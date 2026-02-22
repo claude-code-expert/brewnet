@@ -1,6 +1,6 @@
 # Brewnet TRD (Technical Requirements Document)
 
-> **Version**: 2.0
+> **Version**: 2.1
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -39,7 +39,7 @@ brewnet logs
 |------|------|------|
 | 0 | System Check | OS, Docker, Node.js, Git, 포트, 디스크 확인 |
 | 1 | Project Setup | 프로젝트 이름, 경로, 설치 유형 (Full / Partial) |
-| 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web/File/App/DB/Media/SSH) |
+| 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/App/DB/Media/SSH) |
 | 3 | Runtime & Boilerplate | 언어/프레임워크 선택, 보일러플레이트 (App Server 활성화 시만) |
 | 4 | Domain & Network | 도메인 (Local/FreeDomain/Custom), Cloudflare Tunnel, Mail Server |
 | 5 | Review | 설정 확인, 자격증명 전파 대상 표시, 리소스 추정, 내보내기 |
@@ -105,7 +105,8 @@ brewnet logs
 | **docker-mailserver** | `ghcr.io/docker-mailserver/docker-mailserver:latest` | 메일 서버 (SMTP/IMAP, DKIM/SPF) | 1 |
 | **Roundcube** | `roundcube/roundcubemail:latest` | 웹메일 클라이언트 (선택) | 2 |
 | **Certbot** | 시스템 패키지 | Let's Encrypt SSL 인증서 발급/갱신 | 2 |
-| **Gitea** | `gitea/gitea:latest` | 자체 Git 서버 (저장소 관리, 자동 배포) | 2 |
+| **FileBrowser** | `filebrowser/filebrowser:latest` | 파일 관리 웹 UI (App Server 기본 포함) | 1 |
+| **Gitea** | `gitea/gitea:latest` | 자체 Git 서버 (필수, 저장소 관리, 자동 배포) | 1 |
 
 ### 2.5 데이터 & 설정
 
@@ -163,7 +164,9 @@ brewnet logs
 
 [Docker 서비스]
 ├── 웹 서버: Traefik (기본) / Nginx / Caddy
+├── Git 서버: Gitea (필수)
 ├── 파일 서버: Nextcloud / MinIO
+├── 파일 관리: FileBrowser (App Server 시 기본)
 ├── 미디어: Jellyfin
 ├── DB: PostgreSQL / MySQL / MariaDB + 캐시 (Redis / Valkey / KeyDB)
 ├── 외부 접근: cloudflare/cloudflared (Cloudflare Tunnel)
@@ -172,14 +175,13 @@ brewnet logs
 └── 관리: pgAdmin
 ```
 
-### Phase 2 — 네트워킹 (도메인, SSL, Git 서버)
+### Phase 2 — 네트워킹 (도메인, SSL)
 
 ```
 [추가 의존성]
 ├── Git: simple-git
 ├── SSL: certbot (시스템 패키지)
-├── 웹메일: Roundcube
-└── Git 서버: Gitea
+└── 웹메일: Roundcube
 ```
 
 ### Phase 3 — 보안 (ACL, 방화벽, SSO)
@@ -280,6 +282,8 @@ brewnet logs
 |------|--------|-----------|
 | 80 | HTTP (웹 서버) | 필수 |
 | 443 | HTTPS (웹 서버) | 필수 |
+| 3000 | Gitea Web UI | 필수 (Git Server) |
+| 3022 | Gitea SSH | 필수 (Git Server) |
 | 8080 | Traefik Dashboard | 선택 |
 | 5432 | PostgreSQL | DB 선택 시 |
 | 3306 | MySQL/MariaDB | DB 선택 시 |
@@ -415,6 +419,8 @@ brewnet/
 | `jellyfin` | `jellyfin/jellyfin:latest` | 8096 | Media |
 | `openssh-server` | `linuxserver/openssh-server:latest` | 2222 | SSH/SFTP |
 | `docker-mailserver` | `ghcr.io/docker-mailserver/docker-mailserver:latest` | 25, 587, 993 | Mail |
+| `gitea` | `gitea/gitea:latest` | 3000, 3022 | Git Server (필수) |
+| `filebrowser` | `filebrowser/filebrowser:latest` | 80 | File Manager |
 | `cloudflared` | `cloudflare/cloudflared:latest` | — (outbound) | Tunnel |
 
 ---
@@ -438,6 +444,7 @@ interface WizardState {
 
   servers: {
     webServer: { enabled: true; service: 'traefik' | 'nginx' | 'caddy' };
+    gitServer: { enabled: true };     // 항상 true (필수 컴포넌트)
     fileServer: { enabled: boolean; service: 'nextcloud' | 'minio' | '' };
     appServer: { enabled: boolean };
     dbServer: {

@@ -1,6 +1,6 @@
 # Brewnet PRD (Product Requirements Document)
 
-> **Version**: 1.3
+> **Version**: 2.1
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -125,7 +125,7 @@ npm install -g brewnet
 brewnet init
 #   Step 0: 시스템 체크 (OS, Docker, Node.js, Git, 포트, 디스크)
 #   Step 1: 프로젝트 설정 (이름, 경로, Full Install / Partial Install)
-#   Step 2: 관리자 계정 + 서버 컴포넌트 (Web/File/App/DB/Media/SSH)
+#   Step 2: 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/App/DB/Media/SSH)
 #   Step 3: 런타임 & 보일러플레이트 (App Server 활성화 시만)
 #   Step 4: 도메인 & 네트워크 (Local/FreeDomain/Custom, Cloudflare Tunnel, Mail Server)
 #   Step 5: 리뷰 & 확인 (자격증명 전파 대상, 리소스 추정, 설정 내보내기)
@@ -203,14 +203,14 @@ brewnet domain ssl app.example.com
 | 4 | **SSL Manager** | Let's Encrypt / Certbot 자동 구성 | 2 |
 | 5 | **Nginx Manager** | 리버스 프록시 자동 구성, 가상 호스트 | 2 |
 | 6 | **ACL Manager** | 접근 제어, 사용자 권한, 방화벽 규칙 | 3 |
-| 7 | **Git Server** | Gitea 통합, 저장소 관리, 자동 배포 | 2 |
+| 7 | **Git Server** | Gitea 통합 (필수), 저장소 관리, 자동 배포 | 1 |
 | 8 | **File Manager** | Nextcloud, MinIO (S3), SFTP, Jellyfin 스트리밍 | 3 |
 | 9 | **Database Manager** | PostgreSQL, MySQL/MariaDB, SQLite, Redis, Valkey, KeyDB 관리 | 3 |
 | 10 | **SSH Manager** | OpenSSH 설정, 키 인증, 사용자 관리 | 3 |
 | 11 | **SSO Auth** | 통합 인증 (세션, JWT, OAuth2, 2FA) | 3 |
 | 12 | **Admin Account** | 마스터 관리자 계정 (위저드 Step 2, 자동 생성 20자 비밀번호, .env 저장 chmod 600) | 1 |
 | 13 | **Cloudflare Tunnel** | 외부 접근용 터널 (기본 활성화, NAT/CGNAT 지원, 포트포워딩 불필요) | 1 |
-| 14 | **Credential Propagation** | 단일 관리자 크리덴셜(username/password)을 Step 2에서 1회 입력, Nextcloud/pgAdmin/Jellyfin/SSH Server/Mail Server에 자동 전파. DB는 별도 크리덴셜이나 미입력 시 관리자 비밀번호 자동 적용 | 1 |
+| 14 | **Credential Propagation** | 단일 관리자 크리덴셜(username/password)을 Step 2에서 1회 입력, Nextcloud/pgAdmin/Jellyfin/Gitea/FileBrowser/SSH Server/Mail Server에 자동 전파. DB는 별도 크리덴셜이나 미입력 시 관리자 비밀번호 자동 적용 | 1 |
 | 15 | **External Access Verification** | DNS 전파 확인, Cloudflare Tunnel 연결 테스트, HTTPS 엔드포인트 헬스체크, SSH 연결 테스트. Step 7(완료)에서 non-local 도메인 대상 표시 | 1 |
 
 ### 5.2 Supported Infrastructure Services
@@ -219,6 +219,8 @@ brewnet domain ssl app.example.com
 |----------|--------|
 | 파일 서버 | Nextcloud, MinIO |
 | 웹 서버 | Traefik, Nginx, Caddy |
+| Git 서버 | Gitea (필수, 버전 관리, 자동 배포 파이프라인) |
+| 파일 관리 | FileBrowser (`filebrowser/filebrowser:latest`) — 파일 관리 웹 UI (App Server 시 기본 포함) |
 | 미디어 | Jellyfin |
 | 데이터베이스 | PostgreSQL, MySQL, MariaDB, SQLite, Redis, Valkey, KeyDB |
 | SSH 서버 | OpenSSH Server (`linuxserver/openssh-server:latest`) — 포트 2222, 키 기반 인증, SFTP 서브시스템, 관리자 크리덴셜 사용 |
@@ -260,6 +262,7 @@ docker-compose 생성 시 활성화된 서비스에 대해 Cloudflare Tunnel ing
 |--------|----------------|------------|
 | Dashboard | `mydomain.com` | `http://traefik:80` |
 | File Server | `files.mydomain.com` | `http://nextcloud:80` |
+| FileBrowser | `files.mydomain.com` | `http://filebrowser:80` |
 | App | `app.mydomain.com` | `http://app:PORT` |
 | DB Admin | `db.mydomain.com` | `http://pgadmin:5050` |
 | Media | `media.mydomain.com` | `http://jellyfin:8096` |
@@ -332,7 +335,8 @@ Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare 
 | **도메인** | Cloudflare 연동 + 서브도메인 관리 | O | O | O |
 | | SSL 자동 발급/갱신 | X | O | O |
 | | 와일드카드 SSL | X | O | O |
-| **파일 관리** | 웹 파일 브라우저 + SFTP | O | O | O |
+| **파일 관리** | FileBrowser 웹 파일 관리 UI | O | O | O |
+| | 웹 파일 브라우저 + SFTP | O | O | O |
 | | 공유 링크 / WebDAV | X | O | O |
 | **DB 관리** | PostgreSQL/MySQL 설치/관리 | O | O | O |
 | | 웹 쿼리 에디터 / 자동 백업 | X | O | O |
@@ -361,8 +365,8 @@ Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare 
 
 | Phase | 기간 | 핵심 목표 | 주요 산출물 |
 |-------|------|----------|------------|
-| **Phase 1** (MVP) | 2주 | CLI 기초 + Docker 관리 | 설치 위저드, docker-compose 생성, 서비스 관리 |
-| **Phase 2** | 2주 | 네트워킹 + 배포 | 도메인/SSL, Cloudflare, Nginx, Git 서버, 자동 배포 |
+| **Phase 1** (MVP) | 2주 | CLI 기초 + Docker 관리 | 설치 위저드, docker-compose 생성, 서비스 관리, Git 서버 (Gitea) |
+| **Phase 2** | 2주 | 네트워킹 + 배포 | 도메인/SSL, Cloudflare, Nginx, 자동 배포 |
 | **Phase 3** | 2주 | 보안 + 데이터 관리 | SSH, ACL, 방화벽, 파일/DB 관리, SSO |
 | **Phase 4** | 2주 | Dashboard (Pro) | Next.js 웹 대시보드, 실시간 로그 |
 | **Phase 5** | 2주 | 고도화 | 테스트, 문서화, 성능 최적화, 모니터링 통합 (Grafana/Prometheus 선택적 add-on), 베타 출시 |
@@ -403,6 +407,7 @@ git push brewnet main
 |--------|-----|
 | Dashboard | `https://mydomain.com` |
 | File Manager | `https://files.mydomain.com` |
+| FileBrowser | `https://files.mydomain.com` |
 | Git Web | `https://git.mydomain.com` |
 | DB Manager | `https://db.mydomain.com` |
 | 배포된 앱 | `https://[app-name].mydomain.com` |

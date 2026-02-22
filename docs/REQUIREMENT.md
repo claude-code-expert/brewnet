@@ -1,6 +1,6 @@
 # Brewnet REQUIREMENT.md (Functional Requirements)
 
-> **Version**: 1.3
+> **Version**: 2.1
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -36,7 +36,7 @@
 | REQ-1.3.1 | Step 0: 시스템 체크 자동 실행 | Must | 1 |
 | REQ-1.3.2 | Step 1: 프로젝트 설정 — 설치 유형 선택 (Full Install / Partial Install) | Must | 1 |
 | REQ-1.3.3 | Step 2: 관리자 계정 설정 — username 입력 + 20자 비밀번호 자동 생성, .env 파일 저장 (chmod 600) | Must | 1 |
-| REQ-1.3.4 | Step 3: 서버 컴포넌트 선택 (7개 컴포넌트: File/Web/App/DB/Media/SSH/Mail) | Must | 1 |
+| REQ-1.3.4 | Step 3: 서버 컴포넌트 선택 (8개 컴포넌트 (Web Server + Git Server 필수, 6개 선택): File/Web/App/Git/DB/Media/SSH/Mail) | Must | 1 |
 | REQ-1.3.5 | Step 4: 런타임 & 보일러플레이트 선택 | Must | 1 |
 | REQ-1.3.6 | Step 5: 도메인 & Cloudflare 설정 (DigitalPlat 무료 도메인 또는 커스텀 도메인) | Must | 1 |
 | REQ-1.3.7 | Step 6: 설정 확인 및 최종 승인 | Must | 1 |
@@ -51,7 +51,7 @@
 | REQ-1.4.1 | Full Install — 모든 서버 컴포넌트 포함 (권장 구성) | Must | 1 |
 | REQ-1.4.2 | Partial Install — 사용자가 개별 컴포넌트 선택 | Must | 1 |
 
-### REQ-1.5 서버 컴포넌트 (7개)
+### REQ-1.5 서버 컴포넌트 (8개)
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
@@ -62,6 +62,7 @@
 | REQ-1.5.5 | Media 컴포넌트 — Jellyfin 미디어 서버 | Should | 1 |
 | REQ-1.5.6 | SSH Server 컴포넌트 — Step 2에서 카드 표시, 포트 설정 및 인증 방식 선택 | Must | 1 | → REQ-1.11 참조 |
 | REQ-1.5.7 | Mail Server 섹션 — Step 4에서 표시 (조건: domain != local) | Must | 1 | → REQ-1.12 참조 |
+| REQ-1.5.8 | Git Server 컴포넌트 — 항상 활성화 (필수). Web Server와 함께 필수 컴포넌트. 홈서버 코드 버전 관리 및 배포 파이프라인 핵심 인프라 | Must | 1 | → REQ-4.1 참조 |
 
 ### REQ-1.6 데이터베이스 선택
 
@@ -156,7 +157,7 @@
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
 | REQ-1.13.1 | 관리자 크리덴셜(username/password)을 Step 2에서 1회만 입력 | Must | 1 |
-| REQ-1.13.2 | 활성화된 모든 서비스에 관리자 크리덴셜 자동 전파 (Nextcloud, pgAdmin, Jellyfin, SSH Server, Mail Server 등) | Must | 1 |
+| REQ-1.13.2 | 활성화된 모든 서비스에 관리자 크리덴셜 자동 전파 (Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH Server, Mail Server 등) | Must | 1 |
 | REQ-1.13.3 | Step 5(설정 확인)에서 크리덴셜 전파 대상 목록 표시 (어떤 서비스에 어떤 계정이 설정되는지 확인) | Must | 1 |
 | REQ-1.13.4 | Database는 별도 크리덴셜 사용 가능하나, 미입력 시 관리자 비밀번호가 자동으로 채워짐 | Must | 1 |
 
@@ -267,13 +268,13 @@
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
-| REQ-4.1.1 | Gitea Docker 자동 설치 (`brewnet git install`) | Must | 2 |
+| REQ-4.1.1 | Gitea Docker 설치 — Step 2에서 Git Server 카드 토글 또는 `brewnet git install` CLI 명령 | Must | 1 |
 | REQ-4.1.2 | Git 서버 시작/중지 | Must | 2 |
 | REQ-4.1.3 | 저장소 CRUD (`brewnet git repo create/list/delete`) | Must | 2 |
-| REQ-4.1.4 | SSH 키 기반 Push/Pull (포트 2222) | Must | 2 |
+| REQ-4.1.4 | SSH 키 기반 Push/Pull (포트 3022, SSH Server 2222와 분리) | Must | 1 |
 | REQ-4.1.5 | 사용자 관리 (`brewnet git user add/remove`) | Should | 2 |
 | REQ-4.1.6 | Webhook으로 배포 연동 (`brewnet git hook setup`) | Must | 2 |
-| REQ-4.1.7 | 웹 UI 접근 (서브도메인: `git.mydomain.com`) | Should | 2 |
+| REQ-4.1.7 | 웹 UI 접근 (서브도메인: `git.{DOMAIN}`, 포트 3000) | Should | 1 |
 
 ### REQ-4.2 자동 배포 파이프라인
 
@@ -432,6 +433,20 @@
 | REQ-9.2.3 | 스토리지 쿼터 설정 (`brewnet storage quota set <size>`) — 사용자/서비스별 용량 제한 | Could | 3 |
 | REQ-9.2.4 | 스토리지 모니터링 (`brewnet storage monitor`) — 사용량, 증가율, 예상 가득참 날짜 표시 | Could | 3 |
 | REQ-9.2.5 | 스토리지 정리 (`brewnet storage cleanup`) — 불필요한 임시 파일, 캐시 정리 | Could | 3 |
+
+### REQ-9.3 App Storage (애플리케이션 파일 스토리지)
+
+| ID | 요구사항 | 우선순위 | Phase |
+|----|---------|:--------:|:-----:|
+| REQ-9.3.1 | App Storage 자동 활성화 — App Server 활성화 시 로컬 파일 스토리지 자동 구성 | Must | 1 |
+| REQ-9.3.2 | 스토리지 경로 설정 — 기본 `./storage`, 사용자가 커스텀 경로 지정 가능 | Must | 1 |
+| REQ-9.3.3 | Docker 볼륨 매핑 — `./storage:/app/storage`로 앱 컨테이너에서 파일 접근 | Must | 1 |
+| REQ-9.3.4 | 용량 제한 설정 — 선택적 최대 용량 설정 (기본: 무제한) | Could | 2 |
+| REQ-9.3.5 | FileBrowser (`filebrowser/filebrowser:latest`) — 웹 기반 파일 관리 UI, `files.{DOMAIN}` 서브도메인 | Must | 1 |
+| REQ-9.3.6 | FileBrowser REST API 제공 (`/api/login`, `/api/resources/{path}`, `/api/raw/{path}`) | Must | 1 |
+| REQ-9.3.7 | 사용자별 디렉토리 격리 — 각 사용자는 자신의 디렉토리만 접근 가능 | Should | 2 |
+| REQ-9.3.8 | 공개 파일 디렉토리 — `/uploads/public/` 경로는 인증 없이 접근 가능 | Should | 2 |
+| REQ-9.3.9 | 파일 크기 제한 및 확장자 검증 — 업로드 시 파일 크기/타입 제한 설정 | Should | 1 |
 
 ---
 
