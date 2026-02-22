@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Step 4: Domain & Network</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .provider-card {
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .provider-card:hover { background: #161b22; }
+    .provider-card.selected {
+      border-color: #58a6ff;
+      background: rgba(88, 166, 255, 0.06);
+    }
+    .provider-card .pc-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .provider-card .pc-radio {
+      width: 14px; height: 14px;
+      border: 2px solid #484f58;
+      border-radius: 50%;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .provider-card.selected .pc-radio {
+      border-color: #58a6ff;
+    }
+    .provider-card.selected .pc-radio::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 6px; height: 6px;
+      background: #58a6ff;
+      border-radius: 50%;
+    }
+    .provider-card .pc-title { font-weight: 600; color: #e6edf3; }
+    .provider-card .pc-tag {
+      font-size: 10px; padding: 1px 6px;
+      border-radius: 8px; font-weight: 500;
+    }
+    .tag-rec { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+    .provider-card .pc-desc {
+      font-size: 12px; color: #8b949e;
+      margin-top: 4px; padding-left: 22px;
+    }
+
+    .provider-config {
+      margin-top: 8px; padding: 12px;
+      background: #0d1117; border-radius: 6px;
+      border: 1px solid #21262d;
+      display: none;
+    }
+    .provider-config.visible { display: block; }
+
+    .config-row {
+      display: flex; align-items: center;
+      gap: 8px; margin-bottom: 8px;
+    }
+    .config-label {
+      width: 130px; font-size: 12px;
+      color: #8b949e; flex-shrink: 0;
+    }
+    .config-input {
+      background: #0d1117; border: 1px solid #30363d;
+      border-radius: 4px; color: #e6edf3;
+      padding: 6px 10px; font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      flex: 1; max-width: 300px;
+    }
+    .config-select {
+      background: #0d1117; border: 1px solid #30363d;
+      border-radius: 4px; color: #e6edf3;
+      padding: 6px 10px; font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .tunnel-section {
+      margin-top: 16px; padding: 14px;
+      border: 2px solid #58a6ff;
+      border-radius: 6px;
+      background: rgba(88, 166, 255, 0.04);
+    }
+    .tunnel-section .ts-header {
+      display: flex; align-items: center;
+      gap: 8px; margin-bottom: 8px;
+    }
+    .tunnel-section .ts-title {
+      font-weight: 600; color: #e6edf3; font-size: 14px;
+    }
+    .tunnel-section .ts-desc {
+      font-size: 12px; color: #8b949e; margin-bottom: 12px;
+    }
+    .tunnel-toggle {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 10px;
+    }
+    .toggle-switch {
+      width: 36px; height: 20px;
+      border-radius: 10px;
+      background: #484f58;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle-switch.on { background: #58a6ff; }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s;
+    }
+    .toggle-switch.on::after { transform: translateX(16px); }
+
+    .tunnel-benefits {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin: 8px 0 12px 0;
+    }
+    .tunnel-benefits .tb-item {
+      font-size: 11px; padding: 3px 8px;
+      border-radius: 10px;
+      background: rgba(63, 185, 80, 0.1);
+      color: #3fb950;
+    }
+
+    .tunnel-steps {
+      margin-top: 10px; padding: 10px 12px;
+      background: #161b22; border-radius: 6px;
+      font-size: 12px; color: #8b949e;
+    }
+    .tunnel-steps ol {
+      margin: 4px 0 0 16px; padding: 0;
+    }
+    .tunnel-steps li { padding: 2px 0; }
+    .tunnel-steps code {
+      background: #0d1117; padding: 1px 4px;
+      border-radius: 3px; color: #e6edf3;
+      font-size: 11px;
+    }
+    .tunnel-steps a {
+      color: #58a6ff; text-decoration: none;
+    }
+
+    .domain-preview {
+      margin-top: 16px; padding: 12px;
+      background: #0d1117; border-radius: 6px;
+      border: 1px solid #21262d;
+      font-size: 12px; color: #8b949e;
+    }
+    .domain-preview .url {
+      color: #58a6ff;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <div class="step-header">
+        <span class="step-title">STEP 4/7: Domain & Network</span>
+        <span class="step-badge">NETWORK</span>
+      </div>
+
+      <!-- Domain Provider Selection -->
+      <div class="prompt">
+        <div class="prompt-label">How do you want to set up your domain?</div>
+
+        <div class="provider-card selected" data-provider="local" onclick="selectProvider('local')">
+          <div class="pc-header">
+            <span class="pc-radio"></span>
+            <span class="pc-title">Local Only (.local)</span>
+          </div>
+          <div class="pc-desc">Access from your home network only. No external access or domain needed.</div>
+        </div>
+
+        <div class="provider-card" data-provider="freedomain" onclick="selectProvider('freedomain')">
+          <div class="pc-header">
+            <span class="pc-radio"></span>
+            <span class="pc-title">Free Domain (DigitalPlat)</span>
+            <span class="pc-tag tag-rec">Recommended</span>
+          </div>
+          <div class="pc-desc">Get a free domain (.dpdns.org) via DigitalPlat + Cloudflare. Best for home servers.</div>
+        </div>
+
+        <div class="provider-card" data-provider="custom" onclick="selectProvider('custom')">
+          <div class="pc-header">
+            <span class="pc-radio"></span>
+            <span class="pc-title">Own Domain</span>
+          </div>
+          <div class="pc-desc">Use a domain you already own (e.g., example.com).</div>
+        </div>
+      </div>
+
+      <!-- Local Config -->
+      <div class="provider-config visible" id="config-local">
+        <div class="config-row">
+          <span class="config-label">Local domain:</span>
+          <input class="config-input" id="localDomain" value="brewnet.local" disabled style="opacity:0.6">
+        </div>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px;padding-left:138px">
+          Fixed to <code style="background:#161b22;padding:1px 4px;border-radius:3px;color:#e6edf3">brewnet.local</code>. Add entries to <code style="background:#161b22;padding:1px 4px;border-radius:3px;color:#e6edf3">/etc/hosts</code> for resolution.
+        </div>
+      </div>
+
+      <!-- Free Domain Config -->
+      <div class="provider-config" id="config-freedomain">
+        <div class="config-row">
+          <span class="config-label">Your hostname:</span>
+          <input class="config-input" id="fdHostname" placeholder="my-homeserver" oninput="updateFreeDomain()">
+        </div>
+        <div class="config-row">
+          <span class="config-label">TLD:</span>
+          <select class="config-select" id="fdTld" onchange="updateFreeDomain()"></select>
+        </div>
+        <div class="config-row">
+          <span class="config-label">Full domain:</span>
+          <span id="fdFullDomain" style="color:#58a6ff;font-family:'SF Mono',monospace;font-size:13px">—</span>
+        </div>
+
+        <div id="fdAvailability" style="display:none;margin-top:8px;padding:6px 10px;border-radius:4px;font-size:12px"></div>
+
+        <div class="tunnel-steps" style="margin-top:10px">
+          <strong style="color:#e6edf3">Setup Steps (8 Steps):</strong>
+          <ol>
+            <li>Create a free <a href="https://www.cloudflare.com/" target="_blank">Cloudflare</a> account (dash.cloudflare.com)</li>
+            <li>Visit <a href="https://dash.domain.digitalplat.org/" target="_blank">DigitalPlat FreeDomain</a></li>
+            <li>Register / login to DigitalPlat</li>
+            <li>Search for your desired domain name</li>
+            <li>Register domain (select TLD: .dpdns.org recommended)</li>
+            <li>Set Cloudflare nameservers in DigitalPlat panel</li>
+            <li>Wait for DNS propagation (15min ~ 24hrs, verify: <code>dig +short NS your-domain</code>)</li>
+            <li>Return here and enter your domain name above</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Custom Domain Config -->
+      <div class="provider-config" id="config-custom">
+        <div class="config-row">
+          <span class="config-label">Domain name:</span>
+          <input class="config-input" id="customDomain" placeholder="example.com" oninput="updateCustomDomain()">
+        </div>
+        <div class="config-row">
+          <span class="config-label">SSL:</span>
+          <select class="config-select" id="customSsl" onchange="updateSslChoice()">
+            <option value="cloudflare">Cloudflare (auto)</option>
+            <option value="letsencrypt">Let's Encrypt</option>
+            <option value="self-signed">Self-signed</option>
+            <option value="none">None (HTTP only)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Cloudflare Tunnel Section (always visible for freedomain/custom) -->
+      <div class="tunnel-section" id="tunnelSection" style="display:none">
+        <div class="ts-header">
+          <span class="ts-title">Cloudflare Tunnel</span>
+          <span class="pc-tag tag-rec">Required for external access</span>
+        </div>
+        <div class="ts-desc">
+          Exposes your home server to the internet securely — no port forwarding, no router config, works behind CGNAT.
+        </div>
+
+        <div class="tunnel-benefits">
+          <span class="tb-item">No port forwarding</span>
+          <span class="tb-item">Works behind NAT/CGNAT</span>
+          <span class="tb-item">Auto HTTPS</span>
+          <span class="tb-item">DDoS protection</span>
+          <span class="tb-item">Hides real IP</span>
+          <span class="tb-item">Free plan</span>
+        </div>
+
+        <div class="tunnel-toggle">
+          <div class="toggle-switch on" id="tunnelToggle" onclick="toggleTunnel()"></div>
+          <span style="font-size:13px;color:#e6edf3;font-weight:500">Enable Cloudflare Tunnel</span>
+        </div>
+
+        <div id="tunnelConfig">
+          <div class="config-row">
+            <span class="config-label">Tunnel Token:</span>
+            <input class="config-input" id="tunnelToken" type="password" placeholder="eyJ... (from Cloudflare Zero Trust)" oninput="onTunnelTokenInput(this.value)">
+          </div>
+          <div id="tunnelStatus" style="display:none;margin:4px 0 8px 138px;font-size:12px"></div>
+          <div class="config-row">
+            <span class="config-label">Tunnel Name:</span>
+            <input class="config-input" id="tunnelName" placeholder="brewnet-tunnel" value="brewnet-tunnel" oninput="updateTunnelField('tunnelName', this.value)">
+          </div>
+
+          <div class="tunnel-steps">
+            <strong style="color:#e6edf3">How to get your Tunnel Token:</strong>
+            <ol>
+              <li>Go to <a href="https://one.dash.cloudflare.com/" target="_blank">Cloudflare Zero Trust</a> Dashboard</li>
+              <li>Navigate to <code>Networks</code> &rarr; <code>Tunnels</code></li>
+              <li>Click <code>Create a tunnel</code>, name it (e.g., brewnet-tunnel)</li>
+              <li>Copy the token from the install command (<code>eyJ...</code>)</li>
+              <li>Paste the token above</li>
+            </ol>
+            <div style="margin-top:6px;font-size:11px;color:#8b949e">
+              Token can be set later via <code>brewnet domain tunnel setup</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mail Server Section (only for non-local domains) -->
+      <div id="mailSection" style="display:none">
+        <div class="tunnel-section" style="border-color:#a371f7;background:rgba(163,113,247,0.04);margin-top:16px">
+          <div class="ts-header">
+            <span class="ts-title">Mail Server (SMTP)</span>
+            <span class="pc-tag" style="background:rgba(136,136,136,0.15);color:#8b949e">Optional</span>
+          </div>
+          <div class="ts-desc">
+            Send email notifications from your server (Nextcloud alerts, system notifications, password resets). Uses your admin credentials.
+          </div>
+          <div class="tunnel-toggle">
+            <div class="toggle-switch" id="mailToggle" onclick="toggleMail()"></div>
+            <span style="font-size:13px;color:#e6edf3;font-weight:500">Enable Mail Server</span>
+          </div>
+          <div id="mailConfig" style="display:none">
+            <div style="padding:10px 12px;background:#161b22;border-radius:6px;font-size:12px;color:#8b949e">
+              <div style="color:#e6edf3;font-weight:500;margin-bottom:6px">docker-mailserver</div>
+              <div>Full-featured mail server with SMTP, IMAP, anti-spam, and DKIM signing.</div>
+              <div style="margin-top:8px">
+                <span style="color:#e6edf3">Ports:</span> 25 (SMTP), 587 (Submission), 993 (IMAP)
+              </div>
+              <div style="margin-top:4px">
+                <span style="color:#e6edf3">Sender address:</span>
+                <span id="mailFrom" style="color:#58a6ff;font-family:'SF Mono',monospace">noreply@<span id="mailDomain">example.com</span></span>
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:#8b949e">
+                Admin credentials will be used as the postmaster account. DNS MX records will be configured automatically via Cloudflare.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Domain Preview -->
+      <div class="domain-preview" id="domainPreview">
+        <div style="margin-bottom:6px;color:#e6edf3;font-weight:500">Service URLs Preview:</div>
+        <div id="previewUrls"></div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-bar">
+        <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="navigatePrev()">&larr; Back</button>
+          <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
+        </div>
+        <div class="nav-buttons">
+          <button class="btn btn-primary" onclick="saveAndContinue()">Continue &rarr;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    var state = WizardState.load();
+    var domainState = state.domain || structuredClone(DEFAULT_STATE.domain);
+
+    function init() {
+      // Build TLD dropdown
+      var tldSelect = document.getElementById('fdTld');
+      tldSelect.innerHTML = '';
+      for (var p of FREE_DOMAIN_PROVIDERS) {
+        var opt = document.createElement('option');
+        opt.value = p.tld;
+        opt.textContent = p.name + (p.recommended ? ' (Recommended)' : '');
+        if (p.tld === (domainState.freeDomainTld || '.dpdns.org')) opt.selected = true;
+        tldSelect.appendChild(opt);
+      }
+
+      // Restore provider selection
+      var provider = domainState.provider || 'freedomain';
+      selectProvider(provider, true);
+
+      // Restore free domain hostname
+      if (provider === 'freedomain') {
+        var hostname = (domainState.name || '').replace(domainState.freeDomainTld || '.dpdns.org', '');
+        document.getElementById('fdHostname').value = hostname;
+        updateFreeDomain();
+      }
+
+      // Restore custom domain
+      if (provider === 'custom') {
+        document.getElementById('customDomain').value = domainState.name || '';
+        var sslSelect = document.getElementById('customSsl');
+        for (var i = 0; i < sslSelect.options.length; i++) {
+          if (sslSelect.options[i].value === domainState.ssl) sslSelect.selectedIndex = i;
+        }
+      }
+
+      // Restore tunnel config
+      if (domainState.cloudflare) {
+        var tunnelOn = domainState.cloudflare.enabled !== false;
+        var toggle = document.getElementById('tunnelToggle');
+        toggle.classList.toggle('on', tunnelOn);
+        document.getElementById('tunnelConfig').style.display = tunnelOn ? 'block' : 'none';
+        document.getElementById('tunnelToken').value = domainState.cloudflare.tunnelToken || '';
+        document.getElementById('tunnelName').value = domainState.cloudflare.tunnelName || 'brewnet-tunnel';
+      }
+
+      updatePreview();
+      updateMailSection();
+    }
+
+    function selectProvider(provider, isRestore) {
+      domainState.provider = provider;
+
+      // Update provider cards
+      document.querySelectorAll('.provider-card').forEach(function(card) {
+        card.classList.toggle('selected', card.dataset.provider === provider);
+      });
+
+      // Show/hide config panels
+      document.getElementById('config-local').classList.toggle('visible', provider === 'local');
+      document.getElementById('config-freedomain').classList.toggle('visible', provider === 'freedomain');
+      document.getElementById('config-custom').classList.toggle('visible', provider === 'custom');
+
+      // Show tunnel section for freedomain and custom
+      var tunnelSection = document.getElementById('tunnelSection');
+      tunnelSection.style.display = (provider === 'local') ? 'none' : 'block';
+
+      // Set domain name and SSL based on provider
+      if (!isRestore) {
+        if (provider === 'local') {
+          domainState.name = 'brewnet.local';
+          domainState.ssl = 'none';
+          domainState.cloudflare.enabled = false;
+        } else if (provider === 'freedomain') {
+          domainState.ssl = 'cloudflare';
+          domainState.cloudflare.enabled = true;
+          document.getElementById('tunnelToggle').classList.add('on');
+          document.getElementById('tunnelConfig').style.display = 'block';
+          updateFreeDomain();
+        } else if (provider === 'custom') {
+          domainState.ssl = 'cloudflare';
+          domainState.cloudflare.enabled = true;
+          document.getElementById('tunnelToggle').classList.add('on');
+          document.getElementById('tunnelConfig').style.display = 'block';
+        }
+      }
+
+      updatePreview();
+      updateMailSection();
+    }
+
+    var fdCheckTimer = null;
+    function updateFreeDomain() {
+      var hostname = (document.getElementById('fdHostname').value || '').trim();
+      var tld = document.getElementById('fdTld').value;
+      domainState.freeDomainTld = tld;
+
+      if (hostname) {
+        domainState.name = hostname + tld;
+      } else {
+        domainState.name = 'my-server' + tld;
+      }
+      document.getElementById('fdFullDomain').textContent = domainState.name;
+      updatePreview();
+
+      // Simulated domain availability check
+      var availEl = document.getElementById('fdAvailability');
+      if (hostname && hostname.length >= 3) {
+        availEl.style.display = 'block';
+        availEl.style.background = 'rgba(227, 179, 65, 0.1)';
+        availEl.innerHTML = '<span style="color:#e3b341">&#9679;</span> Checking availability...';
+        clearTimeout(fdCheckTimer);
+        fdCheckTimer = setTimeout(function() {
+          // Simulate: "taken" names for demo, all others "available"
+          var taken = ['test', 'admin', 'server', 'home', 'demo'];
+          if (taken.indexOf(hostname.toLowerCase()) !== -1) {
+            availEl.style.background = 'rgba(248, 81, 73, 0.1)';
+            availEl.innerHTML = '<span style="color:#f85149">&#10007;</span> <span style="color:#f85149"><strong>' + escapeHtml(domainState.name) + '</strong> is already taken. Try another name.</span>';
+          } else {
+            availEl.style.background = 'rgba(63, 185, 80, 0.1)';
+            availEl.innerHTML = '<span style="color:#3fb950">&#10003;</span> <span style="color:#3fb950"><strong>' + escapeHtml(domainState.name) + '</strong> is available!</span>';
+          }
+        }, 600);
+      } else {
+        availEl.style.display = 'none';
+      }
+    }
+
+    function updateCustomDomain() {
+      var domain = (document.getElementById('customDomain').value || '').trim();
+      domainState.name = domain || 'example.com';
+      updatePreview();
+    }
+
+    function updateSslChoice() {
+      domainState.ssl = document.getElementById('customSsl').value;
+      updatePreview();
+    }
+
+    function toggleTunnel() {
+      var toggle = document.getElementById('tunnelToggle');
+      var isOn = toggle.classList.contains('on');
+      toggle.classList.toggle('on', !isOn);
+      domainState.cloudflare.enabled = !isOn;
+      document.getElementById('tunnelConfig').style.display = isOn ? 'none' : 'block';
+    }
+
+    function onTunnelTokenInput(value) {
+      domainState.cloudflare.tunnelToken = value;
+      var statusEl = document.getElementById('tunnelStatus');
+      if (value && value.length > 10) {
+        statusEl.style.display = 'block';
+        statusEl.innerHTML = '<span style="color:#e3b341">&#9679;</span> Validating token...';
+        setTimeout(function() {
+          if (value.startsWith('eyJ')) {
+            statusEl.innerHTML = '<span style="color:#3fb950">&#10003;</span> <span style="color:#3fb950">Tunnel token validated</span>';
+          } else {
+            statusEl.innerHTML = '<span style="color:#f85149">&#10007;</span> <span style="color:#f85149">Invalid token format (should start with eyJ...)</span>';
+          }
+        }, 800);
+      } else {
+        statusEl.style.display = 'none';
+      }
+    }
+
+    function updateTunnelField(field, value) {
+      domainState.cloudflare[field] = value;
+    }
+
+    function toggleMail() {
+      var toggle = document.getElementById('mailToggle');
+      var isOn = toggle.classList.contains('on');
+      toggle.classList.toggle('on', !isOn);
+      document.getElementById('mailConfig').style.display = isOn ? 'none' : 'block';
+      // Save to state
+      if (!state.servers.mailServer) state.servers.mailServer = { enabled: false, service: 'docker-mailserver' };
+      state.servers.mailServer.enabled = !isOn;
+      WizardState.updateNested('servers', state.servers);
+    }
+
+    function updateMailSection() {
+      var isNonLocal = domainState.provider !== 'local';
+      document.getElementById('mailSection').style.display = isNonLocal ? 'block' : 'none';
+      if (isNonLocal) {
+        var mailDomainEl = document.getElementById('mailDomain');
+        if (mailDomainEl) mailDomainEl.textContent = domainState.name || 'example.com';
+      }
+      // Restore mail toggle state
+      var mailState = state.servers.mailServer || {};
+      var mailToggle = document.getElementById('mailToggle');
+      if (mailToggle) {
+        mailToggle.classList.toggle('on', !!mailState.enabled);
+        document.getElementById('mailConfig').style.display = mailState.enabled ? 'block' : 'none';
+      }
+      // Disable mail if switching to local
+      if (!isNonLocal && state.servers.mailServer) {
+        state.servers.mailServer.enabled = false;
+        WizardState.updateNested('servers', state.servers);
+      }
+    }
+
+    function updatePreview() {
+      var domain = domainState.name || 'brewnet.local';
+      var useCf = domainState.cloudflare && domainState.cloudflare.enabled;
+      var protocol = (domainState.ssl === 'none' && !useCf) ? 'http' : 'https';
+      var s = state.servers;
+      var lines = [];
+
+      // Web Server dashboard
+      var web = findService(s.webServer.service || 'traefik');
+      if (web) lines.push('<span class="url">' + protocol + '://' + web.subdomain + '.' + escapeHtml(domain) + '</span> — ' + escapeHtml(web.name) + ' Dashboard');
+
+      // File Server
+      if (s.fileServer.enabled && s.fileServer.service) {
+        var fs = findService(s.fileServer.service);
+        if (fs) lines.push('<span class="url">' + protocol + '://' + fs.subdomain + '.' + escapeHtml(domain) + '</span> — ' + escapeHtml(fs.name));
+      }
+
+      // App
+      if (s.appServer.enabled) {
+        lines.push('<span class="url">' + protocol + '://app.' + escapeHtml(domain) + '</span> — Your Application');
+      }
+
+      // DB Admin
+      if (s.dbServer.enabled && s.dbServer.adminUI && s.dbServer.primary && s.dbServer.primary !== 'sqlite') {
+        lines.push('<span class="url">' + protocol + '://dbadmin.' + escapeHtml(domain) + '</span> — DB Admin Panel');
+      }
+
+      // Media
+      if (s.media.enabled) {
+        for (var m of (s.media.services || [])) {
+          var ms = findService(m);
+          if (ms) lines.push('<span class="url">' + protocol + '://' + ms.subdomain + '.' + escapeHtml(domain) + '</span> — ' + escapeHtml(ms.name));
+        }
+      }
+
+      // SSH
+      if (s.sshServer && s.sshServer.enabled) {
+        var sshPort = s.sshServer.port || 2222;
+        lines.push('<span class="url" style="color:#8b949e">ssh admin@' + escapeHtml(domain) + ' -p ' + sshPort + '</span> — SSH Access');
+        if (s.sshServer.sftp) {
+          lines.push('<span class="url" style="color:#8b949e">sftp -P ' + sshPort + ' admin@' + escapeHtml(domain) + '</span> — SFTP Transfer');
+        }
+      }
+
+      // Mail
+      if (s.mailServer && s.mailServer.enabled) {
+        lines.push('<span class="url" style="color:#a371f7">mail.' + escapeHtml(domain) + '</span> — Mail Server (SMTP/IMAP)');
+      }
+
+      document.getElementById('previewUrls').innerHTML = lines.join('<br>');
+    }
+
+    function saveAndContinue() {
+      WizardState.updateNested('domain', domainState);
+      navigateNext();
+    }
+
+    init();
+  </script>
+
+</body>
+</html>

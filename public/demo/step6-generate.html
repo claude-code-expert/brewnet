@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Step 6: Generating</title>
+  <link rel="stylesheet" href="css/terminal.css">
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init — generating</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <div class="step-header">
+        <span class="step-title">Generating Configuration...</span>
+        <span class="step-badge">BUILD</span>
+      </div>
+
+      <div id="progress-output"></div>
+
+      <div id="complete-msg" style="display:none;margin-top:16px">
+        <div class="alert alert-success" style="border-color:#3fb950">
+          <span style="color:#3fb950;font-weight:600">Setup complete!</span> All services are running.
+        </div>
+        <div style="margin-top:12px">
+          <button class="btn btn-success" onclick="window.location.href='step7-complete.html'">View Your Server &rarr;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    function init() {
+      var state = WizardState.load();
+      var s = state.servers;
+      var items = [];
+      var delay = 0;
+
+      // Phase 1: Generating project files
+      items.push({ text: 'Generating project files...', type: 'header', delay: delay });
+      delay += 200;
+
+      items.push({ text: '[OK] Created ' + state.projectPath, delay: delay }); delay += 200;
+      items.push({ text: '[OK] Created docker-compose.yml', delay: delay }); delay += 200;
+
+      // Admin credentials in .env
+      var adm = state.admin || {};
+      items.push({ text: '[OK] Created .env (ADMIN_USER=' + (adm.username || 'admin') + ', credentials secured)', delay: delay }); delay += 200;
+      items.push({ text: '[OK] Set .env permissions (chmod 600)', delay: delay }); delay += 200;
+      items.push({ text: '[OK] Created .env.example', delay: delay }); delay += 200;
+      items.push({ text: '[OK] Created Makefile', delay: delay }); delay += 200;
+
+      // Web server config
+      var webId = s.webServer.service || 'traefik';
+      items.push({ text: '[OK] Created config/' + webId + '/' + webId + '.yml', delay: delay }); delay += 200;
+
+      // File server config
+      if (s.fileServer.enabled && s.fileServer.service) {
+        items.push({ text: '[OK] Created config/' + s.fileServer.service + '/', delay: delay }); delay += 200;
+      }
+
+      // DB config
+      if (s.dbServer.enabled && s.dbServer.primary && s.dbServer.primary !== 'sqlite') {
+        items.push({ text: '[OK] Created config/' + s.dbServer.primary + '/init.sql', delay: delay }); delay += 200;
+      }
+
+      // App source
+      if (s.appServer.enabled && state.devStack.framework) {
+        var bp = state.boilerplate || {};
+        if (bp.generate) {
+          items.push({ text: '[OK] Created app/src/ (boilerplate)', delay: delay }); delay += 200;
+          items.push({ text: '[OK] Created app/Dockerfile', delay: delay }); delay += 200;
+          if (bp.sampleData) {
+            items.push({ text: '[OK] Created app/src/models/ (sample data)', delay: delay }); delay += 200;
+          }
+        }
+      }
+
+      // Domain config
+      var domain = (state.domain || {}).name || 'brewnet.local';
+      items.push({ text: '[OK] Created config/domain/' + domain + '.yml', delay: delay }); delay += 200;
+
+      // SSH Server config
+      if (s.sshServer && s.sshServer.enabled) {
+        items.push({ text: '[OK] Created config/ssh/sshd_config (port ' + (s.sshServer.port || 2222) + ')', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Generated SSH host keys (RSA, ECDSA, ED25519)', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Configured admin SSH credentials in .env', delay: delay }); delay += 200;
+        if (s.sshServer.sftp) {
+          items.push({ text: '[OK] Enabled SFTP subsystem with chroot jail', delay: delay }); delay += 200;
+        }
+        items.push({ text: '[OK] Added openssh-server to docker-compose.yml', delay: delay }); delay += 200;
+      }
+
+      // Mail Server config
+      if (s.mailServer && s.mailServer.enabled) {
+        var mailDomain = (state.domain || {}).name || 'brewnet.local';
+        items.push({ text: '[OK] Created config/mail/postfix-main.cf', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Created config/mail/dovecot.conf', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Configured postmaster@' + mailDomain + ' in .env', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Added docker-mailserver to docker-compose.yml', delay: delay }); delay += 200;
+      }
+
+      // Cloudflare Tunnel
+      if (state.domain && state.domain.cloudflare && state.domain.cloudflare.enabled) {
+        items.push({ text: '[OK] Created config/cloudflare/tunnel.yml', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Configured CLOUDFLARE_TUNNEL_TOKEN in .env', delay: delay }); delay += 200;
+        items.push({ text: '[OK] Added cloudflared service to docker-compose.yml', delay: delay }); delay += 200;
+      }
+
+      items.push({ text: '[OK] Created README.md', delay: delay }); delay += 400;
+
+      // Phase 2: Pulling images
+      items.push({ text: 'Pulling Docker images...', type: 'header', delay: delay }); delay += 200;
+
+      var allServices = collectAllServices(state);
+      for (var svcId of allServices) {
+        var img = getImageName(svcId);
+        items.push({ text: '[OK] Pulled ' + img, delay: delay }); delay += 300;
+      }
+
+      // App image
+      if (s.appServer.enabled && state.devStack.language) {
+        var langImages = {
+          python: 'python:3.12-slim',
+          nodejs: 'node:20-alpine',
+          java: 'eclipse-temurin:21-jre',
+          rust: 'rust:1-slim',
+          go: 'golang:1.22-alpine',
+        };
+        items.push({ text: '[OK] Pulled ' + (langImages[state.devStack.language] || 'app:latest'), delay: delay }); delay += 300;
+      }
+      delay += 200;
+
+      // Phase 3: Starting containers
+      items.push({ text: 'Starting containers...', type: 'header', delay: delay }); delay += 200;
+
+      var name = state.projectName || 'brewnet';
+      for (var svcId of allServices) {
+        items.push({ text: '[OK] Started ' + name + '-' + svcId, delay: delay }); delay += 250;
+      }
+      if (s.appServer.enabled && state.devStack.framework) {
+        items.push({ text: '[OK] Started ' + name + '-app', delay: delay }); delay += 250;
+      }
+      delay += 200;
+
+      // Phase 4: Health checks
+      items.push({ text: 'Running health checks...', type: 'header', delay: delay }); delay += 400;
+
+      var totalContainers = allServices.length + (s.appServer.enabled && state.devStack.framework ? 1 : 0);
+      items.push({ text: '[OK] All ' + totalContainers + ' containers are healthy', delay: delay }); delay += 300;
+
+      // Phase 5: Credential propagation
+      var targets = getCredentialTargets(state);
+      if (targets.length > 0) {
+        items.push({ text: 'Propagating admin credentials...', type: 'header', delay: delay }); delay += 200;
+        for (var t of targets) {
+          items.push({ text: '[OK] Configured ' + t + ' admin account', delay: delay }); delay += 200;
+        }
+      }
+
+      // Phase 6: External access verification (if tunnel enabled)
+      if (state.domain && state.domain.cloudflare && state.domain.cloudflare.enabled) {
+        items.push({ text: 'Verifying external access...', type: 'header', delay: delay }); delay += 300;
+        items.push({ text: '[OK] Cloudflare Tunnel connected', delay: delay }); delay += 300;
+        items.push({ text: '[OK] DNS resolution verified for ' + ((state.domain || {}).name || 'brewnet.local'), delay: delay }); delay += 300;
+        items.push({ text: '[OK] HTTPS endpoint responding (200 OK)', delay: delay }); delay += 300;
+      }
+
+      // Render
+      var container = document.getElementById('progress-output');
+      container.innerHTML = '';
+
+      for (var item of items) {
+        var div = document.createElement('div');
+        div.className = item.type === 'header' ? 'progress-item progress-header' : 'progress-item';
+        div.style.animationDelay = item.delay + 'ms';
+
+        if (item.type === 'header') {
+          div.innerHTML = '<span style="color:#58a6ff;font-weight:600">' + escapeHtml(item.text) + '</span>';
+        } else {
+          div.innerHTML = '<span style="color:#3fb950">' + item.text.substring(0, 4) + '</span>' + escapeHtml(item.text.substring(4));
+        }
+        container.appendChild(div);
+      }
+
+      // Show complete message after all animations
+      setTimeout(function() {
+        document.getElementById('complete-msg').style.display = 'block';
+      }, delay + 500);
+    }
+
+    init();
+  </script>
+
+</body>
+</html>

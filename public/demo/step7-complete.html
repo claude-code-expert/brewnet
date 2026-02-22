@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Setup Complete</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .endpoint-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .endpoint-table th { text-align: left; padding: 6px 10px; font-size: 12px; color: #8b949e; border-bottom: 1px solid #21262d; }
+    .endpoint-table td { padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #161b22; }
+    .endpoint-url { color: #58a6ff; text-decoration: none; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+    .endpoint-url:hover { text-decoration: underline; }
+    .hosts-block { background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 12px 16px; font-family: 'SF Mono', monospace; font-size: 12px; color: #8b949e; margin-top: 12px; white-space: pre-line; }
+    .success-banner { border: 2px solid #3fb950; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 16px; }
+    .success-banner h2 { color: #3fb950; margin: 0 0 6px 0; font-size: 20px; }
+    .success-banner .domain { color: #58a6ff; font-family: 'SF Mono', monospace; }
+    .tip-item { padding: 4px 0; font-size: 13px; color: #8b949e; }
+    .tip-item code { background: #161b22; padding: 2px 6px; border-radius: 3px; color: #e6edf3; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet — Setup Complete</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <!-- Success Banner -->
+      <div class="success-banner">
+        <h2>Your Home Server is Ready!</h2>
+        <div class="domain" id="domain-display">brewnet.local</div>
+      </div>
+
+      <!-- Endpoints -->
+      <div id="endpoint-sections"></div>
+
+      <!-- /etc/hosts -->
+      <div class="summary-box">
+        <div class="summary-section">/etc/hosts entries</div>
+        <div class="hosts-block" id="hosts-block"></div>
+        <div style="font-size:11px;color:#8b949e;margin-top:6px">
+          Add the above entries to <code>/etc/hosts</code> for local domain resolution.
+        </div>
+      </div>
+
+      <!-- Credentials Summary -->
+      <div id="cred-summary" style="display:none">
+        <div class="summary-box">
+          <div class="summary-section">Credentials Summary</div>
+          <div style="padding:6px 0;font-size:13px">
+            <div style="display:flex;padding:4px 0"><span style="color:#8b949e;width:130px;flex-shrink:0">Admin User:</span><span style="color:#e6edf3" id="cred-user">admin</span></div>
+            <div style="display:flex;padding:4px 0"><span style="color:#8b949e;width:130px;flex-shrink:0">Admin Password:</span><span style="color:#e6edf3">********</span> <span style="font-size:11px;color:#8b949e;margin-left:8px">(stored in .env)</span></div>
+            <div id="cred-targets" style="margin-top:8px;font-size:12px;color:#8b949e"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cloudflare Tunnel Status -->
+      <div id="cf-note" style="display:none">
+        <div class="summary-box">
+          <div class="summary-section">Cloudflare Tunnel</div>
+          <div style="padding:6px 0;font-size:13px">
+            <div id="cf-health" style="margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span id="cf-dns-status" style="color:#3fb950">&#10003;</span> <span style="color:#e6edf3">DNS Resolution</span> <span style="font-size:11px;color:#8b949e;margin-left:auto" id="cf-dns-detail">Cloudflare IP detected</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span id="cf-tunnel-status" style="color:#3fb950">&#10003;</span> <span style="color:#e6edf3">Tunnel Connection</span> <span style="font-size:11px;color:#3fb950;margin-left:auto">Active</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span id="cf-https-status" style="color:#3fb950">&#10003;</span> <span style="color:#e6edf3">HTTPS Certificate</span> <span style="font-size:11px;color:#3fb950;margin-left:auto">Valid (Cloudflare)</span></div>
+            </div>
+            <div class="tip-item"><code>brewnet domain tunnel status</code> — Check tunnel status</div>
+            <div class="tip-item"><code>brewnet domain tunnel expose &lt;service&gt;</code> — Add public hostname</div>
+          </div>
+          <div id="cf-token-warning" style="display:none;margin-top:8px">
+            <div class="alert alert-info" style="border-color:#e3b341;font-size:12px">
+              <span style="color:#e3b341;font-weight:600">Note:</span> Tunnel token not set during setup. Run <code>brewnet domain tunnel setup</code> to configure.
+              <div id="cf-health-warning" style="margin-top:6px">
+                <div style="display:flex;align-items:center;gap:8px;padding:2px 0"><span style="color:#e3b341">&#9679;</span> <span>DNS Resolution — Pending tunnel configuration</span></div>
+                <div style="display:flex;align-items:center;gap:8px;padding:2px 0"><span style="color:#e3b341">&#9679;</span> <span>Tunnel Connection — Not configured</span></div>
+                <div style="display:flex;align-items:center;gap:8px;padding:2px 0"><span style="color:#e3b341">&#9679;</span> <span>HTTPS Certificate — Pending</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mail DNS Records -->
+      <div id="mail-dns" style="display:none">
+        <div class="summary-box">
+          <div class="summary-section">Mail DNS Records</div>
+          <div style="padding:6px 0;font-size:13px">
+            <div style="color:#e6edf3;font-weight:500;margin-bottom:6px">DNS records configured via Cloudflare:</div>
+            <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="color:#3fb950">&#10003;</span> <span style="color:#e6edf3;width:60px">MX</span> <code id="mail-dns-mx">mail.example.com</code> <span style="font-size:11px;color:#8b949e">— Priority 10</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="color:#3fb950">&#10003;</span> <span style="color:#e6edf3;width:60px">SPF</span> <code>v=spf1 mx ~all</code> <span style="font-size:11px;color:#8b949e">— TXT record</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="color:#e3b341">&#9679;</span> <span style="color:#e6edf3;width:60px">DKIM</span> <span style="font-size:12px;color:#8b949e">Run <code>brewnet mail dkim-setup</code> after first start</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="color:#3fb950">&#10003;</span> <span style="color:#e6edf3;width:60px">DMARC</span> <code>v=DMARC1; p=quarantine</code> <span style="font-size:11px;color:#8b949e">— TXT record</span></div>
+          </div>
+          <div style="margin-top:8px">
+            <div class="tip-item"><code>brewnet mail dns-check</code> — Verify all mail DNS records</div>
+            <div class="tip-item"><code>brewnet mail test admin@<span class="verify-domain">example.com</span></code> — Send test email</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- External Access Verification -->
+      <div id="ext-verify" style="display:none">
+        <div class="summary-box">
+          <div class="summary-section">External Access Verification</div>
+          <div style="padding:6px 0;font-size:13px">
+            <div style="color:#e6edf3;font-weight:500;margin-bottom:8px">Verify your server is accessible from the internet:</div>
+            <div class="tip-item" style="padding:4px 0"><span style="color:#3fb950;margin-right:6px">1.</span> <code>dig NS <span class="verify-domain">example.com</span></code> <span style="color:#8b949e;font-size:11px">— Check DNS nameservers</span></div>
+            <div class="tip-item" style="padding:4px 0"><span style="color:#3fb950;margin-right:6px">2.</span> <code>curl -I https://<span class="verify-domain">example.com</span></code> <span style="color:#8b949e;font-size:11px">— Test HTTPS response</span></div>
+            <div class="tip-item" style="padding:4px 0"><span style="color:#3fb950;margin-right:6px">3.</span> <code>brewnet domain tunnel status</code> <span style="color:#8b949e;font-size:11px">— Check tunnel connectivity</span></div>
+            <div class="tip-item" style="padding:4px 0"><span style="color:#3fb950;margin-right:6px">4.</span> <code>brewnet status</code> <span style="color:#8b949e;font-size:11px">— All containers healthy</span></div>
+            <div id="verify-ssh" style="display:none" class="tip-item" style="padding:4px 0"><span style="color:#3fb950;margin-right:6px">5.</span> <code>ssh <span class="verify-user">admin</span>@<span class="verify-domain">example.com</span> -p <span class="verify-ssh-port">2222</span></code> <span style="color:#8b949e;font-size:11px">— Test SSH access</span></div>
+          </div>
+          <div style="margin-top:10px;padding:10px 12px;background:#161b22;border-radius:6px;font-size:12px;color:#8b949e">
+            <strong style="color:#e3b341">Troubleshooting:</strong>
+            <div style="margin-top:4px">&#8226; DNS propagation can take 15 min to 48 hours after domain registration</div>
+            <div>&#8226; Check <a style="color:#58a6ff" href="https://dnschecker.org" target="_blank">dnschecker.org</a> for global DNS propagation status</div>
+            <div>&#8226; Ensure Cloudflare domain status shows <code>Active</code></div>
+            <div>&#8226; Run <code>docker logs brewnet-cloudflared --tail 50</code> to check tunnel logs</div>
+            <div>&#8226; <strong>502 Bad Gateway:</strong> Service container not running or port mismatch — check <code>docker ps</code></div>
+            <div>&#8226; <strong>SSL infinite redirect:</strong> Set Cloudflare SSL mode to <code>Full</code> (not "Flexible")</div>
+            <div>&#8226; <strong>Tunnel drops:</strong> Token expired or network issue — regenerate token in Cloudflare dashboard</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tips -->
+      <div class="summary-box">
+        <div class="summary-section">Useful Commands</div>
+        <div class="tip-item"><code>brewnet status</code> — Check service status</div>
+        <div class="tip-item"><code>brewnet logs &lt;service&gt;</code> — View service logs</div>
+        <div class="tip-item"><code>brewnet backup</code> — Create a backup</div>
+        <div class="tip-item"><code>brewnet domain ssl</code> — Configure SSL certificates</div>
+        <div id="tip-ssh" style="display:none">
+          <div class="tip-item"><code>brewnet ssh add-user &lt;name&gt;</code> — Add SSH user</div>
+          <div class="tip-item"><code>brewnet ssh list</code> — List SSH users</div>
+        </div>
+        <div id="tip-mail" style="display:none">
+          <div class="tip-item"><code>brewnet mail dns-check</code> — Verify mail DNS records</div>
+          <div class="tip-item"><code>brewnet mail test &lt;email&gt;</code> — Send test email</div>
+        </div>
+        <div class="tip-item"><code>brewnet credentials</code> — Show all service credentials</div>
+        <div class="tip-item"><code>brewnet storage monitor</code> — Check storage usage</div>
+        <div class="tip-item"><code>brewnet help</code> — Show all commands</div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="window.location.href='manage.html'">Service Manager</button>
+        <button class="btn btn-secondary" onclick="startNew()">Start New Setup</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    function init() {
+      var state = WizardState.load();
+      var s = state.servers;
+      var domain = (state.domain || {}).name || 'brewnet.local';
+      var dSsl = (state.domain || {}).ssl || 'none';
+      var dCf = (state.domain || {}).cloudflare || {};
+      var protocol = (dSsl === 'none' && !dCf.enabled) ? 'http' : 'https';
+
+      document.getElementById('domain-display').textContent = domain;
+
+      var sections = '';
+      var hostsEntries = [];
+
+      // Infrastructure (Web + File)
+      var infraRows = [];
+      var webSvc = findService(s.webServer.service || 'traefik');
+      if (webSvc) {
+        infraRows.push(endpointRow(webSvc.name + ' Dashboard', protocol, webSvc.subdomain, domain, webSvc.port));
+        hostsEntries.push(webSvc.subdomain + '.' + domain);
+      }
+      if (s.fileServer.enabled && s.fileServer.service) {
+        var fileSvc = findService(s.fileServer.service);
+        if (fileSvc) {
+          infraRows.push(endpointRow(fileSvc.name, protocol, fileSvc.subdomain, domain, fileSvc.port));
+          hostsEntries.push(fileSvc.subdomain + '.' + domain);
+        }
+      }
+      if (infraRows.length > 0) {
+        sections += tableSection('Infrastructure', infraRows);
+      }
+
+      // Applications
+      if (s.appServer.enabled && state.devStack.framework) {
+        var fw = findFramework(state.devStack.language, state.devStack.framework);
+        var appRows = [];
+        appRows.push(endpointRow(fw ? fw.name + ' App' : 'Application', protocol, 'app', domain, fw ? fw.port : 3000));
+        hostsEntries.push('app.' + domain);
+        sections += tableSection('Applications', appRows);
+      }
+
+      // Databases
+      if (s.dbServer.enabled && s.dbServer.primary) {
+        var dbRows = [];
+        var dbInfo = findDatabase('primary', s.dbServer.primary);
+        if (dbInfo && s.dbServer.primary !== 'sqlite') {
+          var dbPort = { postgresql: 5432, mysql: 3306, mariadb: 3306 };
+          dbRows.push(endpointRow(dbInfo.name, '', '', domain, dbPort[s.dbServer.primary] || 5432, true));
+        }
+        if (s.dbServer.adminUI && s.dbServer.primary !== 'sqlite') {
+          dbRows.push(endpointRow('pgAdmin / DB Admin', protocol, 'dbadmin', domain, 5050));
+          hostsEntries.push('dbadmin.' + domain);
+        }
+        if (s.dbServer.cache) {
+          var cacheInfo = findDatabase('cache', s.dbServer.cache);
+          var cachePorts = { redis: 6379, valkey: 6379, keydb: 6379 };
+          if (cacheInfo) {
+            dbRows.push(endpointRow(cacheInfo.name, '', '', domain, cachePorts[s.dbServer.cache] || 6379, true));
+          }
+        }
+        if (dbRows.length > 0) {
+          sections += tableSection('Databases', dbRows);
+        }
+      }
+
+      // Media
+      if (s.media.enabled && s.media.services.length > 0) {
+        var mediaRows = [];
+        for (var m of s.media.services) {
+          var mediaSvc = findService(m);
+          if (mediaSvc) {
+            mediaRows.push(endpointRow(mediaSvc.name, protocol, mediaSvc.subdomain, domain, mediaSvc.port));
+            hostsEntries.push(mediaSvc.subdomain + '.' + domain);
+          }
+        }
+        if (mediaRows.length > 0) {
+          sections += tableSection('Media', mediaRows);
+        }
+      }
+
+      // SSH / SFTP
+      if (s.sshServer && s.sshServer.enabled) {
+        var accessRows = [];
+        var sshPort = s.sshServer.port || 2222;
+        var sshUrl = '<span style="color:#8b949e;font-family:monospace;font-size:12px">ssh ' + escapeHtml(adm.username || 'admin') + '@' + escapeHtml(domain) + ' -p ' + sshPort + '</span>';
+        accessRows.push('<tr><td style="color:#e6edf3">SSH Access</td><td>' + sshUrl + '</td><td>' + sshPort + '</td></tr>');
+        if (s.sshServer.sftp) {
+          var sftpUrl = '<span style="color:#8b949e;font-family:monospace;font-size:12px">sftp -P ' + sshPort + ' ' + escapeHtml(adm.username || 'admin') + '@' + escapeHtml(domain) + '</span>';
+          accessRows.push('<tr><td style="color:#e6edf3">SFTP Transfer</td><td>' + sftpUrl + '</td><td>' + sshPort + '</td></tr>');
+        }
+        sections += tableSection('Remote Access', accessRows);
+      }
+
+      // Mail Server
+      if (s.mailServer && s.mailServer.enabled) {
+        var mailRows = [];
+        mailRows.push(endpointRow('Mail Server (SMTP)', '', '', domain, 587, true));
+        mailRows.push(endpointRow('Mail Server (IMAP)', '', '', domain, 993, true));
+        mailRows.push('<tr><td style="color:#e6edf3">Webmail</td><td><a class="endpoint-url" href="#">' + protocol + '://mail.' + escapeHtml(domain) + '</a></td><td>443</td></tr>');
+        hostsEntries.push('mail.' + domain);
+        sections += tableSection('Mail', mailRows);
+      }
+
+      document.getElementById('endpoint-sections').innerHTML = sections;
+
+      // /etc/hosts
+      var hostsText = hostsEntries.map(function(h) {
+        return '127.0.0.1    ' + h;
+      }).join('\n');
+      document.getElementById('hosts-block').textContent = hostsText || '# No host entries needed';
+
+      // Credentials Summary
+      var adm = state.admin || {};
+      var targets = getCredentialTargets(state);
+      if (targets.length > 0) {
+        document.getElementById('cred-summary').style.display = 'block';
+        document.getElementById('cred-user').textContent = adm.username || 'admin';
+        var targetHtml = 'Applied to: ' + targets.map(function(t) {
+          return '<span style="color:#e6edf3">' + escapeHtml(t) + '</span>';
+        }).join(', ');
+        document.getElementById('cred-targets').innerHTML = targetHtml;
+      }
+
+      // Cloudflare tunnel status
+      if (state.domain && state.domain.cloudflare && state.domain.cloudflare.enabled) {
+        document.getElementById('cf-note').style.display = 'block';
+        if (!state.domain.cloudflare.tunnelToken) {
+          document.getElementById('cf-token-warning').style.display = 'block';
+          document.getElementById('cf-health').style.display = 'none';
+        }
+      }
+
+      // Mail DNS records
+      if (s.mailServer && s.mailServer.enabled) {
+        document.getElementById('mail-dns').style.display = 'block';
+        var mxEl = document.getElementById('mail-dns-mx');
+        if (mxEl) mxEl.textContent = 'mail.' + domain;
+      }
+
+      // SSH tips
+      if (s.sshServer && s.sshServer.enabled) {
+        document.getElementById('tip-ssh').style.display = 'block';
+      }
+      // Mail tips
+      if (s.mailServer && s.mailServer.enabled) {
+        document.getElementById('tip-mail').style.display = 'block';
+      }
+
+      // External Access Verification
+      if (state.domain && state.domain.provider !== 'local') {
+        document.getElementById('ext-verify').style.display = 'block';
+        // Populate domain in verification commands
+        document.querySelectorAll('.verify-domain').forEach(function(el) {
+          el.textContent = domain;
+        });
+        document.querySelectorAll('.verify-user').forEach(function(el) {
+          el.textContent = adm.username || 'admin';
+        });
+        // SSH verification step
+        if (s.sshServer && s.sshServer.enabled) {
+          var sshVerify = document.getElementById('verify-ssh');
+          if (sshVerify) {
+            sshVerify.style.display = 'block';
+            var sshPortEl = sshVerify.querySelector('.verify-ssh-port');
+            if (sshPortEl) sshPortEl.textContent = s.sshServer.port || 2222;
+          }
+        }
+      }
+    }
+
+    function tableSection(title, rows) {
+      return '<div class="summary-box">' +
+        '<div class="summary-section">' + escapeHtml(title) + '</div>' +
+        '<table class="endpoint-table">' +
+          '<tr><th>Service</th><th>URL</th><th>Port</th></tr>' +
+          rows.join('') +
+        '</table></div>';
+    }
+
+    function endpointRow(name, protocol, subdomain, domain, port, tcpOnly) {
+      var url = '';
+      if (tcpOnly) {
+        url = '<span style="color:#8b949e;font-family:monospace;font-size:12px">' + escapeHtml(domain) + ':' + port + ' (TCP)</span>';
+      } else {
+        var fullUrl = protocol + '://' + subdomain + '.' + domain;
+        url = '<a class="endpoint-url" href="#">' + escapeHtml(fullUrl) + '</a>';
+      }
+      return '<tr>' +
+        '<td style="color:#e6edf3">' + escapeHtml(name) + '</td>' +
+        '<td>' + url + '</td>' +
+        '<td style="color:#8b949e">' + port + '</td>' +
+      '</tr>';
+    }
+
+    function startNew() {
+      if (confirm('Start a new setup? Current configuration will be reset.')) {
+        WizardState.reset();
+        window.location.href = 'index.html';
+      }
+    }
+
+    init();
+  </script>
+
+</body>
+</html>

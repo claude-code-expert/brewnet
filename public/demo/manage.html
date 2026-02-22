@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Service Manager</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 8px 20px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text-heading); }
+    .tab-btn.active {
+      color: var(--cyan);
+      border-bottom-color: var(--cyan);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .total-row td {
+      font-weight: bold;
+      border-top: 2px solid var(--border);
+      color: var(--text-heading);
+    }
+
+    .add-service-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .add-service-card:hover { border-color: var(--green); }
+    .add-service-card .svc-name { color: var(--text-heading); font-weight: bold; font-size: 13px; }
+    .add-service-card .svc-desc { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+
+    .remove-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .remove-row:hover { background: var(--bg-hover); }
+    .remove-row .svc-info { color: var(--text-heading); font-size: 13px; }
+    .remove-row .svc-url-small { color: var(--text-muted); font-size: 11px; }
+    .btn-remove {
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--red);
+      border: 1px solid var(--red);
+      transition: background 0.15s;
+    }
+    .btn-remove:hover { background: rgba(248,81,73,0.1); }
+
+    #alert-container {
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet — Service Manager</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <div id="alert-container"></div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="status" onclick="switchTab('status')">Status</button>
+        <button class="tab-btn" data-tab="add" onclick="switchTab('add')">Add Service</button>
+        <button class="tab-btn" data-tab="remove" onclick="switchTab('remove')">Remove Service</button>
+      </div>
+
+      <div class="tab-content active" id="tab-status">
+        <div id="status-table-container"></div>
+      </div>
+
+      <div class="tab-content" id="tab-add">
+        <div class="alert alert-info" style="margin-bottom: 12px;">Select a service to add. It will be started automatically.</div>
+        <div id="add-service-container"></div>
+      </div>
+
+      <div class="tab-content" id="tab-remove">
+        <div class="alert alert-warn" style="margin-bottom: 12px;">Remove a service. Data volumes will be preserved.</div>
+        <div id="remove-service-container"></div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-secondary" onclick="showBackupModal()">Backup / Restore</button>
+        <button class="btn btn-danger" id="btn-stop" onclick="handleStopAll()">Stop All (brewnet down)</button>
+        <button class="btn btn-success" id="btn-start" onclick="handleStartAll()" style="display: none;">Start All (brewnet up)</button>
+        <button class="btn btn-danger" onclick="handleUninstall()">Uninstall</button>
+        <a href="step7-complete.html" class="btn btn-secondary" style="text-decoration: none; margin-left: auto;">&larr; Back to Dashboard</a>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    var allStopped = false;
+
+    function getDomain() {
+      var state = WizardState.load();
+      return (state.domain && state.domain.name) ? state.domain.name : 'brewnet.local';
+    }
+
+    function getProtocol() {
+      var state = WizardState.load();
+      var d = state.domain || {};
+      var cf = d.cloudflare || {};
+      return (d.ssl !== 'none' || cf.enabled) ? 'https' : 'http';
+    }
+
+    /* Collect all service IDs + metadata for display */
+    function collectInstalledItems(state) {
+      var items = [];
+      var s = state.servers;
+
+      // Web server (always)
+      var webId = s.webServer.service || 'traefik';
+      var webSvc = findService(webId);
+      items.push({ id: webId, name: webSvc ? webSvc.name : webId, subdomain: webSvc ? webSvc.subdomain : webId, port: webSvc ? webSvc.port : 80, removable: false, type: 'web' });
+
+      // File server
+      if (s.fileServer.enabled && s.fileServer.service) {
+        var fileSvc = findService(s.fileServer.service);
+        if (fileSvc) items.push({ id: fileSvc.id, name: fileSvc.name, subdomain: fileSvc.subdomain, port: fileSvc.port, removable: true, type: 'file' });
+      }
+
+      // App
+      if (s.appServer.enabled && state.devStack && state.devStack.framework) {
+        var fw = findFramework(state.devStack.language, state.devStack.framework);
+        items.push({ id: 'app', name: fw ? fw.name + ' App' : 'Application', subdomain: 'app', port: fw ? fw.port : 3000, removable: true, type: 'app' });
+      }
+
+      // DB
+      if (s.dbServer.enabled && s.dbServer.primary && s.dbServer.primary !== 'sqlite') {
+        var dbInfo = findDatabase('primary', s.dbServer.primary);
+        var dbPorts = { postgresql: 5432, mysql: 3306, mariadb: 3306 };
+        if (dbInfo) items.push({ id: s.dbServer.primary, name: dbInfo.name, subdomain: 'db', port: dbPorts[s.dbServer.primary] || 5432, removable: true, type: 'db', tcpOnly: true });
+        if (s.dbServer.adminUI) {
+          items.push({ id: 'pgadmin', name: 'DB Admin (pgAdmin)', subdomain: 'dbadmin', port: 5050, removable: true, type: 'dbadmin' });
+        }
+      }
+
+      // Cache
+      if (s.dbServer.enabled && s.dbServer.cache) {
+        var cacheInfo = findDatabase('cache', s.dbServer.cache);
+        if (cacheInfo) items.push({ id: s.dbServer.cache, name: cacheInfo.name, subdomain: s.dbServer.cache, port: 6379, removable: true, type: 'cache', tcpOnly: true });
+      }
+
+      // Media
+      if (s.media.enabled) {
+        for (var m of (s.media.services || [])) {
+          var mediaSvc = findService(m);
+          if (mediaSvc) items.push({ id: m, name: mediaSvc.name, subdomain: mediaSvc.subdomain, port: mediaSvc.port, removable: true, type: 'media' });
+        }
+      }
+
+      // SSH Server
+      if (s.sshServer && s.sshServer.enabled) {
+        var sshName = 'SSH Server' + (s.sshServer.sftp ? ' + SFTP' : '');
+        items.push({ id: 'openssh-server', name: sshName, subdomain: '', port: s.sshServer.port || 2222, removable: true, type: 'ssh', tcpOnly: true });
+      }
+
+      // Mail Server
+      if (s.mailServer && s.mailServer.enabled) {
+        items.push({ id: 'docker-mailserver', name: 'Mail Server', subdomain: 'mail', port: 587, removable: true, type: 'mail' });
+      }
+
+      return items;
+    }
+
+    function simCPU() { return (Math.random() * 4 + 0.1).toFixed(1) + '%'; }
+    function simMemory(id) {
+      var est = RESOURCE_ESTIMATES[id];
+      var baseMB = est ? est.ram : 64;
+      return Math.round(baseMB * (0.4 + Math.random() * 0.4)) + ' MB';
+    }
+    function simUptime() {
+      var mins = Math.floor(Math.random() * 300 + 5);
+      return mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
+    }
+
+    function showAlert(type, message) {
+      var container = document.getElementById('alert-container');
+      var div = document.createElement('div');
+      div.className = 'alert alert-' + type;
+      div.innerHTML = message;
+      container.appendChild(div);
+      setTimeout(function() { if (div.parentNode) div.parentNode.removeChild(div); }, 4000);
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.tab-content').forEach(function(c) {
+        c.classList.toggle('active', c.id === 'tab-' + tabName);
+      });
+      if (tabName === 'status') buildStatusTable();
+      if (tabName === 'add') buildAddServiceList();
+      if (tabName === 'remove') buildRemoveServiceList();
+    }
+
+    /* ─── Status Tab ─── */
+    function buildStatusTable() {
+      var state = WizardState.load();
+      var items = collectInstalledItems(state);
+      var container = document.getElementById('status-table-container');
+      var domain = getDomain();
+      var protocol = getProtocol();
+
+      if (items.length === 0) {
+        container.innerHTML = '<div class="alert alert-warn">No services configured. <a href="index.html" style="color:var(--cyan);">Run the setup wizard</a>.</div>';
+        return;
+      }
+
+      var totalRAM = 0;
+      var html = '<table class="status-table"><thead><tr><th>Service</th><th>Status</th><th>CPU</th><th>Memory</th><th>Uptime</th><th>URL</th></tr></thead><tbody>';
+
+      for (var item of items) {
+        var statusClass = allStopped ? 'status-stopped' : 'status-running';
+        var statusText = allStopped ? 'stopped' : 'running';
+        var cpu = allStopped ? '-' : simCPU();
+        var mem = allStopped ? '-' : simMemory(item.id);
+        var uptime = allStopped ? '-' : simUptime();
+        var urlDisplay = item.tcpOnly
+          ? escapeHtml(domain + ':' + item.port) + ' <span style="color:var(--text-muted)">(TCP)</span>'
+          : '<a href="#" class="endpoint-url" style="text-decoration:none;font-size:12px">' + escapeHtml(item.subdomain + '.' + domain) + '</a>';
+
+        if (!allStopped) {
+          var est = RESOURCE_ESTIMATES[item.id];
+          totalRAM += est ? Math.round(est.ram * (0.4 + Math.random() * 0.4)) : 40;
+        }
+
+        html += '<tr><td style="color:var(--text-heading)">' + escapeHtml(item.name) + '</td>';
+        html += '<td class="' + statusClass + '">' + statusText + '</td>';
+        html += '<td>' + cpu + '</td><td>' + mem + '</td><td>' + uptime + '</td>';
+        html += '<td>' + urlDisplay + '</td></tr>';
+      }
+
+      html += '<tr class="total-row"><td>Total (' + items.length + ' services)</td>';
+      html += '<td class="' + (allStopped ? 'status-stopped' : 'status-running') + '">' + (allStopped ? 'all stopped' : 'all running') + '</td>';
+      html += '<td></td><td>' + (allStopped ? '-' : totalRAM + ' MB') + '</td><td></td><td></td></tr>';
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    /* ─── Add Service Tab ─── */
+    function buildAddServiceList() {
+      var state = WizardState.load();
+      var s = state.servers;
+      var container = document.getElementById('add-service-container');
+      var html = '';
+      var hasAny = false;
+
+      // File Server (if not enabled or could switch)
+      if (!s.fileServer.enabled || !s.fileServer.service) {
+        var fileServices = SERVICE_REGISTRY.fileServer;
+        html += '<div class="category-title">' + CATEGORY_LABELS.fileServer + '</div><div class="service-grid">';
+        for (var fs of fileServices) {
+          html += '<div class="add-service-card" onclick="handleAddFile(\'' + fs.id + '\')">';
+          html += '<div class="svc-name">' + escapeHtml(fs.name) + '</div>';
+          html += '<div class="svc-desc">' + escapeHtml(fs.desc) + '</div></div>';
+          hasAny = true;
+        }
+        html += '</div>';
+      } else {
+        // Show the other file server option
+        var otherFile = SERVICE_REGISTRY.fileServer.filter(function(f) { return f.id !== s.fileServer.service; });
+        if (otherFile.length > 0) {
+          html += '<div class="category-title">' + CATEGORY_LABELS.fileServer + ' (switch)</div><div class="service-grid">';
+          for (var of2 of otherFile) {
+            html += '<div class="add-service-card" onclick="handleAddFile(\'' + of2.id + '\')">';
+            html += '<div class="svc-name">' + escapeHtml(of2.name) + '</div>';
+            html += '<div class="svc-desc">' + escapeHtml(of2.desc) + '</div></div>';
+            hasAny = true;
+          }
+          html += '</div>';
+        }
+      }
+
+      // Media
+      if (!s.media.enabled || (s.media.services || []).length === 0) {
+        html += '<div class="category-title">' + CATEGORY_LABELS.media + '</div><div class="service-grid">';
+        for (var ms of SERVICE_REGISTRY.media) {
+          html += '<div class="add-service-card" onclick="handleAddMedia(\'' + ms.id + '\')">';
+          html += '<div class="svc-name">' + escapeHtml(ms.name) + '</div>';
+          html += '<div class="svc-desc">' + escapeHtml(ms.desc) + '</div></div>';
+          hasAny = true;
+        }
+        html += '</div>';
+      }
+
+      // SSH Server
+      if (!s.sshServer || !s.sshServer.enabled) {
+        html += '<div class="category-title">Remote Access</div><div class="service-grid">';
+        html += '<div class="add-service-card" onclick="handleAddSsh()">';
+        html += '<div class="svc-name">SSH Server</div>';
+        html += '<div class="svc-desc">Remote shell access (port 2222, key-based auth)</div></div>';
+        html += '</div>';
+        hasAny = true;
+      }
+
+      // Mail Server (only if domain is not local)
+      if ((!s.mailServer || !s.mailServer.enabled) && state.domain && state.domain.provider !== 'local') {
+        html += '<div class="category-title">Communication</div><div class="service-grid">';
+        html += '<div class="add-service-card" onclick="handleAddMail()">';
+        html += '<div class="svc-name">Mail Server</div>';
+        html += '<div class="svc-desc">SMTP/IMAP with docker-mailserver</div></div>';
+        html += '</div>';
+        hasAny = true;
+      }
+
+      // Cache (if DB enabled but no cache)
+      if (s.dbServer.enabled && !s.dbServer.cache) {
+        html += '<div class="category-title">Cache Layer</div><div class="service-grid">';
+        for (var c of DATABASE_REGISTRY.cache) {
+          html += '<div class="add-service-card" onclick="handleAddCache(\'' + c.id + '\')">';
+          html += '<div class="svc-name">' + escapeHtml(c.name) + '</div>';
+          html += '<div class="svc-desc">' + escapeHtml(c.license) + '</div></div>';
+          hasAny = true;
+        }
+        html += '</div>';
+      }
+
+      if (!hasAny) {
+        html = '<div class="alert alert-info">All available services are already installed.</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    function handleAddFile(id) {
+      var svc = findService(id);
+      if (!svc || !confirm('Add ' + svc.name + '?')) return;
+      var state = WizardState.load();
+      state.servers.fileServer.enabled = true;
+      state.servers.fileServer.service = id;
+      WizardState.save(state);
+      showAlert('success', escapeHtml(svc.name) + ' has been added.');
+      buildAddServiceList();
+      buildRemoveServiceList();
+    }
+
+    function handleAddMedia(id) {
+      var svc = findService(id);
+      if (!svc || !confirm('Add ' + svc.name + '?')) return;
+      var state = WizardState.load();
+      state.servers.media.enabled = true;
+      if (!state.servers.media.services) state.servers.media.services = [];
+      if (state.servers.media.services.indexOf(id) === -1) state.servers.media.services.push(id);
+      WizardState.save(state);
+      showAlert('success', escapeHtml(svc.name) + ' has been added.');
+      buildAddServiceList();
+      buildRemoveServiceList();
+    }
+
+    function handleAddSsh() {
+      if (!confirm('Add SSH server? Uses admin credentials for login.')) return;
+      var state = WizardState.load();
+      state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: true };
+      WizardState.save(state);
+      showAlert('success', 'SSH server added (port 2222).');
+      buildAddServiceList();
+      buildRemoveServiceList();
+    }
+
+    function handleAddMail() {
+      if (!confirm('Add mail server (docker-mailserver)?')) return;
+      var state = WizardState.load();
+      state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
+      WizardState.save(state);
+      showAlert('success', 'Mail server added.');
+      buildAddServiceList();
+      buildRemoveServiceList();
+    }
+
+    function handleAddCache(id) {
+      var cacheInfo = findDatabase('cache', id);
+      if (!cacheInfo || !confirm('Add ' + cacheInfo.name + '?')) return;
+      var state = WizardState.load();
+      state.servers.dbServer.cache = id;
+      WizardState.save(state);
+      showAlert('success', escapeHtml(cacheInfo.name) + ' has been added.');
+      buildAddServiceList();
+      buildRemoveServiceList();
+    }
+
+    /* ─── Remove Service Tab ─── */
+    function buildRemoveServiceList() {
+      var state = WizardState.load();
+      var s = state.servers;
+      var domain = getDomain();
+      var container = document.getElementById('remove-service-container');
+      var html = '';
+      var hasAny = false;
+
+      // Web server (not removable)
+      var webSvc = findService(s.webServer.service || 'traefik');
+      if (webSvc) {
+        html += '<div class="remove-row" style="opacity:0.5">';
+        html += '<div><div class="svc-info">' + escapeHtml(webSvc.name) + ' <span style="color:var(--text-muted);font-size:11px">(required)</span></div>';
+        html += '<div class="svc-url-small">' + escapeHtml(webSvc.subdomain + '.' + domain) + '</div></div>';
+        html += '<span style="color:var(--text-muted);font-size:11px">Cannot remove</span></div>';
+      }
+
+      // File server
+      if (s.fileServer.enabled && s.fileServer.service) {
+        var fileSvc = findService(s.fileServer.service);
+        if (fileSvc) {
+          hasAny = true;
+          html += removeRow(fileSvc.name, fileSvc.subdomain + '.' + domain, "handleRemoveFile()");
+        }
+      }
+
+      // App
+      if (s.appServer.enabled) {
+        hasAny = true;
+        html += removeRow('Application', 'app.' + domain, "handleRemoveApp()");
+      }
+
+      // DB
+      if (s.dbServer.enabled && s.dbServer.primary && s.dbServer.primary !== 'sqlite') {
+        var dbInfo = findDatabase('primary', s.dbServer.primary);
+        if (dbInfo) {
+          hasAny = true;
+          html += removeRow(dbInfo.name, 'db.' + domain, "handleRemoveDb()");
+        }
+      }
+
+      // Cache
+      if (s.dbServer.enabled && s.dbServer.cache) {
+        var cacheInfo = findDatabase('cache', s.dbServer.cache);
+        if (cacheInfo) {
+          hasAny = true;
+          html += removeRow(cacheInfo.name, s.dbServer.cache + '.' + domain, "handleRemoveCache()");
+        }
+      }
+
+      // Media
+      if (s.media.enabled) {
+        for (var m of (s.media.services || [])) {
+          var mediaSvc = findService(m);
+          if (mediaSvc) {
+            hasAny = true;
+            html += removeRow(mediaSvc.name, mediaSvc.subdomain + '.' + domain, "handleRemoveMedia('" + m + "')");
+          }
+        }
+      }
+
+      // SSH
+      if (s.sshServer && s.sshServer.enabled) {
+        hasAny = true;
+        html += removeRow('SSH Server' + (s.sshServer.sftp ? ' + SFTP' : ''), domain + ':' + (s.sshServer.port || 2222), "handleRemoveSsh()");
+      }
+
+      // Mail
+      if (s.mailServer && s.mailServer.enabled) {
+        hasAny = true;
+        html += removeRow('Mail Server', 'mail.' + domain, "handleRemoveMail()");
+      }
+
+      if (!hasAny) {
+        html += '<div class="alert alert-info" style="margin-top:8px">No removable services. Only the reverse proxy is installed.</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    function removeRow(name, url, onclick) {
+      return '<div class="remove-row">' +
+        '<div><div class="svc-info">' + escapeHtml(name) + '</div>' +
+        '<div class="svc-url-small">' + escapeHtml(url) + '</div></div>' +
+        '<button class="btn-remove" onclick="' + onclick + '">Remove</button></div>';
+    }
+
+    function handleRemoveFile() {
+      if (!confirm('Remove file server? Data volumes will be preserved.')) return;
+      var state = WizardState.load();
+      state.servers.fileServer.enabled = false;
+      state.servers.fileServer.service = '';
+      WizardState.save(state);
+      showAlert('success', 'File server removed. Data preserved.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    function handleRemoveApp() {
+      if (!confirm('Remove application? Source code will be preserved.')) return;
+      var state = WizardState.load();
+      state.servers.appServer.enabled = false;
+      state.devStack = { language: '', framework: '' };
+      WizardState.save(state);
+      showAlert('success', 'Application removed. Source code preserved.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    function handleRemoveDb() {
+      if (!confirm('Remove database? Data volumes will be preserved.')) return;
+      var state = WizardState.load();
+      state.servers.dbServer.primary = '';
+      state.servers.dbServer.primaryVersion = '';
+      state.servers.dbServer.adminUI = false;
+      WizardState.save(state);
+      showAlert('success', 'Database removed. Data preserved.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    function handleRemoveCache() {
+      if (!confirm('Remove cache? Data will be cleared.')) return;
+      var state = WizardState.load();
+      state.servers.dbServer.cache = '';
+      WizardState.save(state);
+      showAlert('success', 'Cache removed.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    function handleRemoveMedia(id) {
+      var svc = findService(id);
+      if (!svc || !confirm('Remove ' + svc.name + '?')) return;
+      var state = WizardState.load();
+      var arr = state.servers.media.services || [];
+      var idx = arr.indexOf(id);
+      if (idx !== -1) arr.splice(idx, 1);
+      if (arr.length === 0) state.servers.media.enabled = false;
+      state.servers.media.services = arr;
+      WizardState.save(state);
+      showAlert('success', escapeHtml(svc.name) + ' removed.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    function handleRemoveSsh() {
+      if (!confirm('Remove SSH server? SSH keys will be preserved.')) return;
+      var state = WizardState.load();
+      state.servers.sshServer = { enabled: false, port: 2222, passwordAuth: false, sftp: false };
+      WizardState.save(state);
+      showAlert('success', 'SSH server removed. Keys preserved.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    function handleRemoveMail() {
+      if (!confirm('Remove mail server? Mail data will be preserved.')) return;
+      var state = WizardState.load();
+      state.servers.mailServer = { enabled: false, service: 'docker-mailserver' };
+      WizardState.save(state);
+      showAlert('success', 'Mail server removed.');
+      buildRemoveServiceList();
+      buildAddServiceList();
+    }
+
+    /* ─── Backup / Restore ─── */
+    var mockBackups = [
+      { id: 'bk-003', date: '2026-02-22 14:30', size: '245 MB', services: 5 },
+      { id: 'bk-002', date: '2026-02-15 09:15', size: '230 MB', services: 4 },
+      { id: 'bk-001', date: '2026-02-08 18:00', size: '210 MB', services: 4 },
+    ];
+
+    function showBackupModal() {
+      var existing = document.getElementById('backup-modal');
+      if (existing) { existing.style.display = 'flex'; return; }
+
+      var rows = mockBackups.map(function(b) {
+        return '<tr>' +
+          '<td style="color:#e6edf3">' + b.id + '</td>' +
+          '<td style="color:#8b949e">' + b.date + '</td>' +
+          '<td style="color:#8b949e">' + b.size + '</td>' +
+          '<td style="color:#8b949e">' + b.services + ' services</td>' +
+          '<td><button class="btn btn-secondary" style="padding:2px 8px;font-size:11px" onclick="handleRestore(\'' + b.id + '\')">Restore</button> ' +
+          '<button class="btn btn-danger" style="padding:2px 8px;font-size:11px" onclick="handleDeleteBackup(\'' + b.id + '\')">Delete</button></td>' +
+        '</tr>';
+      }).join('');
+
+      var modal = document.createElement('div');
+      modal.id = 'backup-modal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100';
+      modal.innerHTML = '<div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:20px;max-width:650px;width:90%;max-height:80vh;overflow-y:auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+          '<span style="font-weight:600;color:#e6edf3;font-size:16px">Backup / Restore</span>' +
+          '<button class="btn btn-secondary" style="padding:2px 10px" onclick="document.getElementById(\'backup-modal\').style.display=\'none\'">&#10005;</button>' +
+        '</div>' +
+        '<button class="btn btn-success" style="margin-bottom:12px" onclick="handleCreateBackup()">Create New Backup</button>' +
+        '<div style="font-size:12px;color:#8b949e;margin-bottom:6px">Existing backups (retention: 5 most recent):</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+          '<tr style="border-bottom:1px solid #21262d"><th style="text-align:left;padding:4px 8px;color:#8b949e;font-size:11px">ID</th><th style="text-align:left;padding:4px 8px;color:#8b949e;font-size:11px">Date</th><th style="text-align:left;padding:4px 8px;color:#8b949e;font-size:11px">Size</th><th style="text-align:left;padding:4px 8px;color:#8b949e;font-size:11px">Content</th><th style="padding:4px 8px"></th></tr>' +
+          rows +
+        '</table>' +
+        '<div style="margin-top:10px;font-size:11px;color:#8b949e">Backups include: docker-compose.yml, .env, service configs, database dumps. Media files are excluded.</div>' +
+      '</div>';
+      document.body.appendChild(modal);
+      modal.addEventListener('click', function(e) { if (e.target === modal) modal.style.display = 'none'; });
+    }
+
+    function handleCreateBackup() {
+      var id = 'bk-' + String(mockBackups.length + 1).padStart(3, '0');
+      showAlert('success', 'Backup created: <code>~/.brewnet/backups/' + id + '.tar.gz</code>');
+      document.getElementById('backup-modal').style.display = 'none';
+    }
+
+    function handleRestore(id) {
+      if (!confirm('Restore from backup ' + id + '? Current configuration will be replaced.')) return;
+      showAlert('success', 'Restored from backup <code>' + id + '</code>. Restarting services...');
+      document.getElementById('backup-modal').style.display = 'none';
+    }
+
+    function handleDeleteBackup(id) {
+      if (!confirm('Delete backup ' + id + '? This cannot be undone.')) return;
+      showAlert('warn', 'Backup <code>' + id + '</code> deleted.');
+      document.getElementById('backup-modal').style.display = 'none';
+    }
+
+    function handleStopAll() {
+      allStopped = true;
+      document.getElementById('btn-stop').style.display = 'none';
+      document.getElementById('btn-start').style.display = '';
+      showAlert('warn', 'All services stopped (brewnet down).');
+      buildStatusTable();
+    }
+
+    function handleStartAll() {
+      allStopped = false;
+      document.getElementById('btn-start').style.display = 'none';
+      document.getElementById('btn-stop').style.display = '';
+      showAlert('success', 'All services running (brewnet up).');
+      buildStatusTable();
+    }
+
+    function handleUninstall() {
+      if (!confirm('Uninstall Brewnet? All configuration will be removed.')) return;
+      if (!confirm('Are you sure? This cannot be undone.')) return;
+      WizardState.reset();
+      window.location.href = 'index.html';
+    }
+
+    // Initialize
+    buildStatusTable();
+  </script>
+
+</body>
+</html>

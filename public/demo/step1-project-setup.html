@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Step 1: Project Setup</title>
+  <link rel="stylesheet" href="css/terminal.css">
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init</span>
+    </div>
+    <div class="terminal-body">
+
+      <!-- Step Header -->
+      <div class="step-header">
+        <span class="step-title">STEP 1/7: Project Setup</span>
+        <span class="step-badge">STEP 1</span>
+      </div>
+
+      <!-- Project Name -->
+      <div class="prompt">
+        <label class="prompt-label" for="projectName">Project name:</label>
+        <input
+          type="text"
+          id="projectName"
+          class="prompt-input"
+          placeholder="my-homeserver"
+        >
+      </div>
+
+      <!-- Location -->
+      <div class="prompt">
+        <label class="prompt-label" for="projectPath">Location:</label>
+        <input
+          type="text"
+          id="projectPath"
+          class="prompt-input"
+          placeholder="~/brewnet/my-homeserver"
+        >
+      </div>
+
+      <!-- Setup Type -->
+      <div class="prompt">
+        <div class="prompt-label">What type of setup do you need?</div>
+        <ul class="option-list" id="setupTypeList">
+          <li class="option-item selected" data-value="full" onclick="selectSetupType(this)">
+            <span class="radio"></span>
+            <span class="option-label">Full Install</span>
+            <span class="option-tag">Recommended</span>
+            <span class="option-desc">Web + App + Database servers with sensible defaults</span>
+          </li>
+          <li class="option-item" data-value="partial" onclick="selectSetupType(this)">
+            <span class="radio"></span>
+            <span class="option-label">Partial Install</span>
+            <span class="option-desc">Choose which server components to include</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-bar">
+        <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="navigatePrev()">&larr; Back</button>
+          <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
+        </div>
+        <div class="nav-buttons">
+          <button class="btn btn-primary" onclick="handleContinue()">Continue &rarr;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    // --- State ---
+    var selectedSetupType = 'full';
+
+    // --- Load saved state ---
+    (function init() {
+      var state = WizardState.load();
+
+      var nameInput = document.getElementById('projectName');
+      var pathInput = document.getElementById('projectPath');
+
+      nameInput.value = state.projectName || 'my-homeserver';
+      pathInput.value = state.projectPath || '~/brewnet/my-homeserver';
+
+      // Restore setup type
+      selectedSetupType = state.setupType || 'full';
+      var items = document.querySelectorAll('#setupTypeList .option-item');
+      items.forEach(function(item) {
+        item.classList.remove('selected');
+        if (item.getAttribute('data-value') === selectedSetupType) {
+          item.classList.add('selected');
+        }
+      });
+
+      // Auto-update location when name changes
+      nameInput.addEventListener('input', function() {
+        var name = nameInput.value.trim() || 'my-homeserver';
+        pathInput.value = '~/brewnet/' + name;
+      });
+    })();
+
+    // --- Setup type selection ---
+    function selectSetupType(el) {
+      var items = document.querySelectorAll('#setupTypeList .option-item');
+      items.forEach(function(item) { item.classList.remove('selected'); });
+      el.classList.add('selected');
+      selectedSetupType = el.getAttribute('data-value');
+    }
+
+    // --- Continue ---
+    function handleContinue() {
+      var nameInput = document.getElementById('projectName');
+      var pathInput = document.getElementById('projectPath');
+
+      var projectName = nameInput.value.trim() || 'my-homeserver';
+      var projectPath = pathInput.value.trim() || '~/brewnet/' + projectName;
+
+      WizardState.update({
+        projectName: projectName,
+        projectPath: projectPath,
+        setupType: selectedSetupType,
+      });
+
+      navigateNext();
+    }
+  </script>
+</body>
+</html>

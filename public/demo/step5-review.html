@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Step 5: Review</title>
+  <link rel="stylesheet" href="css/terminal.css">
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <div class="step-header">
+        <span class="step-title">STEP 5/7: Review & Confirm</span>
+        <span class="step-badge">REVIEW</span>
+      </div>
+
+      <div class="alert alert-info">
+        Review your selections before generating the configuration.
+      </div>
+
+      <div id="review-content"></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn-success" onclick="window.location.href='step6-generate.html'">Generate &rarr;</button>
+        <button class="btn btn-secondary" onclick="window.location.href='step1-project-setup.html'">Modify</button>
+        <button class="btn btn-secondary" onclick="exportConfig()">Export Config</button>
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-bar">
+        <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="navigatePrev()">&larr; Back</button>
+          <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    function init() {
+      var state = WizardState.load();
+      var html = '';
+
+      // Project
+      html += '<div class="summary-box">';
+      html += '<div class="summary-section">Project</div>';
+      html += row('Name', state.projectName);
+      html += row('Location', state.projectPath);
+      html += row('Setup Type', state.setupType === 'full' ? 'Full Install' : 'Partial Install');
+      html += '</div>';
+
+      // Admin Account
+      html += '<div class="summary-box">';
+      html += '<div class="summary-section">Admin Account</div>';
+      var adm = state.admin || {};
+      html += row('Username', adm.username || 'admin');
+      html += row('Password', adm.password ? '********' : '<span style="color:#f85149">Not set</span>');
+      html += row('Storage', 'Local (.env file)');
+      html += '</div>';
+
+      // Server Components
+      html += '<div class="summary-box">';
+      html += '<div class="summary-section">Server Components</div>';
+      var s = state.servers;
+
+      // Web Server (always)
+      var webSvc = findService(s.webServer.service || 'traefik');
+      html += row('Web Server', webSvc ? webSvc.name : 'Traefik');
+
+      // File Server
+      if (s.fileServer.enabled && s.fileServer.service) {
+        var fileSvc = findService(s.fileServer.service);
+        html += row('File Server', fileSvc ? fileSvc.name : s.fileServer.service);
+      } else {
+        html += row('File Server', '<span style="color:#8b949e">Not selected</span>');
+      }
+
+      // App Server
+      html += row('App Server', s.appServer.enabled ? 'Enabled' : '<span style="color:#8b949e">Not selected</span>');
+
+      // DB Server
+      if (s.dbServer.enabled && s.dbServer.primary) {
+        var dbInfo = findDatabase('primary', s.dbServer.primary);
+        var dbText = dbInfo ? dbInfo.name : s.dbServer.primary;
+        if (s.dbServer.primaryVersion) dbText += ' ' + s.dbServer.primaryVersion;
+        if (s.dbServer.adminUI && s.dbServer.primary !== 'sqlite') dbText += ' + Admin UI';
+        if (s.dbServer.cache) {
+          var cacheInfo = findDatabase('cache', s.dbServer.cache);
+          dbText += ' + ' + (cacheInfo ? cacheInfo.name : s.dbServer.cache);
+        }
+        html += row('Database', dbText);
+      } else {
+        html += row('Database', '<span style="color:#8b949e">Not selected</span>');
+      }
+
+      // Media
+      if (s.media.enabled && s.media.services.length > 0) {
+        var mediaNames = s.media.services.map(function(id) {
+          var svc = findService(id);
+          return svc ? svc.name : id;
+        }).join(', ');
+        html += row('Media', mediaNames);
+      } else {
+        html += row('Media', '<span style="color:#8b949e">Not selected</span>');
+      }
+
+      // SSH Server
+      if (s.sshServer && s.sshServer.enabled) {
+        var sshText = 'Port ' + (s.sshServer.port || 2222);
+        sshText += s.sshServer.passwordAuth ? ' (Key + Password)' : ' (Key-only)';
+        if (s.sshServer.sftp) sshText += ' + SFTP';
+        html += row('SSH Server', sshText);
+      } else {
+        html += row('SSH Server', '<span style="color:#8b949e">Not selected</span>');
+      }
+
+      // Mail Server
+      if (s.mailServer && s.mailServer.enabled) {
+        html += row('Mail Server', 'docker-mailserver (SMTP/IMAP)');
+      } else {
+        html += row('Mail Server', '<span style="color:#8b949e">Not selected</span>');
+      }
+      html += '</div>';
+
+      // Runtime & Boilerplate
+      if (s.appServer.enabled || state.devStack.language) {
+        html += '<div class="summary-box">';
+        html += '<div class="summary-section">Runtime & Boilerplate</div>';
+        html += row('Language', LANGUAGE_LABELS[state.devStack.language] || state.devStack.language || 'Not selected');
+        if (state.devStack.framework) {
+          var fw = findFramework(state.devStack.language, state.devStack.framework);
+          html += row('Framework', fw ? fw.name : state.devStack.framework);
+          html += row('Port', fw ? fw.port : '-');
+        }
+        var bp = state.boilerplate || {};
+        html += row('Boilerplate', bp.generate ? 'Yes' : 'No');
+        if (bp.generate) {
+          html += row('Sample Data', bp.sampleData ? 'Yes' : 'No');
+          html += row('Dev Mode', bp.devMode === 'hot-reload' ? 'Hot-reload' : 'Production');
+        }
+        html += '</div>';
+      }
+
+      // Domain & Network
+      html += '<div class="summary-box">';
+      html += '<div class="summary-section">Domain & Network</div>';
+      var d = state.domain || {};
+      var providerLabels = { local: 'Local Only', freedomain: 'Free Domain (DigitalPlat)', custom: 'Own Domain' };
+      html += row('Provider', providerLabels[d.provider] || d.provider || 'Local');
+      html += row('Domain', d.name || 'brewnet.local');
+      var sslLabel = { none: 'None (HTTP)', 'self-signed': 'Self-signed', letsencrypt: "Let's Encrypt", cloudflare: 'Cloudflare (auto)' };
+      html += row('SSL', sslLabel[d.ssl] || d.ssl || 'None');
+      var cf = d.cloudflare || {};
+      if (cf.enabled) {
+        html += row('Cloudflare Tunnel', cf.tunnelName || 'brewnet-tunnel');
+        html += row('Tunnel Token', cf.tunnelToken ? 'Configured' : '<span style="color:#e3b341">Not set (configure later)</span>');
+      } else {
+        html += row('Cloudflare Tunnel', '<span style="color:#8b949e">Disabled</span>');
+      }
+      html += '</div>';
+
+      // Credential Propagation
+      var targets = getCredentialTargets(state);
+      if (targets.length > 0) {
+        html += '<div class="summary-box">';
+        html += '<div class="summary-section">Credential Propagation</div>';
+        html += '<div style="padding:6px 0;font-size:12px;color:#8b949e">Admin credentials (<span style="color:#e6edf3">' + escapeHtml(adm.username || 'admin') + '</span>) will be applied to:</div>';
+        for (var t of targets) {
+          html += '<div style="padding:2px 0;font-size:13px;color:#e6edf3;padding-left:12px">&#8226; ' + escapeHtml(t) + '</div>';
+        }
+        if (s.dbServer.enabled && s.dbServer.primary && s.dbServer.primary !== 'sqlite') {
+          html += '<div style="padding:6px 0 0 0;font-size:11px;color:#8b949e">Database uses separate credentials (user: <span style="color:#e6edf3">' + escapeHtml(s.dbServer.dbUser || 'brewnet') + '</span>)</div>';
+        }
+        html += '</div>';
+      }
+
+      // Resources
+      html += '<div class="summary-box">';
+      html += '<div class="summary-section">Resources</div>';
+      var res = estimateResources(state);
+      html += row('Containers', res.containers);
+      html += row('RAM (est.)', '~' + res.ramGB + ' GB');
+      html += row('Disk (est.)', '~' + res.diskGB + ' GB');
+      html += '</div>';
+
+      // Licenses
+      html += '<div class="summary-box">';
+      html += '<div class="summary-section">Licenses</div>';
+      html += '<div style="padding:6px 0;font-size:13px;color:#8b949e">All selected services use OSI-approved open source licenses.</div>';
+      html += '</div>';
+
+      document.getElementById('review-content').innerHTML = html;
+    }
+
+    function row(label, value) {
+      return '<div style="display:flex;padding:4px 0;font-size:13px">' +
+        '<span style="color:#8b949e;width:140px;flex-shrink:0">' + escapeHtml(label) + ':</span>' +
+        '<span style="color:#e6edf3">' + value + '</span>' +
+      '</div>';
+    }
+
+    function exportConfig() {
+      var state = WizardState.load();
+      var json = JSON.stringify(state, null, 2);
+      var blob = new Blob([json], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'brewnet.config.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    init();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Step 2: Server Components</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .component-card {
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .component-card.enabled {
+      border-color: #58a6ff;
+    }
+    .component-card.required {
+      border-color: #3fb950;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      user-select: none;
+      background: #161b22;
+    }
+    .card-header:hover {
+      background: #1c2129;
+    }
+    .card-toggle {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #484f58;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      color: transparent;
+      transition: all 0.2s;
+    }
+    .card-toggle.checked {
+      background: #58a6ff;
+      border-color: #58a6ff;
+      color: #fff;
+    }
+    .card-toggle.locked {
+      background: #3fb950;
+      border-color: #3fb950;
+      color: #fff;
+      cursor: default;
+    }
+    .card-name {
+      font-weight: 600;
+      color: #e6edf3;
+      flex: 1;
+    }
+    .card-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .tag-required {
+      background: rgba(63, 185, 80, 0.15);
+      color: #3fb950;
+    }
+    .tag-optional {
+      background: rgba(136, 136, 136, 0.15);
+      color: #8b949e;
+    }
+    .card-desc {
+      font-size: 12px;
+      color: #8b949e;
+    }
+    .card-body {
+      padding: 0 16px 16px;
+      display: none;
+      border-top: 1px solid #21262d;
+    }
+    .component-card.enabled .card-body,
+    .component-card.required .card-body {
+      display: block;
+    }
+    .config-section {
+      margin-top: 12px;
+    }
+    .config-section .prompt-label {
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .config-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .config-label {
+      width: 120px;
+      font-size: 12px;
+      color: #8b949e;
+      flex-shrink: 0;
+    }
+    .config-input {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e6edf3;
+      padding: 6px 10px;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      flex: 1;
+      max-width: 250px;
+    }
+    .config-select {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #e6edf3;
+      padding: 6px 10px;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+    .btn-small {
+      padding: 4px 10px;
+      font-size: 11px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-small:hover {
+      background: #30363d;
+      color: #e6edf3;
+    }
+    .mini-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .mini-option:hover {
+      background: #161b22;
+    }
+    .mini-option.selected {
+      background: rgba(88, 166, 255, 0.1);
+    }
+    .mini-radio {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #484f58;
+      border-radius: 50%;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .mini-option.selected .mini-radio {
+      border-color: #58a6ff;
+    }
+    .mini-option.selected .mini-radio::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 6px;
+      height: 6px;
+      background: #58a6ff;
+      border-radius: 50%;
+    }
+    .mini-label {
+      font-size: 13px;
+      color: #e6edf3;
+    }
+    .mini-desc {
+      font-size: 11px;
+      color: #8b949e;
+      margin-left: 4px;
+    }
+    .mini-tag {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 8px;
+      background: rgba(63, 185, 80, 0.15);
+      color: #3fb950;
+    }
+    .db-config-panel {
+      margin-top: 10px;
+      padding: 12px;
+      background: #0d1117;
+      border-radius: 6px;
+      border: 1px solid #21262d;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <div class="step-header">
+        <span class="step-title">STEP 2/7: Server Components</span>
+        <span class="step-badge">SETUP</span>
+      </div>
+
+      <div class="alert alert-info">
+        Set your admin credentials and select which server components to install.
+      </div>
+
+      <!-- Admin Account -->
+      <div class="component-card required" id="card-admin">
+        <div class="card-header" style="cursor:default">
+          <span class="card-toggle locked">&#10003;</span>
+          <span class="card-name">Admin Account</span>
+          <span class="card-tag tag-required">Required</span>
+        </div>
+        <div class="card-body" style="display:block">
+          <div class="card-desc">Master credentials for all Brewnet services. Entered once, applied to all components (Nextcloud, pgAdmin, Jellyfin, SSH, Mail, etc.). Stored securely in local .env file (chmod 600).</div>
+          <div class="config-section">
+            <div class="config-row">
+              <span class="config-label">Username:</span>
+              <input class="config-input" id="admin-username" value="admin" onchange="updateAdmin('username', this.value)">
+            </div>
+            <div class="config-row">
+              <span class="config-label">Password:</span>
+              <input class="config-input" id="admin-password" type="password" value="" placeholder="auto-generated" onchange="updateAdmin('password', this.value)">
+              <button class="btn-small" onclick="togglePasswordVisibility()">Show</button>
+              <button class="btn-small" onclick="autoGenAdminPassword()">Generate</button>
+            </div>
+            <div style="font-size:11px;color:#8b949e;margin-top:4px;padding-left:128px">
+              Used as the default admin password for Nextcloud, pgAdmin, and other services.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Component Cards -->
+      <div id="component-list"></div>
+
+      <!-- Resource Estimate -->
+      <div class="summary-box">
+        <div class="summary-section">Resource Estimate</div>
+        <div class="resource-box" id="resource-estimate">
+          <div class="resource-item">
+            <div class="resource-value" id="res-containers">1</div>
+            <div class="resource-label">Containers</div>
+          </div>
+          <div class="resource-item">
+            <div class="resource-value" id="res-ram">~0.0 GB</div>
+            <div class="resource-label">RAM</div>
+          </div>
+          <div class="resource-item">
+            <div class="resource-value" id="res-disk">~0.0 GB</div>
+            <div class="resource-label">Storage</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-bar">
+        <div class="nav-hint">Toggle components to customize your server</div>
+        <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="navigatePrev()">&larr; Back</button>
+          <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveAndContinue()">Continue &rarr;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    var state = WizardState.load();
+    var servers = state.servers;
+    var admin = state.admin || { username: 'admin', password: '', storage: 'local' };
+
+    function init() {
+      // Auto-generate admin password on first visit
+      if (!admin.password) {
+        admin.password = generatePassword(20);
+        WizardState.updateNested('admin', admin);
+      }
+
+      // Restore admin UI
+      document.getElementById('admin-username').value = admin.username;
+      document.getElementById('admin-password').value = admin.password;
+
+      // Full install: pre-enable App + DB
+      if (state.setupType === 'full') {
+        if (!servers.appServer.enabled) servers.appServer.enabled = true;
+        if (!servers.dbServer.enabled) {
+          servers.dbServer.enabled = true;
+          servers.dbServer.primary = servers.dbServer.primary || 'postgresql';
+          servers.dbServer.primaryVersion = servers.dbServer.primaryVersion || '17';
+          servers.dbServer.cache = servers.dbServer.cache || 'redis';
+        }
+      }
+      buildComponents();
+      updateResources();
+    }
+
+    function updateAdmin(field, value) {
+      admin[field] = value;
+      WizardState.updateNested('admin', admin);
+    }
+
+    function autoGenAdminPassword() {
+      var pw = generatePassword(20);
+      admin.password = pw;
+      document.getElementById('admin-password').value = pw;
+      WizardState.updateNested('admin', admin);
+    }
+
+    function togglePasswordVisibility() {
+      var el = document.getElementById('admin-password');
+      el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    function buildComponents() {
+      var container = document.getElementById('component-list');
+      container.innerHTML = '';
+
+      // 1. Web Server (Required)
+      container.innerHTML += buildWebServerCard();
+      // 2. File Server
+      container.innerHTML += buildFileServerCard();
+      // 3. App Server
+      container.innerHTML += buildAppServerCard();
+      // 4. DB Server
+      container.innerHTML += buildDbServerCard();
+      // 5. Media (Optional)
+      container.innerHTML += buildMediaCard();
+      // 6. SSH Server (Optional)
+      container.innerHTML += buildSshServerCard();
+
+      bindEvents();
+    }
+
+    function buildWebServerCard() {
+      var svc = servers.webServer.service || 'traefik';
+      var options = SERVICE_REGISTRY.webServer.map(function(s) {
+        var sel = s.id === svc ? ' selected' : '';
+        return '<div class="mini-option' + sel + '" data-web="' + s.id + '" onclick="selectWebServer(\'' + s.id + '\')">' +
+          '<span class="mini-radio"></span>' +
+          '<span class="mini-label">' + escapeHtml(s.name) + '</span>' +
+          (s.recommended ? '<span class="mini-tag">Recommended</span>' : '') +
+          '<span class="mini-desc">— ' + escapeHtml(s.desc) + '</span>' +
+          '</div>';
+      }).join('');
+
+      return '<div class="component-card required">' +
+        '<div class="card-header">' +
+          '<span class="card-toggle locked">&#10003;</span>' +
+          '<span class="card-name">Web Server (Reverse Proxy)</span>' +
+          '<span class="card-tag tag-required">Required</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-desc">Routes traffic to all services via subdomains. Required for multi-service setup.</div>' +
+          '<div class="config-section">' + options + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function buildFileServerCard() {
+      var en = servers.fileServer.enabled;
+      var svc = servers.fileServer.service || '';
+      var options = SERVICE_REGISTRY.fileServer.map(function(s) {
+        var sel = s.id === svc ? ' selected' : '';
+        return '<div class="mini-option' + sel + '" data-file="' + s.id + '" onclick="selectFileService(\'' + s.id + '\')">' +
+          '<span class="mini-radio"></span>' +
+          '<span class="mini-label">' + escapeHtml(s.name) + '</span>' +
+          (s.recommended ? '<span class="mini-tag">Recommended</span>' : '') +
+          '<span class="mini-desc">— ' + escapeHtml(s.desc) + '</span>' +
+          '</div>';
+      }).join('');
+
+      var storagePathConfig = en ? '<div class="config-row" style="margin-top:8px">' +
+        '<span class="config-label">Storage path:</span>' +
+        '<input class="config-input" value="~/brewnet-data/storage" style="max-width:250px" disabled>' +
+        '<span style="font-size:11px;color:#8b949e">Auto-configured</span>' +
+      '</div>' : '';
+
+      return '<div class="component-card' + (en ? ' enabled' : '') + '" id="card-file">' +
+        '<div class="card-header" onclick="toggleComponent(\'fileServer\')">' +
+          '<span class="card-toggle' + (en ? ' checked' : '') + '" id="toggle-file">&#10003;</span>' +
+          '<span class="card-name">File Server</span>' +
+          '<span class="card-tag tag-optional">Optional</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-desc">Cloud storage, file sharing, and sync for your home network.</div>' +
+          '<div class="config-section">' + options + '</div>' +
+          storagePathConfig +
+        '</div>' +
+      '</div>';
+    }
+
+    function buildAppServerCard() {
+      var en = servers.appServer.enabled;
+      return '<div class="component-card' + (en ? ' enabled' : '') + '" id="card-app">' +
+        '<div class="card-header" onclick="toggleComponent(\'appServer\')">' +
+          '<span class="card-toggle' + (en ? ' checked' : '') + '" id="toggle-app">&#10003;</span>' +
+          '<span class="card-name">Application Server</span>' +
+          '<span class="card-tag tag-optional">Optional</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-desc">Deploy your custom application. Language &amp; framework configured in the next step.</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function buildDbServerCard() {
+      var en = servers.dbServer.enabled;
+      var db = servers.dbServer;
+
+      // Primary DB options
+      var primaryOptions = DATABASE_REGISTRY.primary.map(function(d) {
+        var sel = d.id === db.primary ? ' selected' : '';
+        return '<div class="mini-option' + sel + '" data-primary="' + d.id + '" onclick="selectPrimaryDb(\'' + d.id + '\')">' +
+          '<span class="mini-radio"></span>' +
+          '<span class="mini-label">' + escapeHtml(d.name) + '</span>' +
+          (d.recommended ? '<span class="mini-tag">Recommended</span>' : '') +
+          '<span class="mini-desc">(' + escapeHtml(d.license) + ')</span>' +
+          '</div>';
+      }).join('');
+
+      // Version dropdown (built dynamically)
+      var versionHtml = '';
+      if (db.primary) {
+        var dbInfo = findDatabase('primary', db.primary);
+        if (dbInfo && dbInfo.versions) {
+          var opts = dbInfo.versions.map(function(v) {
+            return '<option value="' + v + '"' + (v === db.primaryVersion ? ' selected' : '') + '>' + v + '</option>';
+          }).join('');
+          versionHtml = '<div class="config-row">' +
+            '<span class="config-label">Version:</span>' +
+            '<select class="config-select" id="db-version" onchange="updateDbVersion(this.value)">' + opts + '</select>' +
+          '</div>';
+        }
+      }
+
+      // Credentials (only for non-SQLite)
+      var credHtml = '';
+      if (db.primary && db.primary !== 'sqlite') {
+        credHtml = '<div class="config-row">' +
+          '<span class="config-label">Database name:</span>' +
+          '<input class="config-input" id="db-name" value="' + escapeHtml(db.dbName || 'brewnet_db') + '" onchange="updateDbField(\'dbName\', this.value)">' +
+        '</div>' +
+        '<div class="config-row">' +
+          '<span class="config-label">User:</span>' +
+          '<input class="config-input" id="db-user" value="' + escapeHtml(db.dbUser || 'brewnet') + '" onchange="updateDbField(\'dbUser\', this.value)">' +
+        '</div>' +
+        '<div class="config-row">' +
+          '<span class="config-label">Password:</span>' +
+          '<input class="config-input" id="db-password" value="' + escapeHtml(db.dbPassword || '') + '" placeholder="auto-generated if empty" onchange="updateDbField(\'dbPassword\', this.value)">' +
+          '<button class="btn-small" onclick="autoGenPassword()">Auto-generate</button>' +
+        '</div>' +
+        '<div class="config-row">' +
+          '<span class="config-label">Admin UI:</span>' +
+          '<div class="checkbox-item" style="padding:4px 8px;margin:0" onclick="toggleAdminUI()">' +
+            '<span class="check-box' + (db.adminUI ? ' checked' : '') + '" id="admin-ui-check" style="margin-right:6px"></span>' +
+            '<span style="font-size:12px;color:#8b949e">Include pgAdmin / phpMyAdmin</span>' +
+          '</div>' +
+        '</div>';
+      }
+
+      // Cache options
+      var cacheNone = !db.cache ? ' selected' : '';
+      var cacheOptions = '<div class="mini-option' + cacheNone + '" data-cache="none" onclick="selectCache(\'\')">' +
+        '<span class="mini-radio"></span><span class="mini-label">None</span></div>';
+      cacheOptions += DATABASE_REGISTRY.cache.map(function(c) {
+        var sel = c.id === db.cache ? ' selected' : '';
+        return '<div class="mini-option' + sel + '" data-cache="' + c.id + '" onclick="selectCache(\'' + c.id + '\')">' +
+          '<span class="mini-radio"></span>' +
+          '<span class="mini-label">' + escapeHtml(c.name) + '</span>' +
+          (c.recommended ? '<span class="mini-tag">Recommended</span>' : '') +
+          '</div>';
+      }).join('');
+
+      var configPanel = '';
+      if (db.primary) {
+        configPanel = '<div class="db-config-panel" id="db-config-panel">' +
+          versionHtml + credHtml +
+          '<div style="margin-top:10px"><div class="prompt-label" style="font-size:12px;color:#8b949e;margin-bottom:6px">Cache Layer:</div>' +
+          cacheOptions + '</div>' +
+        '</div>';
+      }
+
+      return '<div class="component-card' + (en ? ' enabled' : '') + '" id="card-db">' +
+        '<div class="card-header" onclick="toggleComponent(\'dbServer\')">' +
+          '<span class="card-toggle' + (en ? ' checked' : '') + '" id="toggle-db">&#10003;</span>' +
+          '<span class="card-name">Database Server</span>' +
+          '<span class="card-tag tag-optional">Optional</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-desc">Relational database + optional cache layer for your applications.</div>' +
+          '<div class="config-section">' +
+            '<div class="prompt-label" style="font-size:12px;color:#8b949e;margin-bottom:6px">Primary Database:</div>' +
+            primaryOptions +
+          '</div>' +
+          configPanel +
+        '</div>' +
+      '</div>';
+    }
+
+    function buildMediaCard() {
+      var en = servers.media.enabled;
+      var hasJellyfin = (servers.media.services || []).indexOf('jellyfin') !== -1;
+
+      var mediaConfig = en ? '<div style="margin-top:8px">' +
+        '<div class="config-row">' +
+          '<span class="config-label">Media library:</span>' +
+          '<input class="config-input" value="~/media" style="max-width:200px" disabled>' +
+          '<span style="font-size:11px;color:#8b949e">Mount point for movies, TV, music</span>' +
+        '</div>' +
+        '<div class="config-row">' +
+          '<span class="config-label">Transcoding:</span>' +
+          '<select class="config-select" disabled>' +
+            '<option selected>Software (CPU)</option>' +
+            '<option>Hardware (Intel QSV)</option>' +
+            '<option>Hardware (NVIDIA NVENC)</option>' +
+          '</select>' +
+          '<span style="font-size:11px;color:#8b949e">GPU options in Phase 3+</span>' +
+        '</div>' +
+      '</div>' : '';
+
+      return '<div class="component-card' + (en ? ' enabled' : '') + '" id="card-media">' +
+        '<div class="card-header" onclick="toggleMedia()">' +
+          '<span class="card-toggle' + (en ? ' checked' : '') + '" id="toggle-media">&#10003;</span>' +
+          '<span class="card-name">Media Server</span>' +
+          '<span class="card-tag tag-optional">Optional</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-desc">Stream movies, TV shows, and music on your home network.</div>' +
+          '<div class="config-section">' +
+            '<div class="mini-option selected">' +
+              '<span class="mini-radio"></span>' +
+              '<span class="mini-label">Jellyfin</span>' +
+              '<span class="mini-desc">— Free &amp; open source media streaming (GPL-2.0)</span>' +
+            '</div>' +
+          '</div>' +
+          mediaConfig +
+        '</div>' +
+      '</div>';
+    }
+
+    function buildSshServerCard() {
+      var ssh = servers.sshServer || { enabled: false, port: 2222, passwordAuth: false, sftp: false };
+      var en = ssh.enabled;
+      var hasFileOrMedia = (servers.fileServer.enabled && servers.fileServer.service) || (servers.media.enabled && servers.media.services.length > 0);
+      var sftpSuggest = hasFileOrMedia && !ssh.sftp ? ' <span style="color:#e3b341;font-size:11px">(Recommended — File/Media server detected)</span>' : '';
+
+      var portConfig = '<div class="config-row">' +
+        '<span class="config-label">SSH Port:</span>' +
+        '<input class="config-input" id="ssh-port" type="number" value="' + (ssh.port || 2222) + '" min="1024" max="65535" style="max-width:100px" onchange="updateSshField(\'port\', parseInt(this.value))">' +
+        '<span style="font-size:11px;color:#8b949e">Default: 2222 (avoids conflict with host SSH)</span>' +
+      '</div>';
+
+      var authConfig = '<div class="config-row">' +
+        '<span class="config-label">Auth method:</span>' +
+        '<div style="display:flex;gap:12px;align-items:center">' +
+          '<div class="checkbox-item" style="padding:4px 8px;margin:0;cursor:pointer" onclick="toggleSshPasswordAuth()">' +
+            '<span class="check-box' + (ssh.passwordAuth ? ' checked' : '') + '" id="ssh-password-check" style="margin-right:6px"></span>' +
+            '<span style="font-size:12px;color:#8b949e">Allow password auth</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8b949e;padding-left:128px;margin-top:-4px;margin-bottom:8px">' +
+        'Public key authentication is always enabled. Password uses admin credentials.' +
+      '</div>';
+
+      var sftpConfig = '<div class="config-row">' +
+        '<span class="config-label">SFTP access:</span>' +
+        '<div class="checkbox-item" style="padding:4px 8px;margin:0;cursor:pointer" onclick="toggleSftp()">' +
+          '<span class="check-box' + (ssh.sftp ? ' checked' : '') + '" id="sftp-check" style="margin-right:6px"></span>' +
+          '<span style="font-size:12px;color:#8b949e">Enable SFTP file transfer</span>' + sftpSuggest +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8b949e;padding-left:128px;margin-top:-4px">' +
+        'SFTP runs as SSH subsystem (same port). Chroot jail for security.' +
+      '</div>';
+
+      return '<div class="component-card' + (en ? ' enabled' : '') + '" id="card-ssh">' +
+        '<div class="card-header" onclick="toggleSshServer()">' +
+          '<span class="card-toggle' + (en ? ' checked' : '') + '" id="toggle-ssh">&#10003;</span>' +
+          '<span class="card-name">SSH Server</span>' +
+          '<span class="card-tag tag-optional">Optional</span>' +
+        '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-desc">Remote shell access to your server. Uses admin credentials for login. Key-based auth by default.</div>' +
+          '<div class="config-section">' + portConfig + authConfig + sftpConfig + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    /* ─── Event Handlers ─── */
+
+    function toggleSshServer() {
+      if (!servers.sshServer) servers.sshServer = { enabled: false, port: 2222, passwordAuth: false, sftp: false };
+      servers.sshServer.enabled = !servers.sshServer.enabled;
+      // Auto-suggest SFTP if file/media server is enabled
+      if (servers.sshServer.enabled) {
+        var hasFileOrMedia = (servers.fileServer.enabled && servers.fileServer.service) || (servers.media.enabled && servers.media.services.length > 0);
+        if (hasFileOrMedia && !servers.sshServer.sftp) {
+          servers.sshServer.sftp = true;
+        }
+      }
+      saveState();
+      buildComponents();
+      updateResources();
+    }
+
+    function updateSshField(field, value) {
+      if (!servers.sshServer) servers.sshServer = { enabled: false, port: 2222, passwordAuth: false, sftp: false };
+      servers.sshServer[field] = value;
+      saveState();
+    }
+
+    function toggleSshPasswordAuth() {
+      if (!servers.sshServer) return;
+      servers.sshServer.passwordAuth = !servers.sshServer.passwordAuth;
+      var el = document.getElementById('ssh-password-check');
+      if (el) el.classList.toggle('checked');
+      saveState();
+    }
+
+    function toggleSftp() {
+      if (!servers.sshServer) return;
+      servers.sshServer.sftp = !servers.sshServer.sftp;
+      var el = document.getElementById('sftp-check');
+      if (el) el.classList.toggle('checked');
+      saveState();
+    }
+
+    function toggleComponent(key) {
+      if (key === 'fileServer') {
+        servers.fileServer.enabled = !servers.fileServer.enabled;
+        if (servers.fileServer.enabled && !servers.fileServer.service) {
+          servers.fileServer.service = 'nextcloud';
+        }
+      } else if (key === 'appServer') {
+        servers.appServer.enabled = !servers.appServer.enabled;
+      } else if (key === 'dbServer') {
+        servers.dbServer.enabled = !servers.dbServer.enabled;
+        if (servers.dbServer.enabled && !servers.dbServer.primary) {
+          servers.dbServer.primary = 'postgresql';
+          servers.dbServer.primaryVersion = '17';
+          servers.dbServer.cache = 'redis';
+        }
+      }
+      saveState();
+      buildComponents();
+      updateResources();
+    }
+
+    function toggleMedia() {
+      servers.media.enabled = !servers.media.enabled;
+      if (servers.media.enabled) {
+        servers.media.services = ['jellyfin'];
+      } else {
+        servers.media.services = [];
+      }
+      saveState();
+      buildComponents();
+      updateResources();
+    }
+
+    function selectWebServer(id) {
+      servers.webServer.service = id;
+      saveState();
+      // Update radio UI
+      document.querySelectorAll('[data-web]').forEach(function(el) {
+        el.classList.toggle('selected', el.dataset.web === id);
+      });
+      updateResources();
+    }
+
+    function selectFileService(id) {
+      servers.fileServer.service = id;
+      saveState();
+      document.querySelectorAll('[data-file]').forEach(function(el) {
+        el.classList.toggle('selected', el.dataset.file === id);
+      });
+      updateResources();
+    }
+
+    function selectPrimaryDb(id) {
+      servers.dbServer.primary = id;
+      var dbInfo = findDatabase('primary', id);
+      servers.dbServer.primaryVersion = dbInfo ? dbInfo.versions[0] : '';
+      saveState();
+      buildComponents();
+      updateResources();
+    }
+
+    function updateDbVersion(val) {
+      servers.dbServer.primaryVersion = val;
+      saveState();
+    }
+
+    function updateDbField(field, val) {
+      servers.dbServer[field] = val;
+      saveState();
+    }
+
+    function autoGenPassword() {
+      var pw = generatePassword();
+      servers.dbServer.dbPassword = pw;
+      var el = document.getElementById('db-password');
+      if (el) el.value = pw;
+      saveState();
+    }
+
+    function toggleAdminUI() {
+      servers.dbServer.adminUI = !servers.dbServer.adminUI;
+      var el = document.getElementById('admin-ui-check');
+      if (el) el.classList.toggle('checked');
+      saveState();
+      updateResources();
+    }
+
+    function selectCache(id) {
+      servers.dbServer.cache = id;
+      saveState();
+      document.querySelectorAll('[data-cache]').forEach(function(el) {
+        var match = (id === '' && el.dataset.cache === 'none') || el.dataset.cache === id;
+        el.classList.toggle('selected', match);
+      });
+      updateResources();
+    }
+
+    function bindEvents() {
+      // Events are bound inline via onclick
+    }
+
+    function saveState() {
+      WizardState.updateNested('servers', servers);
+    }
+
+    function updateResources() {
+      var st = WizardState.load();
+      var res = estimateResources(st);
+      document.getElementById('res-containers').textContent = res.containers;
+      document.getElementById('res-ram').textContent = '~' + res.ramGB + ' GB';
+      document.getElementById('res-disk').textContent = '~' + res.diskGB + ' GB';
+    }
+
+    function saveAndContinue() {
+      saveState();
+      navigateNext();
+    }
+
+    init();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Step 3: Runtime & Boilerplate</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .boilerplate-section {
+      margin-top: 16px;
+      padding: 14px;
+      background: #0d1117;
+      border-radius: 6px;
+      border: 1px solid #21262d;
+      display: none;
+    }
+    .boilerplate-section.visible {
+      display: block;
+    }
+    .bp-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+    }
+    .bp-toggle {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #484f58;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .bp-toggle.checked {
+      background: #58a6ff;
+      border-color: #58a6ff;
+      color: #fff;
+    }
+    .bp-label {
+      font-size: 13px;
+      color: #e6edf3;
+      cursor: pointer;
+    }
+    .bp-desc {
+      font-size: 11px;
+      color: #8b949e;
+    }
+    .devmode-options {
+      display: flex;
+      gap: 16px;
+      margin-top: 4px;
+    }
+    .devmode-opt {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .devmode-opt:hover {
+      background: #161b22;
+    }
+    .devmode-opt.selected {
+      background: rgba(88, 166, 255, 0.1);
+    }
+    .dm-radio {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #484f58;
+      border-radius: 50%;
+      position: relative;
+    }
+    .devmode-opt.selected .dm-radio {
+      border-color: #58a6ff;
+    }
+    .devmode-opt.selected .dm-radio::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 4px;
+      height: 4px;
+      background: #58a6ff;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init</span>
+    </div>
+
+    <div class="terminal-body">
+
+      <div class="step-header">
+        <span class="step-title">STEP 3/7: Runtime & Boilerplate</span>
+        <span class="step-badge">DEV</span>
+      </div>
+
+      <!-- Language Selection -->
+      <div class="prompt">
+        <div class="prompt-label">Select development language:</div>
+        <ul class="option-list" id="langList"></ul>
+      </div>
+
+      <!-- Framework Selection (dynamic) -->
+      <div class="prompt" id="frameworkSection" style="display:none">
+        <div class="prompt-label" id="frameworkLabel">Select framework:</div>
+        <ul class="option-list" id="frameworkList"></ul>
+      </div>
+
+      <!-- Summary -->
+      <div class="summary-box" id="summaryBox" style="display:none">
+        <div class="summary-section">Selected Stack</div>
+        <div id="summaryContent"></div>
+      </div>
+
+      <!-- Boilerplate Options -->
+      <div class="boilerplate-section" id="boilerplateSection">
+        <div style="font-weight:600;color:#e6edf3;margin-bottom:10px">Boilerplate Options</div>
+
+        <div class="bp-row">
+          <span class="bp-toggle checked" id="bp-generate" onclick="toggleBp('generate')">&#10003;</span>
+          <span class="bp-label" onclick="toggleBp('generate')">Generate boilerplate project</span>
+        </div>
+
+        <div class="bp-row" style="padding-left:26px">
+          <span class="bp-toggle checked" id="bp-sample" onclick="toggleBp('sampleData')">&#10003;</span>
+          <span class="bp-label" onclick="toggleBp('sampleData')">Include sample data (User/Post models)</span>
+        </div>
+
+        <div class="bp-row">
+          <span class="bp-label" style="margin-right:4px">Dev mode:</span>
+          <div class="devmode-options">
+            <div class="devmode-opt selected" data-mode="hot-reload" onclick="selectDevMode('hot-reload')">
+              <span class="dm-radio"></span>
+              <span class="bp-label">Hot-reload</span>
+            </div>
+            <div class="devmode-opt" data-mode="production" onclick="selectDevMode('production')">
+              <span class="dm-radio"></span>
+              <span class="bp-label">Production</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-bar">
+        <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="navigatePrev()">&larr; Back</button>
+          <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
+        </div>
+        <div class="nav-buttons">
+          <button class="btn btn-primary" onclick="saveAndContinue()">Continue &rarr;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    var selectedLang = '';
+    var selectedFramework = '';
+    var boilerplate = { generate: true, sampleData: true, devMode: 'hot-reload' };
+
+    function init() {
+      var state = WizardState.load();
+
+      // Guard: skip this step if App Server is not enabled
+      if (!state.servers.appServer.enabled) {
+        window.location.href = 'step4-domain.html';
+        return;
+      }
+
+      selectedLang = state.devStack.language || '';
+      selectedFramework = state.devStack.framework || '';
+      boilerplate = Object.assign({ generate: true, sampleData: true, devMode: 'hot-reload' }, state.boilerplate || {});
+
+      buildLanguageList();
+
+      if (selectedLang) {
+        buildFrameworkList(selectedLang);
+        if (selectedFramework) {
+          showSummary();
+          showBoilerplate();
+        }
+      }
+
+      // Restore boilerplate UI
+      restoreBoilerplateUI();
+    }
+
+    function buildLanguageList() {
+      var container = document.getElementById('langList');
+      container.innerHTML = '';
+      var langs = Object.keys(FRAMEWORK_REGISTRY);
+      for (var lang of langs) {
+        var sel = lang === selectedLang ? ' selected' : '';
+        var li = document.createElement('li');
+        li.className = 'option-item' + sel;
+        li.dataset.value = lang;
+        li.onclick = (function(l) { return function() { selectLanguage(l); }; })(lang);
+        li.innerHTML = '<span class="radio"></span>' +
+          '<span class="option-label">' + escapeHtml(LANGUAGE_LABELS[lang] || lang) + '</span>';
+        container.appendChild(li);
+      }
+    }
+
+    function selectLanguage(lang) {
+      selectedLang = lang;
+      selectedFramework = '';
+
+      // Update UI
+      var items = document.querySelectorAll('#langList .option-item');
+      items.forEach(function(item) {
+        item.classList.toggle('selected', item.dataset.value === lang);
+      });
+
+      buildFrameworkList(lang);
+      document.getElementById('summaryBox').style.display = 'none';
+      document.getElementById('boilerplateSection').classList.remove('visible');
+    }
+
+    function buildFrameworkList(lang) {
+      var section = document.getElementById('frameworkSection');
+      var container = document.getElementById('frameworkList');
+      var label = document.getElementById('frameworkLabel');
+
+      section.style.display = 'block';
+      label.textContent = 'Select ' + (LANGUAGE_LABELS[lang] || lang).split(' ')[0] + ' framework:';
+      container.innerHTML = '';
+
+      var frameworks = FRAMEWORK_REGISTRY[lang] || [];
+      for (var fw of frameworks) {
+        var sel = fw.id === selectedFramework ? ' selected' : '';
+        var li = document.createElement('li');
+        li.className = 'option-item' + sel;
+        li.dataset.value = fw.id;
+        li.onclick = (function(f) { return function() { selectFramework(f); }; })(fw.id);
+        li.innerHTML = '<span class="radio"></span>' +
+          '<span class="option-label">' + escapeHtml(fw.name) + '</span>' +
+          '<span class="option-desc">' + escapeHtml(fw.desc) + ' (' + escapeHtml(fw.license) + ')</span>';
+        container.appendChild(li);
+      }
+    }
+
+    function selectFramework(fwId) {
+      selectedFramework = fwId;
+
+      var items = document.querySelectorAll('#frameworkList .option-item');
+      items.forEach(function(item) {
+        item.classList.toggle('selected', item.dataset.value === fwId);
+      });
+
+      showSummary();
+      showBoilerplate();
+      saveDevStack();
+    }
+
+    function showSummary() {
+      var fw = findFramework(selectedLang, selectedFramework);
+      if (!fw) return;
+
+      document.getElementById('summaryBox').style.display = 'block';
+      document.getElementById('summaryContent').innerHTML =
+        '<div style="display:flex;gap:24px;flex-wrap:wrap;padding:8px 0">' +
+          '<div><span style="color:#8b949e">Language:</span> <span style="color:#e6edf3">' + escapeHtml(LANGUAGE_LABELS[selectedLang] || selectedLang) + '</span></div>' +
+          '<div><span style="color:#8b949e">Framework:</span> <span style="color:#e6edf3">' + escapeHtml(fw.name) + '</span></div>' +
+          '<div><span style="color:#8b949e">Runtime:</span> <span style="color:#e6edf3">Docker</span></div>' +
+          '<div><span style="color:#8b949e">Port:</span> <span style="color:#e6edf3">' + fw.port + '</span></div>' +
+        '</div>';
+    }
+
+    function showBoilerplate() {
+      document.getElementById('boilerplateSection').classList.add('visible');
+    }
+
+    function toggleBp(key) {
+      boilerplate[key] = !boilerplate[key];
+      var el = document.getElementById('bp-' + (key === 'sampleData' ? 'sample' : key));
+      if (el) el.classList.toggle('checked');
+    }
+
+    function selectDevMode(mode) {
+      boilerplate.devMode = mode;
+      document.querySelectorAll('.devmode-opt').forEach(function(el) {
+        el.classList.toggle('selected', el.dataset.mode === mode);
+      });
+    }
+
+    function restoreBoilerplateUI() {
+      var genEl = document.getElementById('bp-generate');
+      var sampleEl = document.getElementById('bp-sample');
+      if (genEl) genEl.classList.toggle('checked', boilerplate.generate);
+      if (sampleEl) sampleEl.classList.toggle('checked', boilerplate.sampleData);
+      document.querySelectorAll('.devmode-opt').forEach(function(el) {
+        el.classList.toggle('selected', el.dataset.mode === boilerplate.devMode);
+      });
+    }
+
+    function saveDevStack() {
+      WizardState.updateNested('devStack', { language: selectedLang, framework: selectedFramework });
+    }
+
+    function saveAndContinue() {
+      WizardState.updateNested('devStack', { language: selectedLang, framework: selectedFramework });
+      WizardState.updateNested('boilerplate', boilerplate);
+      navigateNext();
+    }
+
+    init();
+  </script>
+
+</body>
+</html>

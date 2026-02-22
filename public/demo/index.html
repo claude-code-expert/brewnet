@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Your Home Server, Brewed Fresh</title>
+  <link rel="stylesheet" href="css/terminal.css">
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet</span>
+    </div>
+    <div class="terminal-body">
+
+      <!-- Logo / Banner -->
+      <div class="banner">
+        <div class="brand">
+  ____                                _   <br>
+ | __ ) _ __ _____      ___ __   ___| |_ <br>
+ |  _ \| '__/ _ \ \ /\ / / '_ \ / _ \ __|<br>
+ | |_) | | |  __/\ V  V /| | | |  __/ |_ <br>
+ |____/|_|  \___| \_/\_/ |_| |_|\___|\__|<br>
+        </div>
+        <div class="slogan">Your Home Server, Brewed Fresh</div>
+        <div class="version">v1.0.0</div>
+      </div>
+
+      <!-- Description -->
+      <div class="alert alert-info">
+        Interactive CLI Wizard Demo &mdash; simulate the <strong>brewnet init</strong> experience in your browser.
+      </div>
+
+      <p style="color: var(--text-muted); font-size: 13px; margin: 16px 0 8px;">
+        This demo simulates the Brewnet CLI wizard. Each page represents a wizard step.
+        Walk through the full setup flow: system check, project configuration, service
+        selection, and deployment &mdash; all rendered as a terminal interface.
+      </p>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 12px; margin: 24px 0 16px;">
+        <a href="step0-system-check.html" class="btn btn-primary" style="text-decoration: none; flex: 1; text-align: center; padding: 12px 16px; font-size: 14px;">
+          Start Wizard (brewnet init)
+        </a>
+        <a href="manage.html" class="btn btn-secondary" style="text-decoration: none; flex: 1; text-align: center; padding: 12px 16px; font-size: 14px;">
+          Service Manager
+        </a>
+      </div>
+
+      <!-- Reset Link -->
+      <div style="text-align: center; margin-top: 12px;">
+        <a href="#" onclick="handleReset(event)" style="color: var(--red); font-size: 12px; text-decoration: none; opacity: 0.7;">
+          Reset All Data
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+  <script>
+    function handleReset(e) {
+      e.preventDefault();
+      if (confirm('Reset all wizard data? This will clear all saved selections.')) {
+        WizardState.reset();
+        // Brief visual feedback
+        e.target.textContent = 'Data reset!';
+        e.target.style.color = 'var(--green)';
+        setTimeout(function() {
+          e.target.textContent = 'Reset All Data';
+          e.target.style.color = 'var(--red)';
+        }, 1500);
+      }
+    }
+  </script>
+</body>
+</html>

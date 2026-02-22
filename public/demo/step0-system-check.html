@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — System Check</title>
+  <link rel="stylesheet" href="css/terminal.css">
+  <style>
+    .check-list .progress-item:nth-child(1) { animation-delay: 0.4s; }
+    .check-list .progress-item:nth-child(2) { animation-delay: 0.7s; }
+    .check-list .progress-item:nth-child(3) { animation-delay: 1.0s; }
+    .check-list .progress-item:nth-child(4) { animation-delay: 1.4s; }
+    .check-list .progress-item:nth-child(5) { animation-delay: 1.7s; }
+    .check-list .progress-item:nth-child(6) { animation-delay: 2.0s; }
+    .check-list .progress-item:nth-child(7) { animation-delay: 2.3s; }
+    .check-list .progress-item:nth-child(8) { animation-delay: 2.7s; }
+    .check-list .progress-item:nth-child(9) { animation-delay: 3.0s; }
+
+    .all-passed {
+      opacity: 0;
+      animation: fadeIn 0.4s forwards;
+      animation-delay: 3.5s;
+    }
+    .nav-animated {
+      opacity: 0;
+      animation: fadeIn 0.3s forwards;
+      animation-delay: 3.8s;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="terminal">
+    <div class="terminal-titlebar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">brewnet init</span>
+    </div>
+    <div class="terminal-body">
+
+      <!-- Banner -->
+      <div class="banner">
+        <div class="brand">Brewnet v1.0.0</div>
+        <div class="slogan">Your Home Server, Brewed Fresh</div>
+      </div>
+
+      <!-- Checking text -->
+      <p style="color: var(--text-muted); margin-bottom: 14px; font-size: 13px;">
+        <span class="spinner" style="margin-right: 8px; vertical-align: middle;"></span>
+        Checking system requirements...
+      </p>
+
+      <!-- Check items with staggered animation -->
+      <div class="check-list">
+        <div class="progress-item">
+          <div class="check-item check-ok">OS: macOS 15.1 (Apple Silicon M4 Pro)</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Memory: 24GB RAM</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Disk: 512GB (420GB available)</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Docker: v24.0.7 installed</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Docker Compose: v2.23.0 installed</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Node.js: v22.5.0</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Git: v2.42.0</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Port 80: available</div>
+        </div>
+        <div class="progress-item">
+          <div class="check-item check-ok">Port 443: available</div>
+        </div>
+      </div>
+
+      <!-- All passed message -->
+      <div class="all-passed">
+        <div class="alert alert-success" style="margin-top: 16px;">
+          All checks passed! Your system is ready for Brewnet.
+        </div>
+      </div>
+
+      <!-- Navigation -->
+      <div class="nav-bar nav-animated">
+        <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
+        <div class="nav-buttons">
+          <button class="btn btn-primary" onclick="navigateNext()">Continue &rarr;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/wizard.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # 🍺 Brewnet - your server on tap. Just brew it
 
-Self-hosted stack bootstrapper · Docker Compose · Git server · File manager · One command setup
+Self-hosted stack bootstrapper · Docker Compose · Git server · File manager · Application Server · DB Server One command setup
 
 [English](#english) | [한국어](#한국어)
 
