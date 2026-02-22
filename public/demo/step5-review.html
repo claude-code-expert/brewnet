@@ -87,8 +87,9 @@
         html += row('File Server', '<span style="color:#8b949e">Not selected</span>');
       }
 
-      // App Server
-      html += row('App Server', s.appServer.enabled ? 'Enabled' : '<span style="color:#8b949e">Not selected</span>');
+      // App Server (v2.2: auto-enabled from Step 3 devStack)
+      var dsLangs = (state.devStack.languages || []);
+      html += row('App Server', dsLangs.length > 0 ? 'Enabled (auto)' : '<span style="color:#8b949e">Not selected</span>');
 
       // DB Server
       if (s.dbServer.enabled && s.dbServer.primary) {
@@ -126,6 +127,14 @@
         html += row('SSH Server', '<span style="color:#8b949e">Not selected</span>');
       }
 
+      // FileBrowser (v2.2)
+      if (s.fileBrowser && s.fileBrowser.enabled) {
+        var fbLabel = s.fileBrowser.mode === 'directory' ? 'Web Server Directory' : 'FileBrowser (Standalone)';
+        html += row('FileBrowser', fbLabel);
+      } else {
+        html += row('FileBrowser', '<span style="color:#8b949e">Not selected</span>');
+      }
+
       // Mail Server
       if (s.mailServer && s.mailServer.enabled) {
         html += row('Mail Server', 'docker-mailserver (SMTP/IMAP)');
@@ -134,16 +143,42 @@
       }
       html += '</div>';
 
-      // Runtime & Boilerplate
-      if (s.appServer.enabled || state.devStack.language) {
+      // Runtime & Boilerplate (v2.2: multi-select)
+      var dsLangsArr = state.devStack.languages || [];
+      var dsFw = state.devStack.frameworks || {};
+      var dsFe = state.devStack.frontend || [];
+      if (dsLangsArr.length > 0 || dsFe.length > 0) {
         html += '<div class="summary-box">';
-        html += '<div class="summary-section">Runtime & Boilerplate</div>';
-        html += row('Language', LANGUAGE_LABELS[state.devStack.language] || state.devStack.language || 'Not selected');
-        if (state.devStack.framework) {
-          var fw = findFramework(state.devStack.language, state.devStack.framework);
-          html += row('Framework', fw ? fw.name : state.devStack.framework);
-          html += row('Port', fw ? fw.port : '-');
+        html += '<div class="summary-section">Dev Stack & Runtime</div>';
+
+        // Languages & Frameworks
+        if (dsLangsArr.length > 0) {
+          var langParts = [];
+          for (var li = 0; li < dsLangsArr.length; li++) {
+            var dsLang = dsLangsArr[li];
+            var langName = LANGUAGE_LABELS[dsLang] || dsLang;
+            var fwId = dsFw[dsLang];
+            if (fwId) {
+              var fw = findFramework(dsLang, fwId);
+              langParts.push(langName + ' (' + (fw ? fw.name : fwId) + ')');
+            } else {
+              langParts.push(langName);
+            }
+          }
+          html += row('Backend', langParts.join(', '));
         }
+
+        // Frontend
+        if (dsFe.length > 0) {
+          var feNames = dsFe.map(function(feId) {
+            var found = (typeof FRONTEND_REGISTRY !== 'undefined') ? FRONTEND_REGISTRY.find(function(f) { return f.id === feId; }) : null;
+            return found ? found.name : feId;
+          });
+          html += row('Frontend', feNames.join(', '));
+        }
+
+        html += row('Runtime', 'Docker');
+
         var bp = state.boilerplate || {};
         html += row('Boilerplate', bp.generate ? 'Yes' : 'No');
         if (bp.generate) {

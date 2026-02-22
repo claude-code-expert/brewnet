@@ -3,9 +3,129 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brewnet — Step 3: Runtime & Boilerplate</title>
+  <title>Brewnet — Step 3: Dev Stack & App Server</title>
   <link rel="stylesheet" href="css/terminal.css">
   <style>
+    /* Multi-select checkbox items */
+    .multi-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .multi-option:hover { background: #161b22; }
+    .multi-option.selected { background: rgba(88, 166, 255, 0.1); }
+    .multi-check {
+      width: 16px; height: 16px;
+      border: 2px solid #484f58;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: transparent;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .multi-check.checked {
+      background: #58a6ff;
+      border-color: #58a6ff;
+      color: #fff;
+    }
+    .multi-label { font-size: 13px; color: #e6edf3; }
+    .multi-desc { font-size: 11px; color: #8b949e; margin-left: 4px; }
+
+    /* Radio options (single-select per language) */
+    .mini-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .mini-option:hover { background: #161b22; }
+    .mini-option.selected { background: rgba(88, 166, 255, 0.1); }
+    .mini-radio {
+      width: 14px; height: 14px;
+      border: 2px solid #484f58;
+      border-radius: 50%;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .mini-option.selected .mini-radio {
+      border-color: #58a6ff;
+    }
+    .mini-option.selected .mini-radio::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 6px; height: 6px;
+      background: #58a6ff;
+      border-radius: 50%;
+    }
+
+    /* Framework panel per language */
+    .fw-panel {
+      margin: 8px 0;
+      padding: 12px;
+      background: #0d1117;
+      border-radius: 6px;
+      border: 1px solid #21262d;
+    }
+    .fw-panel-title {
+      font-size: 12px;
+      color: #58a6ff;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    /* FileBrowser section */
+    .fb-section {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+    }
+    .fb-section.visible { display: block; }
+    .fb-title {
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 6px;
+    }
+    .fb-desc {
+      font-size: 12px;
+      color: #8b949e;
+      margin-bottom: 10px;
+    }
+
+    /* App Server info banner */
+    .app-server-banner {
+      margin-top: 16px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid #3fb950;
+      background: rgba(63, 185, 80, 0.06);
+      display: none;
+    }
+    .app-server-banner.visible { display: block; }
+    .app-server-banner .asb-title {
+      font-weight: 600;
+      color: #3fb950;
+      font-size: 13px;
+    }
+    .app-server-banner .asb-desc {
+      font-size: 12px;
+      color: #8b949e;
+      margin-top: 4px;
+    }
+
+    /* Boilerplate section */
     .boilerplate-section {
       margin-top: 16px;
       padding: 14px;
@@ -14,9 +134,7 @@
       border: 1px solid #21262d;
       display: none;
     }
-    .boilerplate-section.visible {
-      display: block;
-    }
+    .boilerplate-section.visible { display: block; }
     .bp-row {
       display: flex;
       align-items: center;
@@ -24,8 +142,7 @@
       padding: 6px 0;
     }
     .bp-toggle {
-      width: 16px;
-      height: 16px;
+      width: 16px; height: 16px;
       border: 2px solid #484f58;
       border-radius: 3px;
       display: flex;
@@ -47,10 +164,6 @@
       color: #e6edf3;
       cursor: pointer;
     }
-    .bp-desc {
-      font-size: 11px;
-      color: #8b949e;
-    }
     .devmode-options {
       display: flex;
       gap: 16px;
@@ -65,15 +178,10 @@
       border-radius: 4px;
       transition: background 0.15s;
     }
-    .devmode-opt:hover {
-      background: #161b22;
-    }
-    .devmode-opt.selected {
-      background: rgba(88, 166, 255, 0.1);
-    }
+    .devmode-opt:hover { background: #161b22; }
+    .devmode-opt.selected { background: rgba(88, 166, 255, 0.1); }
     .dm-radio {
-      width: 12px;
-      height: 12px;
+      width: 12px; height: 12px;
       border: 2px solid #484f58;
       border-radius: 50%;
       position: relative;
@@ -84,10 +192,8 @@
     .devmode-opt.selected .dm-radio::after {
       content: '';
       position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 4px;
-      height: 4px;
+      top: 2px; left: 2px;
+      width: 4px; height: 4px;
       background: #58a6ff;
       border-radius: 50%;
     }
@@ -106,26 +212,60 @@
     <div class="terminal-body">
 
       <div class="step-header">
-        <span class="step-title">STEP 3/7: Runtime & Boilerplate</span>
+        <span class="step-title">STEP 3/7: Dev Stack & App Server</span>
         <span class="step-badge">DEV</span>
       </div>
 
-      <!-- Language Selection -->
-      <div class="prompt">
-        <div class="prompt-label">Select development language:</div>
-        <ul class="option-list" id="langList"></ul>
+      <div class="alert alert-info">
+        Select your development languages, frameworks, and frontend technologies. Multiple selections allowed.
       </div>
 
-      <!-- Framework Selection (dynamic) -->
-      <div class="prompt" id="frameworkSection" style="display:none">
-        <div class="prompt-label" id="frameworkLabel">Select framework:</div>
-        <ul class="option-list" id="frameworkList"></ul>
+      <!-- Backend Language Selection (multi-select) -->
+      <div class="prompt">
+        <div class="prompt-label">Select backend language(s):</div>
+        <div id="langList"></div>
+      </div>
+
+      <!-- Framework Selection per Language (dynamic) -->
+      <div id="frameworkPanels"></div>
+
+      <!-- Frontend Tech Stack (multi-select) -->
+      <div class="prompt" style="margin-top:16px">
+        <div class="prompt-label">Select frontend technology(s):</div>
+        <div id="frontendList"></div>
+      </div>
+
+      <!-- App Server Auto-Enable Banner -->
+      <div class="app-server-banner" id="appServerBanner">
+        <div class="asb-title">&#10003; Application Server will be enabled</div>
+        <div class="asb-desc">Based on your dev stack selection, an application container will be created with the selected runtime(s).</div>
       </div>
 
       <!-- Summary -->
       <div class="summary-box" id="summaryBox" style="display:none">
         <div class="summary-section">Selected Stack</div>
         <div id="summaryContent"></div>
+      </div>
+
+      <!-- FileBrowser Option -->
+      <div class="fb-section" id="fileBrowserSection" style="display:none">
+        <div class="fb-title">FileBrowser — File Upload/Download Management</div>
+        <div class="fb-desc">Manage images, attachments, and uploads for your application. This is separate from File Server (cloud storage/sharing).</div>
+        <div class="mini-option" data-fb="none" onclick="selectFileBrowser('none')">
+          <span class="mini-radio"></span>
+          <span class="multi-label">Disabled</span>
+          <span class="multi-desc">— No file browser (handle uploads in application code)</span>
+        </div>
+        <div class="mini-option" data-fb="directory" onclick="selectFileBrowser('directory')">
+          <span class="mini-radio"></span>
+          <span class="multi-label">Web Server Directory</span>
+          <span class="multi-desc">— Simple static file serving via reverse proxy (/uploads/)</span>
+        </div>
+        <div class="mini-option" data-fb="standalone" onclick="selectFileBrowser('standalone')">
+          <span class="mini-radio"></span>
+          <span class="multi-label">FileBrowser (Standalone)</span>
+          <span class="multi-desc">— Web-based file manager (filebrowser/filebrowser container)</span>
+        </div>
       </div>
 
       <!-- Boilerplate Options -->
@@ -164,6 +304,7 @@
           <button class="btn btn-danger" onclick="navigateCancel()">Cancel</button>
         </div>
         <div class="nav-buttons">
+          <button class="btn btn-secondary" onclick="skipStep()">Skip (no dev stack)</button>
           <button class="btn btn-primary" onclick="saveAndContinue()">Continue &rarr;</button>
         </div>
       </div>
@@ -173,122 +314,244 @@
 
   <script src="js/wizard.js"></script>
   <script>
-    var selectedLang = '';
-    var selectedFramework = '';
+    var selectedLangs = [];
+    var selectedFrameworks = {};
+    var selectedFrontend = [];
+    var fileBrowserMode = '';
     var boilerplate = { generate: true, sampleData: true, devMode: 'hot-reload' };
 
     function init() {
       var state = WizardState.load();
 
-      // Guard: skip this step if App Server is not enabled
-      if (!state.servers.appServer.enabled) {
-        window.location.href = 'step4-domain.html';
-        return;
-      }
-
-      selectedLang = state.devStack.language || '';
-      selectedFramework = state.devStack.framework || '';
+      // Restore from state
+      var ds = state.devStack || {};
+      selectedLangs = (ds.languages || []).slice();
+      selectedFrameworks = Object.assign({}, ds.frameworks || {});
+      selectedFrontend = (ds.frontend || []).slice();
       boilerplate = Object.assign({ generate: true, sampleData: true, devMode: 'hot-reload' }, state.boilerplate || {});
 
+      // FileBrowser
+      var fb = (state.servers && state.servers.fileBrowser) || {};
+      fileBrowserMode = fb.mode || '';
+
       buildLanguageList();
-
-      if (selectedLang) {
-        buildFrameworkList(selectedLang);
-        if (selectedFramework) {
-          showSummary();
-          showBoilerplate();
-        }
-      }
-
-      // Restore boilerplate UI
+      buildFrontendList();
+      rebuildFrameworkPanels();
+      updateUI();
       restoreBoilerplateUI();
     }
 
+    /* ─── Language Selection (multi-select) ─── */
     function buildLanguageList() {
       var container = document.getElementById('langList');
       container.innerHTML = '';
       var langs = Object.keys(FRAMEWORK_REGISTRY);
-      for (var lang of langs) {
-        var sel = lang === selectedLang ? ' selected' : '';
-        var li = document.createElement('li');
-        li.className = 'option-item' + sel;
-        li.dataset.value = lang;
-        li.onclick = (function(l) { return function() { selectLanguage(l); }; })(lang);
-        li.innerHTML = '<span class="radio"></span>' +
-          '<span class="option-label">' + escapeHtml(LANGUAGE_LABELS[lang] || lang) + '</span>';
-        container.appendChild(li);
+      for (var i = 0; i < langs.length; i++) {
+        var lang = langs[i];
+        var checked = selectedLangs.indexOf(lang) !== -1;
+        var div = document.createElement('div');
+        div.className = 'multi-option' + (checked ? ' selected' : '');
+        div.dataset.lang = lang;
+        div.onclick = (function(l) { return function() { toggleLanguage(l); }; })(lang);
+        div.innerHTML = '<span class="multi-check' + (checked ? ' checked' : '') + '">&#10003;</span>' +
+          '<span class="multi-label">' + escapeHtml(LANGUAGE_LABELS[lang] || lang) + '</span>';
+        container.appendChild(div);
       }
     }
 
-    function selectLanguage(lang) {
-      selectedLang = lang;
-      selectedFramework = '';
-
-      // Update UI
-      var items = document.querySelectorAll('#langList .option-item');
-      items.forEach(function(item) {
-        item.classList.toggle('selected', item.dataset.value === lang);
-      });
-
-      buildFrameworkList(lang);
-      document.getElementById('summaryBox').style.display = 'none';
-      document.getElementById('boilerplateSection').classList.remove('visible');
-    }
-
-    function buildFrameworkList(lang) {
-      var section = document.getElementById('frameworkSection');
-      var container = document.getElementById('frameworkList');
-      var label = document.getElementById('frameworkLabel');
-
-      section.style.display = 'block';
-      label.textContent = 'Select ' + (LANGUAGE_LABELS[lang] || lang).split(' ')[0] + ' framework:';
-      container.innerHTML = '';
-
-      var frameworks = FRAMEWORK_REGISTRY[lang] || [];
-      for (var fw of frameworks) {
-        var sel = fw.id === selectedFramework ? ' selected' : '';
-        var li = document.createElement('li');
-        li.className = 'option-item' + sel;
-        li.dataset.value = fw.id;
-        li.onclick = (function(f) { return function() { selectFramework(f); }; })(fw.id);
-        li.innerHTML = '<span class="radio"></span>' +
-          '<span class="option-label">' + escapeHtml(fw.name) + '</span>' +
-          '<span class="option-desc">' + escapeHtml(fw.desc) + ' (' + escapeHtml(fw.license) + ')</span>';
-        container.appendChild(li);
+    function toggleLanguage(lang) {
+      var idx = selectedLangs.indexOf(lang);
+      if (idx !== -1) {
+        selectedLangs.splice(idx, 1);
+        delete selectedFrameworks[lang];
+      } else {
+        selectedLangs.push(lang);
       }
-    }
-
-    function selectFramework(fwId) {
-      selectedFramework = fwId;
-
-      var items = document.querySelectorAll('#frameworkList .option-item');
-      items.forEach(function(item) {
-        item.classList.toggle('selected', item.dataset.value === fwId);
-      });
-
-      showSummary();
-      showBoilerplate();
+      buildLanguageList();
+      rebuildFrameworkPanels();
+      updateUI();
       saveDevStack();
     }
 
-    function showSummary() {
-      var fw = findFramework(selectedLang, selectedFramework);
-      if (!fw) return;
+    /* ─── Framework Panels (one per selected language) ─── */
+    function rebuildFrameworkPanels() {
+      var container = document.getElementById('frameworkPanels');
+      container.innerHTML = '';
 
-      document.getElementById('summaryBox').style.display = 'block';
+      for (var i = 0; i < selectedLangs.length; i++) {
+        var lang = selectedLangs[i];
+        var frameworks = FRAMEWORK_REGISTRY[lang] || [];
+        if (frameworks.length === 0) continue;
+
+        var panel = document.createElement('div');
+        panel.className = 'fw-panel';
+
+        var title = document.createElement('div');
+        title.className = 'fw-panel-title';
+        title.textContent = (LANGUAGE_LABELS[lang] || lang).split(' ')[0] + ' Framework:';
+        panel.appendChild(title);
+
+        for (var j = 0; j < frameworks.length; j++) {
+          var fw = frameworks[j];
+          var sel = selectedFrameworks[lang] === fw.id;
+          var opt = document.createElement('div');
+          opt.className = 'mini-option' + (sel ? ' selected' : '');
+          opt.dataset.fw = fw.id;
+          opt.dataset.lang = lang;
+          opt.onclick = (function(l, f) { return function() { selectFramework(l, f); }; })(lang, fw.id);
+          opt.innerHTML = '<span class="mini-radio"></span>' +
+            '<span class="multi-label">' + escapeHtml(fw.name) + '</span>' +
+            '<span class="multi-desc">— ' + escapeHtml(fw.desc) + ' (' + escapeHtml(fw.license) + ')</span>';
+          panel.appendChild(opt);
+        }
+
+        container.appendChild(panel);
+      }
+    }
+
+    function selectFramework(lang, fwId) {
+      selectedFrameworks[lang] = fwId;
+      rebuildFrameworkPanels();
+      updateUI();
+      saveDevStack();
+    }
+
+    /* ─── Frontend Tech Stack (multi-select) ─── */
+    function buildFrontendList() {
+      var container = document.getElementById('frontendList');
+      container.innerHTML = '';
+
+      for (var i = 0; i < FRONTEND_REGISTRY.length; i++) {
+        var fe = FRONTEND_REGISTRY[i];
+        var checked = selectedFrontend.indexOf(fe.id) !== -1;
+        var div = document.createElement('div');
+        div.className = 'multi-option' + (checked ? ' selected' : '');
+        div.dataset.fe = fe.id;
+        div.onclick = (function(id) { return function() { toggleFrontend(id); }; })(fe.id);
+        div.innerHTML = '<span class="multi-check' + (checked ? ' checked' : '') + '">&#10003;</span>' +
+          '<span class="multi-label">' + escapeHtml(fe.name) + '</span>' +
+          '<span class="multi-desc">— ' + escapeHtml(fe.desc) + '</span>';
+        container.appendChild(div);
+      }
+    }
+
+    function toggleFrontend(feId) {
+      var idx = selectedFrontend.indexOf(feId);
+      if (idx !== -1) {
+        selectedFrontend.splice(idx, 1);
+      } else {
+        selectedFrontend.push(feId);
+      }
+      buildFrontendList();
+      updateUI();
+      saveDevStack();
+    }
+
+    /* ─── FileBrowser ─── */
+    function selectFileBrowser(mode) {
+      if (mode === 'none') {
+        fileBrowserMode = '';
+      } else {
+        fileBrowserMode = mode;
+      }
+
+      // Update radio UI
+      document.querySelectorAll('[data-fb]').forEach(function(el) {
+        var match = (mode === 'none' && el.dataset.fb === 'none') ||
+                    (el.dataset.fb === mode);
+        el.classList.toggle('selected', match);
+      });
+
+      saveFileBrowser();
+    }
+
+    function saveFileBrowser() {
+      var state = WizardState.load();
+      if (!state.servers.fileBrowser) state.servers.fileBrowser = {};
+      state.servers.fileBrowser.enabled = !!fileBrowserMode;
+      state.servers.fileBrowser.mode = fileBrowserMode;
+      WizardState.updateNested('servers', state.servers);
+    }
+
+    /* ─── UI Update ─── */
+    function updateUI() {
+      var hasSelection = selectedLangs.length > 0 || selectedFrontend.length > 0;
+
+      // App Server banner
+      var banner = document.getElementById('appServerBanner');
+      banner.classList.toggle('visible', hasSelection);
+
+      // Summary
+      var summaryBox = document.getElementById('summaryBox');
+      if (hasSelection) {
+        summaryBox.style.display = 'block';
+        buildSummary();
+      } else {
+        summaryBox.style.display = 'none';
+      }
+
+      // FileBrowser section (show if any lang selected)
+      document.getElementById('fileBrowserSection').style.display = selectedLangs.length > 0 ? 'block' : 'none';
+
+      // Boilerplate section
+      document.getElementById('boilerplateSection').classList.toggle('visible', hasSelection);
+
+      // Restore FileBrowser radio state
+      document.querySelectorAll('[data-fb]').forEach(function(el) {
+        var match = (!fileBrowserMode && el.dataset.fb === 'none') ||
+                    (el.dataset.fb === fileBrowserMode);
+        el.classList.toggle('selected', match);
+      });
+
+      // Auto-set appServer
+      var state = WizardState.load();
+      state.servers.appServer.enabled = hasSelection;
+      WizardState.updateNested('servers', state.servers);
+    }
+
+    function buildSummary() {
+      var lines = [];
+
+      // Languages & Frameworks
+      if (selectedLangs.length > 0) {
+        var langParts = [];
+        for (var i = 0; i < selectedLangs.length; i++) {
+          var lang = selectedLangs[i];
+          var langName = LANGUAGE_LABELS[lang] || lang;
+          var fwId = selectedFrameworks[lang];
+          if (fwId) {
+            var fw = findFramework(lang, fwId);
+            langParts.push(langName + ' (' + (fw ? fw.name : fwId) + ')');
+          } else {
+            langParts.push(langName);
+          }
+        }
+        lines.push('<div><span style="color:#8b949e">Backend:</span> <span style="color:#e6edf3">' + escapeHtml(langParts.join(', ')) + '</span></div>');
+      }
+
+      // Frontend
+      if (selectedFrontend.length > 0) {
+        var feNames = [];
+        for (var j = 0; j < selectedFrontend.length; j++) {
+          var fe = FRONTEND_REGISTRY.find(function(f) { return f.id === selectedFrontend[j]; });
+          feNames.push(fe ? fe.name : selectedFrontend[j]);
+        }
+        lines.push('<div><span style="color:#8b949e">Frontend:</span> <span style="color:#e6edf3">' + escapeHtml(feNames.join(', ')) + '</span></div>');
+      }
+
+      // FileBrowser
+      if (fileBrowserMode) {
+        var fbLabel = fileBrowserMode === 'directory' ? 'Web Server Directory' : 'FileBrowser (Standalone)';
+        lines.push('<div><span style="color:#8b949e">FileBrowser:</span> <span style="color:#e6edf3">' + fbLabel + '</span></div>');
+      }
+
+      lines.push('<div><span style="color:#8b949e">Runtime:</span> <span style="color:#e6edf3">Docker</span></div>');
+
       document.getElementById('summaryContent').innerHTML =
-        '<div style="display:flex;gap:24px;flex-wrap:wrap;padding:8px 0">' +
-          '<div><span style="color:#8b949e">Language:</span> <span style="color:#e6edf3">' + escapeHtml(LANGUAGE_LABELS[selectedLang] || selectedLang) + '</span></div>' +
-          '<div><span style="color:#8b949e">Framework:</span> <span style="color:#e6edf3">' + escapeHtml(fw.name) + '</span></div>' +
-          '<div><span style="color:#8b949e">Runtime:</span> <span style="color:#e6edf3">Docker</span></div>' +
-          '<div><span style="color:#8b949e">Port:</span> <span style="color:#e6edf3">' + fw.port + '</span></div>' +
-        '</div>';
+        '<div style="display:flex;flex-direction:column;gap:4px;padding:8px 0">' + lines.join('') + '</div>';
     }
 
-    function showBoilerplate() {
-      document.getElementById('boilerplateSection').classList.add('visible');
-    }
-
+    /* ─── Boilerplate ─── */
     function toggleBp(key) {
       boilerplate[key] = !boilerplate[key];
       var el = document.getElementById('bp-' + (key === 'sampleData' ? 'sample' : key));
@@ -312,13 +575,30 @@
       });
     }
 
+    /* ─── Save & Navigate ─── */
     function saveDevStack() {
-      WizardState.updateNested('devStack', { language: selectedLang, framework: selectedFramework });
+      WizardState.updateNested('devStack', {
+        languages: selectedLangs.slice(),
+        frameworks: Object.assign({}, selectedFrameworks),
+        frontend: selectedFrontend.slice(),
+      });
+    }
+
+    function skipStep() {
+      // Clear dev stack, disable app server
+      WizardState.updateNested('devStack', { languages: [], frameworks: {}, frontend: [] });
+      var state = WizardState.load();
+      state.servers.appServer.enabled = false;
+      state.servers.fileBrowser = { enabled: false, mode: '' };
+      WizardState.updateNested('servers', state.servers);
+      WizardState.updateNested('boilerplate', { generate: false, sampleData: false, devMode: 'hot-reload' });
+      navigateNext();
     }
 
     function saveAndContinue() {
-      WizardState.updateNested('devStack', { language: selectedLang, framework: selectedFramework });
+      saveDevStack();
       WizardState.updateNested('boilerplate', boilerplate);
+      saveFileBrowser();
       navigateNext();
     }
 

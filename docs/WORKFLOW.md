@@ -1,6 +1,6 @@
 # Brewnet WORKFLOW.md — Development Reference
 
-> **Version**: 2.1
+> **Version**: 2.2
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -8,7 +8,7 @@
 
 ## Context
 
-REQUIREMENT.md (v2.1)와 USER-STORY.md (v2.1), wizard.js 데이터 구조를 교차 분석하여 `brewnet init` 위자드의 전체 플로우를 단계별로 정리한다. 이 문서는 CLI 개발 시 각 단계의 입력/출력/옵션/조건/데이터 흐름을 파악하기 위한 레퍼런스다.
+REQUIREMENT.md (v2.2)와 USER-STORY.md (v2.2), wizard.js 데이터 구조를 교차 분석하여 `brewnet init` 위자드의 전체 플로우를 단계별로 정리한다. 이 문서는 CLI 개발 시 각 단계의 입력/출력/옵션/조건/데이터 흐름을 파악하기 위한 레퍼런스다.
 
 ---
 
@@ -19,9 +19,9 @@ Step 0: System Check
   ↓
 Step 1: Project Setup (name, path, setupType)
   ↓
-Step 2: Admin Account + Server Components (7개 카드, Web+Git 필수)
+Step 2: Admin Account + Server Components (6개 카드, Web+Git 필수)
   ↓
-Step 3: Runtime & Boilerplate + FileBrowser ← 조건부: appServer.enabled === true 일 때만
+Step 3: Dev Stack & Runtime + FileBrowser ← 항상 표시 (Skip 가능)
   ↓
 Step 4: Domain & Network + Mail Server ← Mail은 조건부: provider !== 'local'
   ↓
@@ -97,7 +97,7 @@ state.setupType = 'full'
 
 > REQ-1.3.3, REQ-1.3.4, REQ-1.5, REQ-1.8, REQ-1.11, REQ-1.13 / USER-STORY §3
 
-이 단계는 **Admin Account** 입력 후 **7개 서버 컴포넌트 카드** (Web Server + Git Server 필수, 5개 선택)를 토글/설정한다.
+이 단계는 **Admin Account** 입력 후 **6개 서버 컴포넌트 카드** (Web Server + Git Server 필수, 4개 선택)를 토글/설정한다. App Server는 Step 3에서 자동 설정된다.
 
 ### 2-A. Admin Account
 
@@ -146,21 +146,12 @@ state.setupType = 'full'
 | **nextcloud** (권장) | Full cloud suite (파일, 캘린더, 연락처) | AGPL-3.0 | 443 | `cloud.{DOMAIN}` | `nextcloud:29-apache` |
 | minio | S3-compatible object storage | AGPL-3.0 | 9000 | `minio.{DOMAIN}` | `minio/minio:latest` |
 
-### 2-D. App Server (Optional)
-
-| 필드 | 타입 | 기본값 | 설명 |
-|------|------|--------|------|
-| `servers.appServer.enabled` | boolean | Full→`true`, Partial→`false` | 토글만. 상세 설정은 Step 3 |
-
-- ON → Step 3 (Runtime & Boilerplate)가 활성화됨
-- OFF → Step 3 스킵
-
-### 2-E. DB Server (Optional)
+### 2-D. DB Server (Optional)
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
 | `servers.dbServer.enabled` | boolean | Full→`true`, Partial→`false` | 토글 |
-| `servers.dbServer.primary` | enum | `''` | `'postgresql'` \| `'mysql'` \| `'mariadb'` \| `'sqlite'` |
+| `servers.dbServer.primary` | enum | `''` | `'postgresql'` \| `'mysql'` \| `'sqlite'` |
 | `servers.dbServer.primaryVersion` | string | `''` | 선택한 DB의 버전 |
 | `servers.dbServer.dbName` | string | `'brewnet_db'` | 데이터베이스 이름 |
 | `servers.dbServer.dbUser` | string | `'brewnet'` | DB 사용자 |
@@ -174,7 +165,6 @@ state.setupType = 'full'
 |----|------|------|--------|-----|-----|
 | **postgresql** (권장) | PostgreSQL | 17, 16, 15 | `postgres:17-alpine` | 120MB | REQ-1.6.1 |
 | mysql | MySQL | 8.4, 8.0 | `mysql:8.4` | 256MB | REQ-1.6.1 |
-| mariadb | MariaDB | 11, 10.11 | `mariadb:11` | 200MB | REQ-1.6.1 |
 | sqlite | SQLite | 3 | (컨테이너 없음) | 0MB | REQ-1.6.1 |
 
 **Cache 옵션:**
@@ -189,7 +179,7 @@ state.setupType = 'full'
 - SQLite 선택 시: 컨테이너 생성 안 됨, adminUI(pgAdmin) 비활성화
 - pgAdmin: primary가 sqlite가 아니고 adminUI===true 일 때만 → `dpage/pgadmin4:latest` (128MB)
 
-### 2-F. Media (Optional)
+### 2-E. Media (Optional)
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
@@ -200,7 +190,7 @@ state.setupType = 'full'
 |------|------|---------|------|-----------|---------------|-----|
 | jellyfin | Media streaming server | GPL-2.0 | 8096 | `jellyfin.{DOMAIN}` | `jellyfin/jellyfin:latest` | 256MB |
 
-### 2-G. SSH Server (Optional)
+### 2-F. SSH Server (Optional)
 
 | 필드 | 타입 | 기본값 | 설명 | REQ |
 |------|------|--------|------|-----|
@@ -213,7 +203,7 @@ state.setupType = 'full'
 - `fileServer.enabled === true` OR `media.enabled === true` → SFTP ON 자동 권장
 - Docker 이미지: `linuxserver/openssh-server:latest` (16MB)
 
-### 2-H. Git Server (Required — 항상 ON)
+### 2-G. Git Server (Required — 항상 ON)
 
 > REQ-1.5.8, REQ-4.1 / USER-STORY §3
 
@@ -253,32 +243,36 @@ state.setupType = 'full'
 
 ---
 
-## Step 3: Runtime & Boilerplate (조건부)
+## Step 3: Dev Stack & Runtime (항상 표시)
 
 > REQ-1.3.5, REQ-12.1 / USER-STORY §4
 
-**표시 조건:** `servers.appServer.enabled === true`
-**스킵 조건:** `servers.appServer.enabled === false` → Step 4로 이동
+**표시 조건:** 항상 표시 (Step 3는 더 이상 조건부가 아님)
+**스킵:** "Skip" 버튼으로 Dev Stack 없이 Step 4로 이동 가능
 
-### 3-A. Language Selection
+### 3-A. Backend Language Selection (다중 선택)
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
-| `devStack.language` | enum | `''` | `'python'` \| `'nodejs'` \| `'java'` \| `'rust'` \| `'go'` |
+| `devStack.languages` | string[] | `[]` | `'python'` \| `'nodejs'` \| `'java'` \| `'php'` \| `'dotnet'` \| `'rust'` \| `'go'` |
 
 | Language | 표시명 | 기본 포트 |
 |----------|--------|----------|
 | python | Python 3.12 | 8000 |
 | nodejs | Node.js 20 LTS | 3000 |
 | java | Java 21 (Eclipse Temurin) | 8080 |
+| php | PHP 8.3 | 8080 |
+| dotnet | .NET 8 | 5000 |
 | rust | Rust (latest) | 8080 |
 | go | Go 1.22 | 8080 |
 
-### 3-B. Framework Selection (언어별 동적)
+### 3-B. Framework Selection (선택된 언어별 1개)
 
 | 필드 | 타입 | 기본값 |
 |------|------|--------|
-| `devStack.framework` | enum | `''` |
+| `devStack.frameworks` | object | `{}` |
+
+각 선택된 언어에 대해 프레임워크를 1개 선택한다. `devStack.frameworks`는 `{ nodejs: 'nextjs', python: 'fastapi' }` 형태의 객체이다.
 
 **Python:**
 
@@ -292,7 +286,8 @@ state.setupType = 'full'
 
 | ID | 이름 | 설명 | 포트 |
 |----|------|------|------|
-| nextjs | Next.js | React full-stack framework | 3000 |
+| nextjs | Next.js | React full-stack (SSR/SSG) | 3000 |
+| nextjs-api | Next.js API Routes | API-only backend | 3000 |
 | express | Express | Minimal web framework | 3000 |
 | nestjs | NestJS | Enterprise Node.js framework | 3000 |
 | fastify | Fastify | Fast web framework | 3000 |
@@ -301,9 +296,23 @@ state.setupType = 'full'
 
 | ID | 이름 | 설명 | 포트 |
 |----|------|------|------|
-| spring | Spring Boot | Enterprise Java framework | 8080 |
-| quarkus | Quarkus | Cloud-native Java | 8080 |
-| micronaut | Micronaut | Lightweight framework | 8080 |
+| java-pure | Pure Java | No framework | 8080 |
+| spring | Spring | Enterprise framework | 8080 |
+| springboot | Spring Boot | Opinionated Spring | 8080 |
+
+**PHP:**
+
+| ID | 이름 | 설명 | 포트 |
+|----|------|------|------|
+| laravel | Laravel | Full-stack framework | 8080 |
+| symfony | Symfony | Enterprise PHP framework | 8080 |
+
+**.NET:**
+
+| ID | 이름 | 설명 | 포트 |
+|----|------|------|------|
+| aspnet | ASP.NET Core | Cross-platform web framework | 5000 |
+| blazor | Blazor | Full-stack web UI | 5000 |
 
 **Rust:**
 
@@ -320,81 +329,46 @@ state.setupType = 'full'
 | echo | Echo | High performance framework | 8080 |
 | fiber | Fiber | Express-inspired framework | 8080 |
 
-### 3-C. Boilerplate Options
+### 3-C. Frontend Tech Stack (다중 선택)
+
+| 필드 | 타입 | 기본값 | 옵션 |
+|------|------|--------|------|
+| `devStack.frontend` | string[] | `[]` | `'vuejs'` \| `'reactjs'` \| `'typescript'` \| `'javascript'` |
+
+| ID | 이름 | 설명 |
+|----|------|------|
+| vuejs | Vue.js | Progressive framework |
+| reactjs | React.js | UI library by Meta |
+| typescript | TypeScript | Typed JavaScript |
+| javascript | JavaScript | Vanilla JS |
+
+### 3-D. App Server (자동 활성화)
+
+언어 또는 프론트엔드를 하나라도 선택하면 App Server가 자동으로 활성화된다:
+
+```
+state.servers.appServer.enabled = (devStack.languages.length > 0 || devStack.frontend.length > 0)
+```
+
+### 3-E. FileBrowser (선택)
+
+| 필드 | 타입 | 기본값 | 옵션 |
+|------|------|--------|------|
+| `servers.fileBrowser.enabled` | boolean | `false` | 활성화 여부 |
+| `servers.fileBrowser.mode` | enum | `''` | `'directory'` \| `'standalone'` |
+
+| 모드 | 설명 |
+|------|------|
+| directory | Web Server 디렉토리 방식 (정적 파일 서빙) |
+| standalone | FileBrowser 별도 컨테이너 (`filebrowser/filebrowser:latest`, `files.{DOMAIN}`) |
+
+### 3-F. Boilerplate Options
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
 | `boilerplate.generate` | boolean | `true` | 프로젝트 스캐폴딩 생성 여부 |
 | `boilerplate.sampleData` | boolean | `true` | 샘플 데이터 (User/Post 엔티티) 포함 여부 |
 | `boilerplate.devMode` | enum | `'hot-reload'` | `'hot-reload'` (소스 볼륨 마운트) \| `'production'` |
-
-### 3-D. FileBrowser (App Server 기본 포함)
-
-> REQ-9.3
-
-App Server 활성화 시 **FileBrowser**가 기본으로 포함된다. `filebrowser/filebrowser:latest` Docker 이미지를 사용하여 웹 기반 파일 관리 UI를 제공하며, 앱의 파일 업로드/다운로드 스토리지와 연동된다.
-
-| 필드 | 타입 | 기본값 | 설명 | REQ |
-|------|------|--------|------|-----|
-| `appStorage.enabled` | boolean | `true` | App Server ON 시 자동 활성화 | REQ-9.3.1 |
-| `appStorage.path` | string | `'./storage'` | 스토리지 경로 (프로젝트 상대 경로) | REQ-9.3.2 |
-| `appStorage.maxSize` | string | `''` | 용량 제한 (빈 값 = 무제한) | REQ-9.3.4 |
-
-**FileBrowser 정보:**
-
-| 항목 | 값 |
-|------|-----|
-| Docker 이미지 | `filebrowser/filebrowser:latest` (~50MB RAM) |
-| 웹 UI | `https://files.{DOMAIN}` |
-| 내부 포트 | 80 |
-| 인증 | JWT 기반 (Admin 크리덴셜 전파) |
-| API | REST API (`/api/login`, `/api/resources/{path}`, `/api/raw/{path}`) |
-
-**스토리지 디렉토리 구조:**
-
-```
-{projectPath}/storage/
-├── {userId}/             ← 사용자별 디렉토리 격리 (FileBrowser scope)
-│   ├── images/
-│   ├── documents/
-│   └── ...
-├── public/               ← 공개 파일 (인증 불필요)
-├── temp/                 ← 임시 파일 (자동 정리)
-└── backups/              ← 파일 백업
-```
-
-**FileBrowser REST API:**
-
-| Method | Endpoint | 설명 |
-|--------|----------|------|
-| `POST` | `/api/login` | JWT 토큰 발급 (username + password) |
-| `GET` | `/api/resources/{path}` | 파일/디렉토리 메타데이터 조회 |
-| `POST` | `/api/resources/{path}` | 파일 업로드 |
-| `PUT` | `/api/resources/{path}` | 파일 수정/이동/이름변경 |
-| `DELETE` | `/api/resources/{path}` | 파일/디렉토리 삭제 |
-| `GET` | `/api/raw/{path}` | 파일 직접 다운로드 (raw) |
-
-**Docker 볼륨 매핑:**
-```yaml
-volumes:
-  - ./storage:/srv                          # 파일 데이터
-  - ./config/filebrowser.json:/config/filebrowser.json  # 설정
-  - ./data/filebrowser/database.db:/database.db         # FileBrowser DB
-```
-
-**사용자 디렉토리 격리:**
-- FileBrowser의 `scope` 설정으로 사용자별 디렉토리 제한
-- Admin: 전체 `/srv` 접근 가능
-- 일반 사용자: `/srv/{username}` 만 접근 가능
-- 앱 컨테이너에서는 `./storage:/app/storage` 볼륨으로 동일 디렉토리 접근
-
-**Traefik 라우팅:**
-```yaml
-labels:
-  - "traefik.enable=true"
-  - "traefik.http.routers.filebrowser.rule=Host(`files.${DOMAIN}`)"
-  - "traefik.http.services.filebrowser.loadbalancer.server.port=80"
-```
 
 ---
 
@@ -520,8 +494,8 @@ labels:
 1. **Project 정보**: projectName, projectPath, setupType
 2. **Admin Account**: username, password(마스킹)
 3. **Server Components**: 필수(Web+Git) + 선택 카드 상태 + 옵션 값
-4. **Runtime & Boilerplate** (appServer 활성화 시): language, framework, boilerplate 옵션
-5. **FileBrowser** (appServer 활성화 시): `files.{DOMAIN}` URL, storage path
+4. **Dev Stack & Runtime** (선택 시): languages, frameworks, frontend, boilerplate 옵션
+5. **FileBrowser** (선택 시): mode (directory/standalone), `files.{DOMAIN}` URL
 6. **Domain & Network**: provider, domain name, tunnel 상태, SSL
 7. **Mail Server** (활성화 시): 프로토콜, postmaster
 8. **Credential Propagation**: `getCredentialTargets(state)` → 대상 서비스 목록 (Gitea, FileBrowser 포함)
@@ -704,11 +678,12 @@ Step 1: state.projectName, projectPath, setupType ← 사용자 입력
   ↓
 Step 2: state.admin.{username,password}
          state.servers.webServer (필수), gitServer (필수)
-         state.servers.{fileServer,appServer,dbServer,media,sshServer} ← 카드 토글+설정
+         state.servers.{fileServer,dbServer,media,sshServer} ← 카드 토글+설정
   ↓
-Step 3: state.devStack.{language,framework}
+Step 3: state.devStack.{languages[],frameworks{},frontend[]}
          state.boilerplate.{generate,sampleData,devMode}
-         state.appStorage.{enabled,path,maxSize} + FileBrowser ← (조건부: appServer ON)
+         state.servers.appServer ← (Step 3 devStack 기반 자동)
+         state.servers.fileBrowser.{enabled,mode} ← (Step 3에서 선택)
   ↓
 Step 4: state.domain.{provider,name,ssl,freeDomainTld}
          state.domain.cloudflare.{enabled,tunnelToken,tunnelName}
@@ -736,7 +711,7 @@ Step 7: state → 엔드포인트 URL, 크리덴셜 요약 표시
 
 ---
 
-## Docker 이미지 전체 목록 (18개)
+## Docker 이미지 전체 목록 (17개)
 
 | ID | Docker Image | 포트 | 용도 |
 |----|-------------|------|------|
@@ -750,7 +725,6 @@ Step 7: state → 엔드포인트 URL, 크리덴셜 요약 표시
 | jellyfin | `jellyfin/jellyfin:latest` | 8096 | Media |
 | postgresql | `postgres:17-alpine` | 5432 | Database |
 | mysql | `mysql:8.4` | 3306 | Database |
-| mariadb | `mariadb:11` | 3306 | Database |
 | redis | `redis:7-alpine` | 6379 | Cache |
 | valkey | `valkey/valkey:7-alpine` | 6379 | Cache |
 | keydb | `eqalpha/keydb:latest` | 6379 | Cache |

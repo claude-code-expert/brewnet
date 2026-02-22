@@ -1,12 +1,13 @@
 /**
- * Brewnet CLI Demo — Wizard State Management (v4)
- * 7 server components + Admin + FreeDomain + Cloudflare Tunnel + SSH/SFTP + Mail
+ * Brewnet CLI Demo — Wizard State Management (v5)
+ * Server components + Admin + FreeDomain + Cloudflare Tunnel + SSH/SFTP + Mail
+ * v2.2: Multi-select dev stack, Frontend registry, FileBrowser, MariaDB removed
  */
 
 const STORAGE_KEY = 'brewnet_wizard_state';
 
 const DEFAULT_STATE = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   projectName: 'my-homeserver',
   projectPath: '~/brewnet/my-homeserver',
   setupType: 'full', // 'full' | 'partial'
@@ -21,7 +22,7 @@ const DEFAULT_STATE = {
   servers: {
     fileServer: { enabled: false, service: '' },
     webServer: { enabled: true, service: 'traefik' },
-    appServer: { enabled: false },
+    appServer: { enabled: false },    // auto-set in Step 3 based on devStack
     dbServer: {
       enabled: false,
       primary: '',
@@ -43,10 +44,18 @@ const DEFAULT_STATE = {
       enabled: false,
       service: 'docker-mailserver', // 'docker-mailserver'
     },
+    fileBrowser: {
+      enabled: false,
+      mode: '',              // 'directory' | 'standalone'
+    },
   },
 
-  // Step 3: Runtime & Boilerplate
-  devStack: { language: '', framework: '' },
+  // Step 3: Dev Stack (multi-select) & Boilerplate
+  devStack: {
+    languages: [],          // e.g. ['nodejs', 'python'] — multi-select
+    frameworks: {},         // e.g. { nodejs: 'nextjs', python: 'fastapi' } — one per language
+    frontend: [],           // e.g. ['reactjs', 'typescript'] — multi-select
+  },
   boilerplate: { generate: true, sampleData: true, devMode: 'hot-reload' },
 
   // Step 4: Domain & Network
@@ -70,7 +79,7 @@ const WizardState = {
       if (!stored) return structuredClone(DEFAULT_STATE);
       const parsed = JSON.parse(stored);
       // Schema migration: reset if old format
-      if (!parsed.schemaVersion || parsed.schemaVersion < 4) {
+      if (!parsed.schemaVersion || parsed.schemaVersion < 5) {
         this.reset();
         return structuredClone(DEFAULT_STATE);
       }
@@ -143,7 +152,7 @@ const FREE_DOMAIN_PROVIDERS = [
   { tld: '.us.kg', name: 'DigitalPlat (.us.kg)', desc: 'Requires GitHub account approval' },
 ];
 
-/* ─── Framework Registry ─── */
+/* ─── Framework Registry (v2.2) ─── */
 const FRAMEWORK_REGISTRY = {
   python: [
     { id: 'fastapi', name: 'FastAPI', desc: 'Modern async API framework', license: 'MIT', port: 8000 },
@@ -151,15 +160,24 @@ const FRAMEWORK_REGISTRY = {
     { id: 'flask', name: 'Flask', desc: 'Lightweight micro framework', license: 'BSD-3', port: 5000 },
   ],
   nodejs: [
-    { id: 'nextjs', name: 'Next.js', desc: 'React full-stack framework', license: 'MIT', port: 3000 },
+    { id: 'nextjs', name: 'Next.js', desc: 'React full-stack framework (SSR/SSG)', license: 'MIT', port: 3000 },
+    { id: 'nextjs-api', name: 'Next.js API Routes', desc: 'API-only backend with Next.js', license: 'MIT', port: 3000 },
     { id: 'express', name: 'Express', desc: 'Minimal web framework', license: 'MIT', port: 3000 },
     { id: 'nestjs', name: 'NestJS', desc: 'Enterprise Node.js framework', license: 'MIT', port: 3000 },
     { id: 'fastify', name: 'Fastify', desc: 'Fast web framework', license: 'MIT', port: 3000 },
   ],
   java: [
-    { id: 'spring', name: 'Spring Boot', desc: 'Enterprise Java framework', license: 'Apache-2.0', port: 8080 },
-    { id: 'quarkus', name: 'Quarkus', desc: 'Cloud-native Java', license: 'Apache-2.0', port: 8080 },
-    { id: 'micronaut', name: 'Micronaut', desc: 'Lightweight framework', license: 'Apache-2.0', port: 8080 },
+    { id: 'java-pure', name: 'Pure Java', desc: 'No framework, standard Java SE', license: 'GPL-2.0+CE', port: 8080 },
+    { id: 'spring', name: 'Spring', desc: 'Enterprise Java framework', license: 'Apache-2.0', port: 8080 },
+    { id: 'springboot', name: 'Spring Boot', desc: 'Opinionated Spring with auto-config', license: 'Apache-2.0', port: 8080 },
+  ],
+  php: [
+    { id: 'laravel', name: 'Laravel', desc: 'Full-stack PHP framework', license: 'MIT', port: 8000 },
+    { id: 'symfony', name: 'Symfony', desc: 'Enterprise PHP framework', license: 'MIT', port: 8000 },
+  ],
+  dotnet: [
+    { id: 'aspnet', name: 'ASP.NET Core', desc: 'Cross-platform web framework', license: 'MIT', port: 5000 },
+    { id: 'blazor', name: 'Blazor', desc: 'Interactive web UI with C#', license: 'MIT', port: 5000 },
   ],
   rust: [
     { id: 'actix', name: 'Actix Web', desc: 'High performance', license: 'MIT', port: 8080 },
@@ -176,16 +194,25 @@ const LANGUAGE_LABELS = {
   python: 'Python 3.12',
   nodejs: 'Node.js 20 LTS',
   java: 'Java 21 (Eclipse Temurin)',
+  php: 'PHP 8.3',
+  dotnet: '.NET 8',
   rust: 'Rust (latest)',
   go: 'Go 1.22',
 };
 
-/* ─── Database Registry (2 categories) ─── */
+/* ─── Frontend Tech Stack Registry (v2.2) ─── */
+const FRONTEND_REGISTRY = [
+  { id: 'vuejs', name: 'Vue.js', desc: 'Progressive JavaScript framework' },
+  { id: 'reactjs', name: 'React.js', desc: 'UI library by Meta' },
+  { id: 'typescript', name: 'TypeScript', desc: 'Typed JavaScript superset' },
+  { id: 'javascript', name: 'JavaScript', desc: 'Vanilla JavaScript (ES6+)' },
+];
+
+/* ─── Database Registry (2 categories, v2.2: MariaDB removed) ─── */
 const DATABASE_REGISTRY = {
   primary: [
     { id: 'postgresql', name: 'PostgreSQL', license: 'PostgreSQL License', versions: ['17', '16', '15'], recommended: true },
     { id: 'mysql', name: 'MySQL', license: 'GPL-2.0', versions: ['8.4', '8.0'] },
-    { id: 'mariadb', name: 'MariaDB', license: 'GPL-2.0', versions: ['11', '10.11'] },
     { id: 'sqlite', name: 'SQLite', license: 'Public Domain', versions: ['3'] },
   ],
   cache: [
@@ -209,7 +236,6 @@ const RESOURCE_ESTIMATES = {
   // Database
   postgresql: { ram: 120, disk: 0.5 },
   mysql: { ram: 256, disk: 0.5 },
-  mariadb: { ram: 200, disk: 0.5 },
   sqlite: { ram: 0, disk: 0.01 },
   redis: { ram: 12, disk: 0.1 },
   keydb: { ram: 16, disk: 0.1 },
@@ -221,6 +247,8 @@ const RESOURCE_ESTIMATES = {
   'openssh-server': { ram: 16, disk: 0.05 },
   // Mail Server
   'docker-mailserver': { ram: 256, disk: 0.5 },
+  // FileBrowser (v2.2)
+  filebrowser: { ram: 32, disk: 0.1 },
   // Cloudflare Tunnel
   cloudflared: { ram: 32, disk: 0.05 },
 };
@@ -236,15 +264,17 @@ function generatePassword(len = 16) {
 /* ─── Utility: count total containers ─── */
 function countSelectedServices(state) {
   const s = state.servers;
+  const ds = state.devStack || {};
   let count = 1; // web server always included
   if (s.fileServer.enabled && s.fileServer.service) count++;
-  if (s.appServer.enabled && state.devStack.framework) count++;
+  if (s.appServer.enabled && (ds.languages || []).length > 0) count++;
   if (s.dbServer.enabled && s.dbServer.primary && s.dbServer.primary !== 'sqlite') count++;
   if (s.dbServer.enabled && s.dbServer.adminUI && s.dbServer.primary && s.dbServer.primary !== 'sqlite') count++;
   if (s.dbServer.enabled && s.dbServer.cache) count++;
   if (s.media.enabled) count += (s.media.services || []).length;
   if (s.sshServer && s.sshServer.enabled) count++;
   if (s.mailServer && s.mailServer.enabled) count++;
+  if (s.fileBrowser && s.fileBrowser.enabled && s.fileBrowser.mode === 'standalone') count++;
   return count;
 }
 
@@ -295,9 +325,16 @@ function estimateResources(state) {
   }
 
   // App
-  if (s.appServer.enabled && state.devStack.framework) {
+  if (s.appServer.enabled && (state.devStack.languages || []).length > 0) {
     ram += RESOURCE_ESTIMATES.app.ram;
     disk += RESOURCE_ESTIMATES.app.disk;
+    containers++;
+  }
+
+  // FileBrowser (v2.2)
+  if (s.fileBrowser && s.fileBrowser.enabled && s.fileBrowser.mode === 'standalone') {
+    ram += RESOURCE_ESTIMATES.filebrowser.ram;
+    disk += RESOURCE_ESTIMATES.filebrowser.disk;
     containers++;
   }
 
@@ -367,15 +404,8 @@ const ALL_WIZARD_STEPS = [
 ];
 
 function getActiveSteps() {
-  var state = WizardState.load();
-  var steps = [];
-  for (var i = 0; i < ALL_WIZARD_STEPS.length; i++) {
-    var file = ALL_WIZARD_STEPS[i];
-    // Skip step3-runtime if App Server is not enabled
-    if (file === 'step3-runtime.html' && !state.servers.appServer.enabled) continue;
-    steps.push(file);
-  }
-  return steps;
+  // v2.2: Step 3 is always shown (dev stack selection is independent of appServer toggle)
+  return ALL_WIZARD_STEPS.slice();
 }
 
 function getStepUrl(step) {
@@ -429,6 +459,7 @@ function collectAllServices(state) {
   if (s.dbServer.enabled && s.dbServer.cache) ids.push(s.dbServer.cache);
   if (s.sshServer && s.sshServer.enabled) ids.push('openssh-server');
   if (s.mailServer && s.mailServer.enabled) ids.push(s.mailServer.service || 'docker-mailserver');
+  if (s.fileBrowser && s.fileBrowser.enabled && s.fileBrowser.mode === 'standalone') ids.push('filebrowser');
   if (state.domain && state.domain.cloudflare && state.domain.cloudflare.enabled) {
     ids.push('cloudflared');
   }
@@ -460,13 +491,13 @@ function getImageName(id) {
     jellyfin: 'jellyfin/jellyfin:latest',
     postgresql: 'postgres:17-alpine',
     mysql: 'mysql:8.4',
-    mariadb: 'mariadb:11',
     redis: 'redis:7-alpine',
     valkey: 'valkey/valkey:7-alpine',
     keydb: 'eqalpha/keydb:latest',
     pgadmin: 'dpage/pgadmin4:latest',
     'openssh-server': 'linuxserver/openssh-server:latest',
     'docker-mailserver': 'ghcr.io/docker-mailserver/docker-mailserver:latest',
+    filebrowser: 'filebrowser/filebrowser:latest',
     cloudflared: 'cloudflare/cloudflared:latest',
   };
   return map[id] || id + ':latest';

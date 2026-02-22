@@ -1,6 +1,6 @@
 # Brewnet TRD (Technical Requirements Document)
 
-> **Version**: 2.1
+> **Version**: 2.2
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -39,8 +39,8 @@ brewnet logs
 |------|------|------|
 | 0 | System Check | OS, Docker, Node.js, Git, 포트, 디스크 확인 |
 | 1 | Project Setup | 프로젝트 이름, 경로, 설치 유형 (Full / Partial) |
-| 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/App/DB/Media/SSH) |
-| 3 | Runtime & Boilerplate | 언어/프레임워크 선택, 보일러플레이트 (App Server 활성화 시만) |
+| 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media/SSH) |
+| 3 | Dev Stack & Runtime | 다중 언어/프레임워크 선택, Frontend 기술 스택, FileBrowser, 보일러플레이트 — 항상 표시 |
 | 4 | Domain & Network | 도메인 (Local/FreeDomain/Custom), Cloudflare Tunnel, Mail Server |
 | 5 | Review | 설정 확인, 자격증명 전파 대상 표시, 리소스 추정, 내보내기 |
 | 6 | Generate | docker-compose.yml 생성, 이미지 풀, 컨테이너 시작, 헬스체크 |
@@ -96,7 +96,6 @@ brewnet logs
 | **Jellyfin** | `jellyfin/jellyfin:latest` | 미디어 서버 (비디오 스트리밍, 트랜스코딩) | 1 |
 | **PostgreSQL** | `postgres:17-alpine` | 관계형 데이터베이스 (기본 권장) | 1 |
 | **MySQL** | `mysql:8.4` | 관계형 데이터베이스 (대안) | 1 |
-| **MariaDB** | `mariadb:11` | 관계형 데이터베이스 (대안) | 1 |
 | **Redis** | `redis:7-alpine` | 캐시 서버 (기본 권장) | 1 |
 | **Valkey** | `valkey/valkey:7-alpine` | 캐시 서버 (Redis 대안, BSD) | 1 |
 | **KeyDB** | `eqalpha/keydb:latest` | 캐시 서버 (Redis 대안, 멀티스레드) | 1 |
@@ -168,7 +167,7 @@ brewnet logs
 ├── 파일 서버: Nextcloud / MinIO
 ├── 파일 관리: FileBrowser (App Server 시 기본)
 ├── 미디어: Jellyfin
-├── DB: PostgreSQL / MySQL / MariaDB + 캐시 (Redis / Valkey / KeyDB)
+├── DB: PostgreSQL / MySQL + 캐시 (Redis / Valkey / KeyDB)
 ├── 외부 접근: cloudflare/cloudflared (Cloudflare Tunnel)
 ├── SSH: linuxserver/openssh-server
 ├── 메일: docker-mailserver
@@ -286,7 +285,7 @@ brewnet logs
 | 3022 | Gitea SSH | 필수 (Git Server) |
 | 8080 | Traefik Dashboard | 선택 |
 | 5432 | PostgreSQL | DB 선택 시 |
-| 3306 | MySQL/MariaDB | DB 선택 시 |
+| 3306 | MySQL | DB 선택 시 |
 | 6379 | Redis/Valkey/KeyDB | 캐시 선택 시 |
 | 8096 | Jellyfin | 미디어 선택 시 |
 | 9000/9001 | MinIO (API/Console) | MinIO 선택 시 |
@@ -411,7 +410,6 @@ brewnet/
 | `minio` | `minio/minio:latest` | 9000, 9001 | File Server |
 | `postgresql` | `postgres:17-alpine` | 5432 | Database |
 | `mysql` | `mysql:8.4` | 3306 | Database |
-| `mariadb` | `mariadb:11` | 3306 | Database |
 | `redis` | `redis:7-alpine` | 6379 | Cache |
 | `valkey` | `valkey/valkey:7-alpine` | 6379 | Cache |
 | `keydb` | `eqalpha/keydb:latest` | 6379 | Cache |
@@ -431,7 +429,7 @@ brewnet/
 
 ```typescript
 interface WizardState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   projectName: string;
   projectPath: string;
   setupType: 'full' | 'partial';
@@ -449,7 +447,7 @@ interface WizardState {
     appServer: { enabled: boolean };
     dbServer: {
       enabled: boolean;
-      primary: 'postgresql' | 'mysql' | 'mariadb' | 'sqlite' | '';
+      primary: 'postgresql' | 'mysql' | 'sqlite' | '';
       primaryVersion: string;
       dbName: string;       // 기본값: 'brewnet_db'
       dbUser: string;       // 기본값: 'brewnet'
@@ -468,9 +466,17 @@ interface WizardState {
       enabled: boolean;
       service: 'docker-mailserver';
     };
+    fileBrowser: {
+      enabled: boolean;
+      mode: 'directory' | 'standalone' | '';
+    };
   };
 
-  devStack: { language: string; framework: string };
+  devStack: {
+    languages: string[];          // e.g. ['nodejs', 'python'] — multi-select
+    frameworks: Record<string, string>;  // e.g. { nodejs: 'nextjs' } — one per language
+    frontend: string[];           // e.g. ['reactjs', 'typescript'] — multi-select
+  };
   boilerplate: { generate: boolean; sampleData: boolean; devMode: 'hot-reload' | 'production' };
 
   domain: {

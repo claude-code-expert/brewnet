@@ -613,6 +613,11 @@
         }
       }
 
+      // FileBrowser (v2.2)
+      if (s.fileBrowser && s.fileBrowser.enabled && s.fileBrowser.mode === 'standalone') {
+        lines.push('<span class="url">' + protocol + '://files.' + escapeHtml(domain) + '</span> — FileBrowser');
+      }
+
       // SSH
       if (s.sshServer && s.sshServer.enabled) {
         var sshPort = s.sshServer.port || 2222;

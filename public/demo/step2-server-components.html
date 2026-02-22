@@ -300,9 +300,8 @@
       document.getElementById('admin-username').value = admin.username;
       document.getElementById('admin-password').value = admin.password;
 
-      // Full install: pre-enable App + DB
+      // Full install: pre-enable DB
       if (state.setupType === 'full') {
-        if (!servers.appServer.enabled) servers.appServer.enabled = true;
         if (!servers.dbServer.enabled) {
           servers.dbServer.enabled = true;
           servers.dbServer.primary = servers.dbServer.primary || 'postgresql';
@@ -339,13 +338,11 @@
       container.innerHTML += buildWebServerCard();
       // 2. File Server
       container.innerHTML += buildFileServerCard();
-      // 3. App Server
-      container.innerHTML += buildAppServerCard();
-      // 4. DB Server
+      // 3. DB Server
       container.innerHTML += buildDbServerCard();
-      // 5. Media (Optional)
+      // 4. Media (Optional)
       container.innerHTML += buildMediaCard();
-      // 6. SSH Server (Optional)
+      // 5. SSH Server (Optional)
       container.innerHTML += buildSshServerCard();
 
       bindEvents();
@@ -405,20 +402,6 @@
           '<div class="card-desc">Cloud storage, file sharing, and sync for your home network.</div>' +
           '<div class="config-section">' + options + '</div>' +
           storagePathConfig +
-        '</div>' +
-      '</div>';
-    }
-
-    function buildAppServerCard() {
-      var en = servers.appServer.enabled;
-      return '<div class="component-card' + (en ? ' enabled' : '') + '" id="card-app">' +
-        '<div class="card-header" onclick="toggleComponent(\'appServer\')">' +
-          '<span class="card-toggle' + (en ? ' checked' : '') + '" id="toggle-app">&#10003;</span>' +
-          '<span class="card-name">Application Server</span>' +
-          '<span class="card-tag tag-optional">Optional</span>' +
-        '</div>' +
-        '<div class="card-body">' +
-          '<div class="card-desc">Deploy your custom application. Language &amp; framework configured in the next step.</div>' +
         '</div>' +
       '</div>';
     }
@@ -652,8 +635,6 @@
         if (servers.fileServer.enabled && !servers.fileServer.service) {
           servers.fileServer.service = 'nextcloud';
         }
-      } else if (key === 'appServer') {
-        servers.appServer.enabled = !servers.appServer.enabled;
       } else if (key === 'dbServer') {
         servers.dbServer.enabled = !servers.dbServer.enabled;
         if (servers.dbServer.enabled && !servers.dbServer.primary) {

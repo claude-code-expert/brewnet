@@ -1,6 +1,6 @@
 # Brewnet PRD (Product Requirements Document)
 
-> **Version**: 2.1
+> **Version**: 2.2
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -125,8 +125,8 @@ npm install -g brewnet
 brewnet init
 #   Step 0: 시스템 체크 (OS, Docker, Node.js, Git, 포트, 디스크)
 #   Step 1: 프로젝트 설정 (이름, 경로, Full Install / Partial Install)
-#   Step 2: 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/App/DB/Media/SSH)
-#   Step 3: 런타임 & 보일러플레이트 (App Server 활성화 시만)
+#   Step 2: 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media/SSH)
+#   Step 3: Dev Stack & 런타임 (다중 선택, Frontend, FileBrowser) — 항상 표시
 #   Step 4: 도메인 & 네트워크 (Local/FreeDomain/Custom, Cloudflare Tunnel, Mail Server)
 #   Step 5: 리뷰 & 확인 (자격증명 전파 대상, 리소스 추정, 설정 내보내기)
 #   Step 6: 생성 & 시작 (docker-compose.yml, 이미지 풀, 컨테이너 시작, 헬스체크)
@@ -205,7 +205,7 @@ brewnet domain ssl app.example.com
 | 6 | **ACL Manager** | 접근 제어, 사용자 권한, 방화벽 규칙 | 3 |
 | 7 | **Git Server** | Gitea 통합 (필수), 저장소 관리, 자동 배포 | 1 |
 | 8 | **File Manager** | Nextcloud, MinIO (S3), SFTP, Jellyfin 스트리밍 | 3 |
-| 9 | **Database Manager** | PostgreSQL, MySQL/MariaDB, SQLite, Redis, Valkey, KeyDB 관리 | 3 |
+| 9 | **Database Manager** | PostgreSQL, MySQL, SQLite, Redis, Valkey, KeyDB 관리 | 3 |
 | 10 | **SSH Manager** | OpenSSH 설정, 키 인증, 사용자 관리 | 3 |
 | 11 | **SSO Auth** | 통합 인증 (세션, JWT, OAuth2, 2FA) | 3 |
 | 12 | **Admin Account** | 마스터 관리자 계정 (위저드 Step 2, 자동 생성 20자 비밀번호, .env 저장 chmod 600) | 1 |
@@ -222,7 +222,7 @@ brewnet domain ssl app.example.com
 | Git 서버 | Gitea (필수, 버전 관리, 자동 배포 파이프라인) |
 | 파일 관리 | FileBrowser (`filebrowser/filebrowser:latest`) — 파일 관리 웹 UI (App Server 시 기본 포함) |
 | 미디어 | Jellyfin |
-| 데이터베이스 | PostgreSQL, MySQL, MariaDB, SQLite, Redis, Valkey, KeyDB |
+| 데이터베이스 | PostgreSQL, MySQL, SQLite, Redis, Valkey, KeyDB |
 | SSH 서버 | OpenSSH Server (`linuxserver/openssh-server:latest`) — 포트 2222, 키 기반 인증, SFTP 서브시스템, 관리자 크리덴셜 사용 |
 | 메일 서버 | docker-mailserver (`ghcr.io/docker-mailserver/docker-mailserver:latest`) — SMTP 587, IMAP 993, 도메인 필수, 관리자 계정을 postmaster로 사용 |
 | 터널/프록시 | Cloudflare Tunnel (`cloudflare/cloudflared:latest`) — 기본 활성화 |
@@ -338,7 +338,7 @@ Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare 
 | **파일 관리** | FileBrowser 웹 파일 관리 UI | O | O | O |
 | | 웹 파일 브라우저 + SFTP | O | O | O |
 | | 공유 링크 / WebDAV | X | O | O |
-| **DB 관리** | PostgreSQL/MySQL 설치/관리 | O | O | O |
+| **DB 관리** | PostgreSQL/MySQL/SQLite 설치/관리 | O | O | O |
 | | 웹 쿼리 에디터 / 자동 백업 | X | O | O |
 | **인증** | 로컬 로그인 + 서비스별 권한 | O | O | O |
 | | 2FA / API Key / OAuth2 | X | O | O |

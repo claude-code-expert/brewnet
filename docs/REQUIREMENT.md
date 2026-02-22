@@ -1,6 +1,6 @@
 # Brewnet REQUIREMENT.md (Functional Requirements)
 
-> **Version**: 2.1
+> **Version**: 2.2
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 
@@ -36,8 +36,8 @@
 | REQ-1.3.1 | Step 0: 시스템 체크 자동 실행 | Must | 1 |
 | REQ-1.3.2 | Step 1: 프로젝트 설정 — 설치 유형 선택 (Full Install / Partial Install) | Must | 1 |
 | REQ-1.3.3 | Step 2: 관리자 계정 설정 — username 입력 + 20자 비밀번호 자동 생성, .env 파일 저장 (chmod 600) | Must | 1 |
-| REQ-1.3.4 | Step 3: 서버 컴포넌트 선택 (8개 컴포넌트 (Web Server + Git Server 필수, 6개 선택): File/Web/App/Git/DB/Media/SSH/Mail) | Must | 1 |
-| REQ-1.3.5 | Step 4: 런타임 & 보일러플레이트 선택 | Must | 1 |
+| REQ-1.3.4 | Step 3: 서버 컴포넌트 선택 (7개 컴포넌트 (Web Server + Git Server 필수, 5개 선택): File/Web/Git/DB/Media/SSH — App Server는 Step 4에서 자동 설정) | Must | 1 |
+| REQ-1.3.5 | Step 4: Dev Stack & 런타임 선택 (다중 언어/프레임워크, Frontend 기술 스택, FileBrowser) — 항상 표시 | Must | 1 |
 | REQ-1.3.6 | Step 5: 도메인 & Cloudflare 설정 (DigitalPlat 무료 도메인 또는 커스텀 도메인) | Must | 1 |
 | REQ-1.3.7 | Step 6: 설정 확인 및 최종 승인 | Must | 1 |
 | REQ-1.3.8 | Step 7: docker-compose.yml 자동 생성 (cloudflared 터널 컨테이너 포함) | Must | 1 |
@@ -57,7 +57,7 @@
 |----|---------|:--------:|:-----:|
 | REQ-1.5.1 | File Server 컴포넌트 — Nextcloud, MinIO 중 선택 | Must | 1 |
 | REQ-1.5.2 | Web Server 컴포넌트 — Traefik, Nginx, Caddy 중 선택 | Must | 1 |
-| REQ-1.5.3 | App Server 컴포넌트 — 런타임 & 보일러플레이트 (Step 3과 연계) | Must | 1 |
+| REQ-1.5.3 | App Server 컴포넌트 — Dev Stack 선택 시 자동 활성화 (Step 3에서 설정) | Must | 1 |
 | REQ-1.5.4 | Database 컴포넌트 — Primary DB + Cache Layer 선택 | Must | 1 |
 | REQ-1.5.5 | Media 컴포넌트 — Jellyfin 미디어 서버 | Should | 1 |
 | REQ-1.5.6 | SSH Server 컴포넌트 — Step 2에서 카드 표시, 포트 설정 및 인증 방식 선택 | Must | 1 | → REQ-1.11 참조 |
@@ -68,7 +68,7 @@
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
-| REQ-1.6.1 | Primary DB 선택 — PostgreSQL, MySQL, MariaDB, SQLite | Must | 1 |
+| REQ-1.6.1 | Primary DB 선택 — PostgreSQL, MySQL, SQLite | Must | 1 |
 | REQ-1.6.2 | Cache Layer 선택 — Redis, Valkey, KeyDB (선택사항) | Should | 1 |
 
 ### REQ-1.7 도메인 & Cloudflare 설정
@@ -456,7 +456,7 @@
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
-| REQ-10.1.1 | MySQL/MariaDB Docker 설치 (`brewnet db install mysql`) | Should | 3 |
+| REQ-10.1.1 | MySQL Docker 설치 (`brewnet db install mysql`) | Should | 3 |
 | REQ-10.1.2 | PostgreSQL Docker 설치 | Should | 3 |
 | REQ-10.1.3 | SQLite 로컬 DB 지원 | Should | 3 |
 | REQ-10.1.4 | Redis / Valkey / KeyDB 캐시 레이어 설치 | Could | 3 |

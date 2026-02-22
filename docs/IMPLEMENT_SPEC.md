@@ -1,7 +1,7 @@
 # Brewnet IMPLEMENT_SPEC (Software Design Document)
 
-> **Version**: 2.1
-> **Schema Version**: 4 (bumped from 3)
+> **Version**: 2.2
+> **Schema Version**: 5 (bumped from 4)
 > **Last Updated**: 2026-02-22
 > **Status**: Draft
 > **Constitution**: [constitution.md](../.specify/memory/constitution.md) v1.0.0
@@ -151,7 +151,7 @@ interface GitServerSelection {
 }
 
 interface DbServerSelection {
-  primary: 'postgresql' | 'mysql' | 'mariadb' | 'sqlite' | null;
+  primary: 'postgresql' | 'mysql' | 'sqlite' | null;
   cache: 'redis' | 'valkey' | 'keydb' | null;
   primaryVersion?: string;
   dbName?: string;
@@ -232,9 +232,20 @@ const DEFAULT_STATE = {
     },
   },
   // Schema version
-  _schemaVersion: 4,
+  _schemaVersion: 5,
 };
 ```
+
+**Schema v4 → v5 Migration Notes (v2.2)**:
+- MariaDB removed from DATABASE_REGISTRY (primary DB options)
+- `devStack` changed from `{ language: string, framework: string }` to `{ languages: string[], frameworks: Record<string, string>, frontend: string[] }` (multi-select)
+- `servers.fileBrowser` changed from `{ enabled: boolean, service: string }` to `{ enabled: boolean, mode: 'directory' | 'standalone' | '' }` (mode selection)
+- FRONTEND_REGISTRY added: `vuejs`, `reactjs`, `typescript`, `javascript`
+- FRAMEWORK_REGISTRY updated: Java (java-pure, spring, springboot), Node.js (+nextjs-api), PHP (new), .NET (new)
+- LANGUAGE_LABELS expanded: `php: 'PHP 8.3'`, `dotnet: '.NET 8'`
+- Step 3 is no longer conditional (always shown, skip button available)
+- App Server auto-enabled from devStack selections (removed from Step 2 toggle cards)
+- `_schemaVersion` bumped from 4 to 5
 
 **Schema v4.2 → v2.1 Migration Notes**:
 - `gitServer.enabled` changed to always `true` (required component — like webServer)
@@ -539,7 +550,7 @@ Nextcloud, pgAdmin 등 설치되는 서비스들의 기본 관리자 비밀번�
 |---|-----------|:--------:|---------|---------|
 | 1 | **Web Server** | Yes | Traefik, Nginx, Caddy | Traefik |
 | 2 | **File Server** | No | Nextcloud, MinIO | — |
-| 3 | **App Server** | No | (user app deployment) | — |
+| 3 | **App Server** | No | Auto-enabled from Step 3 (devStack) | — |
 | 4 | **DB Server** | No | Primary DB + Cache (see below) | — |
 | 5 | **Media** | No | Jellyfin | — |
 | 6 | **SSH Server** | No | Port, Password Auth, SFTP | Port 2222, key-only |
@@ -553,7 +564,7 @@ DB Server 토글을 활성화하면 인라인으로 추가 설정을 입력받�
 ```
 [DB Server] ON
   ├── Primary DB: (select one)
-  │     PostgreSQL / MySQL / MariaDB / SQLite
+  │     PostgreSQL / MySQL / SQLite
   ├── Cache: (select one, optional)
   │     Redis / Valkey / KeyDB / None
   ├── DB Name:     mydb          (auto-generated default)
@@ -604,9 +615,6 @@ Admin Account 섹션이 최상단에 표시되고, 그 아래에 각 컴포넌�
   ├──────────────────────────────────────────────────────┤
   │ ○ File Server                          [Nextcloud ▾] │
   │   Cloud storage and file sync                        │
-  ├──────────────────────────────────────────────────────┤
-  │ ○ App Server                           [ON/OFF]      │
-  │   Deploy your own applications                       │
   ├──────────────────────────────────────────────────────┤
   │ ○ DB Server                            [ON/OFF]      │
   │   Database and cache services                        │
