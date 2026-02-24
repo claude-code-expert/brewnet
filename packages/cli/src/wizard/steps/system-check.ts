@@ -300,7 +300,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     console.log();
 
     // -----------------------------------------------------------------------
-    // 5. Critical failures → remediation 힌트 + 재검사/종료 메뉴
+    // 5. Critical failures → remediation 힌트 + 컨텍스트별 해결 메뉴
     // -----------------------------------------------------------------------
     if (hasCriticalFailure) {
       const criticalFailures = results.filter((r) => r.status === 'fail' && r.critical);
@@ -315,6 +315,55 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       }
       console.log();
 
+      // Docker 데몬 미실행(BN001) 여부 — 전용 재시도 메뉴 제공
+      const isDockerDaemonFailure = criticalFailures.some(
+        (f) => f.name === 'Docker' && f.message.includes('BN001'),
+      );
+
+      if (isDockerDaemonFailure) {
+        const plat = process.platform;
+        const choices: Array<{ value: string; name: string }> = [
+          { value: 'wait', name: '⏱  Docker 기동 대기 (60초)' },
+        ];
+        if (plat === 'darwin') {
+          choices.push({ value: 'open', name: '🐳  Docker Desktop 직접 열기 후 대기' });
+        }
+        choices.push(
+          { value: 'manual', name: '📋  수동 실행 방법 보기' },
+          { value: 'recheck', name: '🔄  다시 검사 (Docker 이미 실행 중인 경우)' },
+          { value: 'quit',   name: '✗   종료' },
+        );
+
+        while (true) {
+          const action = await select({ message: '어떻게 하시겠습니까?', choices });
+          console.log();
+
+          if (action === 'wait') {
+            const ready = await waitForDaemonWithRetry(plat);
+            if (ready) return runSystemCheckStep();
+            // 루프 반복
+
+          } else if (action === 'open') {
+            console.log(chalk.dim('  Docker Desktop을 실행합니다...'));
+            await execa('open', ['-a', 'Docker'], { reject: false });
+            const ready = await waitForDaemonWithRetry(plat);
+            if (ready) return runSystemCheckStep();
+            // 루프 반복
+
+          } else if (action === 'manual') {
+            showDockerStartGuide(plat);
+            // 루프 반복
+
+          } else if (action === 'recheck') {
+            return runSystemCheckStep();
+
+          } else {
+            return { passed: false, results };
+          }
+        }
+      }
+
+      // Docker 외 일반 critical failure → 직접 해결 후 재검사
       const action = await select({
         message: '어떻게 하시겠습니까?',
         choices: [
@@ -326,7 +375,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       console.log();
 
       if (action === 'retry') {
-        return runSystemCheckStep();  // 재귀 재실행
+        return runSystemCheckStep();
       }
 
       return { passed: false, results };
