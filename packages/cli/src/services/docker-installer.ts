@@ -85,6 +85,19 @@ async function installHomebrew(): Promise<void> {
 }
 
 /**
+ * Check if the Docker daemon is currently running (single instant check).
+ * Returns true only if `docker info` exits with 0 right now.
+ */
+export async function isDaemonRunning(): Promise<boolean> {
+  try {
+    const result = await execa('docker', ['info'], { reject: false });
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Poll the Docker daemon until it is ready or the timeout expires.
  *
  * @param timeoutMs  Maximum wait time in milliseconds

@@ -26,6 +26,7 @@ import { runAllChecks } from '../../services/system-checker.js';
 import type { CheckResult } from '../../services/system-checker.js';
 import {
   isDockerInstalled,
+  isDaemonRunning,
   installDocker,
   waitForDockerDaemon,
 } from '../../services/docker-installer.js';
@@ -207,6 +208,36 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     // 2. Docker 사전 설치 (없는 경우 자동 설치 — 재시도 루프 포함)
     // -----------------------------------------------------------------------
     const dockerInstalled = await isDockerInstalled();
+
+    if (dockerInstalled) {
+      // Docker CLI는 있지만 데몬이 꺼진 경우 — 프로액티브 기동 시도
+      const daemonRunning = await isDaemonRunning();
+      if (!daemonRunning) {
+        const plat = process.platform;
+        console.log(chalk.yellow('  ⚠  Docker가 설치되어 있지만 실행되지 않았습니다.'));
+        console.log(chalk.dim(
+          plat === 'darwin'
+            ? '  Docker Desktop을 자동으로 실행합니다...'
+            : '  Docker 데몬을 시작합니다. (sudo 권한이 필요할 수 있습니다)',
+        ));
+        console.log();
+
+        if (plat === 'darwin') {
+          await execa('open', ['-a', 'Docker'], { reject: false });
+        } else {
+          await execa('sudo', ['systemctl', 'start', 'docker'], {
+            stdio: 'inherit',
+            reject: false,
+          });
+        }
+
+        const daemonReady = await waitForDaemonWithRetry(plat);
+        if (!daemonReady) {
+          return { passed: false, results: [] };
+        }
+        console.log();
+      }
+    }
 
     if (!dockerInstalled) {
       const plat = process.platform;
