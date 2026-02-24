@@ -34,6 +34,8 @@ export interface CheckResult {
   message: string;
   details?: string;
   critical: boolean;
+  /** One-line actionable fix hint shown on failure */
+  remediation?: string;
 }
 
 export interface RunAllChecksResult {
@@ -68,6 +70,7 @@ export async function checkOS(): Promise<CheckResult> {
       message: `Unsupported platform: ${plat}. Brewnet requires macOS or Linux.`,
       details: `${plat} ${rel}`,
       critical: true,
+      remediation: 'macOS 12+ 또는 Ubuntu 20.04+에서 실행하세요.',
     };
   } catch (err) {
     return {
@@ -76,6 +79,7 @@ export async function checkOS(): Promise<CheckResult> {
       message: 'Unable to determine operating system',
       details: String(err),
       critical: true,
+      remediation: 'macOS 12+ 또는 Ubuntu 20.04+에서 실행하세요.',
     };
   }
 }
@@ -113,6 +117,7 @@ export async function checkDocker(): Promise<CheckResult> {
         message: 'Docker daemon is not running or Docker Compose is not available (BN001)',
         details: versionString,
         critical: true,
+        remediation: 'macOS: Docker Desktop 앱 실행 | Linux: sudo systemctl start docker',
       };
     }
 
@@ -124,6 +129,7 @@ export async function checkDocker(): Promise<CheckResult> {
         message: `Docker version ${major}.x is too old. Brewnet requires Docker 24.0+.`,
         details: versionString,
         critical: true,
+        remediation: 'https://docs.docker.com/engine/install/ 에서 최신 Docker 설치 후 재시도하세요.',
       };
     }
 
@@ -141,6 +147,7 @@ export async function checkDocker(): Promise<CheckResult> {
       message: 'Docker not found or not installed. Please install Docker and try again.',
       details: 'Install Docker: https://docs.docker.com/get-docker/',
       critical: true,
+      remediation: 'macOS: Docker Desktop 앱 실행 | Linux: sudo systemctl start docker',
     };
   }
 }
@@ -182,6 +189,7 @@ export async function checkNodeVersion(): Promise<CheckResult> {
       message: `Node.js ${version} is too old. Please install or upgrade to Node.js >= 20.`,
       details: `Found ${version}, minimum required is v20.0.0`,
       critical: true,
+      remediation: 'https://nodejs.org/en/download/ 에서 v20+ 설치 후 재시도하세요.',
     };
   } catch (err) {
     return {
@@ -276,6 +284,7 @@ export async function checkDiskSpace(minGB: number = 20): Promise<CheckResult> {
       message: `Low disk space: ${roundedGB}GB available (recommended: ${minGB}GB)`,
       details: `${roundedGB}GB available, ${minGB}GB recommended`,
       critical: false,
+      remediation: '불필요한 파일을 삭제해 공간을 확보하세요. (df -h 로 확인)',
     };
   } catch {
     return {
@@ -313,6 +322,7 @@ export async function checkMemory(minGB: number = 2): Promise<CheckResult> {
       message: `Low memory: ${roundedGB}GB RAM (recommended: ${minGB}GB)`,
       details: `${roundedGB}GB total, ${minGB}GB recommended`,
       critical: false,
+      remediation: '실행 중인 앱을 종료해 메모리를 확보하세요.',
     };
   } catch (err) {
     return {
@@ -346,6 +356,7 @@ export async function checkPort(port: number): Promise<CheckResult> {
             message: `Port ${port} is already in use`,
             details: `Port ${port} is in use (EADDRINUSE). Another process is bound to this port.`,
             critical: false,
+            remediation: `lsof -i :${port} 으로 프로세스 확인 후 종료하세요.`,
           });
         } else if (err.code === 'EACCES') {
           resolve({
@@ -354,6 +365,7 @@ export async function checkPort(port: number): Promise<CheckResult> {
             message: `Port ${port} requires elevated permissions`,
             details: `Port ${port} permission denied (EACCES). Try running with sudo or use a port >= 1024.`,
             critical: false,
+            remediation: `sudo brewnet init 으로 재시도하거나 포트를 변경하세요.`,
           });
         } else {
           resolve({
@@ -416,6 +428,7 @@ export async function checkGit(): Promise<CheckResult> {
       message: 'Git not found. Install Git for deployment features.',
       details: 'Git is not installed or not in PATH',
       critical: false,
+      remediation: 'macOS: xcode-select --install | Linux: sudo apt-get install -y git',
     };
   }
 }

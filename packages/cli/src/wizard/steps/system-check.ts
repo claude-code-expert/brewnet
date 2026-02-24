@@ -7,18 +7,20 @@
  *
  * Flow:
  *   1. Show header "Step 0/7 — System Check"
- *   2. Run all checks with a spinner
- *   3. Display results in a formatted table
- *   4. Critical failures → abort
- *   5. Warnings only → prompt user to continue
- *   6. All pass → proceed
+ *   2. If Docker not installed → auto-install with retry loop
+ *   3. Run all checks with a spinner
+ *   4. Display results in a formatted table
+ *   5. Critical failures → show remediation hints + retry/quit prompt
+ *   6. Warnings only → show remediation hints + confirm prompt
+ *   7. All pass → proceed
  *
  * @module wizard/steps/system-check
  */
 
 import chalk from 'chalk';
 import ora from 'ora';
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
+import { execa } from 'execa';
 import Table from 'cli-table3';
 import { runAllChecks } from '../../services/system-checker.js';
 import type { CheckResult } from '../../services/system-checker.js';
@@ -43,45 +45,143 @@ export interface SystemCheckStepResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Return a colored status icon for the given check status.
- */
 function statusIcon(status: CheckResult['status']): string {
   switch (status) {
-    case 'pass':
-      return chalk.green('✓');
-    case 'fail':
-      return chalk.red('✗');
-    case 'warn':
-      return chalk.yellow('⚠');
+    case 'pass': return chalk.green('✓');
+    case 'fail': return chalk.red('✗');
+    case 'warn': return chalk.yellow('⚠');
   }
 }
 
-/**
- * Color-format the check name based on its status.
- */
 function formatName(name: string, status: CheckResult['status']): string {
   switch (status) {
-    case 'pass':
-      return name;
-    case 'fail':
-      return chalk.red(name);
-    case 'warn':
-      return chalk.yellow(name);
+    case 'pass': return name;
+    case 'fail': return chalk.red(name);
+    case 'warn': return chalk.yellow(name);
   }
 }
 
-/**
- * Color-format the result message based on its status.
- */
 function formatMessage(message: string, status: CheckResult['status']): string {
   switch (status) {
-    case 'pass':
-      return chalk.green(message);
-    case 'fail':
-      return chalk.red(message);
-    case 'warn':
-      return chalk.yellow(message);
+    case 'pass': return chalk.green(message);
+    case 'fail': return chalk.red(message);
+    case 'warn': return chalk.yellow(message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Docker 수동 실행 안내
+// ---------------------------------------------------------------------------
+
+function showDockerStartGuide(plat: string): void {
+  console.log();
+  console.log(chalk.bold('  Docker 수동 실행 방법:'));
+  if (plat === 'darwin') {
+    console.log(chalk.dim('    1. Dock 또는 Applications 폴더에서 "Docker" 앱 실행'));
+    console.log(chalk.dim('    2. 메뉴바 상단 고래(🐳) 아이콘이 나타날 때까지 대기 (~30초)'));
+    console.log(chalk.dim('    3. 위 메뉴에서 "60초 더 대기"를 선택하세요'));
+  } else {
+    console.log(chalk.dim('    sudo systemctl start docker   # systemd (Ubuntu/Debian/CentOS)'));
+    console.log(chalk.dim('    sudo service docker start     # SysV (구형 Ubuntu)'));
+    console.log(chalk.dim('    sudo dockerd &                # 수동 기동 (최후 수단)'));
+  }
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
+// Docker 수동 설치 안내
+// ---------------------------------------------------------------------------
+
+function showDockerInstallGuide(plat: string): void {
+  console.log();
+  console.log(chalk.bold('  Docker 수동 설치 방법:'));
+  if (plat === 'darwin') {
+    console.log(chalk.dim('    1. https://docs.docker.com/desktop/mac/ 에서 Docker Desktop 다운로드'));
+    console.log(chalk.dim('    2. Docker.dmg 열고 Applications 폴더에 드래그'));
+    console.log(chalk.dim('    3. Docker 앱 실행 → 메뉴바 고래 아이콘 확인'));
+    console.log(chalk.dim('    4. 완료 후: brewnet init'));
+  } else {
+    console.log(chalk.dim('    1. curl -fsSL https://get.docker.com | sudo sh'));
+    console.log(chalk.dim('    2. sudo systemctl start docker'));
+    console.log(chalk.dim('    3. sudo usermod -aG docker $USER && newgrp docker'));
+    console.log(chalk.dim('    4. docker info   (정상 응답 확인)'));
+    console.log(chalk.dim('    5. 완료 후: brewnet init'));
+  }
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
+// Docker 데몬 대기 — 타임아웃 시 재시도 메뉴
+// ---------------------------------------------------------------------------
+
+async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
+  const INITIAL_MS = plat === 'darwin' ? 90_000 : 30_000;
+  const RETRY_MS   = 60_000;
+
+  const daemonSpinner = ora({
+    text: `Docker 데몬 시작 대기 중... (최대 ${INITIAL_MS / 1000}초)`,
+    indent: 2,
+  }).start();
+
+  let ready = await waitForDockerDaemon(INITIAL_MS);
+  if (ready) {
+    daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
+    return true;
+  }
+
+  // 타임아웃 → 인터랙티브 루프
+  while (true) {
+    daemonSpinner.stop();
+    console.log();
+    console.log(chalk.red('  ✖ Docker 데몬이 응답하지 않습니다.'));
+    console.log(chalk.dim('    Docker는 설치됐지만 아직 실행되지 않았습니다.'));
+    console.log();
+
+    const choices: Array<{ value: string; name: string }> = [
+      { value: 'retry',  name: `⏱  60초 더 대기` },
+    ];
+    if (plat === 'darwin') {
+      choices.push({ value: 'open', name: '🔧  Docker Desktop 직접 열기' });
+    }
+    choices.push(
+      { value: 'manual', name: '📋  수동 실행 방법 보기' },
+      { value: 'quit',   name: '✗   종료' },
+    );
+
+    const action = await select({ message: '어떻게 하시겠습니까?', choices });
+
+    if (action === 'retry') {
+      daemonSpinner.start('Docker 데몬 대기 중...');
+      ready = await waitForDockerDaemon(RETRY_MS);
+      if (ready) {
+        daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
+        return true;
+      }
+      // 루프 계속
+
+    } else if (action === 'open') {
+      console.log();
+      console.log(chalk.dim('  Docker Desktop을 실행합니다...'));
+      await execa('open', ['-a', 'Docker'], { reject: false });
+      daemonSpinner.start('Docker Desktop 기동 대기 중...');
+      ready = await waitForDockerDaemon(RETRY_MS);
+      if (ready) {
+        daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
+        return true;
+      }
+      // 루프 계속
+
+    } else if (action === 'manual') {
+      showDockerStartGuide(plat);
+      // 루프 반복 → 다시 선택
+
+    } else {
+      // quit
+      console.log();
+      console.log(chalk.dim('  Docker 실행 후 brewnet init을 다시 시도하세요.'));
+      console.log();
+      return false;
+    }
   }
 }
 
@@ -91,9 +191,7 @@ function formatMessage(message: string, status: CheckResult['status']): string {
 
 /**
  * Run Step 0: System Check.
- *
- * This function never throws. If an unexpected error occurs, it returns
- * `{ passed: false, results: [] }`.
+ * This function never throws.
  */
 export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
   try {
@@ -101,111 +199,91 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     // 1. Display header
     // -----------------------------------------------------------------------
     console.log();
-    console.log(
-      chalk.bold.cyan('  Step 0/7') + chalk.bold(' — System Check'),
-    );
-    console.log(
-      chalk.dim(
-        '  Verifying that your system meets the requirements for Brewnet',
-      ),
-    );
+    console.log(chalk.bold.cyan('  Step 0/7') + chalk.bold(' — System Check'));
+    console.log(chalk.dim('  Verifying that your system meets the requirements for Brewnet'));
     console.log();
 
     // -----------------------------------------------------------------------
-    // 2. Docker 사전 설치 (없는 경우 자동 설치 후 진행)
+    // 2. Docker 사전 설치 (없는 경우 자동 설치 — 재시도 루프 포함)
     // -----------------------------------------------------------------------
     const dockerInstalled = await isDockerInstalled();
 
     if (!dockerInstalled) {
       const plat = process.platform;
-      const platformLabel = plat === 'darwin' ? 'macOS' : 'Linux';
 
       console.log(chalk.yellow('  ⚠  Docker가 설치되지 않았습니다. 자동으로 설치합니다.'));
-      console.log(
-        chalk.dim(
-          plat === 'darwin'
-            ? '  [macOS] Homebrew를 통해 Docker Desktop을 설치합니다.'
-            : '  [Linux] 공식 Docker 설치 스크립트를 실행합니다. (sudo 권한 필요)',
-        ),
-      );
+      console.log(chalk.dim(
+        plat === 'darwin'
+          ? '  [macOS] Homebrew를 통해 Docker Desktop을 설치합니다.'
+          : '  [Linux] 공식 Docker 설치 스크립트를 실행합니다. (sudo 권한 필요)',
+      ));
       console.log();
 
-      const installResult = await installDocker();
+      // 설치 시도 — 실패 시 재시도/수동안내/종료 메뉴
+      let requiresRelogin = false;
+      while (true) {
+        const installResult = await installDocker();
 
-      if (!installResult.success) {
-        console.log(chalk.red(`  ✗  Docker 자동 설치에 실패했습니다.`));
-        console.log(chalk.red(`     ${installResult.message}`));
+        if (installResult.success) {
+          console.log();
+          const platformLabel = plat === 'darwin' ? 'macOS' : 'Linux';
+          console.log(chalk.green(`  ✓  Docker 설치 완료 (${platformLabel})`));
+          requiresRelogin = installResult.requiresRelogin ?? false;
+          break;
+        }
+
+        // 설치 실패
+        console.log(chalk.red(`  ✗  Docker 자동 설치 실패: ${installResult.message}`));
         console.log();
-        console.log(chalk.dim('  수동으로 설치 후 brewnet init을 다시 실행하세요.'));
-        console.log(chalk.dim('     macOS: https://docs.docker.com/desktop/mac/'));
-        console.log(chalk.dim('     Linux: https://docs.docker.com/engine/install/'));
-        console.log();
+
+        const action = await select({
+          message: '어떻게 하시겠습니까?',
+          choices: [
+            { value: 'retry',  name: '🔄  설치 다시 시도' },
+            { value: 'manual', name: '📋  수동 설치 방법 보기' },
+            { value: 'quit',   name: '✗   종료' },
+          ],
+        });
+
+        if (action === 'retry') {
+          console.log();
+          continue;
+        }
+        if (action === 'manual') {
+          showDockerInstallGuide(plat);
+        }
         return { passed: false, results: [] };
       }
 
-      console.log();
-      console.log(chalk.green(`  ✓  Docker 설치 완료 (${platformLabel})`));
-
-      // 데몬 기동 대기
-      const daemonTimeoutMs = plat === 'darwin' ? 90_000 : 30_000;
-      const daemonSpinner = ora({
-        text: 'Docker 데몬 시작 대기 중...',
-        indent: 2,
-      }).start();
-
-      const daemonReady = await waitForDockerDaemon(daemonTimeoutMs);
-
+      // Docker 설치 완료 — 데몬 기동 대기 (재시도 루프 포함)
+      const daemonReady = await waitForDaemonWithRetry(process.platform);
       if (!daemonReady) {
-        daemonSpinner.fail('Docker 데몬이 시간 내에 시작되지 않았습니다.');
-        console.log();
-        console.log(chalk.dim('  Docker를 수동으로 실행한 후 brewnet init을 다시 시도하세요.'));
-        console.log(chalk.dim('     macOS: Docker Desktop 앱을 열어주세요.'));
-        console.log(chalk.dim('     Linux: sudo systemctl start docker'));
-        console.log();
         return { passed: false, results: [] };
       }
 
-      daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
-
-      if (installResult.requiresRelogin) {
+      if (requiresRelogin) {
         console.log();
-        console.log(
-          chalk.dim(
-            '  ℹ  docker 그룹이 추가됐습니다. sudo 없이 사용하려면 새 터미널 세션을 열어주세요.',
-          ),
-        );
+        console.log(chalk.dim(
+          '  ℹ  docker 그룹이 추가됐습니다. sudo 없이 사용하려면 새 터미널 세션을 열어주세요.',
+        ));
       }
-
       console.log();
     }
 
     // -----------------------------------------------------------------------
     // 3. Run all checks with spinner
     // -----------------------------------------------------------------------
-    const spinner = ora({
-      text: 'Running system checks...',
-      indent: 2,
-    }).start();
-
+    const spinner = ora({ text: 'Running system checks...', indent: 2 }).start();
     const { results, hasCriticalFailure, warnings } = await runAllChecks();
-
     spinner.stop();
 
     // -----------------------------------------------------------------------
-    // 4. Build and display results table
+    // 4. Display results table
     // -----------------------------------------------------------------------
     const table = new Table({
-      head: [
-        chalk.bold(''),
-        chalk.bold('Check'),
-        chalk.bold('Result'),
-        chalk.bold('Details'),
-      ],
+      head: [chalk.bold(''), chalk.bold('Check'), chalk.bold('Result'), chalk.bold('Details')],
       colWidths: [4, 14, 52, 30],
-      style: {
-        head: [],
-        border: ['dim'],
-      },
+      style: { head: [], border: ['dim'] },
       wordWrap: true,
     });
 
@@ -222,70 +300,78 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     console.log();
 
     // -----------------------------------------------------------------------
-    // 5. Critical failures → abort
+    // 5. Critical failures → remediation 힌트 + 재검사/종료 메뉴
     // -----------------------------------------------------------------------
     if (hasCriticalFailure) {
-      const criticalFailures = results.filter(
-        (r) => r.status === 'fail' && r.critical,
-      );
+      const criticalFailures = results.filter((r) => r.status === 'fail' && r.critical);
 
-      console.log(chalk.red.bold('  Critical system requirements not met:'));
+      console.log(chalk.red.bold('  필수 요구사항을 충족하지 못했습니다:'));
       console.log();
-      for (const failure of criticalFailures) {
-        console.log(chalk.red(`    ✗ ${failure.name}: ${failure.message}`));
+      for (const f of criticalFailures) {
+        console.log(chalk.red(`    ✗  ${f.name}: ${f.message}`));
+        if (f.remediation) {
+          console.log(chalk.dim(`       → ${f.remediation}`));
+        }
       }
       console.log();
-      console.log(
-        chalk.dim(
-          '  Please resolve the above issues and run `brewnet init` again.',
-        ),
-      );
+
+      const action = await select({
+        message: '어떻게 하시겠습니까?',
+        choices: [
+          { value: 'retry', name: '🔄  문제 해결 후 다시 검사' },
+          { value: 'quit',  name: '✗   종료' },
+        ],
+      });
+
       console.log();
+
+      if (action === 'retry') {
+        return runSystemCheckStep();  // 재귀 재실행
+      }
 
       return { passed: false, results };
     }
 
     // -----------------------------------------------------------------------
-    // 6. Warnings only → prompt user
+    // 6. Warnings → remediation 힌트 + 계속할지 확인
     // -----------------------------------------------------------------------
     if (warnings.length > 0) {
-      console.log(
-        chalk.yellow(
-          `  ${warnings.length} warning(s) found. These are not critical but may affect functionality.`,
-        ),
-      );
+      console.log(chalk.yellow(
+        `  ${warnings.length}개의 경고가 있습니다. 필수는 아니지만 일부 기능에 영향을 줄 수 있습니다.`,
+      ));
+      console.log();
+      for (const w of warnings) {
+        console.log(chalk.yellow(`    ⚠  ${w.name}: ${w.message}`));
+        if (w.remediation) {
+          console.log(chalk.dim(`       → ${w.remediation}`));
+        }
+      }
       console.log();
 
       const shouldContinue = await confirm({
-        message: 'Continue despite warnings?',
+        message: '경고를 무시하고 계속 진행하시겠습니까?',
         default: true,
       });
 
       console.log();
-
       return { passed: shouldContinue, results };
     }
 
     // -----------------------------------------------------------------------
-    // 7. All pass → proceed
+    // 7. All pass
     // -----------------------------------------------------------------------
-    console.log(chalk.green.bold('  All system checks passed!'));
+    console.log(chalk.green.bold('  모든 시스템 체크를 통과했습니다!'));
     console.log();
 
     return { passed: true, results };
+
   } catch (err) {
-    // Never throw — gracefully handle unexpected errors
     console.log();
-    console.log(
-      chalk.red(
-        '  An unexpected error occurred during system checks.',
-      ),
-    );
+    console.log(chalk.red('  시스템 체크 중 예상치 못한 오류가 발생했습니다.'));
     if (err instanceof Error) {
       console.log(chalk.dim(`  ${err.message}`));
     }
     console.log();
-
     return { passed: false, results: [] };
   }
 }
