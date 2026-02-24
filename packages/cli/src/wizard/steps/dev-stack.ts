@@ -156,31 +156,18 @@ export async function runDevStackStep(
   // -------------------------------------------------------------------------
   console.log();
   console.log(
-    chalk.bold.cyan('  Step 3/7') + chalk.bold(' — Dev Stack & Runtime'),
+    chalk.bold.cyan('  Step 3/7') + chalk.bold(' — Developer Configuration & Runtime Setup'),
   );
   console.log(
     chalk.dim(
-      '  Configure languages, frameworks, and frontend technologies',
+      '  Select backend languages, frameworks, and frontend technologies.',
     ),
   );
-  console.log();
-
-  // -------------------------------------------------------------------------
-  // 2. Skip prompt
-  // -------------------------------------------------------------------------
-  const skip = await confirm({
-    message: 'Skip Dev Stack configuration? (no app server will be deployed)',
-    default: false,
-  });
-
-  if (skip) {
-    const skipped = applySkipDevStack(next);
-    console.log();
-    console.log(chalk.yellow('  Dev Stack skipped. App Server and FileBrowser disabled.'));
-    console.log();
-    return skipped;
-  }
-
+  console.log(
+    chalk.dim(
+      '  Skip any section by pressing Enter without selecting, or choose Skip at the end.',
+    ),
+  );
   console.log();
 
   // -------------------------------------------------------------------------
@@ -386,7 +373,35 @@ export async function runDevStackStep(
     console.log(chalk.dim('    Boilerplate: no'));
   }
 
+  // -------------------------------------------------------------------------
+  // 10. Apply or Skip — final action prompt
+  // -------------------------------------------------------------------------
   console.log();
+
+  const action = await select<'apply' | 'skip'>({
+    message: 'Developer Configuration',
+    choices: [
+      {
+        name: 'Apply — save configuration and continue to next step',
+        value: 'apply',
+      },
+      {
+        name: 'Skip — continue without Dev Stack (no App Server will be deployed)',
+        value: 'skip',
+      },
+    ],
+    default: isDevStackEmpty(next) ? 'skip' : 'apply',
+  });
+
+  console.log();
+
+  if (action === 'skip') {
+    const skipped = applySkipDevStack(next);
+    console.log(chalk.yellow('  Dev Stack skipped. App Server and FileBrowser disabled.'));
+    console.log();
+    return skipped;
+  }
+
   console.log(chalk.green('  Dev Stack configured.'));
   console.log();
 
