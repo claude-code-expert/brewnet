@@ -160,14 +160,15 @@ function displayFreeDomainGuide(): void {
   console.log(chalk.bold('  FreeDomain Setup Guide (DigitalPlat)'));
   console.log(chalk.dim('  Follow these steps to register your free domain:'));
   console.log();
-  console.log(chalk.dim('    1. Visit https://digitalplat.org and create an account'));
-  console.log(chalk.dim('    2. Verify your email address'));
-  console.log(chalk.dim('    3. Navigate to the domain registration page'));
-  console.log(chalk.dim('    4. Search for your desired subdomain'));
-  console.log(chalk.dim('    5. Select your preferred TLD (.dpdns.org, .qzz.io, .us.kg)'));
-  console.log(chalk.dim('    6. Complete the registration'));
-  console.log(chalk.dim('    7. Configure DNS to point to your server IP'));
-  console.log(chalk.dim('    8. Set up Cloudflare Tunnel for secure access'));
+  console.log(chalk.dim('    1. Visit https://oss.fyi/free-domain (redirects to registration)'));
+  console.log(chalk.dim('       — Sign in with GitHub (no separate account needed)'));
+  console.log(chalk.dim('    2. Search for your desired subdomain name'));
+  console.log(chalk.dim('    3. Select your preferred TLD (.dpdns.org, .qzz.io, .us.kg)'));
+  console.log(chalk.dim('    4. Complete the registration'));
+  console.log(chalk.dim('    5. Set up Cloudflare Tunnel for secure external access'));
+  console.log();
+  console.log(chalk.dim('  Note: Enter only the subdomain part below (e.g., "myserver")'));
+  console.log(chalk.dim('        The TLD you selected will be appended automatically.'));
   console.log();
 }
 
@@ -269,20 +270,28 @@ export async function runDomainNetworkStep(
     displayFreeDomainGuide();
 
     // Domain name input (without TLD — appended automatically)
+    // If the user types the full domain (e.g., "myserver.qzz.io"), strip the TLD automatically.
+    const tldEscaped = tld.replace(/\./g, '\\.');
+    const stripTld = (v: string) =>
+      new RegExp(`${tldEscaped}$`, 'i').test(v) ? v.slice(0, -tld.length) : v;
+
+    const defaultSubdomain = next.domain.name
+      ? stripTld(next.domain.name)
+      : next.projectName;
+
     const subdomainName = await input({
-      message: `Domain name (without ${tld})`,
-      default: next.domain.name
-        ? next.domain.name.replace(new RegExp(`\\${tld.replace('.', '\\.')}$`), '')
-        : next.projectName,
+      message: `Subdomain name → result will be: <name>${tld}`,
+      default: defaultSubdomain,
       validate: (value: string) => {
         if (!value.trim()) return 'Domain name is required';
-        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(value.trim())) {
-          return 'Domain name must contain only letters, numbers, and hyphens';
+        const subdomain = stripTld(value.trim());
+        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(subdomain)) {
+          return `Enter only the subdomain part (e.g., "myserver" → myserver${tld})`;
         }
         return true;
       },
     });
-    next.domain.name = subdomainName.trim() + tld;
+    next.domain.name = stripTld(subdomainName.trim()) + tld;
     next.domain.provider = provider;
 
     console.log();
