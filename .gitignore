@@ -1,3 +1,23 @@
+# Brewnet runtime data (user-generated, not source)
+~/.brewnet/
+
+# pnpm lockfile is committed — ignore only local overrides
+# pnpm-lock.yaml  (intentionally tracked)
+
+# Per-package build outputs
+packages/*/dist/
+packages/*/tsconfig.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+
+# IDE
+.vscode/
+.idea/
+
 # Logs
 logs
 *.log

@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "isolatedModules": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "declaration": false,
+    "declarationMap": false,
+    "paths": {
+      "@brewnet/shared": ["./packages/shared/src/index.ts"],
+      "@brewnet/shared/*": ["./packages/shared/src/*"],
+      "@brewnet/cli": ["./packages/cli/src/index.ts"],
+      "@brewnet/cli/*": ["./packages/cli/src/*"]
+    }
+  },
+  "include": [
+    "tests/**/*.ts",
+    "packages/cli/src/**/*.ts",
+    "packages/shared/src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

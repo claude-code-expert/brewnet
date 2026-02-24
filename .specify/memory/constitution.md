@@ -118,7 +118,7 @@ decisions. Changes require a constitution amendment.
 
 **Data & Validation**:
 - Zod for all input/configuration schema validation
-- better-sqlite3 for local state management (Phase 2+)
+- better-sqlite3 for local state management
 - conf for user configuration persistence (~/.brewnet/)
 
 **Build & Quality**:
