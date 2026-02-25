@@ -20,6 +20,7 @@ import {
   generateEndpoints,
   sortByDependency,
 } from '../../services/health-checker.js';
+import { generateAndOpenStatusPage } from '../../services/status-page.js';
 
 // ---------------------------------------------------------------------------
 // runCompleteStep
@@ -34,7 +35,10 @@ import {
  *
  * @param state - Completed wizard state
  */
-export async function runCompleteStep(state: WizardState): Promise<void> {
+export async function runCompleteStep(
+  state: WizardState,
+  options?: { noOpen?: boolean },
+): Promise<void> {
   // -------------------------------------------------------------------------
   // 1. Display header
   // -------------------------------------------------------------------------
@@ -90,22 +94,27 @@ export async function runCompleteStep(state: WizardState): Promise<void> {
   // -------------------------------------------------------------------------
   // 4. External access verification (non-local domains)
   // -------------------------------------------------------------------------
-  if (state.domain.provider !== 'local') {
-    console.log(chalk.bold('  External Access Verification'));
-    console.log(
-      chalk.dim('    Run these commands to verify external access:'),
-    );
-    console.log();
-
-    const domain = state.domain.name;
-    console.log(`    ${chalk.cyan('dig')} ${domain}`);
-    console.log(`    ${chalk.cyan('curl -I')} https://${domain}`);
-
-    if (state.domain.cloudflare.enabled) {
-      console.log(`    ${chalk.cyan('cloudflared tunnel info')} ${state.domain.cloudflare.tunnelName}`);
+  if (state.domain.provider === 'tunnel') {
+    console.log(chalk.bold('  Cloudflare Tunnel'));
+    console.log(chalk.dim(`    Tunnel:  ${state.domain.cloudflare.tunnelName}`));
+    if (state.domain.cloudflare.tunnelId) {
+      console.log(chalk.dim(`    ID:      ${state.domain.cloudflare.tunnelId}`));
     }
-
+    if (state.domain.cloudflare.zoneName) {
+      console.log(chalk.dim(`    Domain:  ${state.domain.cloudflare.zoneName}`));
+    }
     console.log();
+    if (!state.domain.cloudflare.tunnelId) {
+      // Manual setup — hostnames not yet configured
+      console.log(chalk.dim('  Add public hostnames to expose services externally:'));
+      console.log(chalk.dim('    → one.dash.cloudflare.com → Networks → Connectors → Cloudflare Tunnels'));
+      console.log(chalk.dim('    → Select your tunnel → Published applications → Add'));
+      console.log();
+      console.log(chalk.dim('  Or use Brewnet commands:'));
+      console.log(`    ${chalk.cyan('brewnet domain tunnel status')}`);
+      console.log(`    ${chalk.cyan('brewnet domain tunnel expose')}`);
+      console.log();
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -133,4 +142,18 @@ export async function runCompleteStep(state: WizardState): Promise<void> {
 
   console.log(chalk.green.bold('  Happy brewing! 🍺'));
   console.log();
+
+  // -------------------------------------------------------------------------
+  // 7. Generate and open status page
+  // -------------------------------------------------------------------------
+  try {
+    const statusPath = await generateAndOpenStatusPage(state, { noOpen: options?.noOpen });
+    console.log(chalk.dim(`  Status page: file://${statusPath}`));
+    if (!options?.noOpen) {
+      console.log(chalk.dim('  Opening status page in browser...'));
+    }
+    console.log();
+  } catch {
+    // Non-fatal — status page is optional
+  }
 }

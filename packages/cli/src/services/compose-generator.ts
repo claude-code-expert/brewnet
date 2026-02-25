@@ -261,11 +261,19 @@ function getSshEnv(state: WizardState): Record<string, string> {
 }
 
 function getMailEnv(state: WizardState): Record<string, string> {
-  return {
+  const env: Record<string, string> = {
     OVERRIDE_HOSTNAME: `mail.${state.domain.name}`,
     ENABLE_CLAMAV: '0',
     ENABLE_FAIL2BAN: '1',
   };
+
+  if (state.servers.mailServer.relayProvider) {
+    env['DEFAULT_RELAY_HOST'] = `[${state.servers.mailServer.relayHost}]:${state.servers.mailServer.relayPort}`;
+    env['RELAY_USER'] = '${SMTP_RELAY_USER}';
+    env['RELAY_PASSWORD'] = '${SMTP_RELAY_PASSWORD}';
+  }
+
+  return env;
 }
 
 function getPgadminEnv(state: WizardState): Record<string, string> {

@@ -127,6 +127,12 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
     entries['MAIL_HOSTNAME'] = `mail.${domainName}`;
     entries['POSTMASTER_ADDRESS'] = `postmaster@${domainName}`;
     entries['SMTP_PORT'] = '25';
+
+    // SMTP relay credentials (when port 25 is blocked)
+    if (state.servers.mailServer.relayProvider && state.servers.mailServer.relayUser) {
+      entries['SMTP_RELAY_USER'] = state.servers.mailServer.relayUser;
+      entries['SMTP_RELAY_PASSWORD'] = state.servers.mailServer.relayPassword || generatePassword(16);
+    }
   }
 
   // ── 5. Domain ──────────────────────────────────────────────────────

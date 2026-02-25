@@ -53,6 +53,7 @@ import { generatePassword } from '../utils/password.js';
 export interface InitOptions {
   config?: string;
   nonInteractive?: boolean;
+  open?: boolean;
 }
 
 export function registerInitCommand(program: Command): void {
@@ -61,6 +62,7 @@ export function registerInitCommand(program: Command): void {
     .description('Interactive setup wizard')
     .option('-c, --config <path>', 'Path to a JSON config file for pre-populated values')
     .option('--non-interactive', 'Run in non-interactive mode (requires --config)')
+    .option('--no-open', 'Skip auto-opening the status page in browser after setup')
     .action(async (options: InitOptions) => {
       await runInitWizard(options);
     });
@@ -144,7 +146,7 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
     // Skip directly to generate step
     const success = await runGenerateStep(state);
     if (success) {
-      await runCompleteStep(state);
+      await runCompleteStep(state, { noOpen: options.open === false });
     }
     return;
   }
@@ -313,7 +315,7 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
         // Step 7: Complete (T072)
         // -----------------------------------------------------------------
         case WizardStep.Complete: {
-          await runCompleteStep(state);
+          await runCompleteStep(state, { noOpen: options.open === false });
 
           // Exit the loop — wizard is finished
           cleanupCancel();

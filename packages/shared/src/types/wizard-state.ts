@@ -15,7 +15,7 @@ export type DbPrimary = 'postgresql' | 'mysql' | 'sqlite' | '';
 
 export type CacheService = 'redis' | 'valkey' | 'keydb' | '';
 
-export type DomainProvider = 'local' | 'freedomain' | 'custom';
+export type DomainProvider = 'local' | 'tunnel';
 
 export type SslMode = 'self-signed' | 'letsencrypt' | 'cloudflare';
 
@@ -100,6 +100,18 @@ export interface MailServerConfig {
   enabled: boolean;
   /** Mail server implementation */
   service: 'docker-mailserver';
+  /** Whether port 25 is blocked by the ISP */
+  port25Blocked: boolean;
+  /** SMTP relay provider when port 25 is blocked */
+  relayProvider: '' | 'gmail' | 'sendgrid' | 'custom';
+  /** SMTP relay host (e.g. "smtp.gmail.com") */
+  relayHost: string;
+  /** SMTP relay port (typically 587) */
+  relayPort: number;
+  /** SMTP relay username */
+  relayUser: string;
+  /** SMTP relay password */
+  relayPassword: string;
 }
 
 export interface AppServerConfig {
@@ -146,10 +158,20 @@ export interface BoilerplateConfig {
 export interface CloudflareConfig {
   /** Whether Cloudflare Tunnel is enabled */
   enabled: boolean;
-  /** Cloudflare Tunnel token */
+  /** Cloudflare Account ID (used for API tunnel creation) */
+  accountId: string;
+  /** Cloudflare API Token — used only during setup, not persisted after tunnel is created */
+  apiToken: string;
+  /** Cloudflare Tunnel ID (returned from API or entered manually) */
+  tunnelId: string;
+  /** Cloudflare Tunnel connector token */
   tunnelToken: string;
   /** Cloudflare Tunnel name */
   tunnelName: string;
+  /** Cloudflare Zone ID (used for DNS record creation) */
+  zoneId: string;
+  /** Cloudflare Zone name — the actual domain (e.g. "myserver.com") */
+  zoneName: string;
 }
 
 export interface DomainConfig {

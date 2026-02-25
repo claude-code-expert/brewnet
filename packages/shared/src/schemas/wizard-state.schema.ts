@@ -22,7 +22,7 @@ export const dbPrimarySchema = z.enum(['postgresql', 'mysql', 'sqlite', '']);
 
 export const cacheServiceSchema = z.enum(['redis', 'valkey', 'keydb', '']);
 
-export const domainProviderSchema = z.enum(['local', 'freedomain', 'custom']);
+export const domainProviderSchema = z.enum(['local', 'tunnel']);
 
 export const sslModeSchema = z.enum(['self-signed', 'letsencrypt', 'cloudflare']);
 
@@ -82,9 +82,17 @@ export const sshServerConfigSchema = z.object({
   sftp: z.boolean(),
 });
 
+export const mailRelayProviderSchema = z.enum(['', 'gmail', 'sendgrid', 'custom']);
+
 export const mailServerConfigSchema = z.object({
   enabled: z.boolean(),
   service: z.literal('docker-mailserver'),
+  port25Blocked: z.boolean(),
+  relayProvider: mailRelayProviderSchema,
+  relayHost: z.string(),
+  relayPort: z.number().int().min(1).max(65535),
+  relayUser: z.string(),
+  relayPassword: z.string(),
 });
 
 export const appServerConfigSchema = z.object({
@@ -122,8 +130,13 @@ export const boilerplateConfigSchema = z.object({
 
 export const cloudflareConfigSchema = z.object({
   enabled: z.boolean(),
+  accountId: z.string(),
+  apiToken: z.string(),
+  tunnelId: z.string(),
   tunnelToken: z.string(),
   tunnelName: z.string(),
+  zoneId: z.string(),
+  zoneName: z.string(),
 });
 
 export const domainConfigSchema = z.object({

@@ -390,7 +390,7 @@ export async function runDevStackStep(
         value: 'skip',
       },
     ],
-    default: isDevStackEmpty(next) ? 'skip' : 'apply',
+    default: 'apply',
   });
 
   console.log();

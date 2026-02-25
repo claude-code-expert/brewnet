@@ -1,12 +1,24 @@
 /**
- * T085-T089 — Step 4: Domain & Network
+ * T085-T089 — Step 4: Network Access
  *
- * Pure functions and interactive wizard step for configuring domain provider,
- * SSL mode, Cloudflare Tunnel, and optional Mail Server.
+ * Simplified to: Local (LAN only) vs Cloudflare Tunnel (external access).
+ * Cloudflare Tunnel can be configured via API (full automation) or manually
+ * by pasting the connector token from the Cloudflare dashboard.
+ *
+ * API mode flow (10 steps):
+ *   1. Show pre-filled token creation URL + attempt browser open
+ *   2. Prompt for API token
+ *   3. Verify token (spinner) → account email
+ *   4. Auto-detect / select account
+ *   5. Auto-detect / select zone (domain)
+ *   6. Tunnel name input (default: projectName)
+ *   7. Create tunnel (spinner)
+ *   8. Configure ingress rules (spinner)
+ *   9. Create DNS CNAME records (spinner, one per service)
+ *  10. Clear API token from state + show summary
  *
  * Pure functions:
  *   - applyDomainDefaults  — Apply provider-specific defaults to wizard state
- *   - isMailServerAllowed  — Check if mail server is available (non-local only)
  *   - buildDomainConfig    — Clean / normalize a DomainConfig object
  *
  * Interactive:
@@ -17,13 +29,40 @@
 
 import { input, select, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
+import ora from 'ora';
+import { execa } from 'execa';
 import type {
   WizardState,
   DomainConfig,
   DomainProvider,
-  SslMode,
-  FreeDomainTld,
 } from '@brewnet/shared';
+import {
+  verifyToken,
+  getAccounts,
+  getZones,
+  createTunnel,
+  configureTunnelIngress,
+  createDnsRecord,
+  buildTokenCreationUrl,
+  getActiveServiceRoutes,
+} from '../../services/cloudflare-client.js';
+import { checkPort25Blocked } from '../../utils/network.js';
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+async function tryOpenUrl(url: string): Promise<void> {
+  try {
+    if (process.platform === 'darwin') {
+      await execa('open', [url]);
+    } else {
+      await execa('xdg-open', [url]);
+    }
+  } catch {
+    // Non-fatal — URL already printed to console
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pure Functions
@@ -31,19 +70,6 @@ import type {
 
 /**
  * Apply provider-specific defaults to the wizard state's domain configuration.
- *
- * Uses `structuredClone` to avoid mutating the input state.
- *
- * Behaviour per provider:
- *   - `'local'`:      ssl='self-signed', cloudflare disabled, preserves existing name
- *   - `'freedomain'`: ssl='cloudflare', cloudflare forced ON,
- *                      appends freeDomainTld to name if not already present
- *   - `'custom'`:     ssl='letsencrypt' (default, preserves existing valid ssl),
- *                      cloudflare enabled by default
- *
- * @param state    - Current wizard state
- * @param provider - The domain provider to apply
- * @returns A new WizardState with provider-specific defaults applied
  */
 export function applyDomainDefaults(
   state: WizardState,
@@ -58,26 +84,16 @@ export function applyDomainDefaults(
       next.domain.cloudflare.enabled = false;
       next.domain.cloudflare.tunnelToken = '';
       next.domain.cloudflare.tunnelName = '';
-      // Preserve existing name — caller sets .local suffix in interactive step
+      next.domain.cloudflare.tunnelId = '';
+      next.domain.cloudflare.accountId = '';
+      next.domain.cloudflare.apiToken = '';
+      next.domain.cloudflare.zoneId = '';
+      next.domain.cloudflare.zoneName = '';
+      next.domain.name = `${next.projectName}.local`;
       break;
     }
-
-    case 'freedomain': {
+    case 'tunnel': {
       next.domain.ssl = 'cloudflare';
-      next.domain.cloudflare.enabled = true; // forced ON for freedomain
-
-      // Append freeDomainTld if not already present
-      const tld = next.domain.freeDomainTld || '.dpdns.org';
-      if (next.domain.name && !next.domain.name.endsWith(tld)) {
-        next.domain.name = next.domain.name + tld;
-      }
-      break;
-    }
-
-    case 'custom': {
-      // Default SSL to letsencrypt for custom domains
-      next.domain.ssl = 'letsencrypt';
-      // Cloudflare Tunnel default ON for custom domains
       next.domain.cloudflare.enabled = true;
       break;
     }
@@ -87,111 +103,40 @@ export function applyDomainDefaults(
 }
 
 /**
- * Check whether the mail server option should be available.
- * Mail requires a real domain (not 'local').
- *
- * @param state - Current wizard state
- * @returns true if mail server can be enabled
- */
-export function isMailServerAllowed(state: WizardState): boolean {
-  return state.domain.provider !== 'local';
-}
-
-/**
  * Build a clean DomainConfig from raw selections.
- *
- * Enforces provider-specific invariants:
- *   - `'local'`:      forces cloudflare off, clears tunnel fields
- *   - `'freedomain'`: forces cloudflare ON
- *   - `'custom'`:     preserves cloudflare settings as-is
- *
- * Always returns a new object — never mutates the input.
- *
- * @param selections - A full DomainConfig
- * @returns A clean DomainConfig copy
+ * Enforces provider-specific invariants. Always returns a new object.
  */
-export function buildDomainConfig(selections: DomainConfig): DomainConfig {
-  const config: DomainConfig = {
-    ...selections,
-    cloudflare: { ...selections.cloudflare },
+export function buildDomainConfig(config: DomainConfig): DomainConfig {
+  const result: DomainConfig = {
+    ...config,
+    cloudflare: { ...config.cloudflare },
   };
 
-  switch (config.provider) {
-    case 'local': {
-      config.cloudflare.enabled = false;
-      config.cloudflare.tunnelToken = '';
-      config.cloudflare.tunnelName = '';
-      break;
-    }
-
-    case 'freedomain': {
-      config.cloudflare.enabled = true;
-      break;
-    }
-
-    case 'custom': {
-      // Preserve cloudflare settings as-is
-      break;
-    }
+  if (result.provider === 'local') {
+    result.cloudflare.enabled = false;
+    result.cloudflare.tunnelToken = '';
+    result.cloudflare.tunnelName = '';
+    result.cloudflare.tunnelId = '';
+    result.cloudflare.accountId = '';
+    result.cloudflare.apiToken = '';
+    result.cloudflare.zoneId = '';
+    result.cloudflare.zoneName = '';
+  } else {
+    result.cloudflare.enabled = true;
   }
 
-  return config;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
-// Interactive Step Function (T085-T088)
+// Interactive Step Function
 // ---------------------------------------------------------------------------
 
 /**
- * FreeDomain TLD choices for the select prompt.
- */
-const FREE_DOMAIN_TLD_CHOICES: Array<{ name: string; value: FreeDomainTld }> = [
-  { name: '.dpdns.org', value: '.dpdns.org' },
-  { name: '.qzz.io', value: '.qzz.io' },
-  { name: '.us.kg', value: '.us.kg' },
-];
-
-/**
- * Display the 8-step FreeDomain (DigitalPlat) setup guide.
- * Purely informational — no user input collected.
- */
-function displayFreeDomainGuide(): void {
-  console.log();
-  console.log(chalk.bold('  FreeDomain Setup Guide (DigitalPlat)'));
-  console.log(chalk.dim('  Follow these steps to register your free domain:'));
-  console.log();
-  console.log(chalk.dim('    1. Visit https://oss.fyi/free-domain (redirects to registration)'));
-  console.log(chalk.dim('       — Sign in with GitHub (no separate account needed)'));
-  console.log(chalk.dim('    2. Search for your desired subdomain name'));
-  console.log(chalk.dim('    3. Select your preferred TLD (.dpdns.org, .qzz.io, .us.kg)'));
-  console.log(chalk.dim('    4. Complete the registration'));
-  console.log(chalk.dim('    5. Set up Cloudflare Tunnel for secure external access'));
-  console.log();
-  console.log(chalk.dim('  Note: Enter only the subdomain part below (e.g., "myserver")'));
-  console.log(chalk.dim('        The TLD you selected will be appended automatically.'));
-  console.log();
-}
-
-/**
- * Run Step 4: Domain & Network.
- *
- * Interactively collects domain provider, name, SSL mode, Cloudflare Tunnel
- * configuration, and optional Mail Server settings.
- *
- * Flow:
- *   1. Display header "Step 4/7 — Domain & Network"
- *   2. Domain provider selection (local / freedomain / custom)
- *   3. Provider-specific configuration:
- *      - local:      set name to <projectName>.local, apply defaults
- *      - freedomain: TLD select, setup guide, domain name, tunnel token
- *      - custom:     domain name, SSL method, cloudflare toggle + token
- *   4. Conditional Mail Server (if non-local provider)
- *   5. Apply applyDomainDefaults and buildDomainConfig
- *   6. Show summary
- *   7. Return updated state
+ * Run Step 4: Network Access.
  *
  * @param state - Current wizard state
- * @returns Updated wizard state with domain & network configuration
+ * @returns Updated wizard state with network configuration
  */
 export async function runDomainNetworkStep(
   state: WizardState,
@@ -199,262 +144,544 @@ export async function runDomainNetworkStep(
   const next = structuredClone(state);
 
   // -------------------------------------------------------------------------
-  // 1. Display header
+  // 1. Header
   // -------------------------------------------------------------------------
   console.log();
   console.log(
-    chalk.bold.cyan('  Step 4/7') + chalk.bold(' — Domain & Network'),
+    chalk.bold.cyan('  Step 4/7') + chalk.bold(' — Network Access'),
   );
   console.log(
-    chalk.dim(
-      '  Configure domain provider, SSL, and network access',
-    ),
+    chalk.dim('  Configure how your server is accessed.'),
   );
   console.log();
 
   // -------------------------------------------------------------------------
-  // 2. Domain provider selection
+  // 2. Local vs Cloudflare Tunnel
   // -------------------------------------------------------------------------
   const provider = await select<DomainProvider>({
-    message: 'Domain provider',
+    message: 'Network access',
     choices: [
       {
-        name: 'Local — access via .local hostname (LAN only)',
+        name: 'Local — LAN only (no internet access needed)',
         value: 'local',
       },
       {
-        name: 'FreeDomain — free subdomain via DigitalPlat (.dpdns.org, .qzz.io, .us.kg)',
-        value: 'freedomain',
-      },
-      {
-        name: 'Custom — use your own domain',
-        value: 'custom',
+        name: 'Cloudflare Tunnel — secure external access, no port forwarding',
+        value: 'tunnel',
       },
     ],
-    default: next.domain.provider,
+    default: next.domain.provider === 'tunnel' ? 'tunnel' : 'local',
   });
 
   console.log();
 
-  // -------------------------------------------------------------------------
-  // 3. Provider-specific configuration
-  // -------------------------------------------------------------------------
-
   if (provider === 'local') {
     // -----------------------------------------------------------------------
-    // Local: set name to <projectName>.local
+    // Local: nothing to configure
     // -----------------------------------------------------------------------
-    const localName = `${next.projectName}.local`;
-    next.domain.name = localName;
-    next.domain.provider = provider;
+    next.domain.provider = 'local';
+    next.domain.name = `${next.projectName}.local`;
+    next.domain.ssl = 'self-signed';
+    next.domain.cloudflare.enabled = false;
+    next.domain.cloudflare.accountId = '';
+    next.domain.cloudflare.apiToken = '';
+    next.domain.cloudflare.tunnelId = '';
+    next.domain.cloudflare.tunnelToken = '';
+    next.domain.cloudflare.tunnelName = '';
+    next.domain.cloudflare.zoneId = '';
+    next.domain.cloudflare.zoneName = '';
 
-    console.log(chalk.dim(`  Domain: ${localName}`));
-    console.log(chalk.dim('  SSL: self-signed certificate'));
-    console.log(chalk.dim('  Cloudflare Tunnel: disabled (local network only)'));
-    console.log();
-
-  } else if (provider === 'freedomain') {
-    // -----------------------------------------------------------------------
-    // FreeDomain: TLD select, guide, name input, tunnel token
-    // -----------------------------------------------------------------------
-
-    // TLD selection
-    const tld = await select<FreeDomainTld>({
-      message: 'FreeDomain TLD',
-      choices: FREE_DOMAIN_TLD_CHOICES,
-      default: next.domain.freeDomainTld || '.dpdns.org',
-    });
-    next.domain.freeDomainTld = tld;
-
-    // Display 8-step setup guide
-    displayFreeDomainGuide();
-
-    // Domain name input (without TLD — appended automatically)
-    // If the user types the full domain (e.g., "myserver.qzz.io"), strip the TLD automatically.
-    const tldEscaped = tld.replace(/\./g, '\\.');
-    const stripTld = (v: string) =>
-      new RegExp(`${tldEscaped}$`, 'i').test(v) ? v.slice(0, -tld.length) : v;
-
-    const defaultSubdomain = next.domain.name
-      ? stripTld(next.domain.name)
-      : next.projectName;
-
-    const subdomainName = await input({
-      message: `Subdomain name → result will be: <name>${tld}`,
-      default: defaultSubdomain,
-      validate: (value: string) => {
-        if (!value.trim()) return 'Domain name is required';
-        const subdomain = stripTld(value.trim());
-        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(subdomain)) {
-          return `Enter only the subdomain part (e.g., "myserver" → myserver${tld})`;
-        }
-        return true;
-      },
-    });
-    next.domain.name = stripTld(subdomainName.trim()) + tld;
-    next.domain.provider = provider;
-
-    console.log();
-
-    // Cloudflare Tunnel token (required for freedomain)
-    console.log(chalk.bold('  Cloudflare Tunnel'));
-    console.log(chalk.dim('  Required for FreeDomain — enables secure external access'));
-    console.log();
-
-    const tunnelToken = await input({
-      message: 'Cloudflare Tunnel token',
-      default: next.domain.cloudflare.tunnelToken || '',
-      validate: (value: string) => {
-        if (!value.trim()) return 'Tunnel token is required for FreeDomain';
-        return true;
-      },
-    });
-    next.domain.cloudflare.tunnelToken = tunnelToken.trim();
-
-    const tunnelName = await input({
-      message: 'Cloudflare Tunnel name',
-      default: next.domain.cloudflare.tunnelName || next.projectName,
-    });
-    next.domain.cloudflare.tunnelName = tunnelName.trim();
-
+    console.log(chalk.dim(`  Access: ${next.domain.name} (LAN only)`));
+    console.log(chalk.dim('  External access: disabled'));
     console.log();
 
   } else {
     // -----------------------------------------------------------------------
-    // Custom: domain name, SSL method, cloudflare toggle + token
+    // Cloudflare Tunnel
     // -----------------------------------------------------------------------
+    next.domain.provider = 'tunnel';
+    next.domain.ssl = 'cloudflare';
+    next.domain.cloudflare.enabled = true;
 
-    // Domain name input
-    const domainName = await input({
-      message: 'Custom domain name (e.g., example.com)',
-      default: next.domain.name || '',
-      validate: (value: string) => {
-        if (!value.trim()) return 'Domain name is required';
-        if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(value.trim())) {
-          return 'Invalid domain name format';
-        }
-        return true;
-      },
-    });
-    next.domain.name = domainName.trim();
-    next.domain.provider = provider;
-
-    console.log();
-
-    // SSL method selection
-    const sslMode = await select<SslMode>({
-      message: 'SSL certificate method',
+    // -----------------------------------------------------------------------
+    // 3. Setup method: API or Manual
+    // -----------------------------------------------------------------------
+    const setupMethod = await select<'api' | 'manual'>({
+      message: 'Tunnel setup method',
       choices: [
         {
-          name: 'Self-signed — local development only',
-          value: 'self-signed',
+          name: 'API — full automation (token → account → zone → tunnel → DNS)',
+          value: 'api',
         },
         {
-          name: "Let's Encrypt — free, auto-renewed certificates (recommended)",
-          value: 'letsencrypt',
-        },
-        {
-          name: 'Cloudflare — managed via Cloudflare proxy',
-          value: 'cloudflare',
+          name: 'Manual — paste the connector token from the Cloudflare dashboard',
+          value: 'manual',
         },
       ],
-      default: next.domain.ssl || 'letsencrypt',
+      default: 'api',
     });
-    next.domain.ssl = sslMode;
 
     console.log();
 
-    // Cloudflare Tunnel toggle
-    console.log(chalk.bold('  Cloudflare Tunnel'));
-    console.log(chalk.dim('  Enables secure external access without port forwarding'));
-    console.log();
+    if (setupMethod === 'api') {
+      // =====================================================================
+      // API SETUP — 10-step automation
+      // =====================================================================
 
-    const tunnelEnabled = await confirm({
-      message: 'Enable Cloudflare Tunnel?',
-      default: next.domain.cloudflare.enabled ?? true,
-    });
-    next.domain.cloudflare.enabled = tunnelEnabled;
+      // Step 1: Show pre-filled token creation URL + attempt browser open
+      console.log(chalk.bold('  Cloudflare API Token Setup'));
+      console.log();
+      console.log(chalk.dim('  Required permissions:'));
+      console.log(chalk.dim('    • Cloudflare Tunnel: Edit'));
+      console.log(chalk.dim('    • DNS: Edit'));
+      console.log();
 
-    if (tunnelEnabled) {
-      const tunnelToken = await input({
-        message: 'Cloudflare Tunnel token',
-        default: next.domain.cloudflare.tunnelToken || '',
-        validate: (value: string) => {
-          if (!value.trim()) return 'Tunnel token is required when Cloudflare Tunnel is enabled';
-          return true;
-        },
+      const tokenUrl = buildTokenCreationUrl(next.projectName);
+      console.log(chalk.dim('  Token creation URL (pre-filled):'));
+      console.log(`  ${chalk.cyan(tokenUrl)}`);
+      console.log();
+      console.log(chalk.dim('  Opening in browser... (or copy the URL above)'));
+      await tryOpenUrl(tokenUrl);
+      console.log();
+
+      // Step 2: Prompt for API token
+      let apiToken = await input({
+        message: 'Paste your Cloudflare API Token',
+        default: '',
+        validate: (v) => v.trim().length > 0 ? true : 'API Token is required',
       });
-      next.domain.cloudflare.tunnelToken = tunnelToken.trim();
+      apiToken = apiToken.trim();
+      console.log();
 
+      // Step 3: Verify token
+      const verifySpinner = ora('Verifying API token...').start();
+      let verifyResult: { valid: boolean; email?: string };
+      try {
+        verifyResult = await verifyToken(apiToken);
+      } catch {
+        verifyResult = { valid: false };
+      }
+
+      if (!verifyResult.valid) {
+        verifySpinner.fail(chalk.red('Token verification failed'));
+        console.log();
+        console.log(chalk.yellow('  Falling back to manual token entry.'));
+        console.log();
+
+        const fallbackToken = await input({
+          message: 'Cloudflare Tunnel token (paste from Cloudflare dashboard)',
+          default: '',
+          validate: (v) => v.trim().length > 0 ? true : 'Token is required',
+        });
+        next.domain.cloudflare.tunnelToken = fallbackToken.trim();
+        next.domain.cloudflare.tunnelId = '';
+
+        const fallbackName = await input({
+          message: 'Tunnel name',
+          default: next.domain.cloudflare.tunnelName || next.projectName,
+        });
+        next.domain.cloudflare.tunnelName = fallbackName.trim();
+        console.log();
+
+        // Skip to after tunnel setup
+        await runMailServerSection(next);
+        const withDefaults = applyDomainDefaults(next, provider);
+        withDefaults.domain = buildDomainConfig(withDefaults.domain);
+        printNetworkSummary(withDefaults);
+        return withDefaults;
+      }
+
+      verifySpinner.succeed(
+        chalk.green(`Token verified`) +
+        (verifyResult.email ? chalk.dim(` (account: ${verifyResult.email})`) : ''),
+      );
+      console.log();
+
+      // Step 4: Account auto-detection / selection
+      const accountsSpinner = ora('Fetching Cloudflare accounts...').start();
+      let accounts: Array<{ id: string; name: string }> = [];
+      try {
+        accounts = await getAccounts(apiToken);
+      } catch {
+        accounts = [];
+      }
+      accountsSpinner.stop();
+
+      let selectedAccountId: string;
+      let selectedAccountName: string;
+
+      if (accounts.length === 0) {
+        console.log(chalk.yellow('  No accounts found. Please enter Account ID manually.'));
+        const manualAccountId = await input({
+          message: 'Cloudflare Account ID',
+          default: next.domain.cloudflare.accountId || '',
+          validate: (v) => v.trim().length > 0 ? true : 'Account ID is required',
+        });
+        selectedAccountId = manualAccountId.trim();
+        selectedAccountName = selectedAccountId;
+      } else if (accounts.length === 1) {
+        selectedAccountId = accounts[0].id;
+        selectedAccountName = accounts[0].name;
+        console.log(chalk.dim(`  Account: ${selectedAccountName} (auto-selected)`));
+      } else {
+        selectedAccountId = await select<string>({
+          message: 'Select Cloudflare account',
+          choices: accounts.map((a) => ({ name: a.name, value: a.id })),
+        });
+        selectedAccountName = accounts.find((a) => a.id === selectedAccountId)?.name ?? selectedAccountId;
+      }
+
+      next.domain.cloudflare.accountId = selectedAccountId;
+      console.log();
+
+      // Step 5: Zone (domain) selection
+      const zonesSpinner = ora('Fetching DNS zones...').start();
+      let zones: Array<{ id: string; name: string; status: string }> = [];
+      try {
+        zones = await getZones(apiToken);
+      } catch {
+        zones = [];
+      }
+      zonesSpinner.stop();
+
+      const activeZones = zones.filter((z) => z.status === 'active');
+
+      if (activeZones.length === 0) {
+        console.log(chalk.yellow('  No active zones found in your Cloudflare account.'));
+        console.log(chalk.dim('  Add a domain to Cloudflare first: https://dash.cloudflare.com'));
+        console.log();
+        console.log(chalk.yellow('  Falling back to manual setup.'));
+        console.log();
+
+        const fallbackToken = await input({
+          message: 'Cloudflare Tunnel token (paste from Cloudflare dashboard)',
+          default: '',
+          validate: (v) => v.trim().length > 0 ? true : 'Token is required',
+        });
+        next.domain.cloudflare.tunnelToken = fallbackToken.trim();
+        next.domain.cloudflare.tunnelId = '';
+
+        const fallbackName = await input({
+          message: 'Tunnel name',
+          default: next.domain.cloudflare.tunnelName || next.projectName,
+        });
+        next.domain.cloudflare.tunnelName = fallbackName.trim();
+        console.log();
+
+        await runMailServerSection(next);
+        const withDefaults = applyDomainDefaults(next, provider);
+        withDefaults.domain = buildDomainConfig(withDefaults.domain);
+        printNetworkSummary(withDefaults);
+        return withDefaults;
+      }
+
+      let selectedZoneId: string;
+      let selectedZoneName: string;
+
+      if (activeZones.length === 1) {
+        selectedZoneId = activeZones[0].id;
+        selectedZoneName = activeZones[0].name;
+        console.log(chalk.dim(`  Domain: ${selectedZoneName} (auto-selected)`));
+      } else {
+        selectedZoneId = await select<string>({
+          message: 'Select domain (zone)',
+          choices: activeZones.map((z) => ({ name: z.name, value: z.id })),
+        });
+        selectedZoneName = activeZones.find((z) => z.id === selectedZoneId)?.name ?? selectedZoneId;
+      }
+
+      next.domain.cloudflare.zoneId = selectedZoneId;
+      next.domain.cloudflare.zoneName = selectedZoneName;
+      next.domain.name = selectedZoneName;
+      console.log();
+
+      // Step 6: Tunnel name
       const tunnelName = await input({
-        message: 'Cloudflare Tunnel name',
+        message: 'Tunnel name',
         default: next.domain.cloudflare.tunnelName || next.projectName,
       });
       next.domain.cloudflare.tunnelName = tunnelName.trim();
+      console.log();
+
+      // Step 7: Create tunnel
+      const createSpinner = ora('Creating Cloudflare Tunnel...').start();
+      try {
+        const tunnelResult = await createTunnel(
+          apiToken,
+          selectedAccountId,
+          next.domain.cloudflare.tunnelName,
+        );
+        next.domain.cloudflare.tunnelId = tunnelResult.tunnelId;
+        next.domain.cloudflare.tunnelToken = tunnelResult.tunnelToken;
+        createSpinner.succeed(chalk.green(`Tunnel created: ${next.domain.cloudflare.tunnelName}`));
+        console.log(chalk.dim(`    ID: ${tunnelResult.tunnelId}`));
+      } catch (err) {
+        createSpinner.fail(chalk.red('Failed to create tunnel'));
+        console.log(chalk.yellow(`  Error: ${err instanceof Error ? err.message : String(err)}`));
+        console.log();
+        console.log(chalk.dim('  Falling back to manual token entry.'));
+        const fallbackToken = await input({
+          message: 'Cloudflare Tunnel token (paste from dashboard)',
+          default: '',
+          validate: (v) => v.trim().length > 0 ? true : 'Token is required',
+        });
+        next.domain.cloudflare.tunnelToken = fallbackToken.trim();
+        next.domain.cloudflare.tunnelId = '';
+        console.log();
+
+        // Clear sensitive token from state
+        next.domain.cloudflare.apiToken = '';
+
+        await runMailServerSection(next);
+        const withDefaults = applyDomainDefaults(next, provider);
+        withDefaults.domain = buildDomainConfig(withDefaults.domain);
+        printNetworkSummary(withDefaults);
+        return withDefaults;
+      }
+      console.log();
+
+      // Step 8: Configure ingress rules
+      const routes = getActiveServiceRoutes(next);
+      if (routes.length > 0 && next.domain.cloudflare.tunnelId) {
+        const ingressSpinner = ora('Configuring tunnel ingress rules...').start();
+        try {
+          await configureTunnelIngress(
+            apiToken,
+            selectedAccountId,
+            next.domain.cloudflare.tunnelId,
+            selectedZoneName,
+            routes,
+          );
+          ingressSpinner.succeed(chalk.green(`Ingress configured (${routes.length} service${routes.length !== 1 ? 's' : ''})`));
+        } catch (err) {
+          ingressSpinner.warn(chalk.yellow(`Ingress config warning: ${err instanceof Error ? err.message : String(err)}`));
+          console.log(chalk.dim('  You can configure ingress manually in the Cloudflare dashboard.'));
+        }
+        console.log();
+      }
+
+      // Step 9: Create DNS CNAME records
+      if (routes.length > 0 && next.domain.cloudflare.tunnelId) {
+        const dnsSpinner = ora('Creating DNS CNAME records...').start();
+        const created: string[] = [];
+        const failed: string[] = [];
+
+        for (const route of routes) {
+          try {
+            await createDnsRecord(
+              apiToken,
+              selectedZoneId,
+              next.domain.cloudflare.tunnelId,
+              route.subdomain,
+              selectedZoneName,
+            );
+            created.push(`${route.subdomain}.${selectedZoneName}`);
+          } catch (err) {
+            failed.push(`${route.subdomain} (${err instanceof Error ? err.message : String(err)})`);
+          }
+        }
+
+        if (failed.length === 0) {
+          dnsSpinner.succeed(chalk.green(`DNS records created (${created.length})`));
+        } else {
+          dnsSpinner.warn(chalk.yellow(`DNS records: ${created.length} created, ${failed.length} failed`));
+        }
+
+        for (const record of created) {
+          console.log(chalk.dim(`    CNAME: ${record} → ${next.domain.cloudflare.tunnelId}.cfargotunnel.com`));
+        }
+        for (const record of failed) {
+          console.log(chalk.yellow(`    Failed: ${record}`));
+        }
+        console.log();
+      }
+
+      // Step 10: Clear API token from state
+      next.domain.cloudflare.apiToken = '';
+
     } else {
-      next.domain.cloudflare.tunnelToken = '';
-      next.domain.cloudflare.tunnelName = '';
+      // =====================================================================
+      // MANUAL SETUP
+      // =====================================================================
+      console.log(chalk.bold('  Manual Tunnel Setup'));
+      console.log(chalk.dim('  Create a tunnel in the Cloudflare dashboard and paste the token here.'));
+      console.log();
+      console.log(chalk.dim('  1. Go to https://one.dash.cloudflare.com'));
+      console.log(chalk.dim('     → Networks → Connectors → Cloudflare Tunnels → Create a tunnel'));
+      console.log(chalk.dim('     → Choose Cloudflared → name it → Save'));
+      console.log(chalk.dim('  2. Copy the token from the install command shown on screen'));
+      console.log(chalk.dim('     (the long string after "cloudflared service install ")'));
+      console.log();
+      console.log(chalk.dim('  After the wizard: add public hostnames in the tunnel dashboard'));
+      console.log(chalk.dim('  → Tunnel → Published applications → Add → subdomain + service URL'));
+      console.log();
+
+      const tunnelToken = await input({
+        message: 'Cloudflare Tunnel token',
+        default: next.domain.cloudflare.tunnelToken || '',
+        validate: (v) => v.trim().length > 0 ? true : 'Tunnel token is required',
+      });
+      next.domain.cloudflare.tunnelToken = tunnelToken.trim();
+      next.domain.cloudflare.tunnelId = '';
+
+      const tunnelName = await input({
+        message: 'Tunnel name',
+        default: next.domain.cloudflare.tunnelName || next.projectName,
+      });
+      next.domain.cloudflare.tunnelName = tunnelName.trim();
+
+      console.log();
     }
 
-    console.log();
+    // -----------------------------------------------------------------------
+    // Mail Server section (shown for any tunnel setup method)
+    // -----------------------------------------------------------------------
+    await runMailServerSection(next);
   }
 
   // -------------------------------------------------------------------------
-  // 4. Apply domain defaults (provider-specific invariants)
+  // Apply defaults + build config
   // -------------------------------------------------------------------------
   const withDefaults = applyDomainDefaults(next, provider);
-
-  // -------------------------------------------------------------------------
-  // 5. Build clean domain config
-  // -------------------------------------------------------------------------
   withDefaults.domain = buildDomainConfig(withDefaults.domain);
 
   // -------------------------------------------------------------------------
-  // 6. Conditional Mail Server
+  // Summary
   // -------------------------------------------------------------------------
-  if (isMailServerAllowed(withDefaults)) {
-    console.log(chalk.bold('  Mail Server'));
-    console.log(chalk.dim('  docker-mailserver (SMTP/IMAP) — requires a real domain'));
-    console.log();
-
-    const enableMail = await confirm({
-      message: 'Enable Mail Server (docker-mailserver)?',
-      default: withDefaults.servers.mailServer.enabled,
-    });
-    withDefaults.servers.mailServer.enabled = enableMail;
-    console.log();
-  } else {
-    // Local domain — mail server not available
-    withDefaults.servers.mailServer.enabled = false;
-  }
-
-  // -------------------------------------------------------------------------
-  // 7. Summary
-  // -------------------------------------------------------------------------
-  console.log(chalk.bold('  Domain & Network Summary'));
-  console.log(chalk.dim(`    Provider:    ${withDefaults.domain.provider}`));
-  console.log(chalk.dim(`    Domain:      ${withDefaults.domain.name}`));
-  console.log(chalk.dim(`    SSL:         ${withDefaults.domain.ssl}`));
-
-  if (withDefaults.domain.cloudflare.enabled) {
-    console.log(chalk.dim(`    Tunnel:      enabled (${withDefaults.domain.cloudflare.tunnelName})`));
-  } else {
-    console.log(chalk.dim('    Tunnel:      disabled'));
-  }
-
-  if (withDefaults.domain.provider === 'freedomain') {
-    console.log(chalk.dim(`    TLD:         ${withDefaults.domain.freeDomainTld}`));
-  }
-
-  if (withDefaults.servers.mailServer.enabled) {
-    console.log(chalk.dim('    Mail Server: enabled (docker-mailserver)'));
-  } else {
-    console.log(chalk.dim('    Mail Server: disabled'));
-  }
-
-  console.log();
-  console.log(chalk.green('  Domain & Network configured.'));
-  console.log();
+  printNetworkSummary(withDefaults);
 
   return withDefaults;
+}
+
+// ---------------------------------------------------------------------------
+// Mail Server section helper
+// ---------------------------------------------------------------------------
+
+async function runMailServerSection(next: WizardState): Promise<void> {
+  console.log(chalk.bold('  Mail Server'));
+
+  const mailEnabled = await confirm({
+    message: 'Enable Mail Server? (docker-mailserver)',
+    default: false,
+  });
+  next.servers.mailServer.enabled = mailEnabled;
+
+  if (!mailEnabled) {
+    console.log();
+    return;
+  }
+
+  console.log();
+  const portSpinner = ora('Checking SMTP port 25...').start();
+  let port25Blocked = false;
+
+  try {
+    port25Blocked = await checkPort25Blocked();
+  } catch {
+    port25Blocked = false;
+  }
+
+  next.servers.mailServer.port25Blocked = port25Blocked;
+
+  if (port25Blocked) {
+    portSpinner.warn('Port 25 blocked — SMTP relay required');
+    console.log(chalk.dim('  Most ISPs block port 25 to prevent spam.'));
+    console.log();
+
+    const relayChoice = await select<'' | 'gmail' | 'sendgrid' | 'custom'>({
+      message: 'SMTP relay provider',
+      choices: [
+        { name: 'Gmail SMTP (free, 500/day limit)', value: 'gmail' },
+        { name: 'SendGrid (free tier, 100/day)', value: 'sendgrid' },
+        { name: 'Custom SMTP relay', value: 'custom' },
+        { name: 'Skip mail server', value: '' },
+      ],
+    });
+
+    if (relayChoice === '') {
+      next.servers.mailServer.enabled = false;
+      console.log();
+      return;
+    }
+
+    next.servers.mailServer.relayProvider = relayChoice;
+
+    if (relayChoice === 'gmail') {
+      next.servers.mailServer.relayHost = 'smtp.gmail.com';
+      next.servers.mailServer.relayPort = 587;
+      console.log();
+      console.log(chalk.dim('  Gmail: use an App Password (not your main password).'));
+      console.log(chalk.dim('  → Google Account → Security → 2-Step Verification → App passwords'));
+    } else if (relayChoice === 'sendgrid') {
+      next.servers.mailServer.relayHost = 'smtp.sendgrid.net';
+      next.servers.mailServer.relayPort = 587;
+    } else {
+      // Custom
+      const relayHost = await input({
+        message: 'Relay SMTP host',
+        default: next.servers.mailServer.relayHost || '',
+        validate: (v) => v.trim().length > 0 ? true : 'Relay host is required',
+      });
+      next.servers.mailServer.relayHost = relayHost.trim();
+
+      const relayPortStr = await input({
+        message: 'Relay SMTP port',
+        default: String(next.servers.mailServer.relayPort || 587),
+        validate: (v) => /^\d+$/.test(v.trim()) ? true : 'Port must be a number',
+      });
+      next.servers.mailServer.relayPort = parseInt(relayPortStr.trim(), 10);
+    }
+
+    console.log();
+
+    const relayUser = await input({
+      message: relayChoice === 'gmail' ? 'Gmail address' : 'Relay username',
+      default: next.servers.mailServer.relayUser || '',
+      validate: (v) => v.trim().length > 0 ? true : 'Username is required',
+    });
+    next.servers.mailServer.relayUser = relayUser.trim();
+
+    const relayPassword = await input({
+      message: relayChoice === 'gmail' ? 'Gmail App Password' : 'Relay password',
+      default: '',
+      validate: (v) => v.trim().length > 0 ? true : 'Password is required',
+    });
+    next.servers.mailServer.relayPassword = relayPassword.trim();
+
+  } else {
+    portSpinner.succeed('Port 25 open — direct mail delivery available');
+  }
+
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
+// Summary helper
+// ---------------------------------------------------------------------------
+
+function printNetworkSummary(state: WizardState): void {
+  console.log(chalk.bold('  Network Summary'));
+  if (state.domain.provider === 'local') {
+    console.log(chalk.dim('    Access:  LAN only'));
+    console.log(chalk.dim(`    Host:    ${state.domain.name}`));
+  } else {
+    console.log(chalk.dim('    Access:  Cloudflare Tunnel (external)'));
+    console.log(chalk.dim(`    Tunnel:  ${state.domain.cloudflare.tunnelName}`));
+    if (state.domain.cloudflare.tunnelId) {
+      console.log(chalk.dim(`    ID:      ${state.domain.cloudflare.tunnelId}`));
+    }
+    if (state.domain.cloudflare.zoneName) {
+      console.log(chalk.dim(`    Domain:  ${state.domain.cloudflare.zoneName}`));
+    }
+    console.log(chalk.dim('    SSL:     managed by Cloudflare'));
+    if (state.servers.mailServer.enabled) {
+      const relayInfo = state.servers.mailServer.relayProvider
+        ? ` (relay: ${state.servers.mailServer.relayProvider})`
+        : '';
+      console.log(chalk.dim(`    Mail:    docker-mailserver${relayInfo}`));
+    }
+  }
+  console.log();
+  console.log(chalk.green('  Network Access configured.'));
+  console.log();
 }

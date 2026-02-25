@@ -162,18 +162,29 @@ export function generateReviewSections(state: WizardState): ReviewSection[] {
     items: devItems,
   });
 
-  // --- Domain & Network section (Step 4) ---
-  const domainItems: ReviewItem[] = [
-    { label: 'Domain Provider', value: state.domain.provider },
-    { label: 'Domain Name', value: state.domain.name },
-    { label: 'SSL', value: state.domain.ssl },
-  ];
-  if (state.domain.cloudflare.enabled) {
-    domainItems.push({ label: 'Cloudflare Tunnel', value: state.domain.cloudflare.tunnelName || 'Enabled' });
+  // --- Network Access section (Step 4) ---
+  const domainItems: ReviewItem[] = [];
+  if (state.domain.provider === 'local') {
+    domainItems.push({ label: 'Access', value: 'LAN only' });
+    domainItems.push({ label: 'Host', value: state.domain.name });
+  } else {
+    domainItems.push({ label: 'Access', value: 'Cloudflare Tunnel' });
+    domainItems.push({ label: 'Tunnel name', value: state.domain.cloudflare.tunnelName || '(not set)' });
+    if (state.domain.cloudflare.tunnelId) {
+      domainItems.push({ label: 'Tunnel ID', value: state.domain.cloudflare.tunnelId });
+    }
+    domainItems.push({ label: 'Domain', value: state.domain.cloudflare.zoneName || '(pending)' });
+    domainItems.push({ label: 'SSL', value: 'Cloudflare (managed)' });
+    if (state.servers.mailServer.enabled) {
+      const relayInfo = state.servers.mailServer.relayProvider
+        ? ` via ${state.servers.mailServer.relayProvider}`
+        : '';
+      domainItems.push({ label: 'Mail Server', value: `docker-mailserver${relayInfo}` });
+    }
   }
   sections.push({
     id: 'domain',
-    title: 'Domain & Network',
+    title: 'Network Access',
     step: WizardStep.DomainNetwork,
     items: domainItems,
   });
@@ -303,7 +314,15 @@ export function importConfig(configPath: string): WizardState {
       },
       media: config.servers.media,
       sshServer: config.servers.sshServer,
-      mailServer: config.servers.mailServer,
+      mailServer: {
+        ...config.servers.mailServer,
+        port25Blocked: false,
+        relayProvider: '',
+        relayHost: '',
+        relayPort: 587,
+        relayUser: '',
+        relayPassword: '',
+      },
       appServer: config.servers.appServer,
       fileBrowser: config.servers.fileBrowser,
     },
@@ -312,8 +331,14 @@ export function importConfig(configPath: string): WizardState {
     domain: {
       ...config.domain,
       cloudflare: {
-        ...config.domain.cloudflare,
+        enabled: config.domain.cloudflare.enabled,
+        tunnelName: config.domain.cloudflare.tunnelName,
+        accountId: '',
+        apiToken: '',
+        tunnelId: '',
         tunnelToken: '', // must be re-supplied
+        zoneId: '',
+        zoneName: '',
       },
     },
   };

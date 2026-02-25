@@ -17,7 +17,7 @@ Gemini가 작성한 홈서버 마스터플랜 문서와 Brewnet 기존 REQUIREME
 | # | 영역 | 핵심 내용 | 기존 REQ 연관 |
 |:-:|------|----------|:------------:|
 | A | 설치 완료 상태 페이지 | 자동 브라우저 팝업 + 서비스 상태 대시보드 | REQ-1.3.9 확장 |
-| B | WebAuthn / Device Trust | Authelia 생체인증 기반 기기 신뢰 등록 | REQ-8.2 확장 |
+| B | WebAuthn / Device Trust | Authelia 생체인증 기반 기기 신뢰 등록 - 우선순위 낮음| REQ-8.2 확장 |
 | C | 메일 서버 강화 | docker-mailserver 경량 옵션 + 25번 포트 차단 대응 | REQ-1.12 보강 |
 | D | 무료 티어 자동 배포 | webhook + Docker rebuild 기반 git push 파이프라인 | REQ-4.2 재조정 |
 

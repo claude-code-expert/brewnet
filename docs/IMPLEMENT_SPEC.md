@@ -1161,7 +1161,8 @@ Free Domain 선택 시 사용자를 다음 단계로 안내한다:
   1. Cloudflare 계정 생성/로그인
      → https://dash.cloudflare.com/sign-up
   2. DigitalPlat FreeDomain 등록
-     → https://freedomain.digitalplat.org
+     → https://dash.domain.digitalplat.org/auth/register
+         (Username, Password, Email + WHOIS 정보 필수)
   3. 도메인 등록 시 Cloudflare 네임서버 설정
      → 할당된 CF 네임서버 2개를 DigitalPlat에 입력
   4. DNS 전파 대기 (최대 24시간, 보통 수 분)
