@@ -189,29 +189,34 @@ spinner_stop 0 "Build complete"
 # ─── Step 8: Install global wrapper ───────────────────────────────────────────
 step 8 "Installing brewnet command..."
 
-# /usr/local/bin 쓰기 가능하면 사용, 아니면 ~/.local/bin
-if [ -w "/usr/local/bin" ]; then
-  INSTALL_DIR="/usr/local/bin"
-elif sudo -n true 2>/dev/null; then
-  INSTALL_DIR="/usr/local/bin"
-  USE_SUDO=true
-else
-  INSTALL_DIR="$BREWNET_BIN_DIR"
-  mkdir -p "$INSTALL_DIR"
-fi
-
-WRAPPER="$INSTALL_DIR/brewnet"
 WRAPPER_CONTENT="#!/bin/bash
 exec node \"$BREWNET_SOURCE/packages/cli/dist/index.js\" \"\$@\"
 "
 
-if [ "${USE_SUDO:-false}" = "true" ]; then
+# 1순위: /usr/local/bin 이미 쓰기 가능
+if [ -w "/usr/local/bin" ]; then
+  INSTALL_DIR="/usr/local/bin"
+  WRAPPER="$INSTALL_DIR/brewnet"
+  printf '%s' "$WRAPPER_CONTENT" > "$WRAPPER"
+  chmod +x "$WRAPPER"
+
+# 2순위: sudo 사용해서 /usr/local/bin 에 설치 (비밀번호 입력 허용)
+elif command -v sudo >/dev/null 2>&1; then
+  INSTALL_DIR="/usr/local/bin"
+  WRAPPER="$INSTALL_DIR/brewnet"
+  printf "\n  ${YELLOW}sudo 권한이 필요합니다 — /usr/local/bin 에 설치합니다.${RESET}\n"
   printf '%s' "$WRAPPER_CONTENT" | sudo tee "$WRAPPER" > /dev/null
   sudo chmod +x "$WRAPPER"
+
+# 3순위: sudo 없음 → ~/.local/bin fallback
 else
+  INSTALL_DIR="$BREWNET_BIN_DIR"
+  mkdir -p "$INSTALL_DIR"
+  WRAPPER="$INSTALL_DIR/brewnet"
   printf '%s' "$WRAPPER_CONTENT" > "$WRAPPER"
   chmod +x "$WRAPPER"
 fi
+
 success "Installed at $WRAPPER"
 
 # ─── Step 8b: ~/.brewnet/ data directories ─────────────────────────────────────
