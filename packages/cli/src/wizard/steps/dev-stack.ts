@@ -198,17 +198,25 @@ export async function runDevStackStep(
   const filteredFrameworks = getFilteredFrameworks(selectedLanguages);
   const frameworkSelections: Record<string, string> = {};
 
+  if (selectedLanguages.length > 0) {
+    console.log(chalk.bold('  Framework Selection'));
+    console.log(chalk.dim('  Choose a framework for each selected language'));
+    console.log();
+  }
+
   for (const lang of selectedLanguages) {
     const frameworks = filteredFrameworks[lang];
 
     if (frameworks.length === 0) {
       // Languages like Rust and Go have no frameworks
       console.log(
-        chalk.dim(`  ${LANGUAGE_REGISTRY[lang].name}: no framework selection needed`),
+        chalk.dim(`  ${LANGUAGE_REGISTRY[lang].name}: no framework needed (bare language)`),
       );
+      console.log();
       continue;
     }
 
+    console.log(chalk.bold(`  ${LANGUAGE_REGISTRY[lang].name}`));
     const frameworkChoice = await select<string>({
       message: `${LANGUAGE_REGISTRY[lang].name} framework`,
       choices: frameworks.map((fw) => ({
@@ -218,9 +226,8 @@ export async function runDevStackStep(
       default: next.devStack.frameworks[lang] || frameworks[0].id,
     });
     frameworkSelections[lang] = frameworkChoice;
+    console.log();
   }
-
-  console.log();
 
   // -------------------------------------------------------------------------
   // 5. Frontend tech multi-select

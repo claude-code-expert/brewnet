@@ -1182,15 +1182,39 @@ describe('ComposeGenerator — MinIO file server', () => {
 });
 
 // =========================================================================
-// Compose version
+// Compose config structure
 // =========================================================================
 
 describe('ComposeGenerator — Compose config structure', () => {
-  it('should set version to "3.8"', () => {
+  it('should not include the deprecated version field', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
 
-    expect(config.version).toBe('3.8');
+    expect((config as Record<string, unknown>)['version']).toBeUndefined();
+  });
+
+  it('should include top-level named volumes for all services that use them', () => {
+    const state = buildState();
+    const config = generateComposeConfig(state);
+
+    expect(config.volumes).toBeDefined();
+    // postgresql, redis, gitea are enabled in buildState() — all use named volumes
+    expect(Object.keys(config.volumes!)).toContain('brewnet_postgres_data');
+    expect(Object.keys(config.volumes!)).toContain('brewnet_redis_data');
+    expect(Object.keys(config.volumes!)).toContain('brewnet_gitea_data');
+    // All volume values should be null (Docker default config)
+    for (const v of Object.values(config.volumes!)) {
+      expect(v).toBeNull();
+    }
+  });
+
+  it('should not include bind mounts in top-level volumes', () => {
+    const state = buildState();
+    const config = generateComposeConfig(state);
+
+    // /var/run/docker.sock is a bind mount, not a named volume
+    const volumeKeys = Object.keys(config.volumes ?? {});
+    expect(volumeKeys.some((k) => k.startsWith('/'))).toBe(false);
   });
 
   it('should have services as a non-empty object', () => {
@@ -1224,12 +1248,20 @@ describe('composeConfigToYaml', () => {
     expect(yaml.length).toBeGreaterThan(0);
   });
 
-  it('should contain "version" key in YAML output', () => {
+  it('should contain "volumes" key in YAML output', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
     const yaml = composeConfigToYaml(config);
 
-    expect(yaml).toContain('version');
+    expect(yaml).toContain('volumes:');
+  });
+
+  it('should NOT contain "version" key in YAML output', () => {
+    const state = buildState();
+    const config = generateComposeConfig(state);
+    const yaml = composeConfigToYaml(config);
+
+    expect(yaml).not.toContain('version:');
   });
 
   it('should contain "services" key in YAML output', () => {

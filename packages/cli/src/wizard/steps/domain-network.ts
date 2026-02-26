@@ -237,18 +237,28 @@ export async function runDomainNetworkStep(
       // =====================================================================
 
       // Step 1: Show pre-filled token creation URL + attempt browser open
-      console.log(chalk.bold('  Cloudflare API Token Setup'));
+      console.log(chalk.bold('  Cloudflare API Token — Setup Guide'));
       console.log();
-      console.log(chalk.dim('  Required permissions:'));
-      console.log(chalk.dim('    • Cloudflare Tunnel: Edit'));
-      console.log(chalk.dim('    • DNS: Edit'));
+      console.log(chalk.bold.white('  [1] Cloudflare 로그인'));
+      console.log(chalk.dim('      https://dash.cloudflare.com → 로그인'));
+      console.log();
+      console.log(chalk.bold.white('  [2] 도메인을 Cloudflare에 추가 (처음 사용 시)'));
+      console.log(chalk.dim('      Dashboard → Websites → Add a site → 도메인 입력'));
+      console.log(chalk.dim('      → Cloudflare 네임서버로 변경 (도메인 등록업체에서 설정)'));
+      console.log();
+      console.log(chalk.bold.white('  [3] API Token 생성'));
+      console.log(chalk.dim('      우측 상단 프로필 → My Profile → API Tokens → Create Token'));
+      console.log(chalk.dim('      → "Edit Cloudflare Tunnel" 템플릿 선택'));
+      console.log(chalk.dim('      → Zone Resources: 사용할 도메인 선택'));
+      console.log(chalk.dim('      → Continue to summary → Create Token → 토큰 복사'));
+      console.log();
+      console.log(chalk.dim('  필요 권한: Cloudflare Tunnel:Edit  •  DNS:Edit'));
       console.log();
 
       const tokenUrl = buildTokenCreationUrl(next.projectName);
-      console.log(chalk.dim('  Token creation URL (pre-filled):'));
+      console.log(chalk.dim('  사전 설정된 토큰 생성 URL (브라우저에서 열림):'));
       console.log(`  ${chalk.cyan(tokenUrl)}`);
       console.log();
-      console.log(chalk.dim('  Opening in browser... (or copy the URL above)'));
       await tryOpenUrl(tokenUrl);
       console.log();
 

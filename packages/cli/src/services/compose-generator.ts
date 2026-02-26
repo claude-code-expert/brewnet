@@ -40,9 +40,9 @@ export interface ComposeService {
 }
 
 export interface ComposeConfig {
-  version: string;
   services: Record<string, ComposeService>;
   networks: Record<string, { external?: boolean; internal?: boolean }>;
+  volumes?: Record<string, null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +473,29 @@ function buildComposeService(
 }
 
 // ---------------------------------------------------------------------------
+// Named volume collector
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract all named (non-bind-mount) volumes from a services map.
+ * Bind mounts start with '/' or '.'; everything else is a named volume.
+ */
+function collectNamedVolumes(
+  services: Record<string, ComposeService>,
+): Record<string, null> {
+  const volumes: Record<string, null> = {};
+  for (const svc of Object.values(services)) {
+    for (const vol of svc.volumes ?? []) {
+      const hostPart = vol.split(':')[0];
+      if (!hostPart.startsWith('/') && !hostPart.startsWith('.')) {
+        volumes[hostPart] = null;
+      }
+    }
+  }
+  return volumes;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -574,13 +597,15 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     }
   }
 
+  const namedVolumes = collectNamedVolumes(services);
+
   return {
-    version: '3.8',
     services,
     networks: {
       brewnet: { external: true },
       'brewnet-internal': { internal: true },
     },
+    ...(Object.keys(namedVolumes).length > 0 ? { volumes: namedVolumes } : {}),
   };
 }
 

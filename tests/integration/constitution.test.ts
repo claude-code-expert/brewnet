@@ -366,7 +366,8 @@ describe('TC-C-05: Offline First — all generators are pure functions', () => {
       const config = generateComposeConfig(state);
 
       expect(config).toBeDefined();
-      expect(config.version).toBe('3.8');
+      expect((config as Record<string, unknown>)['version']).toBeUndefined();
+      expect(config.volumes).toBeDefined();
       expect(Object.keys(config.services).length).toBeGreaterThan(0);
       expect(config.networks).toBeDefined();
     });
@@ -402,7 +403,9 @@ describe('TC-C-05: Offline First — all generators are pure functions', () => {
       // Should be parseable back
       const parsed = yaml.load(yamlStr) as ComposeFile;
       expect(parsed.services).toBeDefined();
-      expect(parsed.version).toBe('3.8');
+      expect((parsed as Record<string, unknown>)['version']).toBeUndefined();
+      // Top-level volumes section should be present
+      expect((parsed as Record<string, unknown>)['volumes']).toBeDefined();
     });
   });
 

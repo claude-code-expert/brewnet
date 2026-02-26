@@ -783,9 +783,10 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       const yamlStr = composeConfigToYaml(config);
 
       // Should be parseable as YAML (basic structural check)
-      expect(yamlStr).toContain('version:');
+      expect(yamlStr).not.toContain('version:');
       expect(yamlStr).toContain('services:');
       expect(yamlStr).toContain('networks:');
+      expect(yamlStr).toContain('volumes:');
 
       // All expected services should be in the YAML
       expect(yamlStr).toContain('traefik:');
@@ -830,11 +831,12 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       expect(config.networks['brewnet-internal']).toEqual({ internal: true });
     });
 
-    it('compose version is 3.8', () => {
+    it('should declare top-level named volumes (no deprecated version field)', () => {
       const state = createDefaultWizardState();
       const config = generateComposeConfig(state);
 
-      expect(config.version).toBe('3.8');
+      expect((config as Record<string, unknown>)['version']).toBeUndefined();
+      expect(config.volumes).toBeDefined();
     });
   });
 });

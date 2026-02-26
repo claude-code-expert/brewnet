@@ -189,10 +189,11 @@ describe('TC-C-01: Zero Config — default state produces a valid configuration'
     expect(config.networks['brewnet-internal']).toBeDefined();
   });
 
-  it('should set compose version to 3.8', () => {
+  it('should declare top-level named volumes for all services', () => {
     const state = createDefaultWizardState() as WizardState;
     const config = generateComposeConfig(state);
-    expect(config.version).toBe('3.8');
+    expect(config.volumes).toBeDefined();
+    expect(Object.keys(config.volumes!).length).toBeGreaterThan(0);
   });
 });
 
