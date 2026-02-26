@@ -28,6 +28,11 @@
 | REQ-1.2.5 | 메모리 확인 (최소 2GB) | Must | 1 |
 | REQ-1.2.6 | 필수 포트 사용 가능 여부 확인 (80, 443, 2222) | Should | 1 |
 | REQ-1.2.7 | Git 설치 여부 확인 | Should | 1 |
+| REQ-1.2.8 | Docker 미설치 시 플랫폼별 자동 설치 — macOS: Homebrew(brew install --cask docker), Linux: 공식 convenience script(get.docker.com) | Must | 1 |
+| REQ-1.2.9 | Homebrew 미설치(macOS) 시 Homebrew 먼저 자동 설치 후 Docker 설치 | Must | 1 |
+| REQ-1.2.10 | Docker 설치 후 데몬 기동 확인 — macOS 90초, Linux 30초 타임아웃 폴링 | Must | 1 |
+| REQ-1.2.11 | Linux Docker 설치 시 docker 그룹에 현재 사용자 추가(usermod -aG docker), 재로그인 안내 표시 | Must | 1 |
+| REQ-1.2.12 | Docker 자동 설치 실패 시 수동 설치 URL(플랫폼별) 안내 후 종료 | Must | 1 |
 
 ### REQ-1.3 인터랙티브 위저드 (`brewnet init`)
 

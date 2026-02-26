@@ -293,3 +293,19 @@ All detailed specifications are in the `spec/` directory:
 - `file-server-complete-guide.md` — File server (Nextcloud/MinIO/Jellyfin/SFTP) guide
 - `boilerplate-complete-guide.md` — App scaffolding/template generation guide
 - `testing-complete-guide.md` — Testing strategy & CI/CD pipeline guide
+
+## Language Policy
+
+- Internal reasoning and planning: English
+- Code and technical artifacts: English (variable names, comments, logs, error messages)
+- Git commits: English, follow Conventional Commits (e.g., feat:, fix:, refactor:)
+- User-facing responses: Korean (한국어)
+  - Task summaries, explanations, and clarifying questions in Korean
+  - When reporting errors or issues, describe the problem in Korean but keep the original error message in English
+
+## Response Format
+
+When completing a task, always end with a Korean summary:
+- 무엇을 변경했는지
+- 왜 그렇게 했는지
+- 주의할 점이 있는지

@@ -666,6 +666,7 @@ JWT_SECRET=(auto-generated)
 | `brewnet mail dns-check` | 메일 DNS 레코드 확인 |
 | `brewnet storage monitor` | 스토리지 사용량 |
 | `brewnet backup` | 백업 생성 |
+| `brewnet uninstall` | 전체 서비스 제거 (컨테이너 + 볼륨 + 설정) |
 
 ---
 
@@ -732,6 +733,217 @@ Step 7: state → 엔드포인트 URL, 크리덴셜 요약 표시
 | openssh-server | `linuxserver/openssh-server:latest` | 2222 | SSH/SFTP |
 | docker-mailserver | `ghcr.io/docker-mailserver/docker-mailserver:latest` | 25, 587, 993 | Mail |
 | cloudflared | `cloudflare/cloudflared:latest` | — (outbound) | Tunnel |
+
+---
+
+## Build / Test / Deploy / Monitoring
+
+> **Version**: 2.3 (added 2026-02-25)
+
+---
+
+### 빌드 방법 (Build)
+
+#### 로컬 개발 빌드
+
+```bash
+# 1. 전체 workspace 의존성 설치
+pnpm install
+
+# 2. 전체 빌드 (packages/shared → packages/cli 순서)
+pnpm build
+
+# 3. 결과물 확인
+# packages/cli/dist/index.js  ← CLI 번들 (tsup, ESM)
+# packages/shared/dist/       ← 공유 타입
+
+# 4. 개발 중 watch 모드
+pnpm --filter @brewnet/cli dev
+```
+
+#### 빌드 구조
+
+| 패키지 | 빌드 도구 | 입력 | 출력 |
+|--------|----------|------|------|
+| `packages/shared` | `tsc` | `src/index.ts` | `dist/` |
+| `packages/cli` | `tsup` (esbuild 기반) | `src/index.ts` | `dist/index.js` (ESM, 번들) |
+
+- `packages/cli/dist/index.js` 하나의 파일로 번들됨 (tree-shaking 적용)
+- Node.js `bin` 필드: `"brewnet": "./dist/index.js"`
+
+---
+
+### 테스트 방법 (Test)
+
+```bash
+# 전체 테스트 실행
+pnpm test
+
+# 커버리지 포함
+pnpm test:coverage
+
+# 특정 패키지만
+pnpm --filter @brewnet/cli test
+pnpm --filter @brewnet/shared test
+
+# 특정 파일
+pnpm test -- tests/unit/cli/utils/password.test.ts
+
+# watch 모드
+pnpm test -- --watch
+```
+
+#### 테스트 커버리지 목표
+
+| 대상 | 목표 |
+|------|------|
+| CLI 핵심 로직 (config, utils, wizard state) | 90%+ |
+| 전체 | 80%+ |
+
+#### 테스트 계층
+
+| 계층 | 위치 | 도구 |
+|------|------|------|
+| Unit | `tests/unit/` | Jest |
+| Integration | `tests/integration/` | Jest (mock dockerode) |
+| E2E | `tests/e2e/` | execa (실제 CLI 바이너리 호출) |
+
+---
+
+### 배포 방법 (Deploy)
+
+#### 설치 방식 — GitHub 소스 직접 실행 (npm 레지스트리 불필요)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+```
+
+`install.sh` 실행 흐름:
+
+```
+1. OS 감지 (macOS / Linux)
+2. Node.js 20+ 확인
+3. pnpm 확인 (없으면 자동 설치)
+4. git 확인
+5. git clone --depth 1 https://github.com/claude-code-expert/brewnet.git ~/.brewnet/source/
+   (이미 설치된 경우: git pull --ff-only 업데이트)
+6. pnpm install + pnpm build → packages/cli/dist/index.js 생성
+7. /usr/local/bin/brewnet 또는 ~/.local/bin/brewnet 래퍼 스크립트 생성
+8. ~/.brewnet/{projects,backups,logs,db}/ 디렉토리 생성
+9. PATH 설정 (.zshrc / .bashrc — ~/.local/bin 사용 시만)
+10. brewnet --version 확인
+```
+
+#### GitHub에서 별도 빌드/배포가 필요한가?
+
+| 항목 | 필요 여부 | 이유 |
+|------|----------|------|
+| npm 레지스트리 배포 | ❌ 불필요 | 사용자가 소스에서 직접 빌드 |
+| GitHub Release 태그 | ✅ 권장 | `main` 브랜치 직접 clone — 태그 불필요하나, 안정 버전 관리 목적으로 사용 가능 |
+| GitHub Actions CI | ✅ 필요 | push 시 `pnpm build` + `pnpm test` 자동 검증 (main 브랜치 항상 빌드 가능 상태 유지) |
+| pre-built 바이너리 배포 | ❌ 불필요 | 사용자 환경에서 직접 빌드 (Node.js 20+ 보장됨) |
+
+#### GitHub Actions CI (`/.github/workflows/ci.yml`) — 필수 설정
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main, 001-cli-init-wizard]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: latest }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install
+      - run: pnpm build
+      - run: pnpm test:coverage
+      - run: bash -n install.sh    # install.sh 구문 검사
+```
+
+#### 업데이트 (사용자 측)
+
+```bash
+# 같은 명령으로 재실행하면 git pull → rebuild → 재설치
+curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+```
+
+#### 브랜치 전략
+
+| 브랜치 | 용도 |
+|--------|------|
+| `main` | 안정 버전 — install.sh가 항상 이 브랜치를 clone |
+| `001-cli-init-wizard` | 현재 개발 브랜치 — PR → main merge |
+| `release/v1.x.x` | (선택) 특정 버전 고정 배포용 |
+
+---
+
+### 모니터링 방법 (Monitoring)
+
+#### 서비스 상태 확인
+
+```bash
+# 전체 서비스 상태 (CLI)
+brewnet status
+
+# 개별 서비스 로그
+brewnet logs                  # 전체
+brewnet logs traefik          # 특정 서비스
+brewnet logs --follow         # 실시간 스트리밍
+
+# Docker 직접 확인
+docker compose -f ~/.brewnet/projects/<name>/docker-compose.yml ps
+docker stats                  # CPU/메모리 실시간
+```
+
+#### Admin Panel (localhost:8088)
+
+```bash
+# Admin Panel 시작 (brewnet init 완료 후 자동 실행)
+brewnet admin
+
+# 포트 변경
+brewnet admin --port 9090
+```
+
+브라우저에서 `http://localhost:8088` 접속:
+- **Status 탭**: 서비스 목록, CPU/메모리/업타임, start/stop 버튼
+- **Add 탭**: 새 서비스 설치 (서비스 카탈로그)
+- **Backup 탭**: 백업 생성 / 목록 조회
+
+#### REST API 직접 조회 (curl)
+
+```bash
+# 서비스 목록
+curl http://localhost:8088/api/services | jq .
+
+# 서비스 시작
+curl -X POST http://localhost:8088/api/services/nextcloud/start
+
+# 헬스 체크
+curl http://localhost:8088/api/health
+```
+
+#### 로그 파일
+
+| 위치 | 내용 |
+|------|------|
+| `~/.brewnet/logs/YYYY-MM-DD.json` | brewnet CLI 명령 실행 로그 (구조화 JSON) |
+| `docker compose logs` | 컨테이너 stdout/stderr |
+
+#### SQLite 로컬 DB 직접 조회 (디버깅)
+
+```bash
+sqlite3 ~/.brewnet/db/brewnet.db "SELECT * FROM services;"
+sqlite3 ~/.brewnet/db/brewnet.db "SELECT * FROM backups ORDER BY created_at DESC LIMIT 5;"
+```
 
 ---
 

@@ -1,0 +1,649 @@
+/**
+ * Unit tests for services/boilerplate-generator module
+ *
+ * Covers:
+ *   - getScaffoldTemplate: returns correct template for each language/framework
+ *   - generateBoilerplate: early returns, file generation, sampleData, devMode, fileBrowser
+ * All fs calls are mocked.
+ */
+
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+
+// ---------------------------------------------------------------------------
+// Mock node:fs
+// ---------------------------------------------------------------------------
+
+const mockWriteFileSync = jest.fn();
+const mockMkdirSync = jest.fn();
+
+jest.unstable_mockModule('node:fs', () => ({
+  writeFileSync: mockWriteFileSync,
+  mkdirSync: mockMkdirSync,
+  existsSync: jest.fn(() => false),
+  readFileSync: jest.fn(() => ''),
+}));
+
+// ---------------------------------------------------------------------------
+// Imports (after mocks)
+// ---------------------------------------------------------------------------
+
+const { getScaffoldTemplate, generateBoilerplate } = await import(
+  '../../../../packages/cli/src/services/boilerplate-generator.js'
+);
+
+const { createDefaultWizardState } = await import(
+  '../../../../packages/cli/src/config/defaults.js'
+);
+
+import type { WizardState } from '@brewnet/shared';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeState(overrides: Partial<WizardState> = {}): WizardState {
+  const base = createDefaultWizardState();
+  return {
+    ...base,
+    projectName: 'test-project',
+    projectPath: '/tmp/test-project',
+    domain: { ...base.domain, name: 'test.local' },
+    admin: { ...base.admin, username: 'admin', password: 'secret' },
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// getScaffoldTemplate
+// ---------------------------------------------------------------------------
+
+describe('getScaffoldTemplate — nodejs', () => {
+  it('returns nextjs template for nodejs/nextjs', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'nextjs');
+    expect(tpl.appDir).toContain('nextjs');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns express template for nodejs/express', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'express');
+    expect(tpl.appDir).toContain('express');
+  });
+
+  it('returns nestjs template for nodejs/nestjs', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'nestjs');
+    expect(tpl.appDir).toContain('nestjs');
+  });
+
+  it('returns fastify template for nodejs/fastify', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'fastify');
+    expect(tpl.appDir).toContain('fastify');
+  });
+
+  it('returns nextjs-api template for nodejs/nextjs-api', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'nextjs-api');
+    expect(tpl.appDir).toBeDefined();
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns express (default) for unknown nodejs framework', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'unknown-framework');
+    expect(tpl.appDir).toContain('express');
+  });
+});
+
+describe('getScaffoldTemplate — python', () => {
+  it('returns fastapi template for python/fastapi', () => {
+    const tpl = getScaffoldTemplate('python', 'fastapi');
+    expect(tpl.appDir).toContain('fastapi');
+  });
+
+  it('returns django template for python/django', () => {
+    const tpl = getScaffoldTemplate('python', 'django');
+    expect(tpl.appDir).toContain('django');
+  });
+
+  it('returns flask template for python/flask', () => {
+    const tpl = getScaffoldTemplate('python', 'flask');
+    expect(tpl.appDir).toContain('flask');
+  });
+
+  it('returns fastapi (default) for unknown python framework', () => {
+    const tpl = getScaffoldTemplate('python', 'unknown');
+    expect(tpl.appDir).toContain('fastapi');
+  });
+});
+
+describe('getScaffoldTemplate — java', () => {
+  it('returns java-pure template', () => {
+    const tpl = getScaffoldTemplate('java', 'java-pure');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns spring template', () => {
+    const tpl = getScaffoldTemplate('java', 'spring');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns springboot template', () => {
+    const tpl = getScaffoldTemplate('java', 'springboot');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns java-pure (default) for unknown java framework', () => {
+    const tpl = getScaffoldTemplate('java', 'unknown');
+    expect(tpl.appDir).toBeDefined();
+  });
+});
+
+describe('getScaffoldTemplate — php', () => {
+  it('returns laravel template for php/laravel', () => {
+    const tpl = getScaffoldTemplate('php', 'laravel');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns symfony template for php/symfony', () => {
+    const tpl = getScaffoldTemplate('php', 'symfony');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns laravel (default) for unknown php framework', () => {
+    const tpl = getScaffoldTemplate('php', 'unknown-fw');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+});
+
+describe('getScaffoldTemplate — dotnet', () => {
+  it('returns aspnet template for dotnet/aspnet', () => {
+    const tpl = getScaffoldTemplate('dotnet', 'aspnet');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns blazor template for dotnet/blazor', () => {
+    const tpl = getScaffoldTemplate('dotnet', 'blazor');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns aspnet (default) for unknown dotnet framework', () => {
+    const tpl = getScaffoldTemplate('dotnet', 'unknown-fw');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+});
+
+describe('getScaffoldTemplate — fallback for unknown language', () => {
+  it('returns express template for completely unknown language', () => {
+    const tpl = getScaffoldTemplate('cobol', '');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+});
+
+describe('getScaffoldTemplate — go / rust', () => {
+  it('returns go template', () => {
+    const tpl = getScaffoldTemplate('go', '');
+    expect(tpl.appDir).toContain('go');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns rust template', () => {
+    const tpl = getScaffoldTemplate('rust', '');
+    expect(tpl.appDir).toContain('rust');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+});
+
+describe('getScaffoldTemplate — template content', () => {
+  it('each template file has path and template string', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'express');
+    for (const file of tpl.files) {
+      expect(typeof file.path).toBe('string');
+      expect(file.path.length).toBeGreaterThan(0);
+      expect(typeof file.template).toBe('string');
+    }
+  });
+
+  it('nextjs template contains PROJECT_NAME placeholder', () => {
+    const tpl = getScaffoldTemplate('nodejs', 'nextjs');
+    const allContent = tpl.files.map((f) => f.template).join('\n');
+    expect(allContent).toContain('${PROJECT_NAME}');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateBoilerplate
+// ---------------------------------------------------------------------------
+
+describe('generateBoilerplate', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns empty array when boilerplate.generate is false', async () => {
+    const state = makeState({ boilerplate: { generate: false, sampleData: false, devMode: null } });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files).toEqual([]);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it('returns empty array when no languages selected', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: [], frameworks: {}, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files).toEqual([]);
+  });
+
+  it('generates files for nodejs/nextjs', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'nextjs' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+    expect(mockWriteFileSync).toHaveBeenCalled();
+  });
+
+  it('writes each generated file to disk', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(mockWriteFileSync.mock.calls.length).toBe(files.length);
+  });
+
+  it('creates directories for each file', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+    });
+    await generateBoilerplate(state, '/tmp/output');
+    expect(mockMkdirSync).toHaveBeenCalled();
+    const firstCall = mockMkdirSync.mock.calls[0];
+    expect(firstCall?.[1]).toMatchObject({ recursive: true });
+  });
+
+  it('substitutes PROJECT_NAME in file content', async () => {
+    const state = makeState({
+      projectName: 'my-awesome-project',
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'nextjs' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const fileWithName = files.find((f) => f.content.includes('my-awesome-project'));
+    expect(fileWithName).toBeDefined();
+  });
+
+  it('does not contain raw ${PROJECT_NAME} after substitution', async () => {
+    const state = makeState({
+      projectName: 'test-project',
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'nextjs' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const allContent = files.map((f) => f.content).join('\n');
+    expect(allContent).not.toContain('${PROJECT_NAME}');
+  });
+
+  it('generates files for multiple languages', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: {
+        languages: ['nodejs', 'python'],
+        frameworks: { nodejs: 'express', python: 'fastapi' },
+        frontend: [],
+      },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const hasExpress = files.some((f) => f.path.includes('express'));
+    const hasFastapi = files.some((f) => f.path.includes('fastapi'));
+    expect(hasExpress).toBe(true);
+    expect(hasFastapi).toBe(true);
+  });
+
+  it('adds sample data files when sampleData=true', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+    });
+    const filesWithSample = await generateBoilerplate(state, '/tmp/output');
+
+    jest.clearAllMocks();
+
+    const stateNoSample = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+    });
+    const filesWithoutSample = await generateBoilerplate(stateNoSample, '/tmp/output');
+
+    // With sample data should have more or equal files
+    expect(filesWithSample.length).toBeGreaterThanOrEqual(filesWithoutSample.length);
+  });
+
+  it('generates docker-compose.dev.yml when devMode=hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('services');
+  });
+
+  it('does NOT generate docker-compose.dev.yml when devMode is null', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeUndefined();
+  });
+
+  it('includes storage .gitkeep files when fileBrowser is enabled', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+      servers: {
+        ...makeState().servers,
+        fileBrowser: { enabled: true, mode: 'standalone' },
+      },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const gitkeep = files.find((f) => f.path.includes('.gitkeep'));
+    expect(gitkeep).toBeDefined();
+  });
+
+  it('does NOT include storage files when fileBrowser is disabled', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: [] },
+      servers: {
+        ...makeState().servers,
+        fileBrowser: { enabled: false, mode: null },
+      },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const gitkeep = files.find((f) => f.path.includes('.gitkeep'));
+    expect(gitkeep).toBeUndefined();
+  });
+
+  it('returns GeneratedFile objects with path and content', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['python'], frameworks: { python: 'fastapi' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    for (const file of files) {
+      expect(typeof file.path).toBe('string');
+      expect(typeof file.content).toBe('string');
+      expect(file.path.startsWith('apps/')).toBe(true);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // sampleData=true for additional frameworks (covers getSampleData branches)
+  // ---------------------------------------------------------------------------
+
+  it('adds sample data for nodejs/nextjs-api', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'nextjs-api' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it('adds sample data for nodejs/nestjs', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'nestjs' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it('adds sample data for python/fastapi', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['python'], frameworks: { python: 'fastapi' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it('adds sample data for python/django', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['python'], frameworks: { python: 'django' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it('adds sample data for rust', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['rust'], frameworks: {}, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it('adds sample data for dotnet', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['dotnet'], frameworks: { dotnet: 'aspnet' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // devMode='hot-reload' for additional frameworks (covers getDevConfig branches)
+  // ---------------------------------------------------------------------------
+
+  it('generates dev compose for nodejs/nestjs hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'nestjs' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for python/django hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['python'], frameworks: { python: 'django' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for python/flask hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['python'], frameworks: { python: 'flask' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for java/spring hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['java'], frameworks: { java: 'spring' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for java/springboot hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['java'], frameworks: { java: 'springboot' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for java default (java-pure) hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['java'], frameworks: { java: 'java-pure' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for php/laravel hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['php'], frameworks: { php: 'laravel' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for php/symfony hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['php'], frameworks: { php: 'symfony' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for dotnet hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['dotnet'], frameworks: { dotnet: 'aspnet' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for rust hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['rust'], frameworks: {}, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  // sampleData=true for remaining frameworks (covers getSampleData default branches)
+  it('generates sampleData files for python/flask', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['python'], frameworks: { python: 'flask' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('seed_data.py'))).toBe(true);
+  });
+
+  it('returns no sampleData for python/unknown framework (default)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['python'], frameworks: { python: 'unknown-fw' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    // unknown python framework → getSampleData default → []
+    const seedFile = files.find((f) => f.path.includes('seed'));
+    expect(seedFile).toBeUndefined();
+  });
+
+  it('generates sampleData files for java', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['java'], frameworks: { java: 'spring' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('data.json'))).toBe(true);
+  });
+
+  it('generates sampleData files for php', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['php'], frameworks: { php: 'laravel' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('demo.json'))).toBe(true);
+  });
+
+  it('returns no sampleData for nodejs/unknown framework (default)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'unknown-fw' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    // unknown nodejs framework → getSampleData default → []
+    const hasSeed = files.some(
+      (f) => f.path.includes('seed') || f.path.includes('fixture'),
+    );
+    expect(hasSeed).toBe(false);
+  });
+
+  it('returns no sampleData for unknown language (default)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['cobol' as 'nodejs'], frameworks: {}, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    // unknown language → top-level getSampleData default → []
+    const hasSeed = files.some((f) => f.path.includes('seed'));
+    expect(hasSeed).toBe(false);
+  });
+
+  // devMode='hot-reload' for remaining default branches
+  it('generates dev compose for nodejs/unknown framework (default devConfig)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'unknown-fw' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for python/unknown framework (default devConfig)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['python'], frameworks: { python: 'unknown-fw' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for php/unknown framework (default devConfig)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['php'], frameworks: { php: 'unknown-fw' }, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for unknown language (default devConfig)', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['cobol' as 'nodejs'], frameworks: {}, frontend: [] },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+});
