@@ -18,6 +18,8 @@ import { registerDownCommand } from './commands/down.js';
 import { registerLogsCommand } from './commands/logs.js';
 import { registerBackupCommand } from './commands/backup.js';
 import { registerRestoreCommand } from './commands/restore.js';
+import { registerAdminCommand } from './commands/admin.js';
+import { registerUninstallCommand } from './commands/uninstall.js';
 
 /**
  * Build and return a fully configured Commander.js program with all
@@ -45,6 +47,8 @@ export function createProgram(): Command {
   registerLogsCommand(program);
   registerBackupCommand(program);
   registerRestoreCommand(program);
+  registerAdminCommand(program);
+  registerUninstallCommand(program);
 
   return program;
 }

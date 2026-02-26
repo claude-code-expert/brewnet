@@ -324,7 +324,15 @@ function importConfig(configPath: string): WizardState {
       },
       media: config.servers.media,
       sshServer: config.servers.sshServer,
-      mailServer: config.servers.mailServer,
+      mailServer: {
+        ...config.servers.mailServer,
+        port25Blocked: false,
+        relayProvider: '' as const,
+        relayHost: '',
+        relayPort: 587,
+        relayUser: '',
+        relayPassword: '',
+      },
       appServer: config.servers.appServer,
       fileBrowser: config.servers.fileBrowser,
     },
@@ -333,8 +341,14 @@ function importConfig(configPath: string): WizardState {
     domain: {
       ...config.domain,
       cloudflare: {
-        ...config.domain.cloudflare,
+        enabled: config.domain.cloudflare.enabled,
+        tunnelName: config.domain.cloudflare.tunnelName,
+        accountId: '',
+        apiToken: '',
+        tunnelId: '',
         tunnelToken: '', // must be re-supplied
+        zoneId: '',
+        zoneName: '',
       },
     },
   };
@@ -373,7 +387,10 @@ function createCompletedState(): WizardState {
       fileServer: { enabled: true, service: 'nextcloud' },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: false, service: 'docker-mailserver' },
+      mailServer: {
+        ...state.servers.mailServer,
+        enabled: false,
+      },
       appServer: { enabled: true },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
@@ -383,11 +400,12 @@ function createCompletedState(): WizardState {
       frontend: ['reactjs', 'typescript'],
     },
     domain: {
-      provider: 'custom',
+      provider: 'tunnel',
       name: 'myserver.example.com',
-      ssl: 'letsencrypt',
+      ssl: 'cloudflare',
       freeDomainTld: '.dpdns.org',
       cloudflare: {
+        ...state.domain.cloudflare,
         enabled: true,
         tunnelToken: 'secret-tunnel-token-xyz',
         tunnelName: 'my-tunnel',
@@ -705,9 +723,9 @@ describe('T064 — Review & Export', () => {
       expect(parsed.devStack.languages).toEqual(['nodejs', 'python']);
       expect(parsed.devStack.frameworks).toEqual({ nodejs: 'nextjs', python: 'fastapi' });
       expect(parsed.devStack.frontend).toEqual(['reactjs', 'typescript']);
-      expect(parsed.domain.provider).toBe('custom');
+      expect(parsed.domain.provider).toBe('tunnel');
       expect(parsed.domain.name).toBe('myserver.example.com');
-      expect(parsed.domain.ssl).toBe('letsencrypt');
+      expect(parsed.domain.ssl).toBe('cloudflare');
       expect(parsed.domain.cloudflare.enabled).toBe(true);
       expect(parsed.domain.cloudflare.tunnelName).toBe('my-tunnel');
     });

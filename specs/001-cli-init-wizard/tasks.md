@@ -131,10 +131,8 @@
 - [x] T040 [P] [US2] Implement port availability check (80, 443, 2222) with process info on conflict in `packages/cli/src/services/system-checker.ts`
 - [x] T041 [P] [US2] Implement Git installation check (non-critical warning) in `packages/cli/src/services/system-checker.ts`
 - [x] T042 [US2] Implement Step 0 wizard step: orchestrate all checks, display pass/fail/warn table with chalk, halt on critical failures, prompt to continue on warnings in `packages/cli/src/wizard/steps/system-check.ts`
-- [x] T043 [US2] Implement Docker auto-installer service — platform detection, macOS (Homebrew check → brew install --cask docker → open -a Docker), Linux (get.docker.com script → systemctl start/enable → usermod -aG docker), daemon polling with timeout in `packages/cli/src/services/docker-installer.ts`
-- [x] T044 [US2] Integrate docker-installer into Step 0 wizard: check Docker presence before runAllChecks(), trigger installDocker() with ora spinner, await waitForDockerDaemon(), display install success/failure UI; on failure show manual install URL and halt in `packages/cli/src/wizard/steps/system-check.ts`
 
-**Checkpoint**: `brewnet init` auto-installs Docker when missing (macOS/Linux), awaits daemon, then proceeds to system check table
+**Checkpoint**: `brewnet init` shows system check table, halts on Docker missing (BN001), warns on low RAM
 
 ---
 
@@ -202,6 +200,12 @@
 - [x] T064 [P] [US7] Integration tests for review display, export to brewnet.config.json, config import (--config flag) in `tests/integration/review-export.test.ts` — covers TC-07-01 through TC-07-07
 - [x] T065 [P] [US7] Integration tests for service startup flow (image pull, dependency order, health check polling, timeout handling, rollback, credential propagation verification) in `tests/integration/service-startup.test.ts` — covers TC-08-14 through TC-08-22
 
+### Implemented additions (2026-02-25 update)
+
+- [x] T065a [US7] Implement Cloudflare API client (account lookup, tunnel CRUD, DNS record creation) via CF API v4 in `packages/cli/src/services/cloudflare-client.ts`
+- [x] T065b [US7] Implement post-install status page generator (static HTML: service cards with Running/Stopped badges, masked credentials + copy button, endpoint URLs, next-steps CLI card) in `packages/cli/src/services/status-page.ts`
+- [x] T065c [P] [US7] Implement port 25 TCP reachability check (3 s timeout) for mail relay detection in `packages/cli/src/utils/network.ts`
+
 ### Implementation for User Story 7
 
 - [x] T066 [US7] Implement docker-compose.yml generator using `js-yaml`: build YAML from WizardState using service registry, conditional service blocks, Traefik labels per subdomain, `brewnet`/`brewnet-internal` networks, depends_on ordering, `security_opt: [no-new-privileges:true]` on all containers (per constitution) in `packages/cli/src/services/compose-generator.ts`
@@ -235,7 +239,7 @@
 - [x] T078 [US5] Implement Step 3 wizard step: language multi-select checkbox, per-language framework select (filtered by selected languages), frontend tech multi-select, Skip option in `packages/cli/src/wizard/steps/dev-stack.ts`
 - [x] T079 [US5] Implement App Server auto-enable logic (enabled when languages.length > 0 || frontend.length > 0), FileBrowser auto-enable with mode select (directory/standalone) in `packages/cli/src/wizard/steps/dev-stack.ts`
 - [x] T080 [US5] Implement boilerplate configuration prompts (generate yes/no, sample data yes/no, dev mode hot-reload/production) in `packages/cli/src/wizard/steps/dev-stack.ts`
-- [x] T081 [US5] Implement boilerplate scaffold generator: create `apps/<framework>-app/` with Dockerfile, source files, package.json/requirements.txt per framework template, template variable substitution in `packages/cli/src/services/boilerplate-generator.ts`
+- [x] T081 [US5] Implement boilerplate scaffold generator: create `apps/<framework>-app/` with Dockerfile, source files, package.json/requirements.txt per framework template, template variable substitution in `packages/cli/src/services/config-generator.ts`
 - [x] T082 [US5] Wire Step 2 → Step 3 navigation in init orchestrator in `packages/cli/src/commands/init.ts`
 
 **Checkpoint**: Step 3 shows language/framework/frontend selection → boilerplate generated → App Server auto-enabled in state
@@ -279,7 +283,7 @@
 
 ### Implementation for User Story 8
 
-- [x] T093 [US8] Implement `brewnet status` command: query Docker containers (dockerode listContainers), format table with name/status/CPU/memory/uptime/port/URL using chalk for color in `packages/cli/src/commands/status.ts`
+- [x] T093 [US8] Implement `brewnet status` command: query Docker containers (dockerode listContainers), format table with name/status/CPU/memory/uptime/port/URL using `cli-table3` (per constitution) + chalk for color in `packages/cli/src/commands/status.ts`
 - [x] T094 [US8] Implement `brewnet add <service>` command: validate service ID against registry, backup existing docker-compose.yml before modification (per constitution: Reversible Actions), update docker-compose.yml, pull image, start container, register Traefik route, detect duplicate in `packages/cli/src/commands/add.ts`
 - [x] T095 [US8] Implement `brewnet remove <service>` command: confirmation prompt (unless --force), backup existing docker-compose.yml before modification (per constitution: Reversible Actions), stop container, remove from compose, optionally purge volumes (--purge), preserve data by default in `packages/cli/src/commands/remove.ts`
 - [x] T096 [US8] Implement `brewnet up` / `brewnet down` commands: invoke `docker compose up -d` / `docker compose down` via execa in `packages/cli/src/commands/up.ts` and `packages/cli/src/commands/down.ts`
@@ -289,7 +293,13 @@
 - [x] T100 [US8] Implement `brewnet restore <id>` command: validate backup ID (BN008 if not found), confirmation prompt, stop services, extract archive, restart services in `packages/cli/src/commands/restore.ts`
 - [x] T101 [US8] Initialize SQLite database with services/backups/logs tables on first CLI run (ensure `~/.brewnet/db/` exists) in `packages/cli/src/services/db-manager.ts`
 
-**Checkpoint**: All post-setup commands work against running services without direct Docker CLI usage
+### Admin Panel (research.md 2026-02-25 decision)
+
+- [x] T101a [US8] Implement local admin panel server: Node.js `http.createServer()` serving static HTML dashboard + REST API per `contracts/admin-api.md` (GET /api/services, POST /api/services/:id/start|stop, POST /api/services/install, DELETE /api/services/:id, GET /api/catalog, POST/GET /api/backup) in `packages/cli/src/services/admin-server.ts`
+- [x] T101b [US8] Add `brewnet admin [--port <PORT>]` command: start admin panel server, auto-open `http://localhost:<PORT>` in default browser, port default 8088 in `packages/cli/src/commands/admin.ts`
+- [x] T101c [P] [US8] Integration tests for admin panel REST API (list services, start/stop, install/remove, catalog, backup endpoint) in `tests/integration/admin-server.test.ts` — covers admin-api.md contract
+
+**Checkpoint**: All post-setup commands work against running services without direct Docker CLI usage; admin panel serves at http://localhost:8088
 
 ---
 
@@ -310,51 +320,35 @@
 - [x] T107 [P] Unit tests for wizard state persistence (save, load, schema migration, resume detection) in `tests/unit/cli/wizard/state.test.ts` — covers TC-W-01 through TC-W-05
 - [x] T108 [P] Unit tests for constitution compliance (Zero Config defaults, Secure by Default .env/SSH, Transparent logging) in `tests/unit/cli/constitution.test.ts` — covers TC-C-01 through TC-C-03
 - [x] T109 [P] Integration tests for constitution compliance (Reversible rollback, Offline First wizard without network) in `tests/integration/constitution.test.ts` — covers TC-C-04, TC-C-05
-- [x] T110 Run full test suite with coverage report — 34 suites, 1789 tests passing. CLI core logic (config, utils, wizard state, shared schemas) 96-100%. Overall 63.68% lines (interactive layers + boilerplate templates account for gap; business logic well above 90%)
+- [x] T110 Run full test suite with coverage report, verify 90%+ CLI core coverage and 80%+ overall
 
 **Checkpoint**: All 121 test cases pass, coverage targets met, no constitution violations
 
 ---
 
-## Phase 12: Install Script (Priority: P1)
-
-**Purpose**: One-line curl install script — `curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash`
-
-**Reference**: `specs/001-cli-init-wizard/plan.md` § Architecture: Install Script
-
-### Tests
-
-- [ ] T111 [P] Unit tests for install.sh: Node.js version detection (v20+ pass, v18 fail), npm install success/failure, PATH append idempotency (no duplicate) in `tests/e2e/install-script.test.sh` (BATS or shellspec)
-
-### Implementation
-
-- [x] T112 Create `install.sh` at repo root — POSIX shell, curl-pipeable, set -e; steps: (1) OS detection macOS/Linux, (2) Node.js 20+ check with error + install hint, (3) `npm install -g brewnet`, (4) `mkdir -p ~/.brewnet/{projects,backups,logs,db}`, (5) PATH append to `.zshrc`/`.bashrc`/`.bash_profile` (idempotent, skip if already present), (6) `brewnet --version` verification
-- [ ] T113 Add `chmod +x install.sh` to CI workflow and verify `bash -n install.sh` (syntax check) passes in CI
-
-**Checkpoint**: `curl -fsSL .../install.sh | bash` installs brewnet, creates `~/.brewnet/`, and confirms `brewnet --version`
-
 ---
 
-## Phase 13: Admin Panel (Priority: P2 — after Phase 11)
+## Phase 12: F10 — Uninstall (brewnet uninstall)
 
-**Purpose**: Local HTTP admin panel at `http://localhost:8088` for service management after `brewnet init` completes
+**Goal**: Complete removal of all Brewnet services, volumes, networks, project files, and `~/.brewnet` metadata. Supports `--dry-run`, `--keep-data`, `--keep-config`, `--force` flags.
 
-**Reference**: `specs/001-cli-init-wizard/contracts/admin-api.md`, `public/demo/manage.html`
+**Independent Test**: `brewnet uninstall --dry-run` → lists targets, no actual changes. `brewnet uninstall --force` on a setup → containers/volumes/dirs all removed without prompts.
 
-### Tests
+**REQ Coverage**: IMPLEMENT_SPEC.md F10, INSTALLATION-GUIDE.md `brewnet uninstall` section
+**Dependency**: Requires Phase 2 (state.projectPath known) and Phase 1 (CLI entry point)
 
-- [ ] T114 [P] Unit tests for AdminServer: port binding, graceful shutdown, static file serving, CORS headers (localhost-only) in `tests/unit/cli/services/admin-server.test.ts`
-- [ ] T115 [P] Integration tests for admin REST API: GET /api/health, GET /api/services (mock dockerode), POST .../start, POST .../stop, DELETE ..., GET /api/catalog, POST /api/backup, GET /api/backup in `tests/integration/admin-api.test.ts` — covers admin-api.md contract
+### Tests for F10 (TDD)
 
-### Implementation
+- [x] T111 [P] [F10] Unit tests for uninstall manager: dry-run no-op, `--keep-data` preserves named volumes, `--keep-config` preserves projectPath, graceful when projectPath missing in `tests/unit/cli/services/uninstall-manager.test.ts`
+- [x] T112 [P] [F10] Integration test: `brewnet uninstall --dry-run` (correct output, no file/container changes) and `brewnet uninstall --force` (full removal verified) in `tests/integration/uninstall.test.ts`
 
-- [ ] T116 Create `packages/cli/src/services/admin-server.ts` — Node.js built-in `http.createServer()`, port 8088 default, static file serving for `packages/cli/public/admin/`, REST JSON API (all endpoints from admin-api.md), `AdminServer.start(port)` / `AdminServer.stop()` exports; no external web framework
-- [ ] T117 [P] Create `packages/cli/public/admin/index.html` — terminal-style service manager adapted from `public/demo/manage.html`; real fetch() calls to `/api/services`, `/api/catalog`, `/api/backup`; Status/Add/Remove tabs
-- [ ] T118 [P] Create `packages/cli/src/commands/admin.ts` — `brewnet admin [--port PORT]` command; calls `AdminServer.start()`, auto-opens `http://localhost:PORT` via `open`/`xdg-open`
-- [ ] T119 Integrate admin panel launch into Step 7 complete step: after `runCompleteStep()` succeeds, call `AdminServer.start(8088)` and auto-open browser in `packages/cli/src/wizard/steps/complete.ts`
-- [ ] T120 Register `brewnet admin` command in `packages/cli/src/index.ts` entry point
+### Implementation for F10
 
-**Checkpoint**: After `brewnet init` completes, `http://localhost:8088` opens automatically with live service management UI; `brewnet admin` restarts the panel
+- [x] T113 [F10] Implement uninstall manager: (1) load wizard state (state.projectPath), (2) dry-run: list targets and exit, (3) `docker compose down [--volumes unless --keep-data]` via execa, (4) `docker network rm brewnet brewnet-internal` (errors ignored), (5) `rm -rf {projectPath}` (unless `--keep-config`), (6) `rm -rf ~/.brewnet/status ~/.brewnet/state` in `packages/cli/src/services/uninstall-manager.ts`
+- [x] T114 [F10] Add `brewnet uninstall [--dry-run] [--keep-data] [--keep-config] [--force]` command: display installed service list + removal targets, confirm prompt (skipped with `--force`), invoke uninstall manager, print Cloudflare tunnel manual-removal notice at completion in `packages/cli/src/commands/uninstall.ts`
+- [x] T115 [F10] Register `brewnet uninstall` command in CLI entry point and add to `brewnet --help` output in `packages/cli/src/index.ts`
+
+**Checkpoint**: `brewnet uninstall --dry-run` lists targets without changes; `brewnet uninstall --force` removes all containers + volumes + project dir
 
 ---
 
@@ -369,80 +363,7 @@ Phase 2: Foundational ───────────────────�
                                              ▼
          ┌───────────── Phase 3: US1 (CLI Bootstrap) ─── MUST complete first
          │
-         ├── Phase 4: US2 (System Check) ──── depends on US1
-         │
-         ├── Phase 5: US3 (Project Setup) ──── depends on US2
-         │
-         ├── Phase 6: US4 (Server Components) ──── depends on US3
-         │
-         ├── Phase 8: US5 (Dev Stack) ──── depends on US4
-         │
-         ├── Phase 9: US6 (Domain & Network) ──── depends on US4
-         │
-         ├── Phase 7: US7 (Review & Generation) ──── depends on US4, US5, US6
-         │
-         └── Phase 10: US8 (Post-Setup Mgmt) ──── depends on US1 only
-                                             │
-Phase 11: Polish ◄──────────────────────────┘
-         │
-Phase 12: Install Script ◄──────────────────┘ (parallel with Phase 11)
-         │
-Phase 13: Admin Panel ◄─────────────────────┘ (after Phase 10 + Phase 11)
-```
-
-### User Story Dependencies
-
-- **US1 (P1)**: Foundation only — no other story dependencies. **START HERE (MVP)**
-- **US2 (P1)**: Depends on US1 (needs CLI entry point for `init` command)
-- **US3 (P1)**: Depends on US2 (wizard flows sequentially: Step 0 → Step 1)
-- **US4 (P1)**: Depends on US3 (wizard Step 1 → Step 2)
-- **US5 (P2)**: Depends on US4 (wizard Step 2 → Step 3). Can be developed in parallel with US6.
-- **US6 (P2)**: Depends on US4 (wizard Step 2 → Step 4). Can be developed in parallel with US5.
-- **US7 (P1)**: Depends on US4 (minimum); ideally after US5+US6 for full wizard flow
-- **US8 (P2)**: Depends on US1 only (management commands are independent of wizard)
-
-### Within Each User Story
-
-1. Tests MUST be written and verified to FAIL before implementation
-2. Models/types before services
-3. Services before wizard steps/commands
-4. Wizard steps before orchestrator wiring
-5. Story complete and tested before moving to next priority
-
-### Parallel Opportunities
-
-Within a phase, all tasks marked [P] can run in parallel:
-
-- **Phase 2**: T008–T021 are all [P] — 14 tasks can run concurrently
-- **Phase 6**: T054–T058 (component cards) are [P] — 5 tasks concurrently
-- **Phase 10**: T090–T092 (tests) are [P], T093–T097 are partially [P]
-- **US5 and US6** can be developed in parallel after US4 completes
-- **US8** can be developed in parallel with US2–US7 (only needs US1)
-
----
-
-## Parallel Example: Phase 2 (Foundational)
-
-```bash
-# Launch all shared type definitions together:
-Task: "Define WizardState interface in packages/shared/src/types/wizard-state.ts"
-Task: "Define ServiceDefinition interface in packages/shared/src/types/service.ts"
-Task: "Define ErrorCode enum in packages/shared/src/types/errors.ts"
-Task: "Create Zod schema for WizardState in packages/shared/src/schemas/wizard-state.schema.ts"
-Task: "Create Zod schema for config in packages/shared/src/schemas/config.schema.ts"
-Task: "Define shared constants in packages/shared/src/utils/constants.ts"
-
-# Launch all CLI utility implementations together:
-Task: "Implement BrewnetError class in packages/cli/src/utils/errors.ts"
-Task: "Implement logger in packages/cli/src/utils/logger.ts"
-Task: "Implement password generation in packages/cli/src/utils/password.ts"
-Task: "Implement validation helpers in packages/cli/src/utils/validation.ts"
-Task: "Implement resource estimation in packages/cli/src/utils/resources.ts"
-
-# Launch all config registries together:
-Task: "Create service registry in packages/cli/src/config/services.ts"
-Task: "Create framework registry in packages/cli/src/config/frameworks.ts"
-Task: "Create defaults registry in packages/cli/src/config/defaults.ts"
+         ├── Phase 12: F10 (Uninstall) ──── depends on US1 + Phase 2 only
 ```
 
 ---
@@ -514,4 +435,77 @@ With multiple developers after Phase 2:
 - Each user story should be independently completable and testable
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- Total: **120 tasks** across 13 phases (T111–T120 added for install.sh + admin panel)
+- Total: **128 tasks** across 12 phases (T065a–T065c: 3 implemented additions; T101a–T101c: 3 admin panel; T111–T115: 5 uninstall F10)
+
+         │
+         ├── Phase 4: US2 (System Check) ──── depends on US1
+         │
+         ├── Phase 5: US3 (Project Setup) ──── depends on US2
+         │
+         ├── Phase 6: US4 (Server Components) ──── depends on US3
+         │
+         ├── Phase 8: US5 (Dev Stack) ──── depends on US4
+         │
+         ├── Phase 9: US6 (Domain & Network) ──── depends on US4
+         │
+         ├── Phase 7: US7 (Review & Generation) ──── depends on US4, US5, US6
+         │
+         └── Phase 10: US8 (Post-Setup Mgmt) ──── depends on US1 only
+                                             │
+Phase 11: Polish ◄──────────────────────────┘
+```
+
+### User Story Dependencies
+
+- **US1 (P1)**: Foundation only — no other story dependencies. **START HERE (MVP)**
+- **F10/Uninstall**: Depends on US1 + Phase 2 only. Can be developed in parallel with US2–US8.
+- **US2 (P1)**: Depends on US1 (needs CLI entry point for `init` command)
+- **US3 (P1)**: Depends on US2 (wizard flows sequentially: Step 0 → Step 1)
+- **US4 (P1)**: Depends on US3 (wizard Step 1 → Step 2)
+- **US5 (P2)**: Depends on US4 (wizard Step 2 → Step 3). Can be developed in parallel with US6.
+- **US6 (P2)**: Depends on US4 (wizard Step 2 → Step 4). Can be developed in parallel with US5.
+- **US7 (P1)**: Depends on US4 (minimum); ideally after US5+US6 for full wizard flow
+- **US8 (P2)**: Depends on US1 only (management commands are independent of wizard)
+
+### Within Each User Story
+
+1. Tests MUST be written and verified to FAIL before implementation
+2. Models/types before services
+3. Services before wizard steps/commands
+4. Wizard steps before orchestrator wiring
+5. Story complete and tested before moving to next priority
+
+### Parallel Opportunities
+
+Within a phase, all tasks marked [P] can run in parallel:
+
+- **Phase 2**: T008–T021 are all [P] — 14 tasks can run concurrently
+- **Phase 6**: T054–T058 (component cards) are [P] — 5 tasks concurrently
+- **Phase 10**: T090–T092 (tests) are [P], T093–T097 are partially [P]
+- **US5 and US6** can be developed in parallel after US4 completes
+- **US8** can be developed in parallel with US2–US7 (only needs US1)
+
+---
+
+## Parallel Example: Phase 2 (Foundational)
+
+```bash
+# Launch all shared type definitions together:
+Task: "Define WizardState interface in packages/shared/src/types/wizard-state.ts"
+Task: "Define ServiceDefinition interface in packages/shared/src/types/service.ts"
+Task: "Define ErrorCode enum in packages/shared/src/types/errors.ts"
+Task: "Create Zod schema for WizardState in packages/shared/src/schemas/wizard-state.schema.ts"
+Task: "Create Zod schema for config in packages/shared/src/schemas/config.schema.ts"
+Task: "Define shared constants in packages/shared/src/utils/constants.ts"
+
+# Launch all CLI utility implementations together:
+Task: "Implement BrewnetError class in packages/cli/src/utils/errors.ts"
+Task: "Implement logger in packages/cli/src/utils/logger.ts"
+Task: "Implement password generation in packages/cli/src/utils/password.ts"
+Task: "Implement validation helpers in packages/cli/src/utils/validation.ts"
+Task: "Implement resource estimation in packages/cli/src/utils/resources.ts"
+
+# Launch all config registries together:
+Task: "Create service registry in packages/cli/src/config/services.ts"
+Task: "Create framework registry in packages/cli/src/config/frameworks.ts"
+Task: "Create defaults registry in packages/cli/src/config/defaults.ts"

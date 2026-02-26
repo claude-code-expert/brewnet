@@ -678,7 +678,80 @@ brewnet update                  # 서비스 업데이트
 # 도메인
 brewnet domain tunnel status    # Cloudflare Tunnel 상태
 brewnet domain tunnel expose    # 새 공개 hostname 추가
+
+# 언인스톨
+brewnet uninstall               # 인터랙티브 전체 제거
+brewnet uninstall --dry-run     # 삭제 대상 목록만 출력
+brewnet uninstall --keep-data   # 데이터 보존, 컨테이너만 제거
+brewnet uninstall --force       # 확인 없이 즉시 제거
 ```
+
+---
+
+## brewnet uninstall — 전체 언인스톨
+
+`brewnet init`으로 설정한 서비스 전체를 제거합니다.
+어느 단계에서든 (Step 0~7 이후) 실행 가능합니다.
+
+### 동작 순서
+
+1. 설치된 서비스 목록 표시 + 확인 프롬프트
+2. `docker compose down --volumes` — 컨테이너 + 볼륨 제거
+3. Docker 네트워크 제거 (`brewnet`, `brewnet-internal`)
+4. 프로젝트 디렉토리 삭제 (`{projectPath}/`)
+   - `docker-compose.yml`, `.env`, `.env.example`
+   - `infrastructure/` 설정 파일들
+5. `~/.brewnet/status/` 삭제 (상태 페이지)
+6. `~/.brewnet/state/` 삭제 (임시 세션 상태)
+
+### 옵션
+
+| 옵션 | 설명 |
+|------|------|
+| `--dry-run` | 삭제할 항목만 출력, 실제 삭제하지 않음 |
+| `--keep-data` | Docker 볼륨(데이터베이스, 파일) 보존 |
+| `--keep-config` | 프로젝트 디렉토리 보존 (컨테이너만 제거) |
+| `--force` | 확인 프롬프트 없이 즉시 실행 |
+
+### 예시
+
+```bash
+# 인터랙티브 (단계별 확인)
+brewnet uninstall
+
+# dry-run — 삭제 대상 목록만 확인
+brewnet uninstall --dry-run
+
+# 데이터 보존하고 컨테이너만 제거
+brewnet uninstall --keep-data
+
+# CI/스크립트 환경 (확인 없이 전체 제거)
+brewnet uninstall --force
+```
+
+### 주의사항
+
+- `--keep-data` 없이 실행 시 데이터베이스, 파일 서버 데이터가 영구 삭제됩니다.
+- Cloudflare 터널 레코드는 자동 삭제되지 않습니다. 직접 Cloudflare 대시보드에서 제거하세요.
+- `brewnet init`으로 다시 설치할 수 있습니다 (새 설정).
+
+---
+
+## 구현 예정 기능 (향후 업데이트)
+
+### Phase 2 (다음 릴리즈)
+
+| 기능 | 설명 | REQ |
+|------|------|-----|
+| 실시간 서비스 상태 | 상태 페이지에서 실제 컨테이너 상태 자동 갱신 (dockerode 연동) | REQ-1.16.6 |
+| SMTP relay 연결 검증 | docker-mailserver relay 설정 후 실제 SMTP 연결 테스트 | REQ-1.12.15 |
+| Auto Deploy Pipeline | Gitea webhook 기반 자동 배포 (`brewnet-builder` 컨테이너) | REQ-4.2, 4.3 |
+
+### Phase 3 (향후 릴리즈)
+
+| 기능 | 설명 | REQ |
+|------|------|-----|
+| WebAuthn / 기기 신뢰 | Authelia 연동 지문/PIN 인증, `brewnet auth devices list/revoke` 명령 | REQ-8.3, 8.4 |
 
 ---
 

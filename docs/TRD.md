@@ -353,6 +353,7 @@ brewnet/
 │   │   │   │   ├── up.ts / down.ts
 │   │   │   │   ├── status.ts / logs.ts
 │   │   │   │   ├── deploy.ts / domain.ts
+│   │   │   │   ├── uninstall.ts           # brewnet uninstall
 │   │   │   │   ├── ssh/      # SSH 관련 명령어
 │   │   │   │   └── storage/  # 스토리지 관련 명령어
 │   │   │   ├── services/     # 핵심 서비스 모듈
@@ -365,7 +366,8 @@ brewnet/
 │   │   │   │   ├── git-server.ts
 │   │   │   │   ├── file-manager.ts
 │   │   │   │   ├── db-manager.ts
-│   │   │   │   └── ssh-manager.ts
+│   │   │   │   ├── ssh-manager.ts
+│   │   │   │   └── uninstall-manager.ts  # brewnet uninstall
 │   │   │   ├── boilerplate/  # 앱 스캐폴딩 템플릿
 │   │   │   ├── utils/
 │   │   │   └── config/

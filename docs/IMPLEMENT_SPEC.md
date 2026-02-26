@@ -279,7 +279,7 @@ const DEFAULT_STATE = {
 
 ## 3. Feature Breakdown
 
-전체 구현을 **9개 Feature**로 분해한다. 각 Feature는 Spec Kit의
+전체 구현을 **10개 Feature**로 분해한다. 각 Feature는 Spec Kit의
 `/speckit.specify` 명령으로 독립적인 spec.md를 생성할 수 있다.
 
 ### Feature Map
@@ -294,6 +294,7 @@ F06  Domain & Cloudflare Configuration (Step 4)
 F07  Review, Confirm & Generate (Step 5)
 F08  Docker Compose Generation & Service Startup (Step 6-7)
 F09  Post-Setup Service Management
+F10  Uninstall (brewnet uninstall)
 ```
 
 ### Dependency Graph
@@ -304,6 +305,8 @@ F01 ──→ F02 ──→ F03 ──→ F04 ──→ F05 ──→ F06 ──
                   │        (Partial) ───────────────┘       │
                   │                                         │
                   └────────────────────────────────────────→ F09
+                                                            │
+                                                    F08 ──→ F10
 ```
 
 ---
@@ -2232,6 +2235,72 @@ Brewnet has been uninstalled.
 
 ---
 
+### F10: Uninstall (brewnet uninstall)
+
+**Phase**: 1 (MVP)
+**REQ Coverage**: BN-OPS-01 (운영 도구)
+**의존성**: F08 (파일 생성 경로 알아야 삭제 가능)
+
+#### Description
+
+`brewnet init`으로 설치한 서비스 전체를 안전하게 제거한다.
+컨테이너가 실행 중이지 않아도, 프로젝트 디렉토리가 없어도 gracefully 처리한다.
+
+#### 핵심 엔터티 & 파일
+
+- `packages/cli/src/commands/uninstall.ts` — 신규 생성
+- `packages/cli/src/services/uninstall-manager.ts` — 신규 생성
+
+#### 동작 흐름
+
+```
+1. 상태 파일 로드 (state.projectPath 확인)
+2. --dry-run 이면 삭제 대상 목록만 출력 후 종료 (실제 변경 없음)
+3. 설치 목록 + 삭제 대상 표시 + confirm 프롬프트 (--force 시 skip)
+4. docker compose down [--volumes unless --keep-data]
+5. docker network rm brewnet brewnet-internal (오류 무시)
+6. --keep-config 아닌 경우 rm -rf {projectPath}
+7. rm -rf ~/.brewnet/status ~/.brewnet/state
+8. Cloudflare 터널 레코드 자동 삭제 불가 안내 메시지 표시
+9. 완료 메시지 출력
+```
+
+#### CLI 인터페이스
+
+```
+brewnet uninstall [--dry-run] [--keep-data] [--keep-config] [--force]
+```
+
+| 옵션 | 설명 |
+|------|------|
+| `--dry-run` | 삭제할 항목만 출력, 실제 삭제하지 않음 |
+| `--keep-data` | Docker 볼륨(데이터베이스, 파일) 보존 (`--volumes` 제외) |
+| `--keep-config` | 프로젝트 디렉토리 보존 (컨테이너만 제거) |
+| `--force` | 확인 프롬프트 없이 즉시 실행 |
+
+#### 수락 기준 (Acceptance Criteria)
+
+- [ ] 컨테이너가 실행 중이지 않아도 오류 없이 완료
+- [ ] `--dry-run` 시 실제 파일/컨테이너 변경 없음
+- [ ] `--keep-data` 시 named volumes 보존 (`docker compose down` 에서 `--volumes` 제외)
+- [ ] `--keep-config` 시 프로젝트 디렉토리 보존
+- [ ] 프로젝트 경로가 없어도 gracefully handle (이미 삭제된 경우)
+- [ ] Cloudflare 관련 안내 메시지 표시 (자동 삭제 불가 항목 명시)
+
+#### Tests
+
+| Test ID | Type | Description |
+|---------|------|-------------|
+| T10-01 | Unit | --dry-run: 파일 변경 없이 삭제 목록 출력 |
+| T10-02 | Unit | --keep-data: volumes 미삭제 확인 |
+| T10-03 | Unit | --keep-config: 프로젝트 디렉토리 보존 확인 |
+| T10-04 | Unit | 프로젝트 경로 없음: graceful handling |
+| T10-05 | Unit | Cloudflare 안내 메시지 표시 |
+| T10-06 | Integration | 컨테이너 미실행 상태에서 uninstall 완료 |
+| T10-07 | Integration | --force: confirm 프롬프트 없이 즉시 실행 |
+
+---
+
 ## 5. Cross-Cutting Concerns
 
 ### 5.1 Error Handling (Constitution III)
@@ -2376,7 +2445,7 @@ function loadWizardState(projectName: string): WizardContext | null;
 # ...
 ```
 
-### Phase 3: Generation & Management (F07 → F09)
+### Phase 3: Generation & Management (F07 → F10)
 
 ```bash
 # F07: Review & Confirm
@@ -2388,7 +2457,11 @@ function loadWizardState(projectName: string): WizardContext | null;
 # ...
 
 # F09: Post-Setup Management
-/speckit.specify "brewnet up/down/status/add/remove/logs/backup/restore/uninstall"
+/speckit.specify "brewnet up/down/status/add/remove/logs/backup/restore"
+# ...
+
+# F10: Uninstall
+/speckit.specify "brewnet uninstall with --dry-run/--keep-data/--keep-config/--force options"
 # ...
 ```
 
@@ -2449,12 +2522,33 @@ function loadWizardState(projectName: string): WizardContext | null;
 | 4 | F04 Server Component Selection | M | F03 |
 | 5 | F08 Compose Generation | L | F04 |
 | 6 | F09 Service Management | M | F08 |
-| 7 | F05 Runtime & Boilerplate | M | F03 |
-| 8 | F06 Domain & Cloudflare | M | F05 |
-| 9 | F07 Review & Confirm | M | F04+F06 |
+| 7 | F10 Uninstall | S | F08 |
+| 8 | F05 Runtime & Boilerplate | M | F03 |
+| 9 | F06 Domain & Cloudflare | M | F05 |
+| 10 | F07 Review & Confirm | M | F04+F06 |
 
-**MVP Milestone**: F01 + F02 + F03 + F04 + F08 + F09
-= CLI로 서버 컴포넌트 선택 → Compose 생성 → 서비스 기동 → 관리
+**MVP Milestone**: F01 + F02 + F03 + F04 + F08 + F09 + F10
+= CLI로 서버 컴포넌트 선택 → Compose 생성 → 서비스 기동 → 관리 → 언인스톨
+
+---
+
+## REQUIREMENT_ADDENDUM.md 구현 현황
+
+> `docs/REQUIREMENT_ADDENDUM.md` 기준 갭 분석 결과.
+> ✅ 구현됨 | ⚠️ 부분 구현 | ⏳ 향후 릴리즈
+
+| Area | REQ | 설명 | 상태 | Phase |
+|------|-----|------|------|-------|
+| A | REQ-1.15, 1.16.1~5 | Post-Install 상태 페이지 (정적 HTML, 브라우저 오픈, 서비스 카드, 크리덴셜, 네트워크, Next Steps) | ✅ | 1 |
+| A | REQ-1.16.6 | 실시간 Docker 상태 쿼리 (dockerode 연동, 자동 갱신) | ⏳ | 2 |
+| B | REQ-8.3 | Authelia WebAuthn 설정 자동 포함 | ⏳ | 3 |
+| B | REQ-8.4, 8.4.1, 8.4.2 | `brewnet auth devices list/revoke` 명령, 기기 신뢰 해제 | ⏳ | 3 |
+| C | REQ-1.12.10~12, 16 | Port 25 자동 감지 (3s TCP), 차단 시 relay 프롬프트, Gmail/SendGrid/Custom 선택, compose/env 반영 | ✅ | 1 |
+| C | REQ-1.12.13 | Gmail App Password 생성 가이드 링크 표시 | ⚠️ | 1 |
+| C | REQ-1.12.14 | SendGrid API key 입력 가이드 표시 | ⚠️ | 1 |
+| C | REQ-1.12.15 | SMTP relay 연결 검증 (test SMTP connection) | ⏳ | 2 |
+| D | REQ-4.2 | `brewnet-builder` 경량 빌드 컨테이너 | ⏳ | 2 |
+| D | REQ-4.3, 4.3.1~3 | Gitea webhook 기반 자동 배포, zero-downtime replace, 롤백, `brewnet deploy` 명령 | ⏳ | 2 |
 
 ---
 

@@ -81,8 +81,8 @@ export function applyComponentRules(state: WizardState): WizardState {
  * @returns true if mail server can be enabled
  */
 export function isMailServerAvailable(state: WizardState): boolean {
-  // Mail server requires a configured domain — not available in current setup
-  return false;
+  // Mail server requires a real domain (not local)
+  return state.domain.provider !== 'local';
 }
 
 /**

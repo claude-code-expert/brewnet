@@ -150,6 +150,7 @@ brewnet logs [service]        # 로그 확인
 brewnet update                # 서비스 업데이트
 brewnet backup                # 백업 생성
 brewnet restore <backup-id>   # 백업 복원
+brewnet uninstall             # 전체 서비스 제거 (--dry-run / --keep-data / --force)
 ```
 
 ### 4.4 배포 (개발자 플로우)

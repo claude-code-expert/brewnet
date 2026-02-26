@@ -42,9 +42,9 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
   java: {
     name: 'Java',
     frameworks: [
-      { id: 'springboot', name: 'Spring Boot', description: 'Opinionated Spring, production-ready' },
-      { id: 'spring', name: 'Spring Framework', description: 'Enterprise Java framework' },
       { id: 'java-pure', name: 'Pure Java', description: 'No framework' },
+      { id: 'spring', name: 'Spring Framework', description: 'Enterprise Java framework' },
+      { id: 'springboot', name: 'Spring Boot', description: 'Opinionated Spring, production-ready' },
     ],
   },
   php: {
@@ -63,19 +63,11 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
   },
   rust: {
     name: 'Rust',
-    frameworks: [
-      { id: 'axum', name: 'Axum', description: 'Async web framework by Tokio' },
-      { id: 'actix-web', name: 'Actix Web', description: 'High-performance actor-based framework' },
-      { id: 'rocket', name: 'Rocket', description: 'Ergonomic web framework' },
-    ],
+    frameworks: [],
   },
   go: {
     name: 'Go',
-    frameworks: [
-      { id: 'gin', name: 'Gin', description: 'Fast HTTP web framework' },
-      { id: 'echo', name: 'Echo', description: 'High performance, minimalist framework' },
-      { id: 'fiber', name: 'Fiber', description: 'Express-inspired, built on Fasthttp' },
-    ],
+    frameworks: [],
   },
 };
 

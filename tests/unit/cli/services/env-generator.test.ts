@@ -436,6 +436,30 @@ describe('generateEnvFiles', () => {
       );
       expect(mailKeys).toHaveLength(0);
     });
+
+    it('includes SMTP relay credentials when relayProvider and relayUser are set', () => {
+      const state = buildState({
+        admin: { username: 'admin', password: 'Pass' },
+        servers: {
+          mailServer: {
+            enabled: true,
+            service: 'docker-mailserver',
+            port25Blocked: true,
+            relayProvider: 'sendgrid',
+            relayHost: 'smtp.sendgrid.net',
+            relayPort: 587,
+            relayUser: 'apikey',
+            relayPassword: 'SG.testtoken',
+          },
+        },
+      });
+
+      const result: EnvGeneratorResult = generateEnvFiles(state);
+      const env = parseEnvContent(result.envContent);
+
+      expect(env['SMTP_RELAY_USER']).toBe('apikey');
+      expect(env['SMTP_RELAY_PASSWORD']).toBe('SG.testtoken');
+    });
   });
 
   // -------------------------------------------------------------------------

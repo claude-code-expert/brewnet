@@ -9,6 +9,10 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { execa } from 'execa';
+import { DOCKER_COMPOSE_FILENAME } from '@brewnet/shared';
+import { checkDockerAvailability } from '../services/docker-manager.js';
+import { BrewnetError } from '../utils/errors.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -182,6 +186,73 @@ export function formatStatusTable(rows: StatusRow[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Docker compose ps output parsing
+// ---------------------------------------------------------------------------
+
+interface DockerComposePsEntry {
+  Name?: string;
+  Service?: string;
+  State?: string;
+  Status?: string;
+  ExitCode?: number;
+  Image?: string;
+  Publishers?: { PublishedPort: number; TargetPort: number; Protocol: string }[];
+  Created?: number;
+}
+
+function parseDockerComposePsEntry(entry: DockerComposePsEntry): ContainerInfo {
+  const rawState = (entry.State ?? 'unknown').toLowerCase();
+  const validStates = ['running', 'exited', 'created', 'restarting', 'removing', 'paused', 'dead'];
+  const state = validStates.includes(rawState)
+    ? (rawState as ContainerInfo['state'])
+    : 'dead';
+
+  const ports = (entry.Publishers ?? [])
+    .filter((p) => p.PublishedPort > 0)
+    .map((p) => `${p.PublishedPort}→${p.TargetPort}/${p.Protocol}`);
+
+  // Derive a friendly service name: prefer Service field, strip project prefix from Name
+  const stripped = (entry.Name ?? '').replace(/^[^-]+-/, '').replace(/-\d+$/, '');
+  const name = entry.Service ?? (stripped || entry.Name) ?? 'unknown';
+
+  return {
+    name,
+    state,
+    status: entry.Status ?? state,
+    ports,
+    image: entry.Image ?? '',
+    created: entry.Created ?? 0,
+  };
+}
+
+function parseDockerComposePsOutput(stdout: string): ContainerInfo[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+
+  // Try JSON array first (docker compose v2.20+)
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map((e) => parseDockerComposePsEntry(e as DockerComposePsEntry));
+    }
+  } catch {
+    // fall through to NDJSON
+  }
+
+  // NDJSON — one JSON object per line
+  return trimmed
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [parseDockerComposePsEntry(JSON.parse(line) as DockerComposePsEntry)];
+      } catch {
+        return [];
+      }
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Command registration
 // ---------------------------------------------------------------------------
 
@@ -189,9 +260,59 @@ export function registerStatusCommand(program: Command): void {
   program
     .command('status')
     .description('Show service status')
+    .option('-p, --path <path>', 'Project path (defaults to current directory)', process.cwd())
     .option('--json', 'Output status as JSON for scripting')
-    .action(async (options) => {
-      // TODO: Implement status display
-      console.log('brewnet status: not yet implemented', options);
+    .action(async (options: { path: string; json: boolean }) => {
+      // Guard: Docker must be running
+      try {
+        await checkDockerAvailability();
+      } catch (err) {
+        const msg = err instanceof BrewnetError ? err.message : String(err);
+        console.error(chalk.red(`Error [BN001]: ${msg}`));
+        process.exitCode = 1;
+        return;
+      }
+
+      try {
+        const { stdout } = await execa(
+          'docker',
+          ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'ps', '--all', '--format', 'json'],
+          { cwd: options.path },
+        );
+
+        const containers = parseDockerComposePsOutput(stdout);
+
+        if (options.json) {
+          console.log(JSON.stringify(containers, null, 2));
+          return;
+        }
+
+        const rows = formatServiceStatus(containers);
+        console.log(formatStatusTable(rows));
+
+        if (containers.length > 0) {
+          const running = containers.filter((c) => c.state === 'running').length;
+          console.log(
+            chalk.dim(`\n  ${running}/${containers.length} service${containers.length !== 1 ? 's' : ''} running`),
+          );
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg.includes('no configuration file provided') ||
+          msg.includes('not found') ||
+          msg.includes('No such file')
+        ) {
+          console.log(chalk.yellow('No brewnet project found in the current directory.'));
+          console.log(
+            chalk.dim(`  Run ${chalk.bold('brewnet init')} to set up a project, or use `) +
+              chalk.bold('-p <path>') +
+              chalk.dim(' to specify a project path.'),
+          );
+        } else {
+          console.error(chalk.red(`Error: ${msg}`));
+          process.exitCode = 1;
+        }
+      }
     });
 }

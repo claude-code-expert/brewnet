@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 001-cli-init-wizard
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: ['20', '22']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm --filter @brewnet/shared tsc --noEmit
+        continue-on-error: true
+
+      - name: Build
+        run: pnpm build
+
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Test with coverage
+        run: pnpm test:coverage
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+      - name: Verify install.sh syntax
+        run: bash -n install.sh
+
+      - name: Upload coverage report
+        if: matrix.node-version == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7

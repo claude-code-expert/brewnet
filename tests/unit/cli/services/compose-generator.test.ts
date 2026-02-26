@@ -1516,3 +1516,63 @@ describe('ComposeGenerator — Minimal default state', () => {
     expect(names).toContain('redis');
   });
 });
+
+// =========================================================================
+// Nextcloud + MySQL env (covers getNextcloudEnv mysql branch)
+// =========================================================================
+
+describe('ComposeGenerator — Nextcloud with MySQL env', () => {
+  it('should configure nextcloud with mysql env when primary is mysql', () => {
+    const state = buildState({
+      servers: {
+        fileServer: { enabled: true, service: 'nextcloud' },
+        dbServer: {
+          enabled: true,
+          primary: 'mysql',
+          primaryVersion: '8',
+          dbName: 'nextcloud_db',
+          dbUser: 'nextcloud',
+          dbPassword: 'dbpass123',
+          adminUI: false,
+          cache: '',
+        },
+      },
+    });
+    const config = generateComposeConfig(state);
+    expect(config.services).toHaveProperty('nextcloud');
+    const nextcloudService = config.services['nextcloud'];
+    expect(nextcloudService).toBeDefined();
+    // Environment should include mysql connection
+    const env = nextcloudService?.environment as Record<string, string> | undefined;
+    expect(env?.['MYSQL_HOST']).toBe('mysql');
+  });
+});
+
+// =========================================================================
+// Mail relay env (covers getMailEnv relay branch + env-generator relay)
+// =========================================================================
+
+describe('ComposeGenerator — Mail Server with relay provider', () => {
+  it('should configure relay env when relayProvider is set', () => {
+    const state = buildState({
+      servers: {
+        mailServer: {
+          enabled: true,
+          service: 'docker-mailserver',
+          port25Blocked: true,
+          relayProvider: 'sendgrid',
+          relayHost: 'smtp.sendgrid.net',
+          relayPort: 587,
+          relayUser: 'apikey',
+          relayPassword: 'SG.testtoken',
+        },
+      },
+      domain: { provider: 'tunnel', name: 'test.dpdns.org' },
+    });
+    const config = generateComposeConfig(state);
+    expect(config.services).toHaveProperty('docker-mailserver');
+    const mailService = config.services['docker-mailserver'];
+    const env = mailService?.environment as Record<string, string> | undefined;
+    expect(env?.['DEFAULT_RELAY_HOST']).toContain('smtp.sendgrid.net');
+  });
+});

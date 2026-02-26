@@ -71,6 +71,14 @@ async function tryOpenUrl(url: string): Promise<void> {
 /**
  * Apply provider-specific defaults to the wizard state's domain configuration.
  */
+/**
+ * Return true if the Mail Server option should be shown.
+ * Mail Server requires a tunnel (non-local) domain.
+ */
+export function isMailServerAllowed(state: WizardState): boolean {
+  return state.domain.provider !== 'local';
+}
+
 export function applyDomainDefaults(
   state: WizardState,
   provider: DomainProvider,

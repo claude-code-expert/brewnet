@@ -22,7 +22,8 @@
 
 import { execa } from 'execa';
 import { createServer } from 'node:net';
-import { platform, release, totalmem } from 'node:os';
+import os from 'node:os';
+const { platform, release, totalmem } = os;
 
 // ---------------------------------------------------------------------------
 // Public types

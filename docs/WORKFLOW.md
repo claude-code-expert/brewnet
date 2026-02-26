@@ -666,6 +666,7 @@ JWT_SECRET=(auto-generated)
 | `brewnet mail dns-check` | 메일 DNS 레코드 확인 |
 | `brewnet storage monitor` | 스토리지 사용량 |
 | `brewnet backup` | 백업 생성 |
+| `brewnet uninstall` | 전체 서비스 제거 (컨테이너 + 볼륨 + 설정) |
 
 ---
 

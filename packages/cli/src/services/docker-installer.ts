@@ -27,7 +27,8 @@
  */
 
 import { execa } from 'execa';
-import { platform } from 'node:os';
+import os from 'node:os';
+const { platform } = os;
 
 // ---------------------------------------------------------------------------
 // Types

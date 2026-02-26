@@ -102,9 +102,9 @@ describe('TC-01-01: brewnet --version', () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it('prints version "1.0.0" matching package.json', async () => {
+  it('prints version "1.0.1" matching package.json', async () => {
     const { stdout } = await runCLI(['--version']);
-    expect(stdout.trim()).toBe('1.0.0');
+    expect(stdout.trim()).toBe('1.0.1');
   });
 
   it('exits with code 0 (via exitOverride)', async () => {
@@ -237,10 +237,10 @@ describe('TC-01-03 (extended): various invalid inputs', () => {
 // ---------------------------------------------------------------------------
 
 describe('TC-01-05 (partial): subcommand registration', () => {
-  it('has exactly 9 registered subcommands', () => {
+  it('has exactly 11 registered subcommands', () => {
     const program = createProgram();
     const subcommands = program.commands.map((cmd) => cmd.name());
-    expect(subcommands).toHaveLength(9);
+    expect(subcommands).toHaveLength(11);
   });
 
   const requiredSubcommands = [
@@ -253,6 +253,8 @@ describe('TC-01-05 (partial): subcommand registration', () => {
     'logs',
     'backup',
     'restore',
+    'admin',
+    'uninstall',
   ];
 
   it.each(requiredSubcommands)(

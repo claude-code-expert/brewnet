@@ -1,0 +1,388 @@
+/**
+ * Unit tests for services/uninstall-manager module
+ *
+ * Covers: buildUninstallTargets, listInstallations, runUninstall
+ * All file system and execa calls are mocked.
+ */
+
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
+const mockExeca = jest.fn();
+
+jest.unstable_mockModule('execa', () => ({
+  execa: mockExeca,
+}));
+
+// Track which paths "exist"
+const existingPaths = new Set<string>();
+const mockExistsSync = jest.fn((p: unknown) => existingPaths.has(p as string));
+const mockRmSync = jest.fn();
+const mockReaddirSync = jest.fn<() => { isDirectory: () => boolean; name: string }[]>(() => []);
+
+jest.unstable_mockModule('node:fs', () => ({
+  existsSync: mockExistsSync,
+  rmSync: mockRmSync,
+  readdirSync: mockReaddirSync,
+  mkdirSync: jest.fn(),
+  writeFileSync: jest.fn(),
+  readFileSync: jest.fn(() => '{}'),
+}));
+
+const mockGetLastProject = jest.fn<() => string | null>(() => null);
+const mockLoadState = jest.fn(() => null);
+const mockGetProjectDir = jest.fn((name: string) => join(homedir(), '.brewnet', 'projects', name));
+
+jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
+  getLastProject: mockGetLastProject,
+  loadState: mockLoadState,
+  getProjectDir: mockGetProjectDir,
+  createState: jest.fn(),
+  saveState: jest.fn(),
+  hasResumeState: jest.fn(() => false),
+}));
+
+jest.unstable_mockModule('../../../../packages/cli/src/utils/logger.js', () => ({
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Imports (after mocks)
+// ---------------------------------------------------------------------------
+
+const {
+  buildUninstallTargets,
+  listInstallations,
+  runUninstall,
+} = await import('../../../../packages/cli/src/services/uninstall-manager.js');
+
+// ---------------------------------------------------------------------------
+// buildUninstallTargets
+// ---------------------------------------------------------------------------
+
+describe('buildUninstallTargets', () => {
+  beforeEach(() => {
+    existingPaths.clear();
+    mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
+  });
+
+  it('returns network target even without project path', () => {
+    const targets = buildUninstallTargets(null, {});
+    const network = targets.find((t) => t.type === 'network');
+    expect(network).toBeDefined();
+    expect(network?.label).toContain('Docker networks');
+  });
+
+  it('includes compose target when docker-compose.yml exists', () => {
+    const projectPath = '/home/user/my-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+    const targets = buildUninstallTargets(projectPath, {});
+    const compose = targets.find((t) => t.type === 'compose');
+    expect(compose).toBeDefined();
+  });
+
+  it('does NOT include compose target when docker-compose.yml missing', () => {
+    const targets = buildUninstallTargets('/home/user/no-compose', {});
+    const compose = targets.find((t) => t.type === 'compose');
+    expect(compose).toBeUndefined();
+  });
+
+  it('includes directory target when projectPath provided', () => {
+    const targets = buildUninstallTargets('/home/user/my-project', {});
+    const dir = targets.find((t) => t.type === 'directory');
+    expect(dir).toBeDefined();
+    expect(dir?.path).toBe('/home/user/my-project');
+  });
+
+  it('marks directory target as skipped when keepConfig=true', () => {
+    const targets = buildUninstallTargets('/home/user/my-project', { keepConfig: true });
+    const dir = targets.find((t) => t.type === 'directory');
+    expect(dir?.skipped).toBe(true);
+    expect(dir?.skipReason).toBe('--keep-config');
+  });
+
+  it('does not include directory target when projectPath is null', () => {
+    const targets = buildUninstallTargets(null, {});
+    const dir = targets.find((t) => t.type === 'directory');
+    expect(dir).toBeUndefined();
+  });
+
+  it('includes compose label with volumes when keepData=false', () => {
+    const projectPath = '/home/user/my-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+    const targets = buildUninstallTargets(projectPath, { keepData: false });
+    const compose = targets.find((t) => t.type === 'compose');
+    expect(compose?.label).toContain('volumes');
+  });
+
+  it('includes compose label without volumes when keepData=true', () => {
+    const projectPath = '/home/user/my-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+    const targets = buildUninstallTargets(projectPath, { keepData: true });
+    const compose = targets.find((t) => t.type === 'compose');
+    expect(compose?.label).not.toContain('volumes');
+  });
+
+  it('includes brewnet-meta targets when status/state dirs exist', () => {
+    const statusDir = join(homedir(), '.brewnet', 'status');
+    const stateDir = join(homedir(), '.brewnet', 'state');
+    existingPaths.add(statusDir);
+    existingPaths.add(stateDir);
+    const targets = buildUninstallTargets(null, {});
+    const meta = targets.filter((t) => t.type === 'brewnet-meta');
+    expect(meta.length).toBe(2);
+  });
+
+  it('does not include brewnet-meta targets when dirs do not exist', () => {
+    const targets = buildUninstallTargets(null, {});
+    const meta = targets.filter((t) => t.type === 'brewnet-meta');
+    expect(meta.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listInstallations
+// ---------------------------------------------------------------------------
+
+describe('listInstallations', () => {
+  beforeEach(() => {
+    existingPaths.clear();
+    mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
+  });
+
+  it('returns empty array when projects dir does not exist', () => {
+    const result = listInstallations();
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when projects dir is empty', () => {
+    const projectsDir = join(homedir(), '.brewnet', 'projects');
+    existingPaths.add(projectsDir);
+    mockReaddirSync.mockReturnValue([]);
+    const result = listInstallations();
+    expect(result).toEqual([]);
+  });
+
+  it('returns installations from subdirectories', () => {
+    const projectsDir = join(homedir(), '.brewnet', 'projects');
+    existingPaths.add(projectsDir);
+    mockReaddirSync.mockReturnValue([
+      { isDirectory: () => true, name: 'my-project' },
+      { isDirectory: () => false, name: 'some-file.txt' },
+    ]);
+    mockLoadState.mockReturnValue({ projectPath: '/home/user/my-project' });
+    const result = listInstallations();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.name).toBe('my-project');
+    expect(result[0]?.path).toBe('/home/user/my-project');
+  });
+
+  it('sets path to null when state is missing', () => {
+    const projectsDir = join(homedir(), '.brewnet', 'projects');
+    existingPaths.add(projectsDir);
+    mockReaddirSync.mockReturnValue([
+      { isDirectory: () => true, name: 'orphan-project' },
+    ]);
+    mockLoadState.mockReturnValue(null);
+    const result = listInstallations();
+    expect(result[0]?.path).toBeNull();
+  });
+
+  it('returns empty array when readdirSync throws', () => {
+    const projectsDir = join(homedir(), '.brewnet', 'projects');
+    existingPaths.add(projectsDir);
+    mockReaddirSync.mockImplementationOnce(() => { throw new Error('EACCES: permission denied'); });
+
+    const result = listInstallations();
+    expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runUninstall — dry-run
+// ---------------------------------------------------------------------------
+
+describe('runUninstall (dry-run)', () => {
+  beforeEach(() => {
+    existingPaths.clear();
+    mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
+    mockGetLastProject.mockReturnValue(null);
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+  });
+
+  it('returns without calling execa in dry-run mode', async () => {
+    const result = await runUninstall({ dryRun: true, projectPath: '/tmp/test' });
+    expect(mockExeca).not.toHaveBeenCalled();
+    expect(result.removed.length + result.skipped.length).toBeGreaterThan(0);
+  });
+
+  it('lists targets in removed array in dry-run', async () => {
+    const result = await runUninstall({ dryRun: true, projectPath: '/tmp/test' });
+    expect(result.removed).toContain('Docker networks: brewnet, brewnet-internal');
+  });
+
+  it('adds skipped entries for keepConfig targets', async () => {
+    const result = await runUninstall({ dryRun: true, projectPath: '/tmp/test', keepConfig: true });
+    const skipped = result.skipped.find((s) => s.includes('--keep-config'));
+    expect(skipped).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runUninstall — live (mocked)
+// ---------------------------------------------------------------------------
+
+describe('runUninstall (live)', () => {
+  beforeEach(() => {
+    existingPaths.clear();
+    mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
+    mockGetLastProject.mockReturnValue(null);
+    mockRmSync.mockReset();
+    mockExeca.mockReset();
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+  });
+
+  it('removes docker networks', async () => {
+    const result = await runUninstall({ projectPath: '/tmp/test' });
+    expect(result.removed).toContain('Docker networks: brewnet, brewnet-internal');
+  });
+
+  it('runs docker compose down when compose file exists', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+
+    await runUninstall({ projectPath });
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      expect.arrayContaining(['compose', 'down']),
+      expect.objectContaining({ cwd: projectPath }),
+    );
+  });
+
+  it('adds --volumes flag when keepData is false', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+
+    await runUninstall({ projectPath, keepData: false });
+    const call = mockExeca.mock.calls.find(
+      (c) => (c[0] as string) === 'docker' && (c[1] as string[]).includes('down'),
+    );
+    expect(call?.[1]).toContain('--volumes');
+  });
+
+  it('omits --volumes flag when keepData is true', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+
+    await runUninstall({ projectPath, keepData: true });
+    const call = mockExeca.mock.calls.find(
+      (c) => (c[0] as string) === 'docker' && (c[1] as string[]).includes('down'),
+    );
+    expect(call?.[1]).not.toContain('--volumes');
+  });
+
+  it('removes project directory when it exists and keepConfig is false', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(projectPath);
+
+    await runUninstall({ projectPath, keepConfig: false });
+    expect(mockRmSync).toHaveBeenCalledWith(projectPath, { recursive: true, force: true });
+  });
+
+  it('does NOT remove project directory when keepConfig is true', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(projectPath);
+
+    await runUninstall({ projectPath, keepConfig: true });
+    expect(mockRmSync).not.toHaveBeenCalledWith(projectPath, expect.anything());
+  });
+
+  it('continues when docker compose down fails (non-fatal)', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+
+    // First call (compose down) fails, second (network rm) succeeds
+    mockExeca
+      .mockRejectedValueOnce(new Error('compose down failed'))
+      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });
+
+    const result = await runUninstall({ projectPath });
+    // Should still have removed networks even after compose down failed
+    expect(result.errors.some((e) => e.includes('compose down'))).toBe(true);
+    expect(result.removed).toContain('Docker networks: brewnet, brewnet-internal');
+  });
+
+  it('resolves last project from wizard state when no projectPath given', async () => {
+    mockGetLastProject.mockReturnValue('my-saved-project');
+    mockLoadState.mockReturnValue({ projectPath: '/home/user/my-saved-project', projectName: 'my-saved-project' });
+
+    const result = await runUninstall({});
+    // Should attempt docker network rm (always happens)
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      expect.arrayContaining(['network', 'rm']),
+      expect.anything(),
+    );
+  });
+
+  it('returns success=false when rmSync throws on project dir', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(projectPath);
+    mockRmSync.mockImplementationOnce(() => { throw new Error('permission denied'); });
+
+    const result = await runUninstall({ projectPath });
+    expect(result.success).toBe(false);
+    expect(result.errors.some((e) => e.includes('permission denied'))).toBe(true);
+  });
+
+  it('adds Docker networks to skipped when execa throws for network rm', async () => {
+    // No compose file at projectPath, so only execa call = docker network rm
+    mockExeca.mockRejectedValueOnce(new Error('docker not found'));
+
+    const result = await runUninstall({ projectPath: '/tmp/test' });
+    expect(result.skipped).toContain('Docker networks (not found or already removed)');
+  });
+
+  it('removes brewnet status and state dirs and adds to removed list', async () => {
+    const statusDir = join(homedir(), '.brewnet', 'status');
+    const stateDir = join(homedir(), '.brewnet', 'state');
+    existingPaths.add(statusDir);
+    existingPaths.add(stateDir);
+
+    const result = await runUninstall({ projectPath: '/tmp/test' });
+    expect(result.removed).toContain('~/.brewnet/status');
+    expect(result.removed).toContain('~/.brewnet/state');
+    expect(mockRmSync).toHaveBeenCalledWith(statusDir, { recursive: true, force: true });
+    expect(mockRmSync).toHaveBeenCalledWith(stateDir, { recursive: true, force: true });
+  });
+
+  it('adds to errors when rmSync throws for a brewnet-meta dir', async () => {
+    const statusDir = join(homedir(), '.brewnet', 'status');
+    existingPaths.add(statusDir);
+    mockRmSync.mockImplementationOnce(() => { throw new Error('EPERM: operation not permitted'); });
+
+    const result = await runUninstall({ projectPath: '/tmp/test' });
+    expect(result.errors.some((e) => e.includes('EPERM'))).toBe(true);
+  });
+
+  it('removes wizard state project dir when projectName is resolved', async () => {
+    const projectStateDir = join(homedir(), '.brewnet', 'projects', 'my-project');
+    existingPaths.add(projectStateDir);
+    mockGetLastProject.mockReturnValue('my-project');
+    mockLoadState.mockReturnValue({ projectPath: '/tmp/my-project', projectName: 'my-project' });
+
+    const result = await runUninstall({});
+    expect(result.removed.some((r) => r.includes('Wizard state'))).toBe(true);
+    expect(mockRmSync).toHaveBeenCalledWith(projectStateDir, { recursive: true, force: true });
+  });
+});

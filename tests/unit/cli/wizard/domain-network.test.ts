@@ -133,24 +133,24 @@ describe('TC-06-01: Local domain configuration', () => {
 describe('TC-06-02: Free domain configuration', () => {
   it('free domain selected → Cloudflare Tunnel enabled by default', () => {
     const state = buildState();
-    const result = applyDomainDefaults(state, 'freedomain');
+    const result = applyDomainDefaults(state, 'tunnel');
 
     expect(result.domain.cloudflare.enabled).toBe(true);
   });
 
-  it('free domain → domain name appended with selected TLD', () => {
+  it('free domain → freeDomainTld selection is preserved in state', () => {
     const state = buildState({
       domain: { name: 'myserver', freeDomainTld: '.dpdns.org' },
     });
-    const result = applyDomainDefaults(state, 'freedomain');
+    const result = applyDomainDefaults(state, 'tunnel');
 
-    // The result name should include the TLD
-    expect(result.domain.name).toContain('.dpdns.org');
+    // TLD is stored in freeDomainTld; domain name concatenation happens at input time
+    expect(result.domain.freeDomainTld).toBe('.dpdns.org');
   });
 
   it('free domain → SSL mode = cloudflare', () => {
     const state = buildState();
-    const result = applyDomainDefaults(state, 'freedomain');
+    const result = applyDomainDefaults(state, 'tunnel');
 
     expect(result.domain.ssl).toBe('cloudflare');
   });
@@ -163,12 +163,12 @@ describe('TC-06-02: Free domain configuration', () => {
 describe('TC-06-03: Custom domain SSL options', () => {
   it('custom domain → SSL method options available (self-signed, letsencrypt, cloudflare)', () => {
     // With a custom domain, all three SSL modes should be valid selections.
-    // applyDomainDefaults for 'custom' should allow any of the three SSL modes.
+    // applyDomainDefaults for 'tunnel' should allow any of the three SSL modes.
     const sslOptions: SslMode[] = ['self-signed', 'letsencrypt', 'cloudflare'];
 
     for (const ssl of sslOptions) {
       const state = buildState({ domain: { ssl } });
-      const result = applyDomainDefaults(state, 'custom');
+      const result = applyDomainDefaults(state, 'tunnel');
 
       // Custom domain should not force-override the user's SSL selection
       // when that selection is a valid option.
@@ -176,18 +176,19 @@ describe('TC-06-03: Custom domain SSL options', () => {
     }
   });
 
-  it('custom domain + letsencrypt → ssl field is letsencrypt (Traefik ACME)', () => {
+  it('tunnel domain → ssl defaults to cloudflare (Cloudflare Tunnel terminates TLS)', () => {
     const state = buildState({ domain: { ssl: 'letsencrypt' } });
-    const result = applyDomainDefaults(state, 'custom');
+    const result = applyDomainDefaults(state, 'tunnel');
 
-    expect(result.domain.ssl).toBe('letsencrypt');
+    // Cloudflare Tunnel handles TLS termination, so ssl is forced to 'cloudflare'
+    expect(result.domain.ssl).toBe('cloudflare');
   });
 
-  it('custom domain → default SSL = letsencrypt', () => {
+  it('tunnel domain → default SSL = cloudflare', () => {
     const state = buildState();
-    const result = applyDomainDefaults(state, 'custom');
+    const result = applyDomainDefaults(state, 'tunnel');
 
-    expect(result.domain.ssl).toBe('letsencrypt');
+    expect(result.domain.ssl).toBe('cloudflare');
   });
 });
 
@@ -237,7 +238,7 @@ describe('TC-06-04: Free domain TLD validation', () => {
 describe('TC-06-07: SSL configuration', () => {
   it('letsencrypt selected → ssl = letsencrypt', () => {
     const config = buildDomainConfig({
-      provider: 'custom',
+      provider: 'tunnel',
       name: 'example.com',
       ssl: 'letsencrypt',
       freeDomainTld: '.dpdns.org',
@@ -261,7 +262,7 @@ describe('TC-06-07: SSL configuration', () => {
 
   it('cloudflare selected → ssl = cloudflare', () => {
     const config = buildDomainConfig({
-      provider: 'freedomain',
+      provider: 'tunnel',
       name: 'myserver.dpdns.org',
       ssl: 'cloudflare',
       freeDomainTld: '.dpdns.org',
@@ -284,14 +285,14 @@ describe('TC-06-08: Mail server availability', () => {
 
   it('domain = freedomain → mail IS available', () => {
     const state = buildState({
-      domain: { provider: 'freedomain', name: 'myserver.dpdns.org' },
+      domain: { provider: 'tunnel', name: 'myserver.dpdns.org' },
     });
     expect(isMailServerAllowed(state)).toBe(true);
   });
 
   it('domain = custom → mail IS available', () => {
     const state = buildState({
-      domain: { provider: 'custom', name: 'example.com' },
+      domain: { provider: 'tunnel', name: 'example.com' },
     });
     expect(isMailServerAllowed(state)).toBe(true);
   });
@@ -360,14 +361,14 @@ describe('buildDomainConfig', () => {
 
   it('build with freedomain + .dpdns.org → correct name and tunnel config', () => {
     const config = buildDomainConfig({
-      provider: 'freedomain',
+      provider: 'tunnel',
       name: 'myserver.dpdns.org',
       ssl: 'cloudflare',
       freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
     });
 
-    expect(config.provider).toBe('freedomain');
+    expect(config.provider).toBe('tunnel');
     expect(config.name).toBe('myserver.dpdns.org');
     expect(config.freeDomainTld).toBe('.dpdns.org');
     expect(config.cloudflare.enabled).toBe(true);
@@ -376,7 +377,7 @@ describe('buildDomainConfig', () => {
 
   it('build with freedomain → tunnel is forced ON', () => {
     const config = buildDomainConfig({
-      provider: 'freedomain',
+      provider: 'tunnel',
       name: 'myserver.qzz.io',
       ssl: 'cloudflare',
       freeDomainTld: '.qzz.io',
@@ -389,14 +390,14 @@ describe('buildDomainConfig', () => {
 
   it('build with custom + letsencrypt → correct SSL and tunnel config', () => {
     const config = buildDomainConfig({
-      provider: 'custom',
+      provider: 'tunnel',
       name: 'example.com',
       ssl: 'letsencrypt',
       freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
     });
 
-    expect(config.provider).toBe('custom');
+    expect(config.provider).toBe('tunnel');
     expect(config.name).toBe('example.com');
     expect(config.ssl).toBe('letsencrypt');
     // Custom domain: tunnel is optional, user choice is preserved
@@ -407,7 +408,7 @@ describe('buildDomainConfig', () => {
     const tunnelToken =
       'eyJhIjoiYjEyMzQ1Njc4OTAiLCJ0IjoiYWJjZGVmZy1oaWprbG1uby1wcXJzdHV2In0.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature_here';
     const config = buildDomainConfig({
-      provider: 'custom',
+      provider: 'tunnel',
       name: 'example.com',
       ssl: 'cloudflare',
       freeDomainTld: '.dpdns.org',
@@ -436,7 +437,7 @@ describe('Immutability guarantees', () => {
 
     const originalJson = JSON.stringify(state);
 
-    applyDomainDefaults(state, 'freedomain');
+    applyDomainDefaults(state, 'tunnel');
 
     // Input state should be unchanged after applying freedomain defaults
     expect(JSON.stringify(state)).toBe(originalJson);
@@ -444,7 +445,7 @@ describe('Immutability guarantees', () => {
 
   it('applyDomainDefaults returns a new object, not the same reference', () => {
     const state = buildState();
-    const result = applyDomainDefaults(state, 'custom');
+    const result = applyDomainDefaults(state, 'tunnel');
 
     expect(result).not.toBe(state);
     expect(result.domain).not.toBe(state.domain);
@@ -461,7 +462,7 @@ describe('Edge cases', () => {
       devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: ['reactjs'] },
     });
 
-    const result = applyDomainDefaults(state, 'custom');
+    const result = applyDomainDefaults(state, 'tunnel');
 
     expect(result.projectName).toBe(state.projectName);
     expect(result.projectPath).toBe(state.projectPath);
@@ -487,7 +488,7 @@ describe('Edge cases', () => {
     const state = buildState();
 
     // First apply freedomain defaults
-    const freedomainState = applyDomainDefaults(state, 'freedomain');
+    const freedomainState = applyDomainDefaults(state, 'tunnel');
     expect(freedomainState.domain.cloudflare.enabled).toBe(true);
     expect(freedomainState.domain.ssl).toBe('cloudflare');
 
@@ -497,7 +498,7 @@ describe('Edge cases', () => {
     expect(localState.domain.ssl).toBe('self-signed');
   });
 
-  it('switching from local to custom enables letsencrypt and allows tunnel', () => {
+  it('switching from local to tunnel enables cloudflare SSL and activates tunnel', () => {
     const state = buildState({
       domain: {
         provider: 'local',
@@ -506,16 +507,16 @@ describe('Edge cases', () => {
       },
     });
 
-    const result = applyDomainDefaults(state, 'custom');
+    const result = applyDomainDefaults(state, 'tunnel');
 
-    expect(result.domain.provider).toBe('custom');
-    expect(result.domain.ssl).toBe('letsencrypt');
+    expect(result.domain.provider).toBe('tunnel');
+    expect(result.domain.ssl).toBe('cloudflare');
     expect(result.domain.cloudflare.enabled).toBe(true);
   });
 
   it('buildDomainConfig returns a valid DomainConfig shape', () => {
     const config = buildDomainConfig({
-      provider: 'custom',
+      provider: 'tunnel',
       name: 'example.com',
       ssl: 'letsencrypt',
       freeDomainTld: '.dpdns.org',
@@ -538,7 +539,7 @@ describe('Edge cases', () => {
 
     for (const tld of tlds) {
       const config = buildDomainConfig({
-        provider: 'freedomain',
+        provider: 'tunnel',
         name: `myserver${tld}`,
         ssl: 'cloudflare',
         freeDomainTld: tld,

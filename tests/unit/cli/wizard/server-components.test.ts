@@ -264,23 +264,23 @@ describe('TC-04-09: Local domain → Mail Server hidden', () => {
 // ── TC-04-10: Non-local domain → Mail Server available ─────────────────────
 
 describe('TC-04-10: Non-local domain → Mail Server available', () => {
-  it('isMailServerAvailable returns true when domain.provider is "custom"', () => {
+  it('isMailServerAvailable returns true when domain.provider is "tunnel"', () => {
     const state = buildState({
-      domain: { provider: 'custom', name: 'example.com' },
+      domain: { provider: 'tunnel', name: 'example.com' },
     });
     expect(isMailServerAvailable(state)).toBe(true);
   });
 
-  it('isMailServerAvailable returns true when domain.provider is "freedomain"', () => {
+  it('isMailServerAvailable returns true when domain.provider is "tunnel" (free subdomain)', () => {
     const state = buildState({
-      domain: { provider: 'freedomain', name: 'myserver.dpdns.org' },
+      domain: { provider: 'tunnel', name: 'myserver.dpdns.org' },
     });
     expect(isMailServerAvailable(state)).toBe(true);
   });
 
-  it('applyComponentRules preserves mailServer.enabled = true for custom domain', () => {
+  it('applyComponentRules preserves mailServer.enabled = true for tunnel domain', () => {
     const state = buildState({
-      domain: { provider: 'custom', name: 'example.com' },
+      domain: { provider: 'tunnel', name: 'example.com' },
       servers: { mailServer: { enabled: true, service: 'docker-mailserver' } },
     });
 
@@ -290,7 +290,7 @@ describe('TC-04-10: Non-local domain → Mail Server available', () => {
 
   it('applyComponentRules preserves mailServer.enabled = false if user chose not to enable', () => {
     const state = buildState({
-      domain: { provider: 'custom', name: 'example.com' },
+      domain: { provider: 'tunnel', name: 'example.com' },
       servers: { mailServer: { enabled: false, service: 'docker-mailserver' } },
     });
 
@@ -716,7 +716,7 @@ describe('Combined rule application', () => {
         frameworks: { nodejs: 'nextjs', python: 'fastapi' },
         frontend: ['reactjs', 'typescript'],
       },
-      domain: { provider: 'custom', name: 'example.com' },
+      domain: { provider: 'tunnel', name: 'example.com' },
     });
 
     // Apply component rules first
@@ -772,7 +772,7 @@ describe('Combined rule application', () => {
     expect(finalState.servers.mailServer.enabled).toBe(false);
   });
 
-  it('partial install with freedomain and SSH server', () => {
+  it('partial install with tunnel domain and SSH server', () => {
     const state = buildState({
       servers: {
         sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: false },
@@ -788,7 +788,7 @@ describe('Combined rule application', () => {
         },
       },
       domain: {
-        provider: 'freedomain',
+        provider: 'tunnel',
         name: 'myserver.dpdns.org',
       },
     });
@@ -801,7 +801,7 @@ describe('Combined rule application', () => {
     // No SFTP (no file/media)
     expect(result.servers.sshServer.sftp).toBe(false);
 
-    // Mail available (freedomain)
+    // Mail available (tunnel domain)
     expect(isMailServerAvailable(result)).toBe(true);
 
     // No DB password generation (DB disabled)
