@@ -654,8 +654,9 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       const config = generateComposeConfig(state);
       const yaml = composeConfigToYaml(config);
 
-      expect(yaml).toContain('version:');
+      expect(yaml).not.toContain('version:');
       expect(yaml).toContain('services:');
+      expect(yaml).toContain('volumes:');
       expect(yaml).toContain('traefik:');
       expect(yaml).toContain('gitea:');
       expect(yaml).toContain('postgresql:');
