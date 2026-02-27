@@ -243,16 +243,22 @@ export async function runDomainNetworkStep(
       console.log(chalk.dim('      https://dash.cloudflare.com → 로그인'));
       console.log();
       console.log(chalk.bold.white('  [2] 도메인을 Cloudflare에 추가 (처음 사용 시)'));
-      console.log(chalk.dim('      Dashboard → Websites → Add a site → 도메인 입력'));
-      console.log(chalk.dim('      → Cloudflare 네임서버로 변경 (도메인 등록업체에서 설정)'));
+      console.log(chalk.dim('      ※ 로그인 후 "Developer Platform" 화면이 보이면 정상입니다'));
+      console.log(chalk.dim('      좌측 사이드바에서 "Domains" 클릭'));
+      console.log(chalk.dim('      → "Add a domain" 버튼 → 도메인 입력 → Continue'));
+      console.log(chalk.dim('      → Free 플랜 선택 → Continue → 네임서버 2개 확인'));
+      console.log(chalk.dim('      → 도메인 등록업체(가비아, Namecheap 등) 접속'));
+      console.log(chalk.dim('      → 네임서버를 Cloudflare 네임서버로 교체 → 저장'));
+      console.log(chalk.dim('      (네임서버 전파 최대 24시간 소요)'));
       console.log();
       console.log(chalk.bold.white('  [3] API Token 생성'));
-      console.log(chalk.dim('      우측 상단 프로필 → My Profile → API Tokens → Create Token'));
-      console.log(chalk.dim('      → "Edit Cloudflare Tunnel" 템플릿 선택'));
-      console.log(chalk.dim('      → Zone Resources: 사용할 도메인 선택'));
+      console.log(chalk.dim('      우측 상단 프로필 아이콘 → My Profile'));
+      console.log(chalk.dim('      → 좌측 메뉴 "API Tokens" → "Create Token"'));
+      console.log(chalk.dim('      → "Edit Cloudflare Tunnel" 템플릿 우측 "Use template" 클릭'));
+      console.log(chalk.dim('      → Zone Resources: Include → Specific zone → 사용할 도메인 선택'));
       console.log(chalk.dim('      → Continue to summary → Create Token → 토큰 복사'));
       console.log();
-      console.log(chalk.dim('  필요 권한: Cloudflare Tunnel:Edit  •  DNS:Edit'));
+      console.log(chalk.dim('  필요 권한: Cloudflare Tunnel:Edit  •  DNS:Edit  •  Zone:Read'));
       console.log();
 
       const tokenUrl = buildTokenCreationUrl(next.projectName);
@@ -366,7 +372,7 @@ export async function runDomainNetworkStep(
 
       if (activeZones.length === 0) {
         console.log(chalk.yellow('  No active zones found in your Cloudflare account.'));
-        console.log(chalk.dim('  Add a domain to Cloudflare first: https://dash.cloudflare.com'));
+        console.log(chalk.dim('  Add a domain first: https://dash.cloudflare.com → 좌측 "Domains" → Add a domain'));
         console.log();
         console.log(chalk.yellow('  Falling back to manual setup.'));
         console.log();
