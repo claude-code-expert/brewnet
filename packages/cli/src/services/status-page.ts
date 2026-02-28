@@ -109,7 +109,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     ],
     credentials: {
       method: 'env',
-      summary: 'Admin account created via NEXTCLOUD_ADMIN_USER and NEXTCLOUD_ADMIN_PASSWORD environment variables.',
+      summary: 'Uses admin credentials set in Pre-Step of brewnet init wizard.',
       command: 'docker exec -u www-data brewnet-nextcloud php occ user:add USERNAME --display-name="Display Name"',
     },
     tips: [
@@ -189,7 +189,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     ],
     credentials: {
       method: 'env',
-      summary: 'Login with PGADMIN_DEFAULT_EMAIL and PGADMIN_DEFAULT_PASSWORD. Register the DB server after first login.',
+      summary: 'Uses admin credentials set in Pre-Step. Email format: {username}@brewnet.dev. Register the DB server after first login.',
     },
     tips: [
       'Connect to PostgreSQL using hostname "postgresql" (Docker container name), port 5432',
@@ -227,7 +227,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     ],
     credentials: {
       method: 'env',
-      summary: 'User created via USER_NAME env var. Password auth controlled by PASSWORD_ACCESS flag.',
+      summary: 'Uses admin username set in Pre-Step. Password auth enabled (PASSWORD_ACCESS=true); switch to key-only after setup.',
       command: 'ssh -p 2222 USER@localhost',
     },
     tips: [
@@ -287,7 +287,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     ],
     credentials: {
       method: 'env',
-      summary: 'Login with MINIO_ROOT_USER and MINIO_ROOT_PASSWORD (propagated from admin credentials).',
+      summary: 'Uses admin credentials set in Pre-Step of brewnet init wizard.',
     },
     tips: [
       'Console on port 9001, API on port 9000',
@@ -465,14 +465,17 @@ function collectStatusData(state: WizardState): StatusPageData {
     }
   }
 
-  // Nextcloud — container port 80 → host 8443
-  // Quick Tunnel: path /cloud with OVERWRITEWEBROOT env
+  // Nextcloud — accessed through Traefik path-prefix /cloud.
+  // Direct port 8443 bypasses Traefik strip-prefix and breaks OVERWRITEWEBROOT.
   if (state.servers.fileServer.enabled && state.servers.fileServer.service) {
     if (state.servers.fileServer.service === 'nextcloud') {
+      const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
       services.push({
         name: 'Nextcloud',
         status: 'unknown',
-        localUrl: `http://localhost:${remap(8443)}`,
+        localUrl: isQuickTunnel
+          ? `http://localhost:${remap(80)}/cloud`
+          : `http://localhost:${remap(8443)}`,
         externalUrl: makeExternalUrl('cloud', '/cloud'),
         note: 'Login: admin credentials',
       });
@@ -544,17 +547,23 @@ function collectStatusData(state: WizardState): StatusPageData {
     });
   }
 
+  const username = state.admin.username;
   const password = state.admin.password;
-  const passwordHint = password.length > 4
-    ? '••••••' + password.slice(-4)
-    : '••••••••';
+  // Username: mask last 2 chars  (e.g. "admin" → "adm**")
+  const usernameMasked = username.length > 2
+    ? username.slice(0, -2) + '**'
+    : '**';
+  // Password: show first char only (e.g. "secret123" → "s********")
+  const passwordHint = password.length > 1
+    ? password[0] + '*'.repeat(password.length - 1)
+    : '********';
 
   return {
     projectName: state.projectName,
     generatedAt: new Date().toISOString(),
     services,
     credentials: {
-      username: state.admin.username,
+      username: usernameMasked,
       passwordHint,
     },
     network: {

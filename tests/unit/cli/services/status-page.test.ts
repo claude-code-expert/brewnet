@@ -659,34 +659,36 @@ describe('generateAndOpenStatusPage — HTML content: credentials', () => {
     mockExeca.mockReset();
   });
 
-  it('includes the admin username in the credentials section', async () => {
+  it('includes the masked admin username in the credentials section', async () => {
     const state = makeState({
       admin: { username: 'homeadmin', password: 'pass1234', storage: 'local' },
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('homeadmin');
+    // "homeadmin" (9 chars) → slice(0,-2)="homeadm" + "**" → "homeadm**"
+    expect(html).toContain('homeadm**');
+    expect(html).not.toContain('"username":"homeadmin"');
   });
 
-  it('masks the password showing only the last 4 chars', async () => {
+  it('masks the password showing only the first char', async () => {
     const state = makeState({
       admin: { username: 'admin', password: 'supersecret5678', storage: 'local' },
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    // Should show ••••••5678 (last 4 chars of password)
-    expect(html).toContain('••••••5678');
+    // "supersecret5678" → first char + 14 asterisks → "s**************"
+    expect(html).toContain('s**************');
     // Should NOT expose the full password
     expect(html).not.toContain('supersecret5678');
   });
 
-  it('uses a generic mask for short passwords (4 chars or fewer)', async () => {
+  it('uses a generic mask for single-char passwords', async () => {
     const state = makeState({
-      admin: { username: 'admin', password: 'ab12', storage: 'local' },
+      admin: { username: 'admin', password: 'x', storage: 'local' },
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('••••••••');
+    expect(html).toContain('********');
   });
 });
 
@@ -878,7 +880,8 @@ describe('Service Detail Modal — access URLs in modal', () => {
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
     expect(html).toContain('var ADMIN_CREDS =');
-    expect(html).toContain('"username":"myadmin"');
+    // Username "myadmin" → masked last 2 chars → "myadm**"
+    expect(html).toContain('"username":"myadm**"');
   });
 
   it('includes SERVICE_URLS entries matching service card data', async () => {

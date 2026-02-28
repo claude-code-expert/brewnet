@@ -503,6 +503,35 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       console.log(chalk.dim('  서비스는 정상 시작되었으나 외부 URL을 가져오지 못했습니다.'));
       console.log(chalk.dim('  `docker logs brewnet-cloudflared` 로 확인하세요.'));
     }
+
+    // Post-install Nextcloud configuration.
+    // NEXTCLOUD_TRUSTED_DOMAINS / NEXTCLOUD_TRUSTED_PROXIES env vars only
+    // apply at first install; subsequent changes require occ config:system:set.
+    if (
+      state.servers.fileServer.enabled &&
+      state.servers.fileServer.service === 'nextcloud'
+    ) {
+      try {
+        const { execa: execaFn } = await import('execa');
+        const occ = (args: string[]) =>
+          execaFn('docker', [
+            'exec', '-u', 'www-data', 'brewnet-nextcloud',
+            'php', 'occ', ...args,
+          ]);
+
+        // Trust the Docker bridge network so Nextcloud reads X-Forwarded-Proto
+        // from Traefik.  Without this, protocol detection falls back to HTTP.
+        await occ(['config:system:set', 'trusted_proxies', '0', '--value=172.16.0.0/12']);
+
+        // Add Quick Tunnel hostname to trusted_domains
+        if (state.domain.cloudflare.quickTunnelUrl) {
+          const tunnelHost = new URL(state.domain.cloudflare.quickTunnelUrl).hostname;
+          await occ(['config:system:set', 'trusted_domains', '2', '--value=' + tunnelHost]);
+        }
+      } catch {
+        // Non-critical — user can add manually via occ
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

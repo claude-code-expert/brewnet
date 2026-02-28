@@ -15,12 +15,20 @@ import type { WizardState } from '@brewnet/shared';
 // Credential propagation targets (informational display)
 // ---------------------------------------------------------------------------
 
-const CREDENTIAL_TARGETS = [
+// Services that receive admin credentials via docker-compose environment variables.
+const AUTO_PROPAGATED_SERVICES = [
+  'Nextcloud (File Server)',
+  'MinIO (Object Storage)',
+  'pgAdmin (DB Admin UI)',
+  'SSH Server (OpenSSH)',
+];
+
+// Services that require separate account setup through their own UI/CLI.
+const MANUAL_SETUP_SERVICES = [
   'Gitea (Git server)',
-  'pgAdmin / phpMyAdmin (DB admin UI)',
+  'Jellyfin (Media server)',
+  'Mail Server (docker-mailserver)',
   'FileBrowser',
-  'Nextcloud / MinIO (if enabled)',
-  'Jellyfin (if enabled)',
 ];
 
 // ---------------------------------------------------------------------------
@@ -50,11 +58,19 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
   console.log();
 
   // -------------------------------------------------------------------------
-  // 2. Show credential propagation targets
+  // 2. Show credential propagation info
   // -------------------------------------------------------------------------
-  console.log(chalk.dim('  Credentials will be applied to:'));
-  for (const target of CREDENTIAL_TARGETS) {
-    console.log(chalk.dim(`    • ${target}`));
+  console.log(chalk.yellow('  ⚠ Nextcloud, MinIO, pgAdmin, SSH Server를 사용할 경우'));
+  console.log(chalk.yellow('    적용되는 로그인 계정이므로 신중하게 입력하세요.'));
+  console.log();
+  console.log(chalk.dim('  자동 적용 서비스:'));
+  for (const svc of AUTO_PROPAGATED_SERVICES) {
+    console.log(chalk.dim(`    • ${svc}`));
+  }
+  console.log();
+  console.log(chalk.dim('  별도 설정 필요 서비스:'));
+  for (const svc of MANUAL_SETUP_SERVICES) {
+    console.log(chalk.dim(`    • ${svc}`) + chalk.dim.italic(' — 자체 초기 설정에서 계정 생성'));
   }
   console.log();
 

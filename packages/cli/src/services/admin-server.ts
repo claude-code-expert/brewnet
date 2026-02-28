@@ -263,6 +263,12 @@ const WEB_UI_SERVICES = new Set([
   'jellyfin', 'pgadmin', 'filebrowser',
 ]);
 
+// Services that must be accessed through Traefik path-prefix routing.
+// Their OVERWRITEWEBROOT / SCRIPT_NAME settings make direct-port access broken.
+const TRAEFIK_PATH_SERVICES: Record<string, string> = {
+  nextcloud: 'http://localhost/cloud',
+};
+
 function getPrimaryPort(container: Dockerode.ContainerInfo): number | null {
   const tcp = (container.Ports ?? [])
     .filter((p) => p.Type === 'tcp' && p.PublicPort)
@@ -319,7 +325,7 @@ async function handleGetServices(
         uptime: c.Status?.startsWith('Up') ? c.Status.replace(/^Up /, '') : '—',
         port: port ?? null,
         url: WEB_UI_SERVICES.has(composeService) && port
-          ? `http://localhost:${port}`
+          ? TRAEFIK_PATH_SERVICES[composeService] ?? `http://localhost:${port}`
           : null,
         removable: !REQUIRED_SERVICES.has(composeService),
       });
@@ -534,11 +540,17 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     }
   }
 
-  // Build dashboard config from wizard state
+  // Build dashboard config from wizard state (credentials resolved lazily if needed)
+  const username = wizardState?.admin?.username ?? '';
   const password = wizardState?.admin?.password ?? '';
+
+  // Mask helpers
+  const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
+  const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
+
   const dashConfig: DashboardConfig = {
-    adminUsername: wizardState?.admin?.username ?? 'admin',
-    passwordHint: password.length > 4 ? '••••••' + password.slice(-4) : '••••••••',
+    adminUsername: username ? maskUser(username) : '**',
+    passwordHint: password ? maskPass(password) : '********',
     domainProvider: wizardState?.domain?.provider ?? 'local',
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
@@ -575,6 +587,42 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     }
   }
 
+  /**
+   * Lazy credential detection from running Nextcloud container env vars.
+   * Called once on first dashboard request when wizard state is unavailable.
+   */
+  let credentialsDetected = !!(username && password);
+  async function detectCredentials(): Promise<void> {
+    if (credentialsDetected) return;
+    credentialsDetected = true; // prevent repeated attempts
+    try {
+      const containers = await docker.listContainers({ all: true });
+      const nc = containers.find(
+        (c) => c.Labels?.['com.docker.compose.service'] === 'nextcloud',
+      );
+      if (!nc) return;
+      const info = await docker.getContainer(nc.Id).inspect();
+      const envArr: string[] = info.Config?.Env ?? [];
+      let u = '';
+      let p = '';
+      for (const entry of envArr) {
+        if (!u && entry.startsWith('NEXTCLOUD_ADMIN_USER=')) {
+          u = entry.split('=').slice(1).join('=');
+        }
+        if (!p && entry.startsWith('NEXTCLOUD_ADMIN_PASSWORD=')) {
+          p = entry.split('=').slice(1).join('=');
+        }
+      }
+      if (u || p) {
+        dashConfig.adminUsername = maskUser(u || 'admin');
+        dashConfig.passwordHint = maskPass(p);
+        dashboardHtml = generateDashboardHtml(dashConfig);
+      }
+    } catch {
+      // Non-critical — fall through to defaults
+    }
+  }
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const parts = url.split('?')[0].split('/').filter(Boolean);
@@ -591,9 +639,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       return;
     }
 
-    // Serve dashboard HTML (with lazy Quick Tunnel detection)
+    // Serve dashboard HTML (with lazy Quick Tunnel + credential detection)
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
       await detectQuickTunnelUrl();
+      await detectCredentials();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(dashboardHtml);
       return;

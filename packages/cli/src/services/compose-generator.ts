@@ -231,13 +231,18 @@ function getNextcloudEnv(state: WizardState): Record<string, string> {
   // Quick Tunnel: Nextcloud behind Traefik at /cloud path prefix.
   // OVERWRITEWEBROOT makes NC generate URLs with /cloud prefix.
   // Traefik strips /cloud before forwarding, so NC receives clean paths.
-  // Also trust *.trycloudflare.com as domain.
+  // Protocol detection: TRUSTED_PROXIES + Traefik forwardedHeaders.insecure
+  // lets Nextcloud read X-Forwarded-Proto from cloudflared (https for tunnel,
+  // http for local), so we do NOT hardcode OVERWRITEPROTOCOL.
   // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
   if (state.domain.cloudflare.tunnelMode === 'quick') {
     env['OVERWRITEWEBROOT'] = '/cloud';
-    env['OVERWRITEPROTOCOL'] = 'https';
     env['NEXTCLOUD_TRUSTED_PROXIES'] = 'traefik';
-    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${state.domain.name} *.trycloudflare.com`;
+    // Include localhost variants for direct-port access; tunnel domain is
+    // added post-install via `occ` once the Quick Tunnel URL is known.
+    const portMap = state.portRemapping ?? {};
+    const ncPort = portMap[8443] ?? 8443;
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${state.domain.name} localhost localhost:${ncPort}`;
   }
 
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
@@ -590,6 +595,13 @@ function buildComposeService(
       '--entrypoints.websecure.address=:443',
       '--api.insecure=true',
     ];
+    if (isQuickTunnel) {
+      // Preserve X-Forwarded-Proto from cloudflared so services behind Traefik
+      // (e.g. Nextcloud) can detect the original protocol without hardcoding
+      // OVERWRITEPROTOCOL.  cloudflared sets X-Forwarded-Proto: https for
+      // tunnel traffic; local access gets http from the entrypoint.
+      cmds.push('--entrypoints.web.forwardedHeaders.insecure=true');
+    }
     if (!isQuickTunnel && state.domain.ssl === 'letsencrypt') {
       cmds.push(
         '--certificatesresolvers.letsencrypt.acme.tlschallenge=true',
