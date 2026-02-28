@@ -543,7 +543,37 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
   };
-  const dashboardHtml = generateDashboardHtml(dashConfig);
+
+  // Cache for dashboard HTML (regenerated when Quick Tunnel URL is detected)
+  let dashboardHtml = generateDashboardHtml(dashConfig);
+  let quickTunnelDetected = !!dashConfig.quickTunnelUrl;
+
+  /**
+   * Detect Quick Tunnel URL from running cloudflared container logs.
+   * Called once on first request if no tunnel URL is in the config.
+   */
+  async function detectQuickTunnelUrl(): Promise<void> {
+    if (quickTunnelDetected) return;
+    quickTunnelDetected = true; // prevent repeated attempts
+    try {
+      const containers = await docker.listContainers({ all: true });
+      const cf = containers.find(
+        (c) => c.Labels?.['com.docker.compose.service'] === 'cloudflared',
+      );
+      if (!cf || cf.State !== 'running') return;
+      const container = docker.getContainer(cf.Id);
+      const logBuf = await container.logs({ stdout: true, stderr: true, tail: 50 });
+      const logStr = logBuf.toString('utf-8');
+      const match = logStr.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      if (match) {
+        dashConfig.quickTunnelUrl = match[0];
+        dashConfig.domainProvider = 'quick-tunnel';
+        dashboardHtml = generateDashboardHtml(dashConfig);
+      }
+    } catch {
+      // Non-critical — just serve without external URLs
+    }
+  }
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
@@ -561,8 +591,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       return;
     }
 
-    // Serve dashboard HTML
+    // Serve dashboard HTML (with lazy Quick Tunnel detection)
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
+      await detectQuickTunnelUrl();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(dashboardHtml);
       return;
