@@ -18,8 +18,10 @@ import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
 import { createBackup, listBackups } from './backup-manager.js';
 import { getServiceDefinition, SERVICE_REGISTRY } from '../config/services.js';
+import { SERVICE_DETAIL_MAP } from './status-page.js';
 import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
+import type { WizardState } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
 // Types (per admin-api.md)
@@ -44,10 +46,30 @@ export interface AdminServerOptions {
 }
 
 // ---------------------------------------------------------------------------
-// HTML Dashboard (inline)
+// HTML Dashboard (inline, dynamically generated with embedded config)
 // ---------------------------------------------------------------------------
 
-const DASHBOARD_HTML = `<!DOCTYPE html>
+interface DashboardConfig {
+  adminUsername: string;
+  passwordHint: string;
+  domainProvider: string;
+  quickTunnelUrl: string;
+  zoneName: string;
+}
+
+/**
+ * Name alias map: SERVICE_REGISTRY display names → SERVICE_DETAIL_MAP keys.
+ * Only entries that differ need to be listed here.
+ */
+const NAME_ALIASES: Record<string, string> = {
+  'OpenSSH Server': 'SSH Server',
+  'Docker Mailserver': 'Mail Server',
+  'Cloudflare Tunnel': 'Cloudflared',
+  'MinIO': 'MinIO Console',
+};
+
+function generateDashboardHtml(config: DashboardConfig): string {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -78,6 +100,33 @@ tr:hover td{background:#161b22}
 .section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
 .refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
+.svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
+.svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;font-family:'Courier New',monospace;font-size:14px;color:#c9d1d9}
+.modal-titlebar{background:#0d1117;padding:10px 16px;display:flex;align-items:center;gap:8px;border-radius:10px 10px 0 0;position:sticky;top:0;z-index:1}
+.modal-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+.modal-dot.r{background:#f85149}.modal-dot.y{background:#e3b341}.modal-dot.g{background:#3fb950}
+.modal-title{flex:1;color:#8b949e;font-size:13px;margin-left:4px}
+.modal-close{background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
+.modal-close:hover{color:#c9d1d9}
+.modal-body{padding:16px}
+.modal-desc{color:#8b949e;margin-bottom:4px}
+.modal-license{color:#484f58;font-size:12px;margin-bottom:16px}
+.modal-sh{color:#58a6ff;font-weight:600;margin-bottom:8px;margin-top:16px}
+.modal-sh:first-child{margin-top:0}
+.modal-url{margin-bottom:6px}
+.modal-url-label{color:#8b949e;font-size:13px}
+.modal-url-a{color:#58a6ff;text-decoration:underline;text-decoration-color:#30363d}
+.modal-url-a:hover{text-decoration-color:#58a6ff}
+.modal-bullet{color:#8b949e;padding-left:16px;margin-bottom:4px;position:relative}
+.modal-bullet::before{content:'> ';color:#3fb950;position:absolute;left:0}
+.modal-cmd{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 12px;color:#58a6ff;font-family:monospace;font-size:13px;margin-top:8px;word-break:break-all}
+.modal-cred{margin-top:6px}
+.modal-cred-l{color:#8b949e;font-size:13px}
+.modal-cred-v{color:#c9d1d9;font-family:monospace}
+.modal-tip{color:#8b949e;padding-left:16px;margin-bottom:4px;position:relative}
+.modal-tip::before{content:'! ';color:#e3b341;font-weight:700;position:absolute;left:0}
 </style>
 </head>
 <body>
@@ -90,26 +139,91 @@ tr:hover td{background:#161b22}
 </div>
 <div class="section-title">Services</div>
 <table id="svc-table">
-  <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>URL</th><th>Actions</th></tr></thead>
-  <tbody id="svc-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
+  <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
+  <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
 <div class="section-title">Log</div>
 <div id="log"></div>
 <script>
+var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
+var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
+var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName })};
+var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
+var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
+function getExternalUrl(id){
+  var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
+  var e=EXT_PATHS[id];if(!e)return null;
+  if(c.quickTunnelUrl){var base=c.quickTunnelUrl.replace(/\\/$/,'');return base+e.path;}
+  if(c.zoneName){return e.sub?'https://'+e.sub+'.'+c.zoneName:'https://'+c.zoneName;}
+  return null;
+}
+function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function resolveDetailName(n){return NAME_ALIASES[n]||n;}
+function showServiceModal(name,localUrl,externalUrl){
+  var detailName=resolveDetailName(name);
+  var info=SERVICE_DETAILS[detailName];
+  if(!info)return;
+  var ov=document.createElement('div');ov.className='modal-overlay';
+  ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
+  var accessHtml='';
+  if(localUrl&&localUrl.indexOf('http')===0){
+    accessHtml+='<div class="modal-url"><span class="modal-url-label">Local:</span> <a href="'+escapeHtml(localUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(localUrl)+'</a></div>';
+  }else if(localUrl){
+    accessHtml+='<div class="modal-url"><span class="modal-url-label">Local:</span> <span style="color:#8b949e">'+escapeHtml(localUrl)+'</span></div>';
+  }
+  if(externalUrl){
+    accessHtml+='<div class="modal-url"><span class="modal-url-label">External:</span> <a href="'+escapeHtml(externalUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(externalUrl)+'</a></div>';
+  }
+  var featHtml=info.features.map(function(f){return '<div class="modal-bullet">'+escapeHtml(f)+'</div>';}).join('');
+  var credHtml='<div style="color:#8b949e">'+escapeHtml(info.credentials.summary)+'</div>';
+  if(info.credentials.method==='env'||info.credentials.method==='basicauth'){
+    credHtml+='<div class="modal-cred"><span class="modal-cred-l">Username:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.username)+'</span></div>';
+    credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+'</span></div>';
+  }
+  if(info.credentials.command){credHtml+='<div class="modal-cmd">'+escapeHtml(info.credentials.command)+'</div>';}
+  var tipsHtml=info.tips.map(function(t){return '<div class="modal-tip">'+escapeHtml(t)+'</div>';}).join('');
+  ov.innerHTML='<div class="modal-box">'+
+    '<div class="modal-titlebar">'+
+      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
+      '<span class="modal-title">'+escapeHtml(name)+' \\u2014 service info</span>'+
+      '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
+    '</div>'+
+    '<div class="modal-body">'+
+      '<div class="modal-desc">'+escapeHtml(info.description)+'</div>'+
+      '<div class="modal-license">License: '+escapeHtml(info.license)+'</div>'+
+      (accessHtml?'<div class="modal-sh">$ access</div>'+accessHtml:'')+
+      '<div class="modal-sh">$ features</div>'+featHtml+
+      '<div class="modal-sh">$ credentials</div>'+credHtml+
+      '<div class="modal-sh">$ tips</div>'+tipsHtml+
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.addEventListener('keydown',handleModalEsc);
+}
+function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o)o.remove();document.removeEventListener('keydown',handleModalEsc);}
+function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
 const log=(msg)=>{const d=document.getElementById('log');d.textContent=new Date().toLocaleTimeString()+' '+msg+'\\n'+d.textContent.slice(0,2000);}
 const badge=(s)=>{const c=s==='running'?'running':s==='stopped'?'stopped':'error';return \`<span class="badge \${c}">\${s}</span>\`;}
 const fmt=(s,r)=>\`<button class="btn btn-\${s==='running'?'stop':'start'}" onclick="toggle('\${r.id}','\${s}')">\${s==='running'?'Stop':'Start'}</button><button class="btn btn-remove" onclick="removeSvc('\${r.id}')">Remove</button>\`
 async function loadServices(){
   const r=await fetch('/api/services').then(r=>r.json()).catch(()=>({services:[]}));
   const tbody=document.getElementById('svc-body');
-  if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="5" style="color:#8b949e">No services installed.</td></tr>';return;}
-  tbody.innerHTML=r.services.map(s=>\`<tr>
-    <td><b>\${s.name}</b><br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
+  if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
+  tbody.innerHTML=r.services.map(s=>{
+    var ext=getExternalUrl(s.id);
+    var detailName=resolveDetailName(s.name);
+    var hasDetail=!!SERVICE_DETAILS[detailName];
+    var localUrl=s.url||null;
+    var nameHtml=hasDetail
+      ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
+      :\`<b>\${s.name}</b>\`;
+    return \`<tr>
+    <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
     <td>\${badge(s.status)}</td>
     <td>\${s.port??'—'}</td>
-    <td>\${s.url?\`<a href="\${s.url}" target="_blank" style="color:#58a6ff">\${s.url}</a>\`:\`<span style='color:#8b949e'>—</span>\`}</td>
+    <td>\${localUrl?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
+    <td>\${ext?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
     <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
-  </tr>\`).join('');
+  </tr>\`;}).join('');
   const sum=r.summary;
   document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
 }
@@ -132,6 +246,7 @@ setInterval(loadServices,15000);
 </script>
 </body>
 </html>`;
+}
 
 // ---------------------------------------------------------------------------
 // Docker helpers
@@ -405,15 +520,30 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 } {
   const port = options.port ?? 8088;
 
-  // Resolve project path from options or last saved wizard state
+  // Resolve project path and wizard state
   let projectPath = options.projectPath ?? process.cwd();
+  let wizardState: WizardState | null = null;
   if (!options.projectPath) {
     const last = getLastProject();
     if (last) {
       const state = loadState(last);
-      if (state?.projectPath) projectPath = state.projectPath;
+      if (state) {
+        wizardState = state;
+        if (state.projectPath) projectPath = state.projectPath;
+      }
     }
   }
+
+  // Build dashboard config from wizard state
+  const password = wizardState?.admin?.password ?? '';
+  const dashConfig: DashboardConfig = {
+    adminUsername: wizardState?.admin?.username ?? 'admin',
+    passwordHint: password.length > 4 ? '••••••' + password.slice(-4) : '••••••••',
+    domainProvider: wizardState?.domain?.provider ?? 'local',
+    quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
+    zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
+  };
+  const dashboardHtml = generateDashboardHtml(dashConfig);
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
@@ -434,7 +564,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     // Serve dashboard HTML
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(DASHBOARD_HTML);
+      res.end(dashboardHtml);
       return;
     }
 
