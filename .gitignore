@@ -10,6 +10,7 @@ packages/*/tsconfig.tsbuildinfo
 
 # OS files
 .DS_Store
+
 Thumbs.db
 *.tmp
 *.swp
