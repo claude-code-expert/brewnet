@@ -78,7 +78,7 @@ function generateDashboardHtml(config: DashboardConfig): string {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
-h1{color:#58a6ff;margin-bottom:4px;font-size:20px}
+h1{color:#58a6ff;margin-bottom:4px;font-size:20px;display:flex;align-items:center;gap:8px}
 .sub{color:#8b949e;margin-bottom:24px;font-size:12px}
 table{width:100%;border-collapse:collapse;margin-bottom:24px}
 th{text-align:left;padding:8px 12px;background:#161b22;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d}
@@ -132,7 +132,7 @@ tr:hover td{background:#161b22}
 <body>
 <div class="header">
   <div>
-    <h1>&#127866; Brewnet Admin</h1>
+    <h1><svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#58a6ff" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#58a6ff" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg> Brewnet Admin</h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
   <span class="refresh" onclick="loadServices()">&#8635; Refresh</span>
