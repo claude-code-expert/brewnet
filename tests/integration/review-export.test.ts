@@ -178,8 +178,8 @@ function generateReviewSections(state: WizardState): ReviewSection[] {
       }
     }
   }
-  if (state.devStack.frontend.length > 0) {
-    devItems.push({ label: 'Frontend', value: state.devStack.frontend.join(', ') });
+  if (state.devStack.frontend !== null) {
+    devItems.push({ label: 'Frontend', value: state.devStack.frontend });
   }
   if (devItems.length === 0) {
     devItems.push({ label: 'Dev Stack', value: 'Skipped' });
@@ -277,7 +277,6 @@ function exportConfig(state: WizardState, projectPath: string): string {
       provider: state.domain.provider,
       name: state.domain.name,
       ssl: state.domain.ssl,
-      freeDomainTld: state.domain.freeDomainTld,
       cloudflare: {
         enabled: state.domain.cloudflare.enabled,
         tunnelName: state.domain.cloudflare.tunnelName,
@@ -343,6 +342,8 @@ function importConfig(configPath: string): WizardState {
       cloudflare: {
         enabled: config.domain.cloudflare.enabled,
         tunnelName: config.domain.cloudflare.tunnelName,
+        tunnelMode: 'none' as const,
+        quickTunnelUrl: '',
         accountId: '',
         apiToken: '',
         tunnelId: '',
@@ -351,6 +352,7 @@ function importConfig(configPath: string): WizardState {
         zoneName: '',
       },
     },
+    portRemapping: {},
   };
 
   return state;
@@ -397,13 +399,12 @@ function createCompletedState(): WizardState {
     devStack: {
       languages: ['nodejs', 'python'],
       frameworks: { nodejs: 'nextjs', python: 'fastapi' },
-      frontend: ['reactjs', 'typescript'],
+      frontend: 'react',
     },
     domain: {
       provider: 'tunnel',
       name: 'myserver.example.com',
       ssl: 'cloudflare',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         ...state.domain.cloudflare,
         enabled: true,
@@ -526,8 +527,7 @@ describe('T064 — Review & Export', () => {
       expect(langItem.value).toContain('python');
 
       const frontendItem = devSection.items.find((i) => i.label === 'Frontend')!;
-      expect(frontendItem.value).toContain('reactjs');
-      expect(frontendItem.value).toContain('typescript');
+      expect(frontendItem.value).toBe('react');
 
       // Framework entries
       const frameworkLabels = devSection.items
@@ -722,7 +722,7 @@ describe('T064 — Review & Export', () => {
       expect(parsed.servers.dbServer.cache).toBe('redis');
       expect(parsed.devStack.languages).toEqual(['nodejs', 'python']);
       expect(parsed.devStack.frameworks).toEqual({ nodejs: 'nextjs', python: 'fastapi' });
-      expect(parsed.devStack.frontend).toEqual(['reactjs', 'typescript']);
+      expect(parsed.devStack.frontend).toBe('react');
       expect(parsed.domain.provider).toBe('tunnel');
       expect(parsed.domain.name).toBe('myserver.example.com');
       expect(parsed.domain.ssl).toBe('cloudflare');
@@ -752,7 +752,7 @@ describe('T064 — Review & Export', () => {
       const imported = importConfig(filePath);
 
       expect(imported).toBeDefined();
-      expect(imported.schemaVersion).toBe(5);
+      expect(imported.schemaVersion).toBe(7);
       expect(imported.projectName).toBe('test-project');
     });
 
@@ -800,7 +800,6 @@ describe('T064 — Review & Export', () => {
       expect(imported.domain.provider).toBe(state.domain.provider);
       expect(imported.domain.name).toBe(state.domain.name);
       expect(imported.domain.ssl).toBe(state.domain.ssl);
-      expect(imported.domain.freeDomainTld).toBe(state.domain.freeDomainTld);
       expect(imported.domain.cloudflare.enabled).toBe(state.domain.cloudflare.enabled);
       expect(imported.domain.cloudflare.tunnelName).toBe(state.domain.cloudflare.tunnelName);
     });
@@ -853,7 +852,7 @@ describe('T064 — Review & Export', () => {
       original.devStack = {
         languages: ['nodejs', 'python', 'go'],
         frameworks: { nodejs: 'nestjs', python: 'django' },
-        frontend: ['vuejs', 'typescript'],
+        frontend: 'vue',
       };
 
       const filePath = exportConfig(original, tmpDir);
@@ -861,7 +860,7 @@ describe('T064 — Review & Export', () => {
 
       expect(restored.devStack.languages).toEqual(['nodejs', 'python', 'go']);
       expect(restored.devStack.frameworks).toEqual({ nodejs: 'nestjs', python: 'django' });
-      expect(restored.devStack.frontend).toEqual(['vuejs', 'typescript']);
+      expect(restored.devStack.frontend).toBe('vue');
     });
 
     it('round-trip with partial install preserves disabled servers', () => {
@@ -1006,7 +1005,7 @@ describe('T064 — Review & Export', () => {
       const raw = readFileSync(filePath, 'utf-8');
       const loaded: WizardState = JSON.parse(raw);
 
-      expect(loaded.schemaVersion).toBe(5);
+      expect(loaded.schemaVersion).toBe(7);
       expect(loaded.projectName).toBe('test-project');
       expect(loaded.admin.password).toBe('SuperSecurePassword123!');
       expect(loaded.servers.webServer.service).toBe('traefik');
@@ -1056,7 +1055,7 @@ describe('T064 — Review & Export', () => {
     it('handles state with empty devStack gracefully', () => {
       const state = createDefaultWizardState();
       state.admin.password = 'testPassword123!';
-      state.devStack = { languages: [], frameworks: {}, frontend: [] };
+      state.devStack = { languages: [], frameworks: {}, frontend: null };
 
       const sections = generateReviewSections(state);
       const devSection = sections.find((s) => s.id === 'devStack')!;

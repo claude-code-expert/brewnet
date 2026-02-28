@@ -65,6 +65,10 @@ export function registerUninstallCommand(program: Command): void {
         // --- Show what is installed ---
         if (installations.length === 0) {
           console.log(chalk.yellow('No Brewnet installations found.'));
+          console.log(chalk.dim(
+            '  If Docker containers are still running, stop them manually:\n' +
+            '  docker ps  →  docker compose down (in your project directory)',
+          ));
           return;
         }
 
@@ -158,7 +162,12 @@ export function registerUninstallCommand(program: Command): void {
         );
 
         // --- Re-install hint ---
-        console.log(chalk.dim(`  Run ${chalk.bold('brewnet init')} to set up a new installation.`));
+        console.log(
+          chalk.dim(
+            '  To reinstall, run:\n' +
+              `  ${chalk.bold('curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash')}`,
+          ),
+        );
       },
     );
 }

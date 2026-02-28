@@ -55,7 +55,7 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
     {
       id: 'traefik',
       name: 'Traefik',
-      image: 'traefik:v3.0',
+      image: 'traefik:v2.11',
       ports: [80, 443, 8080],
       subdomain: 'traefik',
       ramMB: 64,
@@ -372,7 +372,7 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
         'PGADMIN_DEFAULT_EMAIL',
         'PGADMIN_DEFAULT_PASSWORD',
       ],
-      traefikLabels: traefikRouterLabels('pgadmin', 'pgadmin', 5050),
+      traefikLabels: traefikRouterLabels('pgadmin', 'pgadmin', 80),
     },
   ],
 

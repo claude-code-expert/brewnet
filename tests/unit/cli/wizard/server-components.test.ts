@@ -273,7 +273,7 @@ describe('TC-04-10: Non-local domain → Mail Server available', () => {
 
   it('isMailServerAvailable returns true when domain.provider is "tunnel" (free subdomain)', () => {
     const state = buildState({
-      domain: { provider: 'tunnel', name: 'myserver.dpdns.org' },
+      domain: { provider: 'tunnel', name: 'myserver.example.com' },
     });
     expect(isMailServerAvailable(state)).toBe(true);
   });
@@ -493,7 +493,7 @@ describe('TC-04-14: DB Server enabled → dbPassword auto-generated if empty', (
 describe('TC-04-15: No language selected → App Server disabled', () => {
   it('keeps appServer disabled when languages and frontend are empty', () => {
     const state = buildState({
-      devStack: { languages: [], frameworks: {}, frontend: [] },
+      devStack: { languages: [], frameworks: {}, frontend: null },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -508,7 +508,7 @@ describe('TC-04-15: No language selected → App Server disabled', () => {
 
   it('disables fileBrowser when no devStack is selected', () => {
     const state = buildState({
-      devStack: { languages: [], frameworks: {}, frontend: [] },
+      devStack: { languages: [], frameworks: {}, frontend: null },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -521,7 +521,7 @@ describe('TC-04-15: No language selected → App Server disabled', () => {
 describe('TC-04-16: Language selected → App Server auto-enabled', () => {
   it('enables appServer when a backend language is selected', () => {
     const state = buildState({
-      devStack: { languages: ['nodejs'], frameworks: {}, frontend: [] },
+      devStack: { languages: ['nodejs'], frameworks: {}, frontend: null },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -533,7 +533,7 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
       devStack: {
         languages: ['nodejs', 'python'],
         frameworks: { nodejs: 'nextjs', python: 'fastapi' },
-        frontend: [],
+        frontend: null,
       },
     });
 
@@ -543,7 +543,7 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
 
   it('enables appServer when only frontend is selected (no backend language)', () => {
     const state = buildState({
-      devStack: { languages: [], frameworks: {}, frontend: ['reactjs'] },
+      devStack: { languages: [], frameworks: {}, frontend: 'react' },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -555,7 +555,7 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
       devStack: {
         languages: ['nodejs'],
         frameworks: { nodejs: 'express' },
-        frontend: ['reactjs', 'typescript'],
+        frontend: 'react',
       },
     });
 
@@ -564,11 +564,11 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
   });
 
   it('works with each individual language option', () => {
-    const languages = ['python', 'nodejs', 'java', 'php', 'dotnet', 'rust', 'go'] as const;
+    const languages = ['python', 'nodejs', 'java', 'rust', 'go', 'kotlin'] as const;
 
     for (const lang of languages) {
       const state = buildState({
-        devStack: { languages: [lang], frameworks: {}, frontend: [] },
+        devStack: { languages: [lang], frameworks: {}, frontend: null },
       });
 
       const result = applyDevStackAutoEnables(state);
@@ -577,11 +577,11 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
   });
 
   it('works with each individual frontend option', () => {
-    const frontendOptions = ['vuejs', 'reactjs', 'typescript', 'javascript'] as const;
+    const frontendOptions = ['react', 'vue', 'svelte'] as const;
 
     for (const fe of frontendOptions) {
       const state = buildState({
-        devStack: { languages: [], frameworks: {}, frontend: [fe] },
+        devStack: { languages: [], frameworks: {}, frontend: fe },
       });
 
       const result = applyDevStackAutoEnables(state);
@@ -595,7 +595,7 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
 describe('TC-04-17: App Server auto-enabled → FileBrowser auto-enabled', () => {
   it('enables fileBrowser when languages are selected (app server auto-enabled)', () => {
     const state = buildState({
-      devStack: { languages: ['nodejs'], frameworks: {}, frontend: [] },
+      devStack: { languages: ['nodejs'], frameworks: {}, frontend: null },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -605,7 +605,7 @@ describe('TC-04-17: App Server auto-enabled → FileBrowser auto-enabled', () =>
 
   it('enables fileBrowser when frontend is selected', () => {
     const state = buildState({
-      devStack: { languages: [], frameworks: {}, frontend: ['reactjs'] },
+      devStack: { languages: [], frameworks: {}, frontend: 'react' },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -616,14 +616,14 @@ describe('TC-04-17: App Server auto-enabled → FileBrowser auto-enabled', () =>
   it('disables fileBrowser when devStack is cleared (languages + frontend removed)', () => {
     // Start with devStack selected
     const stateWithDevStack = buildState({
-      devStack: { languages: ['python'], frameworks: { python: 'fastapi' }, frontend: [] },
+      devStack: { languages: ['python'], frameworks: { python: 'fastapi' }, frontend: null },
     });
     const enabledResult = applyDevStackAutoEnables(stateWithDevStack);
     expect(enabledResult.servers.fileBrowser.enabled).toBe(true);
 
     // Now clear devStack
     const stateCleared = buildState({
-      devStack: { languages: [], frameworks: {}, frontend: [] },
+      devStack: { languages: [], frameworks: {}, frontend: null },
     });
     const disabledResult = applyDevStackAutoEnables(stateCleared);
     expect(disabledResult.servers.appServer.enabled).toBe(false);
@@ -635,7 +635,7 @@ describe('TC-04-17: App Server auto-enabled → FileBrowser auto-enabled', () =>
       devStack: {
         languages: ['java'],
         frameworks: { java: 'spring' },
-        frontend: ['typescript'],
+        frontend: 'svelte',
       },
     });
 
@@ -677,7 +677,7 @@ describe('Immutability guarantees', () => {
 
   it('applyDevStackAutoEnables does not mutate the input state', () => {
     const state = buildState({
-      devStack: { languages: ['nodejs'], frameworks: {}, frontend: [] },
+      devStack: { languages: ['nodejs'], frameworks: {}, frontend: null },
     });
 
     const originalAppServer = state.servers.appServer.enabled;
@@ -714,7 +714,7 @@ describe('Combined rule application', () => {
       devStack: {
         languages: ['nodejs', 'python'],
         frameworks: { nodejs: 'nextjs', python: 'fastapi' },
-        frontend: ['reactjs', 'typescript'],
+        frontend: 'react',
       },
       domain: { provider: 'tunnel', name: 'example.com' },
     });
@@ -789,7 +789,7 @@ describe('Combined rule application', () => {
       },
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
       },
     });
 
@@ -854,7 +854,7 @@ describe('Edge cases', () => {
 
   it('applyDevStackAutoEnables does not affect non-server state', () => {
     const state = buildState({
-      devStack: { languages: ['rust'], frameworks: {}, frontend: [] },
+      devStack: { languages: ['rust'], frameworks: {}, frontend: null },
     });
 
     const result = applyDevStackAutoEnables(state);
@@ -915,7 +915,7 @@ describe('Edge cases', () => {
 
   it('applyDevStackAutoEnables can be called multiple times idempotently', () => {
     const state = buildState({
-      devStack: { languages: ['go'], frameworks: {}, frontend: ['typescript'] },
+      devStack: { languages: ['go'], frameworks: {}, frontend: 'svelte' },
     });
 
     const first = applyDevStackAutoEnables(state);

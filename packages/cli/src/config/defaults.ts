@@ -8,9 +8,10 @@
  */
 
 import type { WizardState } from '@brewnet/shared';
+import { SCHEMA_VERSION } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
-// Factory — creates a blank default WizardState (schema v5)
+// Factory — creates a blank default WizardState
 // ---------------------------------------------------------------------------
 
 /**
@@ -21,7 +22,7 @@ import type { WizardState } from '@brewnet/shared';
  */
 export function createDefaultWizardState(): WizardState {
   return {
-    schemaVersion: 5,
+    schemaVersion: SCHEMA_VERSION,
     projectName: 'my-homeserver',
     projectPath: '~/brewnet/my-homeserver',
     setupType: 'full',
@@ -62,10 +63,12 @@ export function createDefaultWizardState(): WizardState {
       fileBrowser: { enabled: false, mode: '' },
     },
 
+    portRemapping: {},
+
     devStack: {
       languages: [],
       frameworks: {},
-      frontend: [],
+      frontend: null,
     },
 
     boilerplate: {
@@ -78,9 +81,10 @@ export function createDefaultWizardState(): WizardState {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         enabled: false,
+        tunnelMode: 'none',
+        quickTunnelUrl: '',
         accountId: '',
         apiToken: '',
         tunnelId: '',

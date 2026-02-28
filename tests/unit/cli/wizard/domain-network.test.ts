@@ -36,7 +36,6 @@ const { createDefaultWizardState } = await import(
 );
 
 const {
-  validateFreeDomainTld,
   validateTunnelToken,
 } = await import(
   '../../../../packages/cli/src/utils/validation.js'
@@ -47,7 +46,6 @@ import type {
   DomainConfig,
   DomainProvider,
   SslMode,
-  FreeDomainTld,
 } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
@@ -138,17 +136,7 @@ describe('TC-06-02: Free domain configuration', () => {
     expect(result.domain.cloudflare.enabled).toBe(true);
   });
 
-  it('free domain → freeDomainTld selection is preserved in state', () => {
-    const state = buildState({
-      domain: { name: 'myserver', freeDomainTld: '.dpdns.org' },
-    });
-    const result = applyDomainDefaults(state, 'tunnel');
-
-    // TLD is stored in freeDomainTld; domain name concatenation happens at input time
-    expect(result.domain.freeDomainTld).toBe('.dpdns.org');
-  });
-
-  it('free domain → SSL mode = cloudflare', () => {
+  it('tunnel → SSL mode = cloudflare', () => {
     const state = buildState();
     const result = applyDomainDefaults(state, 'tunnel');
 
@@ -192,44 +180,6 @@ describe('TC-06-03: Custom domain SSL options', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TC-06-04: Free domain TLD validation
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('TC-06-04: Free domain TLD validation', () => {
-  it('accepts .dpdns.org', () => {
-    const result = validateFreeDomainTld('.dpdns.org');
-    expect(result.valid).toBe(true);
-  });
-
-  it('accepts .qzz.io', () => {
-    const result = validateFreeDomainTld('.qzz.io');
-    expect(result.valid).toBe(true);
-  });
-
-  it('accepts .us.kg', () => {
-    const result = validateFreeDomainTld('.us.kg');
-    expect(result.valid).toBe(true);
-  });
-
-  it('rejects .invalid-tld', () => {
-    const result = validateFreeDomainTld('.invalid-tld');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
-  });
-
-  it('rejects .com', () => {
-    const result = validateFreeDomainTld('.com');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
-  });
-
-  it('rejects empty string', () => {
-    const result = validateFreeDomainTld('');
-    expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TC-06-07: SSL configuration
@@ -241,7 +191,6 @@ describe('TC-06-07: SSL configuration', () => {
       provider: 'tunnel',
       name: 'example.com',
       ssl: 'letsencrypt',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
     });
 
@@ -253,7 +202,6 @@ describe('TC-06-07: SSL configuration', () => {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
     });
 
@@ -263,9 +211,8 @@ describe('TC-06-07: SSL configuration', () => {
   it('cloudflare selected → ssl = cloudflare', () => {
     const config = buildDomainConfig({
       provider: 'tunnel',
-      name: 'myserver.dpdns.org',
+      name: 'myserver.example.com',
       ssl: 'cloudflare',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
     });
 
@@ -283,9 +230,9 @@ describe('TC-06-08: Mail server availability', () => {
     expect(isMailServerAllowed(state)).toBe(false);
   });
 
-  it('domain = freedomain → mail IS available', () => {
+  it('domain = tunnel → mail IS available', () => {
     const state = buildState({
-      domain: { provider: 'tunnel', name: 'myserver.dpdns.org' },
+      domain: { provider: 'tunnel', name: 'myserver.example.com' },
     });
     expect(isMailServerAllowed(state)).toBe(true);
   });
@@ -336,7 +283,6 @@ describe('buildDomainConfig', () => {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
     });
 
@@ -351,7 +297,6 @@ describe('buildDomainConfig', () => {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken: 'some-token', tunnelName: 'my-tunnel' },
     });
 
@@ -359,32 +304,28 @@ describe('buildDomainConfig', () => {
     expect(config.cloudflare.enabled).toBe(false);
   });
 
-  it('build with freedomain + .dpdns.org → correct name and tunnel config', () => {
+  it('build with tunnel provider → correct name and tunnel config', () => {
     const config = buildDomainConfig({
       provider: 'tunnel',
-      name: 'myserver.dpdns.org',
+      name: 'myserver.example.com',
       ssl: 'cloudflare',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
     });
 
     expect(config.provider).toBe('tunnel');
-    expect(config.name).toBe('myserver.dpdns.org');
-    expect(config.freeDomainTld).toBe('.dpdns.org');
+    expect(config.name).toBe('myserver.example.com');
     expect(config.cloudflare.enabled).toBe(true);
     expect(config.ssl).toBe('cloudflare');
   });
 
-  it('build with freedomain → tunnel is forced ON', () => {
+  it('build with tunnel → tunnel enabled', () => {
     const config = buildDomainConfig({
       provider: 'tunnel',
-      name: 'myserver.qzz.io',
+      name: 'myserver.example.com',
       ssl: 'cloudflare',
-      freeDomainTld: '.qzz.io',
-      cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
+      cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
     });
 
-    // FreeDomain should force tunnel ON
     expect(config.cloudflare.enabled).toBe(true);
   });
 
@@ -393,7 +334,6 @@ describe('buildDomainConfig', () => {
       provider: 'tunnel',
       name: 'example.com',
       ssl: 'letsencrypt',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
     });
 
@@ -411,7 +351,6 @@ describe('buildDomainConfig', () => {
       provider: 'tunnel',
       name: 'example.com',
       ssl: 'cloudflare',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: true, tunnelToken, tunnelName: 'my-tunnel' },
     });
 
@@ -439,7 +378,7 @@ describe('Immutability guarantees', () => {
 
     applyDomainDefaults(state, 'tunnel');
 
-    // Input state should be unchanged after applying freedomain defaults
+    // Input state should be unchanged after applying tunnel defaults
     expect(JSON.stringify(state)).toBe(originalJson);
   });
 
@@ -459,7 +398,7 @@ describe('Immutability guarantees', () => {
 describe('Edge cases', () => {
   it('applyDomainDefaults preserves non-domain state fields', () => {
     const state = buildState({
-      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: ['reactjs'] },
+      devStack: { languages: ['nodejs'], frameworks: { nodejs: 'express' }, frontend: 'react' },
     });
 
     const result = applyDomainDefaults(state, 'tunnel');
@@ -484,16 +423,16 @@ describe('Edge cases', () => {
     expect(first.domain.cloudflare.enabled).toBe(second.domain.cloudflare.enabled);
   });
 
-  it('switching from freedomain to local disables tunnel and resets SSL', () => {
+  it('switching from tunnel to local disables tunnel and resets SSL', () => {
     const state = buildState();
 
-    // First apply freedomain defaults
-    const freedomainState = applyDomainDefaults(state, 'tunnel');
-    expect(freedomainState.domain.cloudflare.enabled).toBe(true);
-    expect(freedomainState.domain.ssl).toBe('cloudflare');
+    // First apply tunnel defaults
+    const tunnelState = applyDomainDefaults(state, 'tunnel');
+    expect(tunnelState.domain.cloudflare.enabled).toBe(true);
+    expect(tunnelState.domain.ssl).toBe('cloudflare');
 
     // Then switch to local
-    const localState = applyDomainDefaults(freedomainState, 'local');
+    const localState = applyDomainDefaults(tunnelState, 'local');
     expect(localState.domain.cloudflare.enabled).toBe(false);
     expect(localState.domain.ssl).toBe('self-signed');
   });
@@ -519,7 +458,6 @@ describe('Edge cases', () => {
       provider: 'tunnel',
       name: 'example.com',
       ssl: 'letsencrypt',
-      freeDomainTld: '.dpdns.org',
       cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
     });
 
@@ -527,27 +465,10 @@ describe('Edge cases', () => {
     expect(config).toHaveProperty('provider');
     expect(config).toHaveProperty('name');
     expect(config).toHaveProperty('ssl');
-    expect(config).toHaveProperty('freeDomainTld');
     expect(config).toHaveProperty('cloudflare');
     expect(config.cloudflare).toHaveProperty('enabled');
     expect(config.cloudflare).toHaveProperty('tunnelToken');
     expect(config.cloudflare).toHaveProperty('tunnelName');
   });
 
-  it('freedomain TLDs passed through buildDomainConfig are all valid', () => {
-    const tlds: FreeDomainTld[] = ['.dpdns.org', '.qzz.io', '.us.kg'];
-
-    for (const tld of tlds) {
-      const config = buildDomainConfig({
-        provider: 'tunnel',
-        name: `myserver${tld}`,
-        ssl: 'cloudflare',
-        freeDomainTld: tld,
-        cloudflare: { enabled: true, tunnelToken: '', tunnelName: '' },
-      });
-
-      expect(config.freeDomainTld).toBe(tld);
-      expect(validateFreeDomainTld(config.freeDomainTld).valid).toBe(true);
-    }
-  });
 });

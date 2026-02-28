@@ -120,14 +120,20 @@ export function buildPullCommand(
 }
 
 /**
- * Build `docker compose up -d` command arguments.
+ * Build `docker compose up -d --force-recreate --remove-orphans` command arguments.
+ *
+ * --force-recreate  : recreate containers even if config has not changed,
+ *                     resolving "container name already in use" conflicts on
+ *                     re-runs of `brewnet init`.
+ * --remove-orphans  : remove containers for services not defined in the
+ *                     current compose file (handles partial uninstall remnants).
  */
 export function buildUpCommand(
   composePath: string,
 ): { cmd: string; args: string[] } {
   return {
     cmd: 'docker',
-    args: ['compose', '-f', composePath, 'up', '-d'],
+    args: ['compose', '-f', composePath, 'up', '-d', '--force-recreate', '--remove-orphans'],
   };
 }
 

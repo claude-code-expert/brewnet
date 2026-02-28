@@ -210,15 +210,14 @@ interface BoilerplateConfig {
 
 ```typescript
 interface DomainConfig {
-  provider: 'local' | 'freedomain' | 'custom';
-  name: string;                         // e.g., "myserver.dpdns.org"
+  provider: 'local' | 'tunnel';
+  name: string;                         // e.g., "myserver.example.com"
   ssl: 'self-signed' | 'letsencrypt' | 'cloudflare';
-  freeDomainTld: '.dpdns.org' | '.qzz.io' | '.us.kg';
   cloudflare: CloudflareConfig;
 }
 
 interface CloudflareConfig {
-  enabled: boolean;                     // default: true for freedomain/custom
+  enabled: boolean;                     // default: true for tunnel
   tunnelToken: string;                  // eyJ... format
   tunnelName: string;
 }

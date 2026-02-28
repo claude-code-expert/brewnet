@@ -62,6 +62,7 @@ function mockCheckbox(opts: Record<string, unknown>) {
 
 jest.unstable_mockModule('@inquirer/prompts', () => ({
   input: jest.fn(mockInput),
+  password: jest.fn(mockInput),
   select: jest.fn(mockSelect),
   confirm: jest.fn(mockConfirm),
   checkbox: jest.fn(mockCheckbox),
@@ -370,7 +371,7 @@ describe('T103 — E2E: Partial Install Flow', () => {
       const config = generateComposeConfig(state);
       const serviceNames = Object.keys(config.services);
 
-      expect(serviceNames).toHaveLength(2);
+      expect(serviceNames).toHaveLength(3); // traefik + gitea + brewnet-welcome
       expect(serviceNames).toContain('traefik');
       expect(serviceNames).toContain('gitea');
     });
@@ -386,7 +387,7 @@ describe('T103 — E2E: Partial Install Flow', () => {
       const config = generateComposeConfig(state);
       const serviceNames = Object.keys(config.services);
 
-      expect(serviceNames).toHaveLength(3);
+      expect(serviceNames).toHaveLength(4); // traefik + gitea + cloudflared + brewnet-welcome
       expect(serviceNames).toContain('traefik');
       expect(serviceNames).toContain('gitea');
       expect(serviceNames).toContain('cloudflared');
@@ -452,14 +453,15 @@ describe('T103 — E2E: Partial Install Flow', () => {
       expect(state.projectName).toBe('partial-server');
 
       // --- Step 2: Server Components ---
-      // Admin: username=admin, accept password
-      // Web: traefik (only web/git shown, DB is disabled)
-      // File server: disabled (confirm no)
-      // DB: disabled (confirm no)
+      // Admin is pre-set (done by runAdminSetupStep Pre-Step in real flow)
+      // Web: traefik
+      // File server: disabled
+      // DB: disabled
       // Media: disabled
       // SSH: disabled
-      inputQueue = ['admin'];
-      confirmQueue = [true, false, false, false, false];
+      state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
+      inputQueue = [];
+      confirmQueue = [false, false, false, false]; // fileServer=false, db=false, media=false, ssh=false
       selectQueue = ['traefik'];
 
       state = await runServerComponentsStep(state);
@@ -492,7 +494,7 @@ describe('T103 — E2E: Partial Install Flow', () => {
       const composeConfig = generateComposeConfig(state);
       const serviceNames = Object.keys(composeConfig.services);
 
-      expect(serviceNames).toHaveLength(2);
+      expect(serviceNames).toHaveLength(3); // traefik + gitea + brewnet-welcome
       expect(serviceNames).toContain('traefik');
       expect(serviceNames).toContain('gitea');
       expect(serviceNames).not.toContain('postgresql');

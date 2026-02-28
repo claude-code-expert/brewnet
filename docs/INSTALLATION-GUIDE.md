@@ -755,5 +755,4 @@ brewnet uninstall --force
 
 ---
 
-*Brewnet — BUSL-1.1 License (converts to Apache 2.0 on 2029-01-01)*
-*Licensor: codevillain*
+*Brewnet — MIT License · Copyright (c) 2025 Brewnet (codevillain)*

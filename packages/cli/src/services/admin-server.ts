@@ -107,7 +107,7 @@ async function loadServices(){
     <td><b>\${s.name}</b><br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
     <td>\${badge(s.status)}</td>
     <td>\${s.port??'—'}</td>
-    <td>\${s.url??\`<span style='color:#8b949e'>—</span>\`}</td>
+    <td>\${s.url?\`<a href="\${s.url}" target="_blank" style="color:#58a6ff">\${s.url}</a>\`:\`<span style='color:#8b949e'>—</span>\`}</td>
     <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
   </tr>\`).join('');
   const sum=r.summary;
@@ -141,6 +141,20 @@ const docker = new Dockerode();
 
 const REQUIRED_SERVICES = new Set(['traefik', 'nginx', 'caddy', 'gitea']);
 
+const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'cloudflared']);
+
+const WEB_UI_SERVICES = new Set([
+  'traefik', 'nginx', 'caddy', 'gitea', 'nextcloud', 'minio',
+  'jellyfin', 'pgadmin', 'filebrowser',
+]);
+
+function getPrimaryPort(container: Dockerode.ContainerInfo): number | null {
+  const tcp = (container.Ports ?? [])
+    .filter((p) => p.Type === 'tcp' && p.PublicPort)
+    .sort((a, b) => a.PublicPort! - b.PublicPort!);
+  return tcp[0]?.PublicPort ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Request router
 // ---------------------------------------------------------------------------
@@ -173,11 +187,12 @@ async function handleGetServices(
     for (const c of allContainers) {
       const composeService = c.Labels?.['com.docker.compose.service'];
       if (!composeService) continue;
+      if (INTERNAL_SERVICES.has(composeService)) continue;
 
       const def = getServiceDefinition(composeService);
       const s = c.State as string;
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
-      const port = c.Ports?.[0]?.PublicPort ?? def?.ports?.[0] ?? null;
+      const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
 
       services.push({
         id: composeService,
@@ -188,7 +203,9 @@ async function handleGetServices(
         memory: '—',
         uptime: c.Status?.startsWith('Up') ? c.Status.replace(/^Up /, '') : '—',
         port: port ?? null,
-        url: null,
+        url: WEB_UI_SERVICES.has(composeService) && port
+          ? `http://localhost:${port}`
+          : null,
         removable: !REQUIRED_SERVICES.has(composeService),
       });
     }

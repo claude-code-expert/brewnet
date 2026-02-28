@@ -8,7 +8,6 @@ import {
   validateProjectName,
   validateDomainName,
   validateTunnelToken,
-  validateFreeDomainTld,
 } from '../../../../packages/cli/src/utils/validation.js';
 
 // ---------------------------------------------------------------------------
@@ -314,55 +313,3 @@ describe('validateTunnelToken', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// validateFreeDomainTld
-// ---------------------------------------------------------------------------
-
-describe('validateFreeDomainTld', () => {
-  describe('accepted TLDs', () => {
-    it.each(['.dpdns.org', '.qzz.io', '.us.kg'])(
-      'accepts "%s"',
-      (tld) => {
-        expect(validateFreeDomainTld(tld)).toEqual({ valid: true });
-      },
-    );
-
-    it('accepts TLD without leading dot (auto-normalized)', () => {
-      expect(validateFreeDomainTld('dpdns.org')).toEqual({ valid: true });
-      expect(validateFreeDomainTld('qzz.io')).toEqual({ valid: true });
-      expect(validateFreeDomainTld('us.kg')).toEqual({ valid: true });
-    });
-  });
-
-  describe('rejected TLDs', () => {
-    it.each(['.com', '.org', '.io', '.net', '.example.com', '.xyz', '.free.domain'])(
-      'rejects "%s"',
-      (tld) => {
-        const result = validateFreeDomainTld(tld);
-        expect(result.valid).toBe(false);
-        expect(result.error).toMatch(/Invalid free domain TLD/i);
-        expect(result.error).toMatch(/Allowed values/);
-      },
-    );
-
-    it('rejects arbitrary string', () => {
-      const result = validateFreeDomainTld('random-tld');
-      expect(result.valid).toBe(false);
-      expect(result.error).toMatch(/Invalid free domain TLD/i);
-    });
-  });
-
-  describe('empty / missing input', () => {
-    it('rejects empty string', () => {
-      const result = validateFreeDomainTld('');
-      expect(result.valid).toBe(false);
-      expect(result.error).toMatch(/required/i);
-    });
-
-    it('rejects non-string input', () => {
-      const result = validateFreeDomainTld(null as unknown as string);
-      expect(result.valid).toBe(false);
-      expect(result.error).toMatch(/required/i);
-    });
-  });
-});

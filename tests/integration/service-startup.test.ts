@@ -138,12 +138,12 @@ function buildPullCommand(composePath: string): { cmd: string; args: string[] } 
 }
 
 /**
- * Build the `docker compose up -d` command arguments.
+ * Build the `docker compose up -d --force-recreate --remove-orphans` command arguments.
  */
 function buildUpCommand(composePath: string): { cmd: string; args: string[] } {
   return {
     cmd: 'docker',
-    args: ['compose', '-f', composePath, 'up', '-d'],
+    args: ['compose', '-f', composePath, 'up', '-d', '--force-recreate', '--remove-orphans'],
   };
 }
 
@@ -328,13 +328,12 @@ function createCompletedState(): WizardState {
     devStack: {
       languages: ['nodejs'],
       frameworks: { nodejs: 'nextjs' },
-      frontend: ['reactjs', 'typescript'],
+      frontend: 'react',
     },
     domain: {
       provider: 'custom',
       name: 'myserver.example.com',
       ssl: 'letsencrypt',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         enabled: true,
         tunnelToken: 'secret-token',
@@ -365,7 +364,6 @@ function createLocalState(): WizardState {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         enabled: false,
         tunnelToken: '',
@@ -437,7 +435,10 @@ describe('T065 — Service Startup Flow', () => {
       const { cmd, args } = buildUpCommand(composePath);
 
       expect(cmd).toBe('docker');
-      expect(args).toEqual(['compose', '-f', composePath, 'up', '-d']);
+      expect(args).toEqual([
+        'compose', '-f', composePath,
+        'up', '-d', '--force-recreate', '--remove-orphans',
+      ]);
     });
 
     it('sortByDependency places infrastructure before databases', () => {
@@ -775,10 +776,10 @@ describe('T065 — Service Startup Flow', () => {
       expect(state.domain.ssl).toBe('letsencrypt');
     });
 
-    it('freedomain provider also requires DNS verification', () => {
+    it('tunnel provider requires DNS verification', () => {
       const state = createCompletedState();
-      state.domain.provider = 'freedomain';
-      state.domain.name = 'myserver.dpdns.org';
+      state.domain.provider = 'tunnel';
+      state.domain.name = 'myserver.example.com';
 
       expect(state.domain.provider).not.toBe('local');
     });

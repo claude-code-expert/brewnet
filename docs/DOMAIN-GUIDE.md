@@ -59,8 +59,6 @@ In the Cloudflare dashboard, go to your tunnel → **Published applications** ta
 
 After saving, those URLs are immediately accessible from the internet.
 
-> **No domain yet?** See [Getting a free domain](#getting-a-free-domain) below.
-
 ---
 
 ## Verify tunnel status
@@ -70,23 +68,6 @@ brewnet domain tunnel status
 ```
 
 Shows whether the `cloudflared` connector is running and connected.
-
----
-
-## Getting a free domain
-
-If you don't own a domain, you can get one for free from **DigitalPlat** and add it to Cloudflare:
-
-1. Register at **https://dash.domain.digitalplat.org/auth/register**
-   - Provide: Username, Password, Email, WHOIS info (Privacy Protection available after signup)
-2. Search for and register a subdomain (e.g., `myserver.dpdns.org`)
-   - Available TLDs: `.dpdns.org`, `.qzz.io`, `.us.kg`
-3. In the Cloudflare dashboard, go to **Add a site** → enter your domain → Free plan
-4. Copy the two nameservers Cloudflare assigns
-5. In DigitalPlat dashboard, replace the NS records with the Cloudflare nameservers
-6. Wait for Active status (usually minutes, up to 24 hours)
-
-Once active, use your DigitalPlat domain as the domain in Step 4 above.
 
 ---
 

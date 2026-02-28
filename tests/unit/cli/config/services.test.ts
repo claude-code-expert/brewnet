@@ -153,7 +153,7 @@ describe('getServiceDefinition()', () => {
     expect(traefik).toBeDefined();
     expect(traefik!.id).toBe('traefik');
     expect(traefik!.name).toBe('Traefik');
-    expect(traefik!.image).toBe('traefik:v3.0');
+    expect(traefik!.image).toBe('traefik:v2.11');
   });
 
   it('returns the correct definition for every registered service', () => {

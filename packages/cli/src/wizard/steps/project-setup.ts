@@ -75,7 +75,7 @@ export async function runProjectSetupStep(
   // -------------------------------------------------------------------------
   console.log();
   console.log(
-    chalk.bold.cyan('  Step 1/7') + chalk.bold(' — Project Setup'),
+    chalk.bold.cyan('  Step 2/8') + chalk.bold(' — Project Setup'),
   );
   console.log(
     chalk.dim(
@@ -108,7 +108,7 @@ export async function runProjectSetupStep(
       : defaultPath,
   });
 
-  const projectPath = rawPath.startsWith('~') ? rawPath : rawPath;
+  const projectPath = rawPath;
 
   // -------------------------------------------------------------------------
   // 4. Prompt for setup type

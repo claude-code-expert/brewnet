@@ -3,9 +3,9 @@
 
 // ─── Primitive Types ─────────────────────────────────────────────────────────
 
-export type Language = 'python' | 'nodejs' | 'java' | 'php' | 'dotnet' | 'rust' | 'go';
+export type Language = 'python' | 'nodejs' | 'java' | 'rust' | 'go' | 'kotlin';
 
-export type FrontendTech = 'vuejs' | 'reactjs' | 'typescript' | 'javascript';
+export type FrontendTech = 'react' | 'vue' | 'svelte' | 'none';
 
 export type WebServerService = 'traefik' | 'nginx' | 'caddy';
 
@@ -15,11 +15,9 @@ export type DbPrimary = 'postgresql' | 'mysql' | 'sqlite' | '';
 
 export type CacheService = 'redis' | 'valkey' | 'keydb' | '';
 
-export type DomainProvider = 'local' | 'tunnel';
+export type DomainProvider = 'local' | 'tunnel' | 'quick-tunnel';
 
 export type SslMode = 'self-signed' | 'letsencrypt' | 'cloudflare';
-
-export type FreeDomainTld = '.dpdns.org' | '.qzz.io' | '.us.kg';
 
 export type SetupType = 'full' | 'partial';
 
@@ -142,8 +140,8 @@ export interface DevStackConfig {
   languages: Language[];
   /** Per-language framework selection. Key = language, value = framework id */
   frameworks: Record<string, string>;
-  /** Selected frontend technologies (multi-select) */
-  frontend: FrontendTech[];
+  /** Selected frontend technology (single-select), null when no frontend selected */
+  frontend: FrontendTech | null;
 }
 
 export interface BoilerplateConfig {
@@ -158,6 +156,10 @@ export interface BoilerplateConfig {
 export interface CloudflareConfig {
   /** Whether Cloudflare Tunnel is enabled */
   enabled: boolean;
+  /** Discriminates Quick Tunnel vs Named Tunnel vs no tunnel */
+  tunnelMode: 'quick' | 'named' | 'none';
+  /** Quick Tunnel URL (*.trycloudflare.com) — populated at runtime, never persisted after restart */
+  quickTunnelUrl: string;
   /** Cloudflare Account ID (used for API tunnel creation) */
   accountId: string;
   /** Cloudflare API Token — used only during setup, not persisted after tunnel is created */
@@ -174,15 +176,50 @@ export interface CloudflareConfig {
   zoneName: string;
 }
 
+// ─── Tunnel Runtime Types (not persisted) ────────────────────────────────────
+
+export interface TunnelServiceStatus {
+  name: string;
+  url: string;
+  subdomain?: string;
+  path?: string;
+  accessible: boolean;
+}
+
+export interface TunnelHealth {
+  status: 'healthy' | 'degraded' | 'inactive';
+  connectorCount: number;
+  tunnelId: string;
+  tunnelName: string;
+  lastChecked: string;
+  services: TunnelServiceStatus[];
+}
+
+export interface TunnelLogEvent {
+  timestamp: string;
+  event:
+    | 'CREATE'
+    | 'ROLLBACK'
+    | 'DOMAIN_CONNECT'
+    | 'RESTART'
+    | 'STATUS_CHANGE'
+    | 'QUICK_START'
+    | 'QUICK_STOP';
+  tunnelMode: 'quick' | 'named';
+  tunnelId?: string;
+  tunnelName?: string;
+  domain?: string;
+  detail: string;
+  error?: string;
+}
+
 export interface DomainConfig {
   /** Domain provider type */
   provider: DomainProvider;
-  /** Domain name (e.g., "myserver.dpdns.org", "example.com") */
+  /** Domain name (e.g., "myserver.example.com") */
   name: string;
   /** SSL certificate strategy */
   ssl: SslMode;
-  /** TLD for free domain provider */
-  freeDomainTld: FreeDomainTld;
   /** Cloudflare Tunnel configuration */
   cloudflare: CloudflareConfig;
 }
@@ -190,8 +227,8 @@ export interface DomainConfig {
 // ─── Root State ──────────────────────────────────────────────────────────────
 
 export interface WizardState {
-  /** Schema version for migration support. Current version: 5 */
-  schemaVersion: 5;
+  /** Schema version for migration support. Current version: 7 (v6→v7: frontend changed from array to single value|null) */
+  schemaVersion: 7;
   /** Project display name (e.g., "my-homeserver") */
   projectName: string;
   /** Absolute path where the project is stored */
@@ -208,4 +245,10 @@ export interface WizardState {
   boilerplate: BoilerplateConfig;
   /** Domain and networking configuration */
   domain: DomainConfig;
+  /**
+   * Port conflict remapping. Key = original port, value = user-selected alternative.
+   * Applied when generating docker-compose.yml port bindings.
+   * e.g., { 80: 8080, 443: 8443 }
+   */
+  portRemapping: Record<number, number>;
 }

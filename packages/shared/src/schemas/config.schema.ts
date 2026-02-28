@@ -11,7 +11,6 @@ import {
   cacheServiceSchema,
   domainProviderSchema,
   sslModeSchema,
-  freeDomainTldSchema,
   fileBrowserModeSchema,
   devModeSchema,
   languageSchema,
@@ -94,7 +93,7 @@ const configServersSchema = z.object({
 const configDevStackSchema = z.object({
   languages: z.array(languageSchema),
   frameworks: z.record(z.string(), z.string()),
-  frontend: z.array(frontendTechSchema),
+  frontend: frontendTechSchema.nullable(),
 });
 
 const configBoilerplateSchema = z.object({
@@ -113,14 +112,13 @@ const configDomainSchema = z.object({
   provider: domainProviderSchema,
   name: z.string(),
   ssl: sslModeSchema,
-  freeDomainTld: freeDomainTldSchema,
   cloudflare: configCloudflareSchema,
 });
 
 // ─── Root Config Schema ──────────────────────────────────────────────────────
 
 export const brewnetConfigSchema = z.object({
-  schemaVersion: z.literal(5),
+  schemaVersion: z.literal(7),
   projectName: z.string().min(1).regex(
     /^[a-z0-9][a-z0-9-]*$/,
     'Project name must start with a lowercase letter or number and contain only lowercase letters, numbers, and hyphens',

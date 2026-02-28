@@ -114,9 +114,7 @@
 | TC | Type | Given | When | Then | Linked FR |
 |----|------|-------|------|------|-----------|
 | TC-06-01 | U | Local domain selected | Domain config generated | Self-signed SSL (Secure by Default), no cloudflared service, `.local` hostname | FR-07 |
-| TC-06-02 | U | Free domain (.dpdns.org) selected | Tunnel config | Cloudflare Tunnel enabled by default | FR-07 |
-| TC-06-03 | U | Custom domain selected | SSL method selector | Options: self-signed, letsencrypt, cloudflare | FR-07 |
-| TC-06-04 | U | Free domain TLD entry | `.invalid-tld` entered | Rejected (only .dpdns.org, .qzz.io, .us.kg accepted) | FR-07 |
+| TC-06-03 | U | Tunnel provider selected | SSL method selector | Options: self-signed, letsencrypt, cloudflare; Tunnel enabled by default | FR-07 |
 | TC-06-05 | I | Cloudflare tunnel enabled | Tunnel token field | Empty token → validation error before proceeding | FR-07 |
 | TC-06-06 | I | cloudflared enabled | Compose generated | `cloudflared` service with tunnel token in docker-compose.yml | FR-07 |
 | TC-06-07 | U | letsencrypt SSL selected | Compose generated | Traefik ACME config included, HTTP challenge configured | FR-07 |

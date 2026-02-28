@@ -5,6 +5,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-25
 ## Active Technologies
 - TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, better-sqlite3, zod, conf, tsup (001-cli-init-wizard)
 - better-sqlite3 (local SQLite at `~/.brewnet/db/`), JSON state files at `~/.brewnet/projects/<name>/selections.json` (001-cli-init-wizard)
+- TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, execa, dockerode, js-yaml, better-sqlite3, zod (001-cf-tunnel-setup)
+- `~/.brewnet/config.json` (wizard state), `~/.brewnet/logs/tunnel.log` (new tunnel audit log) (001-cf-tunnel-setup)
 
 - TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, better-sqlite3, zod, conf (001-cli-init-wizard)
 
@@ -25,6 +27,7 @@ npm test && npm run lint
 TypeScript 5.x strict mode, Node.js 20+ (ESM): Follow standard conventions
 
 ## Recent Changes
+- 001-cf-tunnel-setup: Added TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, execa, dockerode, js-yaml, better-sqlite3, zod
 - 001-cli-init-wizard: Added TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, better-sqlite3, zod, conf, tsup
 
 - 001-cli-init-wizard: Added TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, better-sqlite3, zod, conf

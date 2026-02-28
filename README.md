@@ -4,7 +4,7 @@ Self-hosted stack bootstrapper · Docker Compose · Git server · File manager �
 
 [English](#english) | [한국어](#한국어)
 
-[![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-0066cc.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-codevillain%2Fbrewnet-black?logo=github)](https://github.com/claude-code-expert/brewnet)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-3178c6?logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js)](https://nodejs.org/)
@@ -26,7 +26,7 @@ A fully self-hosted home server management platform. Set up and manage a persona
 - One-command setup wizard (7 steps)
 - Docker auto-install (macOS + Linux)
 - Local Git, DB, file, media services
-- Open source (BUSL-1.1)
+- Open source (MIT)
 
 </td>
 <td width="50%">
@@ -174,7 +174,7 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 - 7단계 원커맨드 설정 위저드
 - Docker 자동 설치 (macOS + Linux)
 - Git / DB / 파일 / 미디어 서비스
-- 오픈소스 (BUSL-1.1)
+- 오픈소스 (MIT)
 
 </td>
 <td width="50%">
@@ -353,21 +353,6 @@ A: `brewnet up`으로 서비스가 실행 중인지 확인하세요. 관리 패�
 
 ## License
 
-```
-Business Source License 1.1
+MIT License — Copyright (c) 2025 Brewnet (codevillain)
 
-Licensor:       Brewnet (codevillain)
-Licensed Work:  Brewnet CLI
-                The Licensed Work is (c) 2025 Brewnet
-
-Change Date:    2029-01-01
-Change License: Apache License, Version 2.0
-```
-
-- **Personal use allowed**: Home server deployments, learning, educational purposes, non-commercial research, internal testing
-- **Commercial use restricted**: Selling, reselling, redistribution, hosted/managed services, and revenue-generating activities are prohibited
-- **Change Date**: On **2029-01-01**, the license automatically converts to **Apache License 2.0**
-
-For full license details, see [LICENSE](LICENSE).
-
-Questions about licensing or commercial use? Contact: licenses@brewnet.io
+See [LICENSE](LICENSE) for the full text.

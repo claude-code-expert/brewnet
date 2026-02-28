@@ -94,7 +94,6 @@ function buildCloudflareState(tunnelToken: string): WizardState {
       provider: 'custom',
       name: 'myserver.example.com',
       ssl: 'letsencrypt',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         enabled: true,
         tunnelToken,
@@ -108,7 +107,7 @@ function buildCloudflareState(tunnelToken: string): WizardState {
  * Build a state with mail server enabled and the given domain config.
  */
 function buildMailState(
-  provider: 'local' | 'freedomain' | 'custom',
+  provider: 'local' | 'tunnel',
   domainName: string,
   mailEnabled: boolean,
 ): WizardState {
@@ -142,7 +141,6 @@ function buildMailState(
       provider,
       name: domainName,
       ssl: provider === 'local' ? 'self-signed' : 'letsencrypt',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         enabled: false,
         tunnelToken: '',
@@ -298,7 +296,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'local',
           name: 'brewnet.local',
           ssl: 'self-signed',
-          freeDomainTld: '.dpdns.org',
           cloudflare: {
             enabled: false,
             tunnelToken: '',
@@ -318,7 +315,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'local',
           name: 'brewnet.local',
           ssl: 'self-signed',
-          freeDomainTld: '.dpdns.org',
           cloudflare: {
             enabled: false,
             tunnelToken: '',
@@ -452,14 +448,14 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       expect(mailService.environment!['OVERRIDE_HOSTNAME']).toBe('mail.brewnet.local');
     });
 
-    it('freedomain + mail server enabled → compose includes docker-mailserver', () => {
-      const state = buildMailState('freedomain', 'myserver.dpdns.org', true);
+    it('tunnel + mail server enabled → compose includes docker-mailserver', () => {
+      const state = buildMailState('tunnel', 'myserver.example.com', true);
       const config = generateComposeConfig(state);
 
       expect(config.services).toHaveProperty('docker-mailserver');
 
       const mailService = config.services['docker-mailserver'];
-      expect(mailService.environment!['OVERRIDE_HOSTNAME']).toBe('mail.myserver.dpdns.org');
+      expect(mailService.environment!['OVERRIDE_HOSTNAME']).toBe('mail.myserver.example.com');
     });
 
     it('docker-mailserver YAML output contains all three port mappings', () => {
@@ -512,7 +508,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -533,7 +528,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -549,7 +543,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -565,7 +558,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'local',
           name: 'brewnet.local',
           ssl: 'self-signed',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -583,7 +575,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'local',
           name: 'brewnet.local',
           ssl: 'self-signed',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -609,7 +600,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'cloudflare',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: true, tunnelToken: 'some-token', tunnelName: 'my-tunnel' },
         },
       });
@@ -635,7 +625,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -664,7 +653,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
         },
       });
@@ -715,7 +703,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: {
             enabled: true,
             tunnelToken: 'combined-test-token',
@@ -770,7 +757,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
           provider: 'custom',
           name: 'myserver.example.com',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: {
             enabled: true,
             tunnelToken: 'full-state-token',

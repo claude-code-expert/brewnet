@@ -6,9 +6,9 @@
  * Task: T020 — Phase 2 Config Registries
  */
 
-export type Language = 'python' | 'nodejs' | 'java' | 'php' | 'dotnet' | 'rust' | 'go';
+export type Language = 'python' | 'nodejs' | 'java' | 'rust' | 'go' | 'kotlin';
 
-export type FrontendTech = 'vuejs' | 'reactjs' | 'typescript' | 'javascript';
+export type FrontendTech = 'react' | 'vue' | 'svelte' | 'none';
 
 export interface FrameworkOption {
   id: string;
@@ -33,41 +33,39 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
     name: 'Node.js',
     frameworks: [
       { id: 'nextjs', name: 'Next.js', description: 'Full-stack React framework' },
-      { id: 'nextjs-api', name: 'Next.js (API only)', description: 'API routes only' },
+      { id: 'nextjs-app', name: 'Next.js 15.x (App Router)', description: 'Next.js 15 App Router with Server Components' },
       { id: 'express', name: 'Express', description: 'Minimal web framework' },
       { id: 'nestjs', name: 'NestJS', description: 'Progressive Node.js framework' },
-      { id: 'fastify', name: 'Fastify', description: 'Fast and low overhead' },
     ],
   },
   java: {
     name: 'Java',
     frameworks: [
-      { id: 'java-pure', name: 'Pure Java', description: 'No framework' },
       { id: 'spring', name: 'Spring Framework', description: 'Enterprise Java framework' },
-      { id: 'springboot', name: 'Spring Boot', description: 'Opinionated Spring, production-ready' },
-    ],
-  },
-  php: {
-    name: 'PHP',
-    frameworks: [
-      { id: 'laravel', name: 'Laravel', description: 'PHP web framework' },
-      { id: 'symfony', name: 'Symfony', description: 'Enterprise PHP framework' },
-    ],
-  },
-  dotnet: {
-    name: '.NET',
-    frameworks: [
-      { id: 'aspnet', name: 'ASP.NET Core', description: 'Web framework for .NET' },
-      { id: 'blazor', name: 'Blazor', description: 'Interactive web UI with .NET' },
+      { id: 'springboot', name: 'Spring Boot', description: 'Opinionated Spring, production-ready (recommended)' },
     ],
   },
   rust: {
     name: 'Rust',
-    frameworks: [],
+    frameworks: [
+      { id: 'axum', name: 'Axum', description: 'Ergonomic and modular framework (MIT)' },
+      { id: 'actix-web', name: 'Actix Web', description: 'High performance web framework (MIT)' },
+    ],
   },
   go: {
     name: 'Go',
-    frameworks: [],
+    frameworks: [
+      { id: 'gin', name: 'Gin', description: 'HTTP web framework (MIT)' },
+      { id: 'echo', name: 'Echo', description: 'High performance framework (MIT)' },
+      { id: 'fiber', name: 'Fiber', description: 'Express-inspired framework (MIT)' },
+    ],
+  },
+  kotlin: {
+    name: 'Kotlin',
+    frameworks: [
+      { id: 'ktor', name: 'Ktor', description: 'Asynchronous Kotlin web framework (default)' },
+      { id: 'springboot-kt', name: 'Spring Boot (Kotlin)', description: 'Spring Boot with Kotlin DSL' },
+    ],
   },
 };
 
@@ -76,10 +74,10 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
 // ---------------------------------------------------------------------------
 
 export const FRONTEND_REGISTRY: Record<FrontendTech, { name: string; description: string }> = {
-  vuejs: { name: 'Vue.js', description: 'Progressive JavaScript framework' },
-  reactjs: { name: 'React', description: 'UI component library' },
-  typescript: { name: 'TypeScript', description: 'Typed JavaScript' },
-  javascript: { name: 'JavaScript', description: 'Plain JavaScript' },
+  react: { name: 'React (Vite)', description: 'React SPA with Vite build tool' },
+  vue: { name: 'Vue.js (Vite)', description: 'Vue 3 SPA with Vite build tool' },
+  svelte: { name: 'SvelteKit', description: 'Full-stack Svelte framework' },
+  none: { name: 'Skip frontend', description: 'No frontend framework' },
 };
 
 // ---------------------------------------------------------------------------
@@ -88,7 +86,6 @@ export const FRONTEND_REGISTRY: Record<FrontendTech, { name: string; description
 
 /**
  * Return the list of available frameworks for a given language.
- * Returns an empty array for languages that have no framework options.
  */
 export function getFrameworksForLanguage(language: Language): FrameworkOption[] {
   return LANGUAGE_REGISTRY[language].frameworks;

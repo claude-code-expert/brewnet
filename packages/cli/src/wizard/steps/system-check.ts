@@ -19,7 +19,7 @@
 
 import chalk from 'chalk';
 import ora from 'ora';
-import { confirm, select } from '@inquirer/prompts';
+import { confirm, select, input } from '@inquirer/prompts';
 import { execa } from 'execa';
 import Table from 'cli-table3';
 import { runAllChecks } from '../../services/system-checker.js';
@@ -29,7 +29,10 @@ import {
   isDaemonRunning,
   installDocker,
   waitForDockerDaemon,
+  getDaemonDiagnostics,
+  launchDockerDesktop,
 } from '../../services/docker-installer.js';
+import { suggestAlternativePorts, getPortOccupant } from '../../utils/port-utils.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -40,6 +43,8 @@ export interface SystemCheckStepResult {
   passed: boolean;
   /** Individual check results */
   results: CheckResult[];
+  /** Port remapping chosen during conflict resolution */
+  portRemapping: Record<number, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +95,19 @@ function showDockerStartGuide(plat: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Docker Desktop 첫 실행 안내 (신규 설치 직후)
+// ---------------------------------------------------------------------------
+
+function showDockerFirstLaunchGuide(): void {
+  console.log();
+  console.log(chalk.bold('  Docker Desktop을 실행해주세요:'));
+  console.log(chalk.dim('    1. Dock 또는 Applications 폴더에서 "Docker" 앱 클릭'));
+  console.log(chalk.dim('    2. 라이선스 동의 및 초기 설정 완료 (~1분)'));
+  console.log(chalk.dim('    3. 메뉴바 상단 고래(🐳) 아이콘이 나타나면 준비 완료'));
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
 // Docker 수동 설치 안내
 // ---------------------------------------------------------------------------
 
@@ -136,6 +154,17 @@ async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
     console.log();
     console.log(chalk.red('  ✖ Docker 데몬이 응답하지 않습니다.'));
     console.log(chalk.dim('    Docker는 설치됐지만 아직 실행되지 않았습니다.'));
+
+    // 실제 오류 원인 표시 (docker info stderr)
+    const diagInfo = await getDaemonDiagnostics();
+    if (diagInfo) {
+      console.log();
+      console.log(chalk.yellow('  원인 (docker info):'));
+      const lines = diagInfo.split('\n').filter((l) => l.trim()).slice(0, 6);
+      for (const line of lines) {
+        console.log(chalk.dim(`    ${line.trim()}`));
+      }
+    }
     console.log();
 
     const choices: Array<{ value: string; name: string }> = [
@@ -163,7 +192,12 @@ async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
     } else if (action === 'open') {
       console.log();
       console.log(chalk.dim('  Docker Desktop을 실행합니다...'));
-      await execa('open', ['-a', 'Docker'], { reject: false });
+      const lr = await launchDockerDesktop();
+      if (!lr.success) {
+        console.log(chalk.red(`  Docker Desktop 실행 실패: ${lr.error ?? '알 수 없는 오류'}`));
+        console.log(chalk.dim('  Dock 또는 Applications 폴더에서 직접 실행해주세요.'));
+        console.log();
+      }
       daemonSpinner.start('Docker Desktop 기동 대기 중...');
       ready = await waitForDockerDaemon(RETRY_MS);
       if (ready) {
@@ -191,16 +225,18 @@ async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 /**
- * Run Step 0: System Check.
+ * Run Step 1: System Check.
  * This function never throws.
  */
 export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
+  const portRemapping: Record<number, number> = {};
+
   try {
     // -----------------------------------------------------------------------
     // 1. Display header
     // -----------------------------------------------------------------------
     console.log();
-    console.log(chalk.bold.cyan('  Step 0/7') + chalk.bold(' — System Check'));
+    console.log(chalk.bold.cyan('  Step 1/8') + chalk.bold(' — System Check'));
     console.log(chalk.dim('  Verifying that your system meets the requirements for Brewnet'));
     console.log();
 
@@ -210,9 +246,13 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     const dockerInstalled = await isDockerInstalled();
 
     if (dockerInstalled) {
-      // Docker CLI는 있지만 데몬이 꺼진 경우 — 프로액티브 기동 시도
       const daemonRunning = await isDaemonRunning();
-      if (!daemonRunning) {
+      if (daemonRunning) {
+        // Docker가 이미 실행 중 — 그대로 사용
+        console.log(chalk.green('  ✓  Docker가 실행 중입니다. 기존 설치를 사용합니다.'));
+        console.log();
+      } else {
+        // Docker CLI는 있지만 데몬이 꺼진 경우 — 기동 안내
         const plat = process.platform;
         console.log(chalk.yellow('  ⚠  Docker가 설치되어 있지만 실행되지 않았습니다.'));
         console.log(chalk.dim(
@@ -223,7 +263,12 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
         console.log();
 
         if (plat === 'darwin') {
-          await execa('open', ['-a', 'Docker'], { reject: false });
+          const lr = await launchDockerDesktop();
+          if (!lr.success) {
+            console.log(chalk.red(`  Docker Desktop 실행 실패: ${lr.error ?? '알 수 없는 오류'}`));
+            console.log(chalk.dim('  Dock 또는 Applications 폴더에서 직접 실행해주세요.'));
+            console.log();
+          }
         } else {
           await execa('sudo', ['systemctl', 'start', 'docker'], {
             stdio: 'inherit',
@@ -233,7 +278,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
 
         const daemonReady = await waitForDaemonWithRetry(plat);
         if (!daemonReady) {
-          return { passed: false, results: [] };
+          return { passed: false, results: [], portRemapping };
         }
         console.log();
       }
@@ -283,13 +328,24 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
         if (action === 'manual') {
           showDockerInstallGuide(plat);
         }
-        return { passed: false, results: [] };
+        return { passed: false, results: [], portRemapping };
+      }
+
+      // Docker 설치 완료 — macOS: 사용자가 직접 실행하도록 안내 후 확인 대기
+      // (자동 실행을 시도하지 않음 — 첫 실행 시 라이선스 동의 등 사용자 상호작용 필요)
+      if (plat === 'darwin') {
+        showDockerFirstLaunchGuide();
+        await confirm({
+          message: 'Docker Desktop을 실행하고 메뉴바에 고래(🐳) 아이콘이 나타났나요?',
+          default: true,
+        });
+        console.log();
       }
 
       // Docker 설치 완료 — 데몬 기동 대기 (재시도 루프 포함)
       const daemonReady = await waitForDaemonWithRetry(process.platform);
       if (!daemonReady) {
-        return { passed: false, results: [] };
+        return { passed: false, results: [], portRemapping };
       }
 
       if (requiresRelogin) {
@@ -329,6 +385,64 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
 
     console.log(table.toString());
     console.log();
+
+    // -----------------------------------------------------------------------
+    // 4a. Port conflict resolution — suggest alternatives and collect remapping
+    // -----------------------------------------------------------------------
+    const portConflicts = results.filter(
+      (r) => r.status === 'warn' && r.name.startsWith('Port '),
+    );
+
+    if (portConflicts.length > 0) {
+      console.log(chalk.yellow(
+        `  ${portConflicts.length} port conflict(s) detected. Select an alternative for each.`,
+      ));
+      console.log();
+
+      for (const conflict of portConflicts) {
+        // name format: "Port 80 — Traefik (Web Server)" or legacy "Port 80"
+        const portMatch = conflict.name.match(/^Port (\d+)/);
+        const port = portMatch ? parseInt(portMatch[1], 10) : 0;
+        const serviceMatch = conflict.name.match(/— (.+)$/);
+        const serviceName = serviceMatch ? serviceMatch[1] : null;
+        const occupant = getPortOccupant(port);
+        const alternatives = suggestAlternativePorts(port);
+
+        const choices: Array<{ value: number | 'keep' | 'custom'; name: string }> = alternatives.map((p) => ({
+          value: p as number | 'keep' | 'custom',
+          name: `Port ${p}`,
+        }));
+        choices.push({ value: 'custom', name: 'Enter custom port number' });
+        choices.push({ value: 'keep', name: `Keep port ${port} (conflict will persist)` });
+
+        const occupantHint = occupant ? `, used by ${occupant}` : '';
+        const serviceHint = serviceName ? ` [${serviceName}]` : '';
+        const choice = await select({
+          message: `Port ${port}${serviceHint} is in use${occupantHint}. Choose an alternative:`,
+          choices,
+        });
+
+        if (choice === 'custom') {
+          const raw = await input({
+            message: 'Enter port number (1024-65535)',
+            validate: (v) => {
+              const n = parseInt(v, 10);
+              if (isNaN(n) || n < 1024 || n > 65535) return 'Enter a number between 1024 and 65535';
+              return true;
+            },
+          });
+          const customPort = parseInt(raw, 10);
+          portRemapping[port] = customPort;
+          console.log(chalk.dim(`    → Port ${port} remapped to ${customPort}`));
+        } else if (choice !== 'keep') {
+          portRemapping[port] = choice as number;
+          console.log(chalk.dim(`    → Port ${port} remapped to ${choice as number}`));
+        } else {
+          console.log(chalk.dim(`    → Keeping port ${port} (may cause issues)`));
+        }
+        console.log();
+      }
+    }
 
     // -----------------------------------------------------------------------
     // 5. Critical failures → remediation 힌트 + 컨텍스트별 해결 메뉴
@@ -376,7 +490,12 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
 
           } else if (action === 'open') {
             console.log(chalk.dim('  Docker Desktop을 실행합니다...'));
-            await execa('open', ['-a', 'Docker'], { reject: false });
+            const lr = await launchDockerDesktop();
+            if (!lr.success) {
+              console.log(chalk.red(`  Docker Desktop 실행 실패: ${lr.error ?? '알 수 없는 오류'}`));
+              console.log(chalk.dim('  Dock 또는 Applications 폴더에서 직접 실행해주세요.'));
+              console.log();
+            }
             const ready = await waitForDaemonWithRetry(plat);
             if (ready) return runSystemCheckStep();
             // 루프 반복
@@ -389,7 +508,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
             return runSystemCheckStep();
 
           } else {
-            return { passed: false, results };
+            return { passed: false, results, portRemapping };
           }
         }
       }
@@ -409,18 +528,20 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
         return runSystemCheckStep();
       }
 
-      return { passed: false, results };
+      return { passed: false, results, portRemapping };
     }
 
     // -----------------------------------------------------------------------
-    // 6. Warnings → remediation 힌트 + 계속할지 확인
+    // 6. Non-port warnings → remediation 힌트 + 계속할지 확인
     // -----------------------------------------------------------------------
-    if (warnings.length > 0) {
+    const nonPortWarnings = warnings.filter((w) => !w.name.startsWith('Port '));
+
+    if (nonPortWarnings.length > 0) {
       console.log(chalk.yellow(
-        `  ${warnings.length}개의 경고가 있습니다. 필수는 아니지만 일부 기능에 영향을 줄 수 있습니다.`,
+        `  ${nonPortWarnings.length}개의 경고가 있습니다. 필수는 아니지만 일부 기능에 영향을 줄 수 있습니다.`,
       ));
       console.log();
-      for (const w of warnings) {
+      for (const w of nonPortWarnings) {
         console.log(chalk.yellow(`    ⚠  ${w.name}: ${w.message}`));
         if (w.remediation) {
           console.log(chalk.dim(`       → ${w.remediation}`));
@@ -434,7 +555,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       });
 
       console.log();
-      return { passed: shouldContinue, results };
+      return { passed: shouldContinue, results, portRemapping };
     }
 
     // -----------------------------------------------------------------------
@@ -443,7 +564,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     console.log(chalk.green.bold('  모든 시스템 체크를 통과했습니다!'));
     console.log();
 
-    return { passed: true, results };
+    return { passed: true, results, portRemapping };
 
   } catch (err) {
     console.log();
@@ -452,6 +573,6 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       console.log(chalk.dim(`  ${err.message}`));
     }
     console.log();
-    return { passed: false, results: [] };
+    return { passed: false, results: [], portRemapping };
   }
 }

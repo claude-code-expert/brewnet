@@ -1,8 +1,8 @@
 # Brewnet IMPLEMENT_SPEC (Software Design Document)
 
-> **Version**: 2.2
-> **Schema Version**: 5 (bumped from 4)
-> **Last Updated**: 2026-02-22
+> **Version**: 2.3
+> **Schema Version**: 6 (bumped from 5)
+> **Last Updated**: 2026-02-27
 > **Status**: Draft
 > **Constitution**: [constitution.md](../.specify/memory/constitution.md) v1.0.0
 > **Base**: [USER-STORY.md](USER-STORY.md), [REQUIREMENT.md](REQUIREMENT.md)
@@ -48,7 +48,7 @@ IMPLEMENT_SPEC.md → 구현 관점 (What to build)      ← 이 문서
 
 모든 위저드 단계는 **양방향 네비게이션**을 지원한다. 사용자는
 현재 단계에서 이전 단계로 돌아가거나, 전체 설치를 취소할 수 있다.
-위저드는 **8단계** (Step 0 ~ Step 7)로 구성된다.
+위저드는 **9단계** (Pre-Step + Step 0 ~ Step 7)로 구성된다.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -166,8 +166,7 @@ interface BoilerplateOptions {
 }
 
 interface DomainSelection {
-  provider: 'local' | 'freedomain' | 'custom';      // NEW: domain provider type
-  freeDomainTld: '.dpdns.org' | '.qzz.io' | '.us.kg'; // NEW: free domain TLD choice
+  provider: 'local' | 'tunnel';                       // domain provider type
   name: string;                                       // default: 'brewnet.local'
   ssl: 'none' | 'self-signed' | 'letsencrypt' | 'cloudflare'; // expanded SSL options
   cloudflare: {
@@ -178,6 +177,7 @@ interface DomainSelection {
 }
 
 type WizardStep =
+  | 'admin-setup'        // Pre-Step (NEW v2.3): Admin credentials before Docker install
   | 'system-check'       // Step 0
   | 'project-setup'      // Step 1
   | 'server-components'  // Step 2
@@ -221,8 +221,7 @@ const DEFAULT_STATE = {
     },
   },
   domain: {
-    provider: 'local',      // 'local' | 'freedomain' | 'custom'
-    freeDomainTld: '.dpdns.org',
+    provider: 'local',      // 'local' | 'tunnel'
     name: 'brewnet.local',
     ssl: 'cloudflare',      // 'none' | 'self-signed' | 'letsencrypt' | 'cloudflare'
     cloudflare: {
@@ -235,6 +234,12 @@ const DEFAULT_STATE = {
   _schemaVersion: 5,
 };
 ```
+
+**Schema v5 → v6 Migration Notes (v2.3)**:
+- `admin` field moved from Step 2 (server-components) to **Pre-Step** (new `admin-setup` wizard step)
+- `portRemapping` field added: `Record<number, number>` — tracks port conflict resolutions (e.g., `{80: 8080}`)
+- `devStack.frameworks` extended: PHP (laravel, symfony), .NET (aspnet, blazor), Rust (actix-web, axum), Go (gin, echo, fiber)
+- `_schemaVersion` bumped from 5 to 6
 
 **Schema v4 → v5 Migration Notes (v2.2)**:
 - MariaDB removed from DATABASE_REGISTRY (primary DB options)
@@ -269,8 +274,7 @@ const DEFAULT_STATE = {
 
 **Schema v2 → v3 Migration Notes** (previous):
 - `admin` 필드 추가 (신규)
-- `domain.provider` 추가 (`'local'` | `'freedomain'` | `'custom'`)
-- `domain.freeDomainTld` 추가 (Free Domain 전용)
+- `domain.provider` 추가 (`'local'` | `'tunnel'`)
 - `domain.ssl` 타입 변경: `boolean` → `'none' | 'self-signed' | 'letsencrypt' | 'cloudflare'`
 - `domain.cloudflare` 객체로 확장 (이전: `cloudflareTunnel: boolean`)
 - `domain.cloudflare.enabled` 기본값 `true` (이전: `false`)
@@ -285,16 +289,17 @@ const DEFAULT_STATE = {
 ### Feature Map
 
 ```
-F01  CLI Bootstrap & Entry Point
-F02  System Check (Step 0)
-F03  Project Setup & Setup Type (Step 1)
-F04  Server Component Selection (Step 2)
-F05  Runtime & Boilerplate (Step 3)
-F06  Domain & Cloudflare Configuration (Step 4)
-F07  Review, Confirm & Generate (Step 5)
-F08  Docker Compose Generation & Service Startup (Step 6-7)
-F09  Post-Setup Service Management
-F10  Uninstall (brewnet uninstall)
+F01   CLI Bootstrap & Entry Point
+F01.5 Admin Account Setup (Pre-Step — NEW v2.3)
+F02   System Check (Step 0)
+F03   Project Setup & Setup Type (Step 1)
+F04   Server Component Selection (Step 2)
+F05   Runtime & Boilerplate (Step 3)
+F06   Domain & Cloudflare Configuration (Step 4)
+F07   Review, Confirm & Generate (Step 5)
+F08   Docker Compose Generation & Service Startup (Step 6-7)
+F09   Post-Setup Service Management
+F10   Uninstall (brewnet uninstall)
 ```
 
 ### Dependency Graph
@@ -379,6 +384,93 @@ packages/cli/
 
 ---
 
+### F01.5: Admin Account Setup (Pre-Step — NEW v2.3)
+
+**Phase**: 1 (MVP)
+**REQ Coverage**: REQ-1.8.1 ~ REQ-1.8.6
+
+#### Description
+
+`brewnet init` 실행 직후, **Docker 설치 이전**에 수행되는 관리자 계정 설정 단계.
+이 단계에서 입력한 단일 admin credential이 이후 모든 서비스의 기본 인증 정보로 사용된다.
+
+#### Rationale
+
+Docker 설치 전에 admin 계정을 먼저 설정하는 이유:
+- Docker 설치 직후 컨테이너 기동 시 즉시 크리덴셜 전파 가능
+- 사용자가 설치 초반에 보안 설정을 완료하여 전체 흐름의 일관성 확보
+- Step 0 시스템 체크 결과에 따른 Docker 설치 여부 판단 전 크리덴셜 준비
+
+#### Prompts
+
+| Prompt | Type | Default | Description |
+|--------|------|---------|-------------|
+| Admin username | input | `admin` | 모든 서비스의 관리자 ID |
+| Admin password | password (masked) | auto-generated 20자 | 첫 방문 시 자동 생성, Enter로 수락 가능 |
+
+**Auto-generated Password**:
+```typescript
+crypto.randomBytes(15).toString('base64url').slice(0, 20)
+// Example: Xk9mP2vQ8nL4wR7jTb5s
+```
+
+#### UI Display
+
+```
+─── Admin Account Setup ──────────────────────────────────────────────
+
+  Set up your Brewnet admin credentials.
+  This single credential will be used for ALL services:
+  Nextcloud, Gitea, pgAdmin, Jellyfin, FileBrowser, SSH, Mail.
+
+  Username:  admin
+  Password:  ******************** [Show] [Regenerate]
+             Generated: Xk9mP2vQ8nL4wR7jTb5s
+
+  ℹ This password will be propagated to all activated services.
+    You can change individual service passwords later from each
+    service's admin panel.
+
+  [OK] Credentials will be saved to .env (chmod 600)
+```
+
+#### Credential Propagation Targets
+
+| Service | Env Variable | Notes |
+|---------|-------------|-------|
+| Gitea | `GITEA_ADMIN_USER` / `GITEA_ADMIN_PASSWORD` | Always |
+| PostgreSQL | `POSTGRES_USER` / `POSTGRES_PASSWORD` | If DB enabled |
+| MySQL | `MYSQL_USER` / `MYSQL_PASSWORD` | If DB enabled |
+| Redis | `REDIS_PASSWORD` | If Cache enabled |
+| Nextcloud | `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` | If File Server |
+| MinIO | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | If File Server |
+| pgAdmin | `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD` | If PostgreSQL |
+| Jellyfin | (initial setup auto-fill) | If Media |
+| FileBrowser | `FB_ADMIN_USER` / `FB_ADMIN_PASSWORD` | If FileBrowser |
+| SSH Server | `SSH_ADMIN_USER` / `SSH_ADMIN_PASSWORD` | If SSH Server |
+| Mail Server | postmaster@{domain} | If Mail Server |
+
+#### Storage
+
+```
+~/.brewnet/projects/{name}/.env
+  BREWNET_ADMIN_USERNAME=admin
+  BREWNET_ADMIN_PASSWORD=Xk9mP2vQ8nL4wR7jTb5s
+
+chmod 600 ~/.brewnet/projects/{name}/.env
+```
+
+#### Tests
+
+| Test ID | Type | Description |
+|---------|------|-------------|
+| T01.5-01 | Unit | 20자 비밀번호 자동 생성 |
+| T01.5-02 | Unit | 사용자 입력 비밀번호 수락 |
+| T01.5-03 | Unit | .env 파일 저장 및 chmod 600 적용 |
+| T01.5-04 | Integration | admin 설정 → Step 0 자동 진행 |
+
+---
+
 ### F02: System Check (Step 0)
 
 **Phase**: 1 (MVP)
@@ -417,13 +509,54 @@ packages/cli/
 - Docker 미설치 (필수): BN001 에러 → 설치 URL 안내 후 종료
 - 메모리/디스크 부족: 경고 출력 → 사용자 확인 후 계속 진행 가능
 
+#### Port Conflict Resolution (NEW v2.3)
+
+포트 충돌 감지 시 자동으로 대안 포트를 제안한다. 사용자가 대안을 승인하면
+`state.portRemapping` 에 기록되고 docker-compose.yml 생성 시 반영된다.
+
+```
+  [WARN] Port 80 is in use by another process.
+
+  Suggested alternatives:
+    > Use port 8080  (recommended)
+      Use port 8088
+      Use port 8000
+      Enter custom port
+
+  → User selects 8080
+  [OK] Port 80 → 8080 remapped (saved to portRemapping)
+```
+
+**Port Conflict Rules**:
+
+| Default Port | Service | Alternatives |
+|:------------:|---------|--------------|
+| 80 | HTTP (Traefik) | 8080, 8088, 8000 |
+| 443 | HTTPS (Traefik) | 8443, 4443 |
+| 2222 | SSH Server | 2223, 2220, 22222 |
+| 3000 | Gitea Web UI | 3001, 3010 |
+| 3022 | Gitea SSH | 3023, 3033 |
+| 8096 | Jellyfin | 8097, 8080 |
+| 9000 | MinIO API | 9001, 9090 |
+
+**`suggestAlternativePort(port: number): number[]`** — 충돌 포트에 대한 대안 목록을 반환하는 유틸리티 함수.
+
+**State field**:
+```typescript
+interface WizardSelections {
+  // ... existing fields ...
+  portRemapping: Record<number, number>;  // NEW v2.3: { 80: 8080, 443: 8443 }
+}
+```
+
 #### Navigation
 
 ```
 [System Check]
-  ├── All pass    → Auto-proceed to Project Setup
-  ├── Warn only   → "Continue anyway? (y/N)"
-  └── Fatal fail  → Exit with error code + install guide
+  ├── All pass         → Auto-proceed to Project Setup
+  ├── Port conflict    → Suggest alternatives → User picks → Proceed
+  ├── Warn only        → "Continue anyway? (y/N)"
+  └── Fatal fail       → Exit with error code + install guide
 ```
 
 #### Tests
@@ -506,44 +639,21 @@ function getNextStep(setupType: SetupType): WizardStep {
 
 #### Description
 
-**Admin Account 설정** 후 8개 서버 컴포넌트를 **토글 카드** 형태로 선택한다.
-Admin 자격증명은 이 단계 최상단에서 설정되며, Web Server와 Git Server는 필수이고,
-나머지 컴포넌트는 선택 사항이다(FileBrowser는 App Server 활성화 시 자동 포함).
+**[v2.3] Admin Account는 Pre-Step (F01.5)로 이동되었다.** 서버 컴포넌트 선택 전,
+Docker 설치 이전에 설정된다. 이 단계에서는 Pre-Step에서 설정된 admin 크리덴셜을
+**요약만 표시**하고, 8개 서버 컴포넌트를 **토글 카드** 형태로 선택한다.
+Web Server와 Git Server는 필수이고, 나머지 컴포넌트는 선택 사항이다.
 DB Server 선택 시 Primary DB와 Cache를 인라인으로 구성한다.
 
-#### Admin Account (Step 2 상단)
+#### Admin Account Summary (Step 2 상단 — 읽기 전용)
 
-Admin 계정은 서버 컴포넌트 토글 이전에 설정된다. 이 자격증명은
-Nextcloud, pgAdmin 등 설치되는 서비스들의 기본 관리자 비밀번호로 사용된다.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| Username | input | `admin` | 관리자 사용자명 |
-| Password | input (masked) | (auto-generated) | 20자 자동 생성, 첫 방문 시 |
-| Storage | — | `local` | 로컬 `.env` 파일에 저장 (chmod 600) |
-
-**Auto-generated Password**:
-- 첫 방문(위저드 최초 진입) 시 20자 비밀번호 자동 생성
-- `crypto.randomBytes(15).toString('base64url').slice(0, 20)` 사용
-- 사용자가 원하면 수정 가능
-- `.env` 파일에 `BREWNET_ADMIN_USERNAME`, `BREWNET_ADMIN_PASSWORD`로 저장
-- `.env` 파일 퍼미션: `chmod 600` (소유자만 읽기/쓰기)
-
-**Admin Password 전파**:
-- Nextcloud: `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD`
-- pgAdmin: `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD`
-- 기타 서비스: 각 서비스의 admin env var에 매핑
+Pre-Step에서 설정된 admin 크리덴셜을 요약 표시한다 (편집 버튼 포함):
 
 ```
   ┌──────────────────────────────────────────────────────┐
-  │  Admin Account                                       │
-  │                                                      │
-  │  Username:  admin                                    │
-  │  Password:  ******************** [Show] [Regenerate] │
-  │                                                      │
-  │  ℹ This password will be used as the default admin   │
-  │    password for Nextcloud, pgAdmin, and other        │
-  │    services.                                         │
+  │  Admin Account (set in Pre-Step)                     │
+  │  Username: admin          Password: ******** [Show]  │
+  │  [Edit credentials]                                  │
   └──────────────────────────────────────────────────────┘
 ```
 
@@ -920,9 +1030,53 @@ function estimateResources(
 #### Description
 
 개발 언어와 프레임워크를 선택하고, 보일러플레이트 옵션을 설정한다.
-언어 선택 → 프레임워크 선택 → 보일러플레이트 옵션 순서.
+
+**[v2.3 FIX] Framework Sub-Prompt**: 언어를 다중 선택한 뒤, 선택된 각 언어에 대해
+**순차적으로** 프레임워크 선택 프롬프트가 표시된다 (이전에 누락된 기능).
+언어 선택 → **언어 1 프레임워크 선택** → **언어 2 프레임워크 선택** → ... → 프론트엔드 선택 → 보일러플레이트 옵션.
+
 App Server가 선택되지 않은 경우에도 이 단계를 진행할 수 있으며,
 이 경우 보일러플레이트만 로컬에 생성된다.
+
+**[v2.3 NOTE] Boilerplate source**: 프레임워크 보일러플레이트의 git 소스 주소는 추후 제공 예정.
+현재 설치 테스트에서는 git clone 없이 **디렉토리 구조만 생성**한다.
+
+#### Framework Sub-Prompt Flow (NEW v2.3)
+
+```
+Step 1: Language multi-select
+  ? Select backend languages (multi-select):
+    [x] Python
+    [x] Node.js
+    [ ] Java
+    ...
+
+Step 2: Per-language framework (sequential sub-prompt, one per selected language)
+  ? Select Python framework:   → FastAPI / Django / Flask
+  ? Select Node.js framework:  → Next.js / Express / NestJS / Fastify
+
+Step 3: Frontend multi-select
+  ? Select frontend technologies (multi-select):
+    [ ] Vue.js / React.js / TypeScript / JavaScript
+
+Step 4: Boilerplate options
+  → Generate project? → Sample data? → Dev mode?
+```
+
+**Sequential Sub-Prompt Implementation**:
+```typescript
+// After language multi-select
+for (const lang of selectedLanguages) {
+  const framework = await select({
+    message: `Select ${LANGUAGE_LABELS[lang]} framework:`,
+    choices: FRAMEWORK_REGISTRY[lang].map(fw => ({
+      value: fw.id,
+      name: `${fw.name} — ${fw.description}`,
+    })),
+  });
+  state.devStack.frameworks[lang] = framework;
+}
+```
 
 #### Framework Registry
 
@@ -931,6 +1085,7 @@ interface FrameworkDefinition {
   id: string;
   name: string;
   language: Language;
+  description: string;
   license: string;
   dockerBaseImage: string;
   defaultPort: number;
@@ -940,14 +1095,16 @@ interface FrameworkDefinition {
   templateDir: string;          // packages/cli/templates/{id}/
 }
 
-type Language = 'python' | 'nodejs' | 'java' | 'rust' | 'go';
+type Language = 'python' | 'nodejs' | 'java' | 'php' | 'dotnet' | 'rust' | 'go';
 ```
 
 | Language | Frameworks | Default Port |
 |----------|-----------|:------------:|
 | Python | FastAPI, Django, Flask | 8000 |
-| Node.js | Next.js, Express, NestJS, Fastify | 3000 |
-| Java | Spring Boot, Quarkus, Micronaut | 8080 |
+| Node.js | Next.js, Next.js API, Express, NestJS, Fastify | 3000 |
+| Java | Pure Java, Spring, Spring Boot | 8080 |
+| PHP | Laravel, Symfony | 8080 |
+| .NET | ASP.NET Core, Blazor | 8080 |
 | Rust | Actix Web, Axum | 8080 |
 | Go | Gin, Echo, Fiber | 8080 |
 
@@ -1147,45 +1304,18 @@ async def delete_file(
 지원하며, 외부 접근이 필요한 경우(local 이외) Cloudflare Tunnel이
 **기본적으로 활성화**된다.
 
-#### Domain Providers (3가지)
+#### Domain Providers (2가지)
 
 | # | Provider | Description | Recommended |
 |---|----------|-------------|:-----------:|
 | 1 | **Local Only** (.local) | 외부 접근 없음, `brewnet.local` 사용 | — |
-| 2 | **Free Domain (DigitalPlat)** | 무료 도메인 등록 (.dpdns.org, .qzz.io, .us.kg) | **RECOMMENDED** |
-| 3 | **Own Domain** | 사용자 소유 도메인 사용 | — |
-
-#### Free Domain (DigitalPlat) Flow
-
-Free Domain 선택 시 사용자를 다음 단계로 안내한다:
-
-```
-[Free Domain Setup Guide]
-  1. Cloudflare 계정 생성/로그인
-     → https://dash.cloudflare.com/sign-up
-  2. DigitalPlat FreeDomain 등록
-     → https://dash.domain.digitalplat.org/auth/register
-         (Username, Password, Email + WHOIS 정보 필수)
-  3. 도메인 등록 시 Cloudflare 네임서버 설정
-     → 할당된 CF 네임서버 2개를 DigitalPlat에 입력
-  4. DNS 전파 대기 (최대 24시간, 보통 수 분)
-     → 위저드에서 DNS 전파 상태 확인 가능
-```
-
-**Free Domain TLD 선택**:
-
-| TLD | Example | Description |
-|-----|---------|-------------|
-| `.dpdns.org` | `myserver.dpdns.org` | 기본값, 가장 안정적 |
-| `.qzz.io` | `myserver.qzz.io` | 짧은 도메인 |
-| `.us.kg` | `myserver.us.kg` | 대안 TLD |
+| 2 | **Tunnel (Own Domain)** | 커스텀 도메인 + Cloudflare Tunnel | **RECOMMENDED** |
 
 #### Prompts
 
 | Prompt | Type | Default | Validation |
 |--------|------|---------|------------|
-| Domain provider | select | `Local Only` | 3개 옵션 중 택 1 |
-| Free Domain TLD | select (freedomain만) | `.dpdns.org` | 3개 TLD 중 택 1 |
+| Domain provider | select | `Local Only` | 2개 옵션 중 택 1 |
 | Domain name | input | `brewnet.local` (local) / (입력필요) | 유효한 도메인 형식 |
 | SSL method | select | `cloudflare` | `none` / `self-signed` / `letsencrypt` / `cloudflare` |
 | Cloudflare Tunnel | toggle | ON (external) / OFF (local) | Required for external access |
@@ -1202,16 +1332,7 @@ Free Domain 선택 시 사용자를 다음 단계로 안내한다:
   │     → cloudflare.enabled: false
   │     → Summary
   │
-  ├── Free Domain (DigitalPlat) — RECOMMENDED
-  │     → [TLD Select] (.dpdns.org / .qzz.io / .us.kg)
-  │     → [Domain Name Input] (e.g., myserver)
-  │     → [Setup Guide Display] (Cloudflare + DigitalPlat 등록 안내)
-  │     → ssl: 'cloudflare'
-  │     → cloudflare.enabled: true (default ON, required)
-  │     → [Tunnel Token Input]
-  │     → Summary
-  │
-  ├── Own Domain
+  ├── Tunnel (Own Domain)
   │     → [Domain Name Input]
   │     → [SSL Select] (letsencrypt / cloudflare / self-signed)
   │     → cloudflare.enabled: true (default ON, required)
@@ -1252,30 +1373,6 @@ services:
       traefik:
         condition: service_healthy
 ```
-
-#### DigitalPlat API Integration
-
-FreeDomain 등록은 현재 수동 프로세스 (사용자가 DigitalPlat 대시보드를 방문).
-향후 API 연동 로드맵:
-
-| 단계 | 현재 (v1.0) | 향후 (v2.0+) |
-|------|-------------|-------------|
-| 도메인 검색 | 수동 (DigitalPlat 대시보드) | `brewnet domain free search myserver` |
-| 도메인 등록 | 수동 (DigitalPlat 대시보드) | `brewnet domain free register myserver.dpdns.org` |
-| 네임서버 설정 | 수동 (DigitalPlat 패널) | Cloudflare NS 자동 위임 via DigitalPlat API |
-| DNS 전파 확인 | `dig +short NS {domain}` | `brewnet domain verify {domain}` |
-
-> **참고**: DigitalPlat은 현재 공개 API를 제공하지 않음. 위저드에서 단계별 가이드를 제공하고, API가 공개되면 인라인 등록을 구현할 계획.
-
-**Free Domain 등록 가이드 (위저드 Step 4에서 표시)**:
-1. Cloudflare 계정 생성 (dash.cloudflare.com)
-2. DigitalPlat FreeDomain 방문 (dash.domain.digitalplat.org)
-3. 계정 등록/로그인
-4. 도메인명 검색 및 TLD 선택 (.dpdns.org 권장)
-5. 도메인 등록 완료
-6. DigitalPlat 패널에서 Cloudflare 네임서버 설정
-7. DNS 전파 대기 (15분~24시간, `dig +short NS {domain}` 으로 확인)
-8. 위저드로 돌아와 도메인명 입력
 
 #### Cloudflare Access Policy Configuration (Phase 2+)
 
@@ -1404,12 +1501,10 @@ services:
 | T06-06 | Unit | Domain provider별 cloudflare.enabled 기본값 검증 |
 | T06-07 | Unit | Tunnel Token 유효성 검증 |
 | T06-08 | Integration | Local Only 도메인 설정 플로우 |
-| T06-09 | Integration | Free Domain → CF Tunnel 전체 플로우 |
-| T06-10 | Integration | Own Domain → SSL → CF Tunnel 전체 플로우 |
-| T06-11 | Unit | Mail Server shown only when domain provider != 'local' |
-| T06-12 | Unit | Mail Server DNS MX record generation |
-| T06-13 | Integration | Mail Server + Free Domain 전체 플로우 |
-| T06-14 | Unit | Free Domain TLD 입력 유효성 검증 (.dpdns.org, .qzz.io, .us.kg만 허용) |
+| T06-09 | Integration | Tunnel (Own Domain) → CF Tunnel 전체 플로우 |
+| T06-10 | Unit | Mail Server shown only when domain provider != 'local' |
+| T06-11 | Unit | Mail Server DNS MX record generation |
+| T06-12 | Integration | Mail Server + Tunnel 도메인 전체 플로우 |
 
 ---
 
@@ -1452,7 +1547,7 @@ SSH Server:     Enabled
 ```
 Mail Server:    Enabled
   Service:      docker-mailserver
-  Postmaster:   admin@myserver.dpdns.org
+  Postmaster:   admin@myserver.example.com
   Ports:        25 (SMTP), 587 (Submission), 993 (IMAP)
 ```
 
@@ -1938,9 +2033,67 @@ DNS 전파에 시간이 걸릴 수 있으므로, 실패 시 재시도 안내를 
 6. **App Build** -- `docker compose build` (보일러플레이트 앱)
 7. **Service Start** -- `docker compose up -d`
 8. **Health Check** -- 모든 컨테이너 healthy 상태 대기 (timeout 120s)
-9. **DNS Setup** -- `/etc/hosts` 업데이트 제안 (sudo 요청)
-10. **External Access Verification** -- DNS, tunnel, HTTPS endpoint check (non-local only)
-11. **Endpoint Display** -- 접근 가능한 URL 목록 출력
+9. **Service Installation Verification** -- 각 서비스별 접속 확인 (NEW v2.3, see §6-D below)
+10. **DNS Setup** -- `/etc/hosts` 업데이트 제안 (sudo 요청)
+11. **External Access Verification** -- DNS, tunnel, HTTPS endpoint check (non-local only)
+12. **Endpoint Display** -- 로컬 + 외부 URL 목록 출력 (NEW v2.3: both local and external)
+
+#### 6-D Service Installation Verification (NEW v2.3)
+
+각 서비스가 시작된 후, 사용자에게 실제 접속 가능 여부를 확인하는 단계.
+Progress bar (이미 구현됨)와 함께 각 서비스에 대한 접속 URL을 표시한다.
+
+```
+  Installing services...
+
+  [████████████████████░] 90% Starting services...
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  Service Installation Verification                            │
+  ├─────────────────┬────────────────────────┬───────────────────┤
+  │  Service        │  Local Access           │  External Access  │
+  ├─────────────────┼────────────────────────┼───────────────────┤
+  │  Traefik        │  http://localhost:80    │  (web server)     │
+  │  Gitea          │  http://localhost:3000  │  https://git.{D}  │
+  │  PostgreSQL     │  (localhost:5432)       │  (internal only)  │
+  │  Nextcloud      │  http://localhost:8080  │  https://files.{D}│
+  │  Jellyfin       │  http://localhost:8096  │  https://media.{D}│
+  └─────────────────┴────────────────────────┴───────────────────┘
+
+  ℹ External Access URLs are shown only when Cloudflare Tunnel is active.
+  ℹ Database services are internal-only (not exposed externally).
+
+  ? Verify installation — open each URL in your browser:
+    http://localhost:3000 (Gitea)
+    Press Enter when ready...
+```
+
+**`verifyServiceAccess(serviceId: string, localUrl: string, externalUrl?: string): Promise<VerifyResult>`**
+— 서비스 HTTP 엔드포인트에 대한 접속 테스트 유틸리티 함수.
+
+**Service URL Mapping**:
+
+| Service | Local URL | External URL (if tunnel) |
+|---------|-----------|--------------------------|
+| Traefik | `http://localhost:{port}` | `https://{domain}` |
+| Gitea | `http://localhost:3000` | `https://git.{domain}` |
+| Nextcloud | `http://localhost:8080` | `https://files.{domain}` |
+| MinIO | `http://localhost:9000` | `https://minio.{domain}` |
+| Jellyfin | `http://localhost:8096` | `https://media.{domain}` |
+| pgAdmin | `http://localhost:5050` | `https://db.{domain}` |
+| FileBrowser | `http://localhost:8085` | `https://fb.{domain}` |
+| SSH | `ssh {admin}@localhost -p 2222` | (TCP, no external URL) |
+
+**Failure Handling**:
+```
+  [FAIL] Gitea is not responding at http://localhost:3000
+
+  Options:
+    > Retry (wait 30s and check again)
+      Skip this service
+      View logs (docker logs brewnet-gitea)
+      Exit and investigate
+```
 
 #### Failure & Rollback (Constitution IV)
 
@@ -1992,6 +2145,10 @@ function generateSecret(length: number = 24): string {
 | T08-20 | Unit | FileBrowser filebrowser.json config generation |
 | T08-21 | Unit | FileBrowser admin credential propagation via API |
 | T08-22 | Integration | FileBrowser + App Server 연동 전체 플로우 |
+| T08-23 | Unit | verifyServiceAccess — HTTP 헬스체크 성공/실패 케이스 |
+| T08-24 | Unit | Service URL mapping (local vs external, tunnel active/inactive) |
+| T08-25 | Unit | Port remapping applied to docker-compose.yml generation |
+| T08-26 | Integration | 서비스 시작 후 Installation Verification 플로우 |
 
 ---
 
@@ -2262,7 +2419,13 @@ Brewnet has been uninstalled.
 6. --keep-config 아닌 경우 rm -rf {projectPath}
 7. rm -rf ~/.brewnet/status ~/.brewnet/state
 8. Cloudflare 터널 레코드 자동 삭제 불가 안내 메시지 표시
-9. 완료 메시지 출력
+9. [NEW v2.3] ? Remove Docker installation? (y/N) — Docker 제거 여부 확인
+   ├── Y → 플랫폼별 Docker 제거 명령 실행
+   │   ├── macOS: brew uninstall --cask docker (Homebrew) or rm -rf /Applications/Docker.app
+   │   └── Linux: sudo apt-get purge docker-ce docker-ce-cli (Ubuntu/Debian)
+   │             sudo yum remove docker-ce (CentOS/RHEL)
+   └── N → Docker 유지, 완료 메시지 출력
+10. 완료 메시지 출력
 ```
 
 #### CLI 인터페이스
@@ -2286,6 +2449,9 @@ brewnet uninstall [--dry-run] [--keep-data] [--keep-config] [--force]
 - [ ] `--keep-config` 시 프로젝트 디렉토리 보존
 - [ ] 프로젝트 경로가 없어도 gracefully handle (이미 삭제된 경우)
 - [ ] Cloudflare 관련 안내 메시지 표시 (자동 삭제 불가 항목 명시)
+- [ ] [NEW v2.3] Docker 제거 여부 확인 프롬프트 표시
+- [ ] [NEW v2.3] `--remove-docker` 플래그로 확인 없이 Docker 제거
+- [ ] [NEW v2.3] 플랫폼별 Docker 제거 명령어 실행 (macOS Homebrew / Linux apt)
 
 #### Tests
 
@@ -2298,6 +2464,10 @@ brewnet uninstall [--dry-run] [--keep-data] [--keep-config] [--force]
 | T10-05 | Unit | Cloudflare 안내 메시지 표시 |
 | T10-06 | Integration | 컨테이너 미실행 상태에서 uninstall 완료 |
 | T10-07 | Integration | --force: confirm 프롬프트 없이 즉시 실행 |
+| T10-08 | Unit | Docker 제거 프롬프트 표시 확인 |
+| T10-09 | Unit | macOS Docker 제거 명령 실행 (Homebrew) |
+| T10-10 | Unit | Linux Docker 제거 명령 실행 (apt-get) |
+| T10-11 | Integration | --remove-docker 플래그로 Docker 자동 제거 |
 
 ---
 
@@ -2441,7 +2611,7 @@ function loadWizardState(projectName: string): WizardContext | null;
 # ...
 
 # F06: Domain & Cloudflare
-/speckit.specify "3 domain providers (local/freedomain/custom), DigitalPlat free domain flow, Cloudflare tunnel as default for external access"
+/speckit.specify "2 domain providers (local/tunnel), custom domain with Cloudflare tunnel as default for external access"
 # ...
 ```
 

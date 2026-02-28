@@ -81,8 +81,8 @@ describe('Integration: Resource Estimation with Default States', () => {
     defaultState = createDefaultWizardState();
   });
 
-  it('should produce a valid default state with schemaVersion 5', () => {
-    expect(defaultState.schemaVersion).toBe(5);
+  it('should produce a valid default state with schemaVersion 7', () => {
+    expect(defaultState.schemaVersion).toBe(7);
     expect(defaultState.setupType).toBe('full');
     expect(defaultState.servers.webServer.enabled).toBe(true);
     expect(defaultState.servers.webServer.service).toBe('traefik');

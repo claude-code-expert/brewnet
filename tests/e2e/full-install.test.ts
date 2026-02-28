@@ -69,6 +69,7 @@ function mockCheckbox(opts: Record<string, unknown>) {
 
 jest.unstable_mockModule('@inquirer/prompts', () => ({
   input: jest.fn(mockInput),
+  password: jest.fn(mockInput),
   select: jest.fn(mockSelect),
   confirm: jest.fn(mockConfirm),
   checkbox: jest.fn(mockCheckbox),
@@ -323,20 +324,21 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(state.servers.dbServer.cache).toBe('redis');
 
       // --- Step 2: Server Components ---
-      // Admin: username=admin, accept generated password
+      // Admin is pre-set (done by runAdminSetupStep Pre-Step in real flow)
       // Web server: traefik
       // File server: disabled
-      // DB: postgresql 17, admin UI yes, db name, db user, cache=redis
+      // DB: postgresql 17, adminUI=false, db name, db user, cache=redis
       // Media: disabled
       // SSH: disabled
-      inputQueue = ['admin', 'brewnet_db', 'brewnet'];
-      confirmQueue = [true, false, true, true, false, false];
+      state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
+      inputQueue = ['brewnet_db', 'brewnet'];
+      confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
       selectQueue = ['traefik', 'postgresql', '17', 'redis'];
 
       state = await runServerComponentsStep(state);
 
       expect(state.admin.username).toBe('admin');
-      expect(state.admin.password).toBeTruthy(); // auto-generated
+      expect(state.admin.password).toBeTruthy(); // pre-set
       expect(state.servers.webServer.service).toBe('traefik');
       expect(state.servers.dbServer.enabled).toBe(true);
       expect(state.servers.dbServer.primary).toBe('postgresql');
@@ -347,7 +349,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       state = await runDevStackStep(state);
 
       expect(state.devStack.languages).toEqual([]);
-      expect(state.devStack.frontend).toEqual([]);
+      expect(state.devStack.frontend).toBeNull();
       expect(state.servers.appServer.enabled).toBe(false);
       expect(state.servers.fileBrowser.enabled).toBe(false);
 
@@ -477,7 +479,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
 
       expect(state.devStack.languages).toEqual([]);
       expect(state.devStack.frameworks).toEqual({});
-      expect(state.devStack.frontend).toEqual([]);
+      expect(state.devStack.frontend).toBeNull();
       expect(state.servers.appServer.enabled).toBe(false);
       expect(state.servers.fileBrowser.enabled).toBe(false);
     });
@@ -488,7 +490,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       // Simulate some prior devStack selections
       baseState.devStack.languages = ['nodejs'] as any;
       baseState.devStack.frameworks = { nodejs: 'nextjs' };
-      baseState.devStack.frontend = ['reactjs'] as any;
+      baseState.devStack.frontend = 'react' as any;
       baseState.servers.appServer.enabled = true;
       baseState.servers.fileBrowser.enabled = true;
 
@@ -496,7 +498,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
 
       expect(skipped.devStack.languages).toEqual([]);
       expect(skipped.devStack.frameworks).toEqual({});
-      expect(skipped.devStack.frontend).toEqual([]);
+      expect(skipped.devStack.frontend).toBeNull();
       expect(skipped.servers.appServer.enabled).toBe(false);
       expect(skipped.servers.fileBrowser.enabled).toBe(false);
     });
@@ -732,8 +734,8 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
   // =========================================================================
 
   describe('Navigation through all steps', () => {
-    it('should navigate forward through all 8 steps', () => {
-      const nav = new WizardNavigation();
+    it('should navigate forward through all 8 steps (SystemCheck to Complete)', () => {
+      const nav = new WizardNavigation(WizardStep.SystemCheck);
 
       expect(nav.currentStep).toBe(WizardStep.SystemCheck);
 
@@ -760,7 +762,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
     });
 
     it('should skip DevStack step when marked as skipped', () => {
-      const nav = new WizardNavigation();
+      const nav = new WizardNavigation(WizardStep.SystemCheck);
 
       nav.skipStep(WizardStep.DevStack);
 
@@ -778,7 +780,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
     });
 
     it('should allow going back', () => {
-      const nav = new WizardNavigation();
+      const nav = new WizardNavigation(WizardStep.SystemCheck);
 
       nav.goForward(); // -> ProjectSetup
       nav.goForward(); // -> ServerComponents
@@ -808,7 +810,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       state.domain.cloudflare.enabled = false;
 
       // Verify all required fields are populated
-      expect(state.schemaVersion).toBe(5);
+      expect(state.schemaVersion).toBe(7);
       expect(state.projectName).toBeTruthy();
       expect(state.admin.username).toBeTruthy();
       expect(state.admin.password).toBeTruthy();

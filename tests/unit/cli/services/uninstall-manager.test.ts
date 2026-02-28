@@ -64,6 +64,7 @@ const {
   buildUninstallTargets,
   listInstallations,
   runUninstall,
+  cleanupForRestart,
 } = await import('../../../../packages/cli/src/services/uninstall-manager.js');
 
 // ---------------------------------------------------------------------------
@@ -133,14 +134,21 @@ describe('buildUninstallTargets', () => {
     expect(compose?.label).not.toContain('volumes');
   });
 
-  it('includes brewnet-meta targets when status/state dirs exist', () => {
-    const statusDir = join(homedir(), '.brewnet', 'status');
-    const stateDir = join(homedir(), '.brewnet', 'state');
-    existingPaths.add(statusDir);
-    existingPaths.add(stateDir);
+  it('includes brewnet-meta target for ~/.brewnet/ when it exists', () => {
+    existingPaths.add(join(homedir(), '.brewnet'));
     const targets = buildUninstallTargets(null, {});
     const meta = targets.filter((t) => t.type === 'brewnet-meta');
-    expect(meta.length).toBe(2);
+    expect(meta.length).toBeGreaterThanOrEqual(1);
+    expect(meta.some((t) => t.label.includes('~/.brewnet/'))).toBe(true);
+  });
+
+  it('includes CLI binary as brewnet-meta target when binary exists', () => {
+    const binPath = join(homedir(), '.local', 'bin', 'brewnet');
+    existingPaths.add(binPath);
+    const targets = buildUninstallTargets(null, {});
+    const binary = targets.find((t) => t.type === 'brewnet-meta' && t.path === binPath);
+    expect(binary).toBeDefined();
+    expect(binary?.label).toContain('CLI binary');
   });
 
   it('does not include brewnet-meta targets when dirs do not exist', () => {
@@ -353,26 +361,32 @@ describe('runUninstall (live)', () => {
     expect(result.skipped).toContain('Docker networks (not found or already removed)');
   });
 
-  it('removes brewnet status and state dirs and adds to removed list', async () => {
-    const statusDir = join(homedir(), '.brewnet', 'status');
-    const stateDir = join(homedir(), '.brewnet', 'state');
-    existingPaths.add(statusDir);
-    existingPaths.add(stateDir);
+  it('removes entire ~/.brewnet/ directory and adds to removed list', async () => {
+    existingPaths.add(join(homedir(), '.brewnet'));
 
     const result = await runUninstall({ projectPath: '/tmp/test' });
-    expect(result.removed).toContain('~/.brewnet/status');
-    expect(result.removed).toContain('~/.brewnet/state');
-    expect(mockRmSync).toHaveBeenCalledWith(statusDir, { recursive: true, force: true });
-    expect(mockRmSync).toHaveBeenCalledWith(stateDir, { recursive: true, force: true });
+    expect(result.removed).toContain('~/.brewnet/ (all data, source, config)');
+    expect(mockRmSync).toHaveBeenCalledWith(
+      join(homedir(), '.brewnet'),
+      { recursive: true, force: true },
+    );
   });
 
-  it('adds to errors when rmSync throws for a brewnet-meta dir', async () => {
-    const statusDir = join(homedir(), '.brewnet', 'status');
-    existingPaths.add(statusDir);
+  it('adds to errors when rmSync throws for brewnet dir removal', async () => {
+    existingPaths.add(join(homedir(), '.brewnet'));
     mockRmSync.mockImplementationOnce(() => { throw new Error('EPERM: operation not permitted'); });
 
     const result = await runUninstall({ projectPath: '/tmp/test' });
     expect(result.errors.some((e) => e.includes('EPERM'))).toBe(true);
+  });
+
+  it('removes CLI binary and adds to removed list', async () => {
+    const binPath = join(homedir(), '.local', 'bin', 'brewnet');
+    existingPaths.add(binPath);
+
+    const result = await runUninstall({ projectPath: '/tmp/test' });
+    expect(result.removed.some((r) => r.includes('CLI binary'))).toBe(true);
+    expect(mockRmSync).toHaveBeenCalledWith(binPath, { force: true });
   });
 
   it('removes wizard state project dir when projectName is resolved', async () => {
@@ -384,5 +398,105 @@ describe('runUninstall (live)', () => {
     const result = await runUninstall({});
     expect(result.removed.some((r) => r.includes('Wizard state'))).toBe(true);
     expect(mockRmSync).toHaveBeenCalledWith(projectStateDir, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanupForRestart
+// ---------------------------------------------------------------------------
+
+describe('cleanupForRestart', () => {
+  beforeEach(() => {
+    existingPaths.clear();
+    mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
+    mockRmSync.mockReset();
+    mockExeca.mockReset();
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+  });
+
+  it('calls docker compose down when compose file exists', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+
+    await cleanupForRestart(projectPath);
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      expect.arrayContaining(['compose', '-f', expect.stringContaining('docker-compose.yml'), 'down', '--volumes', '--remove-orphans']),
+      expect.objectContaining({ env: expect.any(Object) }),
+    );
+  });
+
+  it('skips docker compose down when no compose file', async () => {
+    await cleanupForRestart('/tmp/test-project');
+    const composeDownCalls = mockExeca.mock.calls.filter(
+      (c) => (c[1] as string[]).includes('down'),
+    );
+    expect(composeDownCalls).toHaveLength(0);
+  });
+
+  it('removes docker networks', async () => {
+    await cleanupForRestart('/tmp/test-project');
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      ['network', 'rm', 'brewnet'],
+      expect.objectContaining({ env: expect.any(Object) }),
+    );
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      ['network', 'rm', 'brewnet-internal'],
+      expect.objectContaining({ env: expect.any(Object) }),
+    );
+  });
+
+  it('removes project directory when it exists', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(projectPath);
+
+    await cleanupForRestart(projectPath);
+    expect(mockRmSync).toHaveBeenCalledWith(projectPath, { recursive: true, force: true });
+  });
+
+  it('does NOT remove ~/.brewnet/ directory', async () => {
+    existingPaths.add(join(homedir(), '.brewnet'));
+
+    await cleanupForRestart('/tmp/test-project');
+    expect(mockRmSync).not.toHaveBeenCalledWith(
+      join(homedir(), '.brewnet'),
+      expect.anything(),
+    );
+  });
+
+  it('handles docker compose down errors gracefully', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+    mockExeca.mockRejectedValue(new Error('docker not running'));
+
+    // Should not throw
+    await expect(cleanupForRestart(projectPath)).resolves.toBeUndefined();
+  });
+
+  it('handles network rm errors gracefully', async () => {
+    mockExeca.mockRejectedValue(new Error('network not found'));
+
+    // Should not throw
+    await expect(cleanupForRestart('/tmp/test')).resolves.toBeUndefined();
+  });
+
+  it('handles rmSync errors gracefully', async () => {
+    const projectPath = '/tmp/test-project';
+    existingPaths.add(projectPath);
+    mockRmSync.mockImplementation(() => { throw new Error('EPERM'); });
+
+    // Should not throw
+    await expect(cleanupForRestart(projectPath)).resolves.toBeUndefined();
+  });
+
+  it('expands tilde in project path', async () => {
+    const projectPath = '~/brewnet/my-project';
+    const expanded = join(homedir(), 'brewnet/my-project');
+    existingPaths.add(expanded);
+
+    await cleanupForRestart(projectPath);
+    expect(mockRmSync).toHaveBeenCalledWith(expanded, { recursive: true, force: true });
   });
 });

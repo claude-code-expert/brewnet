@@ -95,7 +95,7 @@ Commands:
 - Skip option available
 
 ### Step 4: Domain & Network
-- `domain.provider` — select: `local` | `freedomain` | `custom`
+- `domain.provider` — select: `local` | `tunnel`
 - `domain.name` — input
 - `domain.cloudflare.tunnelToken` — password (when provider !== 'local')
 - `mailServer.enabled` — confirm (when provider !== 'local')
@@ -161,7 +161,7 @@ $ brewnet status
 ┌─────────────┬──────────┬────────┬──────────┬──────────────────┬───────┬────────────────────────────┐
 │ Service     │ Status   │ CPU    │ Memory   │ Uptime           │ Port  │ URL                        │
 ├─────────────┼──────────┼────────┼──────────┼──────────────────┼───────┼────────────────────────────┤
-│ traefik     │ running  │ 0.1%   │ 45MB     │ 2 hours          │ 80    │ traefik.myserver.dpdns.org │
+│ traefik     │ running  │ 0.1%   │ 45MB     │ 2 hours          │ 80    │ traefik.myserver.example.com │
 │ postgres    │ running  │ 0.3%   │ 120MB    │ 2 hours          │ 5432  │ localhost:5432             │
 │ redis       │ running  │ 0.1%   │ 12MB     │ 2 hours          │ 6379  │ localhost:6379             │
 ├─────────────┼──────────┼────────┼──────────┼──────────────────┼───────┼────────────────────────────┤
@@ -193,9 +193,9 @@ Adding Jellyfin (media streaming server)...
   [OK] Updated docker-compose.yml
   [OK] Pulled jellyfin/jellyfin:latest
   [OK] Started brewnet-jellyfin
-  [OK] Added Traefik route: https://jellyfin.myserver.dpdns.org
+  [OK] Added Traefik route: https://jellyfin.myserver.example.com
 
-  Jellyfin is now running at https://jellyfin.myserver.dpdns.org
+  Jellyfin is now running at https://jellyfin.myserver.example.com
 ```
 
 **Errors**:

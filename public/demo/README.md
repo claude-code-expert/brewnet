@@ -101,15 +101,11 @@ App Server가 활성화된 경우에만 표시됩니다.
 | 제공자 | 설명 |
 |--------|------|
 | Local Only | `brewnet.local` (hosts 파일 기반, 외부 접근 없음) |
-| Free Domain | DigitalPlat 무료 도메인 (.dpdns.org, .qzz.io, .us.kg) |
-| Custom | 자체 도메인 입력 |
+| Own Domain (Cloudflare Tunnel) | 자체 도메인 + Cloudflare Named Tunnel |
 
-**Cloudflare Tunnel**: Free Domain / Custom 선택 시 기본 활성화. NAT/CGNAT 환경에서도 외부 접근 가능.
+**Cloudflare Tunnel**: Own Domain 선택 시 기본 활성화. NAT/CGNAT 환경에서도 외부 접근 가능.
 - 터널 토큰 입력 시 시뮬레이션된 검증 상태 표시 (녹색 "Tunnel validated")
 - Public Hostname 미리보기 (활성화된 서비스별 외부 URL)
-
-**Free Domain 가용성 확인**: 도메인명 입력 시 시뮬레이션된 가용성 체크 ("Available!" / "Taken") 표시.
-- 8단계 등록 가이드 제공 (Cloudflare 계정 → DigitalPlat → NS 위임 → DNS 전파)
 
 **Mail Server**: 도메인이 Local이 아닌 경우에만 표시. docker-mailserver (SMTP 587, IMAP 993)를 설정합니다.
 

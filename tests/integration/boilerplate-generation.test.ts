@@ -73,7 +73,7 @@ function createNextjsState(): WizardState {
     devStack: {
       languages: ['nodejs'] as Language[],
       frameworks: { nodejs: 'nextjs' },
-      frontend: ['reactjs', 'typescript'],
+      frontend: 'react',
     },
     boilerplate: {
       generate: true,

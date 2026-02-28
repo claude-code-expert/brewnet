@@ -108,7 +108,7 @@ export function applyDevStackAutoEnables(state: WizardState): WizardState {
   const next = structuredClone(state);
 
   const hasLanguages = next.devStack.languages.length > 0;
-  const hasFrontend = next.devStack.frontend.length > 0;
+  const hasFrontend = next.devStack.frontend !== null;
   const hasDevStack = hasLanguages || hasFrontend;
 
   next.servers.appServer.enabled = hasDevStack;
@@ -141,14 +141,15 @@ export function isCacheSelectionAvailable(state: WizardState): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Run Step 2: Server Components.
+ * Run Step 3: Server Components.
  *
- * Interactively collects admin credentials and server component selections.
+ * Displays admin account summary (set in Pre-Step) and collects
+ * server component selections.
  * Applies component rules at the end to enforce invariants.
  *
  * Flow:
- *   1. Display header "Step 2/7 — Server Components"
- *   2. Admin Account (username, password)
+ *   1. Display header "Step 3/8 — Server Components"
+ *   2. Admin Account summary (read-only, set in Pre-Step)
  *   3. Web Server (always ON, select service)
  *   4. File Server (toggle, select service)
  *   5. Git Server (always ON, show info)
@@ -172,68 +173,36 @@ export async function runServerComponentsStep(
   // -------------------------------------------------------------------------
   console.log();
   console.log(
-    chalk.bold.cyan('  Step 2/7') + chalk.bold(' — Server Components'),
+    chalk.bold.cyan('  Step 3/8') + chalk.bold(' — Server Components'),
   );
   console.log(
     chalk.dim(
-      '  Configure admin credentials and select server components',
+      '  Select server components to install',
     ),
   );
   console.log();
 
   // -------------------------------------------------------------------------
-  // 2. Admin Account
+  // 2. Admin Account summary (read-only — configured in Pre-Step)
   // -------------------------------------------------------------------------
-  console.log(chalk.bold('  Admin Account'));
-  console.log(chalk.dim('  Credentials are propagated to all enabled services'));
-  console.log();
-
-  // Username
-  const adminUsername = await input({
-    message: 'Admin username',
-    default: next.admin.username || 'admin',
-  });
-  next.admin.username = adminUsername;
-
-  // Password — auto-generate, then offer accept/custom
-  const generatedPassword = generatePassword(20);
-  console.log();
-  console.log(
-    chalk.dim('  Generated password: ') + chalk.yellow(generatedPassword),
-  );
-
-  const acceptPassword = await confirm({
-    message: 'Accept generated password?',
-    default: true,
-  });
-
-  if (acceptPassword) {
-    next.admin.password = generatedPassword;
-  } else {
-    const customPassword = await input({
-      message: 'Enter custom password (min 8 characters)',
-      validate: (value: string) => {
-        if (value.length < 8) return 'Password must be at least 8 characters';
-        return true;
-      },
-    });
-    next.admin.password = customPassword;
-  }
-  next.admin.storage = 'local';
-
+  console.log(chalk.bold('  Admin Account') + chalk.dim(' (configured in Pre-Step)'));
+  console.log(chalk.dim(`    Username: ${next.admin.username || 'admin'}`));
+  console.log(chalk.dim(`    Password: ${'*'.repeat(Math.min(next.admin.password?.length ?? 0, 12))} (set)`));
   console.log();
 
   // -------------------------------------------------------------------------
   // 3. Web Server (always ON — select service)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Web Server') + chalk.green(' (required)'));
+  console.log(chalk.dim('  모든 서비스 앞단에서 HTTPS 처리 및 도메인 라우팅을 담당하는 리버스 프록시'));
+  console.log();
 
   const webService = await select<WebServerService>({
     message: 'Reverse proxy',
     choices: [
-      { name: 'Traefik (recommended)', value: 'traefik' },
-      { name: 'Nginx', value: 'nginx' },
-      { name: 'Caddy', value: 'caddy' },
+      { name: 'Traefik (recommended)', value: 'traefik', description: '자동 SSL 갱신 + Docker 레이블 기반 라우팅. 서비스 추가 시 설정 불필요' },
+      { name: 'Nginx', value: 'nginx', description: '업계 표준 웹서버 겸 프록시. 안정적이며 범용 설정 지원' },
+      { name: 'Caddy', value: 'caddy', description: '간결한 설정 파일, Let\'s Encrypt 자동화 내장' },
     ],
     default: next.servers.webServer.service || 'traefik',
   });
@@ -244,6 +213,8 @@ export async function runServerComponentsStep(
   // 4. File Server (toggle + select service)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  File Server'));
+  console.log(chalk.dim('  파일 저장·공유·동기화 서버. Dropbox / S3 같은 자체 호스팅 스토리지'));
+  console.log();
 
   const fileServerEnabled = await confirm({
     message: 'Enable File Server?',
@@ -255,8 +226,8 @@ export async function runServerComponentsStep(
     const fileService = await select<FileServerService>({
       message: 'File server service',
       choices: [
-        { name: 'Nextcloud', value: 'nextcloud', description: 'Full collaboration suite with file sync' },
-        { name: 'MinIO (S3-compatible)', value: 'minio', description: 'Object storage with S3 API' },
+        { name: 'Nextcloud', value: 'nextcloud', description: '파일 동기화 + 캘린더·연락처·사진 앱 포함 올인원 협업 Suite' },
+        { name: 'MinIO (S3-compatible)', value: 'minio', description: 'AWS S3 호환 오브젝트 스토리지. 대용량 파일·백업·미디어 저장에 최적' },
       ],
       default: next.servers.fileServer.service || 'nextcloud',
     });
@@ -279,6 +250,8 @@ export async function runServerComponentsStep(
   // 6. DB Server (toggle + primary + version + cache + password)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Database Server'));
+  console.log(chalk.dim('  앱 데이터를 영구 저장하는 관계형 DB. 대부분의 서비스에 필수'));
+  console.log();
 
   const dbEnabled = await confirm({
     message: 'Enable Database Server?',
@@ -291,9 +264,9 @@ export async function runServerComponentsStep(
     const dbPrimary = await select<DbPrimary>({
       message: 'Primary database',
       choices: [
-        { name: 'PostgreSQL (recommended)', value: 'postgresql' },
-        { name: 'MySQL', value: 'mysql' },
-        { name: 'SQLite (embedded)', value: 'sqlite' },
+        { name: 'PostgreSQL (recommended)', value: 'postgresql', description: '기능이 풍부한 오픈소스 RDBMS. JSON·전문검색 지원, 대규모 서비스에 적합' },
+        { name: 'MySQL', value: 'mysql', description: '세계 최다 사용 DB. WordPress·Drupal 등 PHP 생태계와 높은 호환성' },
+        { name: 'SQLite (embedded)', value: 'sqlite', description: '파일 기반 경량 DB. 외부 서버 불필요, 소규모·단일 서비스용' },
       ],
       default: next.servers.dbServer.primary || 'postgresql',
     });
@@ -348,10 +321,10 @@ export async function runServerComponentsStep(
     const cacheChoice = await select<CacheService>({
       message: 'Cache layer',
       choices: [
-        { name: 'Redis (recommended)', value: 'redis' },
-        { name: 'Valkey', value: 'valkey' },
-        { name: 'KeyDB', value: 'keydb' },
-        { name: 'None', value: '' },
+        { name: 'Redis (recommended)', value: 'redis', description: '인메모리 캐시 + 세션·큐 저장소. 응답 속도를 획기적으로 향상' },
+        { name: 'Valkey', value: 'valkey', description: 'Redis 호환 오픈소스 포크. Redis 7과 API 동일, 완전 무료 라이선스' },
+        { name: 'KeyDB', value: 'keydb', description: '멀티스레드 Redis 호환. 단일 인스턴스에서 더 높은 처리량 제공' },
+        { name: 'None', value: '', description: '캐시 레이어 없이 DB 직접 접근. 소규모·저트래픽 서비스에 적합' },
       ],
       default: next.servers.dbServer.cache || 'redis',
     });
@@ -372,6 +345,8 @@ export async function runServerComponentsStep(
   // 7. Media (toggle jellyfin)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Media Server'));
+  console.log(chalk.dim('  영화·드라마·음악·사진을 스트리밍하는 자체 Netflix. 브라우저·모바일·TV 앱 지원'));
+  console.log();
 
   const mediaEnabled = await confirm({
     message: 'Enable Media Server (Jellyfin)?',
@@ -385,6 +360,8 @@ export async function runServerComponentsStep(
   // 8. SSH Server (toggle + passwordAuth + SFTP auto-suggest)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  SSH Server'));
+  console.log(chalk.dim('  터미널로 서버에 원격 접속하거나 SFTP로 파일을 전송하는 보안 채널'));
+  console.log();
 
   const sshEnabled = await confirm({
     message: 'Enable SSH Server?',

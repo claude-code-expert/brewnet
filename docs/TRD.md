@@ -41,7 +41,7 @@ brewnet logs
 | 1 | Project Setup | 프로젝트 이름, 경로, 설치 유형 (Full / Partial) |
 | 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media/SSH) |
 | 3 | Dev Stack & Runtime | 다중 언어/프레임워크 선택, Frontend 기술 스택, FileBrowser, 보일러플레이트 — 항상 표시 |
-| 4 | Domain & Network | 도메인 (Local/FreeDomain/Custom), Cloudflare Tunnel, Mail Server |
+| 4 | Domain & Network | 도메인 (Local/Custom), Cloudflare Tunnel, Mail Server |
 | 5 | Review | 설정 확인, 자격증명 전파 대상 표시, 리소스 추정, 내보내기 |
 | 6 | Generate | docker-compose.yml 생성, 이미지 풀, 컨테이너 시작, 헬스체크 |
 | 7 | Complete | 엔드포인트, 자격증명, 외부 접근 검증, 다음 단계 안내 |
@@ -273,7 +273,6 @@ brewnet logs
 |------|------|-----------|
 | 인터넷 연결 | Docker 이미지 다운로드, Cloudflare Tunnel | 초기 설정 시 필수 |
 | Cloudflare 계정 (무료) | 외부 접근, DNS 관리, Tunnel | non-local 도메인 시 필수 |
-| DigitalPlat 계정 (무료) | 무료 도메인 등록 | Free Domain 사용 시 필수 |
 
 ### 포트
 
@@ -327,7 +326,7 @@ brewnet/
 ├── tsconfig.json
 ├── CLAUDE.md                 # AI 컨텍스트
 ├── README.md
-├── LICENSE                   # BUSL-1.1
+├── LICENSE                   # MIT
 │
 ├── docs/
 │   ├── PRD.md                # 제품 요구사항
@@ -482,8 +481,7 @@ interface WizardState {
   boilerplate: { generate: boolean; sampleData: boolean; devMode: 'hot-reload' | 'production' };
 
   domain: {
-    provider: 'local' | 'freedomain' | 'custom';
-    freeDomainTld: '.dpdns.org' | '.qzz.io' | '.us.kg';
+    provider: 'local' | 'tunnel';
     name: string;
     ssl: 'none' | 'self-signed' | 'letsencrypt' | 'cloudflare';
     cloudflare: {

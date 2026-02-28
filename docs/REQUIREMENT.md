@@ -1,7 +1,7 @@
 # Brewnet REQUIREMENT.md (Functional Requirements)
 
-> **Version**: 2.2
-> **Last Updated**: 2026-02-22
+> **Version**: 2.3
+> **Last Updated**: 2026-02-27
 > **Status**: Draft
 
 ---
@@ -33,21 +33,24 @@
 | REQ-1.2.10 | Docker 설치 후 데몬 기동 확인 — macOS 90초, Linux 30초 타임아웃 폴링 | Must | 1 |
 | REQ-1.2.11 | Linux Docker 설치 시 docker 그룹에 현재 사용자 추가(usermod -aG docker), 재로그인 안내 표시 | Must | 1 |
 | REQ-1.2.12 | Docker 자동 설치 실패 시 수동 설치 URL(플랫폼별) 안내 후 종료 | Must | 1 |
+| REQ-1.2.13 | 포트 충돌 감지 시 자동으로 대안 포트 제안 — 사용자 승인 후 portRemapping에 저장 | Must | 1 |
+| REQ-1.2.14 | 대안 포트 규칙: 80→8080/8088/8000, 443→8443/4443, 2222→2223/2220, 3000→3001/3010 | Must | 1 |
+| REQ-1.2.15 | 사용자 정의 포트 입력 지원 (대안 목록 + "Enter custom port" 옵션) | Should | 1 |
 
 ### REQ-1.3 인터랙티브 위저드 (`brewnet init`)
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
-| REQ-1.3.1 | Step 0: 시스템 체크 자동 실행 | Must | 1 |
+| REQ-1.3.0 | **[NEW v2.3] Pre-Step**: 관리자 계정 설정 — Docker 설치 이전에 admin username/password 설정 | Must | 1 |
+| REQ-1.3.1 | Step 0: 시스템 체크 자동 실행 (포트 충돌 시 대안 포트 제안 포함) | Must | 1 |
 | REQ-1.3.2 | Step 1: 프로젝트 설정 — 설치 유형 선택 (Full Install / Partial Install) | Must | 1 |
-| REQ-1.3.3 | Step 2: 관리자 계정 설정 — username 입력 + 20자 비밀번호 자동 생성, .env 파일 저장 (chmod 600) | Must | 1 |
-| REQ-1.3.4 | Step 3: 서버 컴포넌트 선택 (7개 컴포넌트 (Web Server + Git Server 필수, 5개 선택): File/Web/Git/DB/Media/SSH — App Server는 Step 4에서 자동 설정) | Must | 1 |
-| REQ-1.3.5 | Step 4: Dev Stack & 런타임 선택 (다중 언어/프레임워크, Frontend 기술 스택, FileBrowser) — 항상 표시 | Must | 1 |
-| REQ-1.3.6 | Step 5: 도메인 & Cloudflare 설정 (DigitalPlat 무료 도메인 또는 커스텀 도메인) | Must | 1 |
-| REQ-1.3.7 | Step 6: 설정 확인 및 최종 승인 | Must | 1 |
-| REQ-1.3.8 | Step 7: docker-compose.yml 자동 생성 (cloudflared 터널 컨테이너 포함) | Must | 1 |
-| REQ-1.3.9 | Step 8: 완료 (서비스 시작 및 접속 정보 표시) | Must | 1 |
-| REQ-1.3.10 | `--non-interactive` 플래그로 기본값 자동 선택 | Should | 1 |
+| REQ-1.3.3 | Step 2: 서버 컴포넌트 선택 (Admin 크리덴셜은 Pre-Step에서 설정, 7개 컴포넌트 토글) | Must | 1 |
+| REQ-1.3.4 | Step 3: Dev Stack & 런타임 선택 (다중 언어 선택 후 언어별 프레임워크 순차 Sub-Prompt 표시) | Must | 1 |
+| REQ-1.3.5 | Step 4: 도메인 & Cloudflare 설정 (Local/Named Tunnel/Quick Tunnel) | Must | 1 |
+| REQ-1.3.6 | Step 5: 설정 확인 및 최종 승인 (크리덴셜 전파 대상 요약 포함) | Must | 1 |
+| REQ-1.3.7 | Step 6: docker-compose.yml 자동 생성 + 서비스 시작 + 설치 확인 | Must | 1 |
+| REQ-1.3.8 | Step 7: 완료 — 로컬 접속 URL + 외부 접속 URL 모두 표시 | Must | 1 |
+| REQ-1.3.9 | `--non-interactive` 플래그로 기본값 자동 선택 | Should | 1 |
 
 ### REQ-1.4 설치 유형
 
@@ -80,7 +83,7 @@
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
-| REQ-1.7.1 | 도메인 설정 방식 선택: DigitalPlat 무료 도메인 / 커스텀 도메인 / 나중에 설정 | Must | 1 |
+| REQ-1.7.1 | 도메인 설정 방식 선택: 커스텀 도메인 / 나중에 설정 | Must | 1 |
 | REQ-1.7.2 | Cloudflare API 토큰 연동 | Must | 1 |
 | REQ-1.7.3 | Cloudflare DNS 레코드 자동 생성 | Must | 1 |
 | REQ-1.7.4 | Cloudflare Tunnel 기본 활성화 (외부 접근 기본 경로) | Must | 1 |
@@ -91,7 +94,7 @@
 
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
-| REQ-1.8.1 | 위저드 Step 2에서 관리자 username 입력 (기본값: `admin`) | Must | 1 |
+| REQ-1.8.1 | **[v2.3] Pre-Step**에서 관리자 username 입력 (기본값: `admin`) — Docker 설치 이전 | Must | 1 |
 | REQ-1.8.2 | 20자 비밀번호 자동 생성 (영문 대소문자 + 숫자 + 특수문자) | Must | 1 |
 | REQ-1.8.3 | 사용자가 자동 생성 비밀번호 수락 또는 직접 입력 선택 가능 | Must | 1 |
 | REQ-1.8.4 | 관리자 크리덴셜을 `~/.brewnet/.env` 파일에 저장 | Must | 1 |
@@ -99,18 +102,6 @@
 | REQ-1.8.6 | 관리자 계정을 모든 서비스의 기본 인증으로 사용 (Gitea, Nextcloud, DB 등) | Must | 1 |
 | REQ-1.8.7 | 완료 화면에서 관리자 계정 정보 표시 (비밀번호 마스킹 옵션) | Must | 1 |
 | REQ-1.8.8 | `brewnet admin reset-password` 비밀번호 재설정 명령어 | Should | 1 |
-
-### REQ-1.9 무료 도메인 (DigitalPlat FreeDomain)
-
-| ID | 요구사항 | 우선순위 | Phase |
-|----|---------|:--------:|:-----:|
-| REQ-1.9.1 | DigitalPlat FreeDomain API 연동으로 무료 도메인 등록 | Must | 1 |
-| REQ-1.9.2 | 지원 TLD: `.dpdns.org` (권장), `.qzz.io`, `.us.kg` | Must | 1 |
-| REQ-1.9.3 | 위저드 Step 5에서 "무료 도메인 등록" / "기존 도메인 사용" / "나중에 설정" 선택 | Must | 1 |
-| REQ-1.9.4 | 등록된 무료 도메인을 Cloudflare DNS에 자동 연결 | Must | 1 |
-| REQ-1.9.5 | `brewnet domain free register <name>.<tld>` CLI 명령어 | Must | 1 |
-| REQ-1.9.6 | `brewnet domain free list` 등록된 무료 도메인 목록 조회 | Should | 1 |
-| REQ-1.9.7 | 무료 도메인 갱신 알림 (만료 전 자동 갱신 또는 사용자 알림) | Should | 2 |
 
 ### REQ-1.10 Cloudflare Tunnel (기본 활성화)
 
@@ -174,8 +165,37 @@
 | REQ-1.14.2 | Cloudflare Tunnel 연결 상태 확인 — 터널 컨테이너 상태 및 Cloudflare API 연결 테스트 | Must | 1 |
 | REQ-1.14.3 | HTTPS 엔드포인트 헬스체크 — 도메인 접근 가능 여부 및 SSL 인증서 유효성 확인 | Must | 1 |
 | REQ-1.14.4 | SSH 연결 테스트 — SSH Server 활성화 시 포트 연결 및 키 인증 테스트 | Should | 1 |
-| REQ-1.14.5 | Step 7(완료)에서 검증 섹션 표시 — non-local 도메인(FreeDomain/Custom) 사용 시에만 표시 | Must | 1 |
+| REQ-1.14.5 | Step 7(완료)에서 검증 섹션 표시 — non-local 도메인(Custom/Tunnel) 사용 시에만 표시 | Must | 1 |
 | REQ-1.14.6 | 문제 해결 가이드 — DNS 미전파, 터널 연결 실패, SSL 오류, SSH 접속 불가 등 일반적 문제에 대한 해결 방법 표시 | Should | 1 |
+
+### REQ-1.15 Dev Stack Framework Sub-Prompt (NEW v2.3)
+
+| ID | 요구사항 | 우선순위 | Phase |
+|----|---------|:--------:|:-----:|
+| REQ-1.15.1 | 언어 다중 선택 후, 선택된 각 언어에 대해 **순차적으로** 프레임워크 선택 Sub-Prompt 표시 | Must | 1 |
+| REQ-1.15.2 | Python 프레임워크: FastAPI, Django, Flask | Must | 1 |
+| REQ-1.15.3 | Node.js 프레임워크: Next.js, Next.js API, Express, NestJS, Fastify | Must | 1 |
+| REQ-1.15.4 | Java 프레임워크: Pure Java, Spring, Spring Boot | Must | 1 |
+| REQ-1.15.5 | PHP 프레임워크: Laravel, Symfony | Must | 1 |
+| REQ-1.15.6 | .NET 프레임워크: ASP.NET Core, Blazor | Must | 1 |
+| REQ-1.15.7 | Rust 프레임워크: Actix Web, Axum | Must | 1 |
+| REQ-1.15.8 | Go 프레임워크: Gin, Echo, Fiber | Must | 1 |
+| REQ-1.15.9 | 선택한 프레임워크는 `state.devStack.frameworks[lang]`에 저장 | Must | 1 |
+| REQ-1.15.10 | 보일러플레이트 git 소스는 추후 제공 예정 — 현재는 디렉토리 구조만 생성 (git clone 없음) | Must | 1 |
+
+### REQ-1.16 Uninstall (brewnet uninstall) — v2.3 Update
+
+| ID | 요구사항 | 우선순위 | Phase |
+|----|---------|:--------:|:-----:|
+| REQ-1.16.1 | `brewnet uninstall` — 컨테이너 + 볼륨 + 프로젝트 디렉토리 + ~/.brewnet 상태 순서 제거 | Must | 1 |
+| REQ-1.16.2 | `--dry-run` — 실제 삭제 없이 삭제 대상 목록만 출력 | Must | 1 |
+| REQ-1.16.3 | `--keep-data` — Docker 볼륨 보존 (DB, 파일 데이터 유지) | Must | 1 |
+| REQ-1.16.4 | `--keep-config` — 프로젝트 디렉토리 보존 (컨테이너만 제거) | Must | 1 |
+| REQ-1.16.5 | `--force` — 확인 프롬프트 없이 즉시 실행 | Must | 1 |
+| REQ-1.16.6 | **[NEW v2.3]** 모든 서비스 제거 완료 후 Docker 제거 여부 확인 프롬프트 표시 | Must | 1 |
+| REQ-1.16.7 | **[NEW v2.3]** Docker 제거 — macOS: Homebrew(`brew uninstall --cask docker`), Linux: apt-get/yum | Must | 1 |
+| REQ-1.16.8 | **[NEW v2.3]** `--remove-docker` 플래그로 확인 없이 Docker 자동 제거 | Should | 1 |
+| REQ-1.16.9 | Cloudflare 터널 레코드 수동 삭제 안내 메시지 (자동 삭제 불가) | Must | 1 |
 
 ---
 
@@ -192,6 +212,8 @@
 | REQ-2.1.5 | 환경 변수 .env 파일 자동 생성 (관리자 크리덴셜 포함, chmod 600) | Must | 1 |
 | REQ-2.1.6 | `cloudflare/cloudflared:latest` 컨테이너 기본 포함 (Cloudflare Tunnel) | Must | 1 |
 | REQ-2.1.7 | 헬스체크 설정 포함 | Should | 1 |
+| REQ-2.1.8 | **[NEW v2.3]** 서비스 시작 후 각 서비스 접속 확인 — 로컬 URL + 외부 URL 표시, HTTP 헬스체크 | Must | 1 |
+| REQ-2.1.9 | **[NEW v2.3]** portRemapping 적용 — portConflict 해결 결과를 docker-compose.yml 포트에 반영 | Must | 1 |
 
 ### REQ-2.2 서비스 관리 명령어
 
@@ -311,7 +333,6 @@
 | REQ-5.2.3 | Cloudflare Tunnel 기본 활성화 (`cloudflare/cloudflared:latest` Docker 컨테이너) | Must | 1 |
 | REQ-5.2.4 | Cloudflare 프록시 모드 (CDN/DDoS 보호) 토글 | Should | 2 |
 | REQ-5.2.5 | DDNS 자동 업데이트 (IP 변경 감지 시 Cloudflare DNS 갱신) | Should | 2 |
-| REQ-5.2.6 | DigitalPlat FreeDomain으로 등록된 도메인의 Cloudflare DNS 자동 연동 | Must | 1 |
 
 ### REQ-5.3 SSL 관리
 

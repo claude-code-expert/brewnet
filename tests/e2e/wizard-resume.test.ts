@@ -66,6 +66,7 @@ function mockCheckbox(opts: Record<string, unknown>) {
 
 jest.unstable_mockModule('@inquirer/prompts', () => ({
   input: jest.fn(mockInput),
+  password: jest.fn(mockInput),
   select: jest.fn(mockSelect),
   confirm: jest.fn(mockConfirm),
   checkbox: jest.fn(mockCheckbox),
@@ -316,10 +317,13 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       state = await runProjectSetupStep(state);
       saveState(state);
 
-      // Step 2
-      inputQueue = ['admin', 'brewnet_db', 'brewnet'];
-      confirmQueue = [true, false, true, true, false, false];
-      selectQueue = ['traefik', 'postgresql', '17', 'redis'];
+      // Pre-set admin (done by runAdminSetupStep Pre-Step in real flow)
+      state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
+
+      // Step 2: web server only, skip all optional components
+      inputQueue = [];
+      confirmQueue = [false, false, false, false]; // fileServer=false, db=false, media=false, ssh=false
+      selectQueue = ['traefik'];
 
       state = await runServerComponentsStep(state);
       saveState(state);
@@ -460,14 +464,14 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       (state as any).projectName = 'devstack-restore';
       state.devStack.languages = ['nodejs', 'python'] as any;
       state.devStack.frameworks = { nodejs: 'nextjs', python: 'fastapi' };
-      state.devStack.frontend = ['reactjs', 'typescript'] as any;
+      state.devStack.frontend = 'react' as any;
       saveState(state as any);
 
       const loaded = loadState('devstack-restore');
       expect(loaded).not.toBeNull();
       expect(loaded!.devStack.languages).toEqual(['nodejs', 'python']);
       expect(loaded!.devStack.frameworks).toEqual({ nodejs: 'nextjs', python: 'fastapi' });
-      expect(loaded!.devStack.frontend).toEqual(['reactjs', 'typescript']);
+      expect(loaded!.devStack.frontend).toBe('react');
     });
 
     it('should restore domain configuration after save/load', () => {
@@ -515,9 +519,12 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       state = await runProjectSetupStep(state);
       saveState(state);
 
-      // Step 2: Server Components
-      inputQueue = ['admin', 'brewnet_db', 'brewnet'];
-      confirmQueue = [true, false, true, true, false, false];
+      // Pre-set admin (done by runAdminSetupStep Pre-Step in real flow)
+      state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
+
+      // Step 2: Server Components (fileServer=false, db=postgresql+17+redis, adminUI=false, media=false, ssh=false)
+      inputQueue = ['brewnet_db', 'brewnet'];
+      confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
       selectQueue = ['traefik', 'postgresql', '17', 'redis'];
 
       state = await runServerComponentsStep(state);
@@ -540,14 +547,14 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
   // =========================================================================
 
   describe('Schema version validation', () => {
-    it('should accept state with current schema version (5)', () => {
+    it('should accept state with current schema version (6)', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'version-5';
+      (state as any).projectName = 'version-6';
       saveState(state as any);
 
-      const loaded = loadState('version-5');
+      const loaded = loadState('version-6');
       expect(loaded).not.toBeNull();
-      expect(loaded!.schemaVersion).toBe(5);
+      expect(loaded!.schemaVersion).toBe(7);
     });
 
     it('should reject state with schema version 4 (older)', () => {
@@ -652,7 +659,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       expect(freshState.admin.password).toBe(''); // cleared
       expect(freshState.devStack.languages).toEqual([]); // cleared
       expect(freshState.projectName).toBe('reset-me'); // preserved
-      expect(freshState.schemaVersion).toBe(5);
+      expect(freshState.schemaVersion).toBe(7);
     });
 
     it('should overwrite the saved state with defaults', () => {
@@ -752,9 +759,12 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       let state = createDefaultWizardState();
       state = await runProjectSetupStep(state);
 
-      // Step 2
-      inputQueue = ['admin', 'brewnet_db', 'brewnet'];
-      confirmQueue = [true, false, true, true, false, false];
+      // Pre-set admin (done by runAdminSetupStep Pre-Step in real flow)
+      state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
+
+      // Step 2: fileServer=false, db=postgresql+17+redis, adminUI=false, media=false, ssh=false
+      inputQueue = ['brewnet_db', 'brewnet'];
+      confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
       selectQueue = ['traefik', 'postgresql', '17', 'redis'];
       state = await runServerComponentsStep(state);
       saveState(state);

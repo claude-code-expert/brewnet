@@ -164,7 +164,6 @@ describe('generateReviewSections', () => {
         provider: 'local',
         name: 'brewnet.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
         cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
         mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
@@ -179,10 +178,9 @@ describe('generateReviewSections', () => {
     const state = makeState({
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
-        cloudflare: { enabled: true, tunnelToken: '', tunnelName: 'my-tunnel', accountId: '', apiToken: '', tunnelId: 'tid-123', zoneId: '', zoneName: 'dpdns.org' },
+        cloudflare: { enabled: true, tunnelToken: '', tunnelName: 'my-tunnel', accountId: '', apiToken: '', tunnelId: 'tid-123', zoneId: '', zoneName: 'example.com' },
         mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
@@ -194,7 +192,7 @@ describe('generateReviewSections', () => {
 
   it('dev stack section shows "Skipped" when no languages selected', () => {
     const state = makeState({
-      devStack: { languages: [], frameworks: {}, frontend: [] },
+      devStack: { languages: [], frameworks: {}, frontend: null },
     });
     const sections = generateReviewSections(state);
     const devStack = sections.find((s) => s.id === 'devStack')!;
@@ -204,7 +202,7 @@ describe('generateReviewSections', () => {
 
   it('dev stack section lists selected languages', () => {
     const state = makeState({
-      devStack: { languages: ['nodejs', 'python'], frameworks: { nodejs: 'express', python: 'fastapi' }, frontend: [] },
+      devStack: { languages: ['nodejs', 'python'], frameworks: { nodejs: 'express', python: 'fastapi' }, frontend: null },
     });
     const sections = generateReviewSections(state);
     const devStack = sections.find((s) => s.id === 'devStack')!;
@@ -310,13 +308,13 @@ describe('generateReviewSections', () => {
 
   it('dev stack section lists selected frontend technologies', () => {
     const state = makeState({
-      devStack: { languages: [], frameworks: {}, frontend: ['reactjs', 'typescript'] },
+      devStack: { languages: [], frameworks: {}, frontend: 'react' },
     });
     const sections = generateReviewSections(state);
     const devStack = sections.find((s) => s.id === 'devStack')!;
     const frontendItem = devStack.items.find((i) => i.label === 'Frontend');
     expect(frontendItem).toBeDefined();
-    expect(frontendItem?.value).toContain('reactjs');
+    expect(frontendItem?.value).toBe('react');
   });
 
   it('domain section includes Mail Server with relay info when tunnel + mailServer enabled', () => {
@@ -324,9 +322,8 @@ describe('generateReviewSections', () => {
     const state = makeState({
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: true,
           tunnelToken: '',
@@ -335,7 +332,7 @@ describe('generateReviewSections', () => {
           apiToken: '',
           tunnelId: '',
           zoneId: '',
-          zoneName: 'dpdns.org',
+          zoneName: 'example.com',
         },
       },
       servers: {
@@ -364,9 +361,8 @@ describe('generateReviewSections', () => {
     const state = makeState({
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: true,
           tunnelToken: '',
@@ -375,7 +371,7 @@ describe('generateReviewSections', () => {
           apiToken: '',
           tunnelId: '',
           zoneId: '',
-          zoneName: 'dpdns.org',
+          zoneName: 'example.com',
         },
       },
       servers: {

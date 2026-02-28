@@ -80,7 +80,7 @@ const {
 /** Build a valid WizardState object for testing. */
 function buildValidState(overrides: Record<string, unknown> = {}): any {
   return {
-    schemaVersion: 5,
+    schemaVersion: 7,
     projectName: 'test-project',
     projectPath: '~/brewnet/test-project',
     setupType: 'full',
@@ -105,15 +105,26 @@ function buildValidState(overrides: Record<string, unknown> = {}): any {
       appServer: { enabled: false },
       fileBrowser: { enabled: false, mode: '' },
     },
-    devStack: { languages: [], frameworks: {}, frontend: [] },
+    devStack: { languages: [], frameworks: {}, frontend: null },
     boilerplate: { generate: true, sampleData: true, devMode: 'hot-reload' },
     domain: {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
-      cloudflare: { enabled: false, tunnelToken: '', tunnelName: '' },
+      cloudflare: {
+        enabled: false,
+        tunnelMode: 'none',
+        quickTunnelUrl: '',
+        accountId: '',
+        apiToken: '',
+        tunnelId: '',
+        tunnelToken: '',
+        tunnelName: '',
+        zoneId: '',
+        zoneName: '',
+      },
     },
+    portRemapping: {},
     ...overrides,
   };
 }
@@ -147,9 +158,9 @@ describe('getProjectDir / getStateFilePath', () => {
 // ── createState ─────────────────────────────────────────────────────────────
 
 describe('createState', () => {
-  it('returns a WizardState with schemaVersion 5', () => {
+  it('returns a WizardState with schemaVersion 7', () => {
     const state = createState();
-    expect(state.schemaVersion).toBe(5);
+    expect(state.schemaVersion).toBe(7);
   });
 
   it('returns default project name "my-homeserver"', () => {
@@ -186,7 +197,7 @@ describe('createState', () => {
     // DevStack defaults
     expect(state.devStack.languages).toEqual([]);
     expect(state.devStack.frameworks).toEqual({});
-    expect(state.devStack.frontend).toEqual([]);
+    expect(state.devStack.frontend).toBeNull();
 
     // Boilerplate defaults
     expect(state.boilerplate.generate).toBe(true);
@@ -269,7 +280,7 @@ describe('loadState', () => {
 
     const result = loadState('test-project');
     expect(result).toEqual(state);
-    expect(result!.schemaVersion).toBe(5);
+    expect(result!.schemaVersion).toBe(7);
     expect(result!.projectName).toBe('test-project');
   });
 
@@ -329,7 +340,7 @@ describe('loadState', () => {
 // ── Schema migration ────────────────────────────────────────────────────────
 
 describe('loadState — schema migration', () => {
-  it('returns null when schemaVersion is 3 (older than current 5)', () => {
+  it('returns null when schemaVersion is 3 (older than current 7)', () => {
     const oldState = buildValidState({ schemaVersion: 3 });
 
     mockExistsSync.mockReturnValue(true);
@@ -339,13 +350,23 @@ describe('loadState — schema migration', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when schemaVersion is 4 (older than current 5)', () => {
+  it('returns null when schemaVersion is 4 (older than current 7)', () => {
     const oldState = buildValidState({ schemaVersion: 4 });
 
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(JSON.stringify(oldState));
 
     const result = loadState('old-v4');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when schemaVersion is 5 (older than current 7)', () => {
+    const oldState = buildValidState({ schemaVersion: 5 });
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(oldState));
+
+    const result = loadState('old-v5');
     expect(result).toBeNull();
   });
 
@@ -359,15 +380,46 @@ describe('loadState — schema migration', () => {
     expect(result).toBeNull();
   });
 
-  it('returns the state when schemaVersion matches the current (5)', () => {
-    const state = buildValidState({ schemaVersion: 5 });
+  it('migrates v6 state: converts frontend array to single value', () => {
+    // v6 state with frontend as array ['reactjs']
+    const v6State = {
+      ...buildValidState({ schemaVersion: 6 }),
+      devStack: { languages: [], frameworks: {}, frontend: ['reactjs'] },
+    };
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(v6State));
+
+    const result = loadState('migrate-v6-react');
+    expect(result).not.toBeNull();
+    expect(result!.schemaVersion).toBe(7);
+    expect(result!.devStack.frontend).toBe('react');
+  });
+
+  it('migrates v6 state: frontend empty array maps to null', () => {
+    const v6State = {
+      ...buildValidState({ schemaVersion: 6 }),
+      devStack: { languages: [], frameworks: {}, frontend: [] },
+    };
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(v6State));
+
+    const result = loadState('migrate-v6-empty');
+    expect(result).not.toBeNull();
+    expect(result!.schemaVersion).toBe(7);
+    expect(result!.devStack.frontend).toBeNull();
+  });
+
+  it('returns the state when schemaVersion matches the current (7)', () => {
+    const state = buildValidState({ schemaVersion: 7 });
 
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(JSON.stringify(state));
 
-    const result = loadState('current-v5');
+    const result = loadState('current-v7');
     expect(result).not.toBeNull();
-    expect(result!.schemaVersion).toBe(5);
+    expect(result!.schemaVersion).toBe(7);
   });
 
   it('returns null when schemaVersion is missing', () => {
@@ -433,7 +485,7 @@ describe('saveState + loadState (round-trip)', () => {
       devStack: {
         languages: ['nodejs', 'python'],
         frameworks: { nodejs: 'nextjs', python: 'fastapi' },
-        frontend: ['reactjs', 'typescript'],
+        frontend: 'react',
       },
       servers: {
         ...buildValidState().servers,
@@ -469,7 +521,7 @@ describe('resetState', () => {
   it('returns a fresh state with the given project name', () => {
     const state = resetState('fresh-project');
     expect(state.projectName).toBe('fresh-project');
-    expect(state.schemaVersion).toBe(5);
+    expect(state.schemaVersion).toBe(7);
   });
 
   it('sets the projectPath based on the project name', () => {
@@ -490,7 +542,7 @@ describe('resetState', () => {
     const writtenJson = (mockWriteFileSync.mock.calls[0] as any[])[1] as string;
     const parsed = JSON.parse(writtenJson);
     expect(parsed.projectName).toBe('saved-reset');
-    expect(parsed.schemaVersion).toBe(5);
+    expect(parsed.schemaVersion).toBe(7);
   });
 
   it('returns default values for all other fields', () => {
@@ -703,13 +755,12 @@ describe('T107 — Wizard state persistence (cross-cutting)', () => {
         devStack: {
           languages: ['nodejs', 'python'],
           frameworks: { nodejs: 'nextjs', python: 'fastapi' },
-          frontend: ['reactjs'],
+          frontend: 'react',
         },
         domain: {
           provider: 'custom',
           name: 'myserver.dev',
           ssl: 'letsencrypt',
-          freeDomainTld: '.dpdns.org',
           cloudflare: { enabled: true, tunnelToken: 'abc123', tunnelName: 'my-tunnel' },
         },
       });
@@ -758,15 +809,15 @@ describe('T107 — Wizard state persistence (cross-cutting)', () => {
       const writtenJson = (mockWriteFileSync.mock.calls[0] as any[])[1] as string;
       const parsed = JSON.parse(writtenJson);
       expect(parsed.projectName).toBe('overwritten-project');
-      expect(parsed.schemaVersion).toBe(5);
+      expect(parsed.schemaVersion).toBe(7);
       expect(parsed.admin.username).toBe('admin');
     });
   });
 
-  // TC-W-05: Schema version < 5 → state auto-reset
+  // TC-W-05: Schema version migration
   describe('TC-W-05: Schema version migration', () => {
-    it.each([1, 2, 3, 4])(
-      'should return null for schemaVersion %i (older than current 5)',
+    it.each([1, 2, 3, 4, 5])(
+      'should return null for schemaVersion %i (older than current 7, no migration path)',
       (version) => {
         const oldState = buildValidState({ schemaVersion: version });
         mockExistsSync.mockReturnValue(true);
@@ -777,18 +828,32 @@ describe('T107 — Wizard state persistence (cross-cutting)', () => {
       },
     );
 
-    it('should return the state when schemaVersion is exactly 5 (current)', () => {
-      const state = buildValidState({ schemaVersion: 5 });
+    it('should migrate v6 state: frontend array → null when empty', () => {
+      const v6State = {
+        ...buildValidState({ schemaVersion: 6 }),
+        devStack: { languages: [], frameworks: {}, frontend: [] },
+      };
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(JSON.stringify(v6State));
+
+      const result = loadState('migrate-v6');
+      expect(result).not.toBeNull();
+      expect(result!.schemaVersion).toBe(7);
+      expect(result!.devStack.frontend).toBeNull();
+    });
+
+    it('should return the state when schemaVersion is exactly 7 (current)', () => {
+      const state = buildValidState({ schemaVersion: 7 });
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue(JSON.stringify(state));
 
       const result = loadState('current');
       expect(result).not.toBeNull();
-      expect(result!.schemaVersion).toBe(5);
+      expect(result!.schemaVersion).toBe(7);
     });
 
-    it('should return null for future schema versions (e.g., 6, 99)', () => {
-      for (const futureVersion of [6, 99]) {
+    it('should return null for future schema versions (e.g., 8, 99)', () => {
+      for (const futureVersion of [8, 99]) {
         const futureState = buildValidState({ schemaVersion: futureVersion });
         mockExistsSync.mockReturnValue(true);
         mockReadFileSync.mockReturnValue(JSON.stringify(futureState));

@@ -37,9 +37,11 @@ export interface ComposeService {
   depends_on?: string[];
   healthcheck?: ComposeHealthcheck;
   command?: string | string[];
+  entrypoint?: string[];
 }
 
 export interface ComposeConfig {
+  name: string;
   services: Record<string, ComposeService>;
   networks: Record<string, { external?: boolean; internal?: boolean }>;
   volumes?: Record<string, null>;
@@ -59,7 +61,7 @@ function getServiceVolumes(serviceId: string): string[] {
   switch (serviceId) {
     case 'traefik':
       return [
-        '/var/run/docker.sock:/var/run/docker.sock:ro',
+        '/var/run/docker.sock:/var/run/docker.sock',
         `${BREWNET_PREFIX}_traefik_certs:/letsencrypt`,
       ];
     case 'gitea':
@@ -226,6 +228,18 @@ function getNextcloudEnv(state: WizardState): Record<string, string> {
     NEXTCLOUD_TRUSTED_DOMAINS: state.domain.name,
   };
 
+  // Quick Tunnel: Nextcloud behind Traefik at /cloud path prefix.
+  // OVERWRITEWEBROOT makes NC generate URLs with /cloud prefix.
+  // Traefik strips /cloud before forwarding, so NC receives clean paths.
+  // Also trust *.trycloudflare.com as domain.
+  // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['OVERWRITEWEBROOT'] = '/cloud';
+    env['OVERWRITEPROTOCOL'] = 'https';
+    env['NEXTCLOUD_TRUSTED_PROXIES'] = 'traefik';
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${state.domain.name} *.trycloudflare.com`;
+  }
+
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
     if (state.servers.dbServer.primary === 'postgresql') {
       env['POSTGRES_HOST'] = 'postgresql';
@@ -277,13 +291,25 @@ function getMailEnv(state: WizardState): Record<string, string> {
 }
 
 function getPgadminEnv(state: WizardState): Record<string, string> {
-  return {
-    PGADMIN_DEFAULT_EMAIL: `${state.admin.username || 'admin'}@${state.domain.name}`,
+  const env: Record<string, string> = {
+    // pgAdmin v8+ validates email domain strictly — .local TLD is rejected.
+    // Always use @brewnet.dev to avoid startup crash.
+    PGADMIN_DEFAULT_EMAIL: `${state.admin.username || 'admin'}@brewnet.dev`,
     PGADMIN_DEFAULT_PASSWORD: state.admin.password || '${ADMIN_PASSWORD}',
   };
+  // In Quick Tunnel mode pgadmin is served under /pgadmin path prefix,
+  // so SCRIPT_NAME must be set so pgadmin generates correct relative URLs.
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['SCRIPT_NAME'] = '/pgadmin';
+  }
+  return env;
 }
 
-function getCloudflaredEnv(state: WizardState): Record<string, string> {
+function getCloudflaredEnv(state: WizardState): Record<string, string> | undefined {
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    // Quick Tunnel needs no TUNNEL_TOKEN env var
+    return undefined;
+  }
   return {
     TUNNEL_TOKEN: state.domain.cloudflare.tunnelToken || '${TUNNEL_TOKEN}',
   };
@@ -306,27 +332,109 @@ function resolveTraefikLabels(
   return resolved;
 }
 
+/**
+ * Traefik path-prefix routing labels for Quick Tunnel mode.
+ *
+ * Quick Tunnel exposes all services under the same *.trycloudflare.com URL
+ * using path prefixes:  /files → filebrowser, /git → gitea, /cloud → nextcloud, etc.
+ *
+ * @param serviceId  The compose service identifier
+ * @param path       The URL path prefix (e.g. "/files")
+ * @param port       The container HTTP port (must be explicit to avoid Traefik picking the wrong port)
+ * @param noStrip    When true, the path prefix is NOT stripped before forwarding.
+ *                   WSGI apps (pgadmin) rely on SCRIPT_NAME and need the full path intact.
+ */
+function buildQuickTunnelPathLabels(
+  serviceId: string,
+  path: string,
+  port: number,
+  noStrip = false,
+): Record<string, string> {
+  const name = `quicktunnel-${serviceId}`;
+  const labels: Record<string, string> = {
+    'traefik.enable': 'true',
+    [`traefik.http.routers.${name}.rule`]: `PathPrefix(\`${path}\`)`,
+    [`traefik.http.routers.${name}.entrypoints`]: 'web',
+    [`traefik.http.services.${name}.loadbalancer.server.port`]: String(port),
+  };
+  if (!noStrip) {
+    labels[`traefik.http.middlewares.${name}-strip.stripprefix.prefixes`] = path;
+    labels[`traefik.http.routers.${name}.middlewares`] = `${name}-strip`;
+  }
+  return labels;
+}
+
+interface QuickTunnelEntry {
+  path: string;
+  port: number;
+  /** When true, prefix is preserved in the upstream request (needed by WSGI apps using SCRIPT_NAME). */
+  noStrip?: boolean;
+}
+
+// Path-prefix routing map for Quick Tunnel mode
+const QUICK_TUNNEL_PATH_MAP: Record<string, QuickTunnelEntry> = {
+  gitea:         { path: '/git',     port: 3000 },
+  filebrowser:   { path: '/files',   port: 80 },
+  'uptime-kuma': { path: '/status',  port: 3001 },
+  grafana:       { path: '/grafana', port: 3000 },
+  // pgadmin: WSGI app — SCRIPT_NAME handles path; no strip needed
+  pgadmin:       { path: '/pgadmin', port: 80, noStrip: true },
+  // Nextcloud: OVERWRITEWEBROOT env makes NC generate prefixed URLs; strip prefix so NC gets clean paths
+  // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
+  nextcloud:     { path: '/cloud',   port: 80 },
+  // Jellyfin: Base URL setting handles path natively; no strip needed
+  // Ref: https://jellyfin.org/docs/general/post-install/networking — "Base URL"
+  jellyfin:      { path: '/jellyfin', port: 8096, noStrip: true },
+};
+
 // ---------------------------------------------------------------------------
 // Port mapping builders
 // ---------------------------------------------------------------------------
 
 function getServicePorts(serviceId: string, state: WizardState): string[] {
+  // Apply portRemapping: maps default host port → user-selected alternative host port
+  const portMap = state.portRemapping ?? {};
+  const remap = (hostPort: number): number => portMap[hostPort] ?? hostPort;
+
   switch (serviceId) {
-    case 'traefik':
-      return ['80:80', '443:443', '8080:8080'];
-    case 'nginx':
-      return ['80:80', '443:443'];
-    case 'caddy':
-      return ['80:80', '443:443'];
-    case 'gitea':
+    case 'traefik': {
+      const httpHost = remap(80);
+      const httpsHost = remap(443);
+      // Dashboard defaults to host 8080, but shift if it collides with remapped ports
+      let dashboardHost = 8080;
+      while (dashboardHost === httpHost || dashboardHost === httpsHost) {
+        dashboardHost++;
+      }
       return [
-        `${state.servers.gitServer.port}:3000`,
-        `${state.servers.gitServer.sshPort}:22`,
+        `${httpHost}:80`,
+        `${httpsHost}:443`,
+        `${dashboardHost}:8080`,
       ];
+    }
+    case 'nginx':
+      return [`${remap(80)}:80`, `${remap(443)}:443`];
+    case 'caddy':
+      return [`${remap(80)}:80`, `${remap(443)}:443`];
+    case 'gitea': {
+      return [
+        `${remap(state.servers.gitServer.port)}:3000`,
+        `${remap(state.servers.gitServer.sshPort)}:22`,
+      ];
+    }
     case 'openssh-server':
-      return [`${state.servers.sshServer.port}:2222`];
+      return [`${remap(state.servers.sshServer.port)}:2222`];
     case 'docker-mailserver':
-      return ['25:25', '587:587', '993:993'];
+      return [`${remap(25)}:25`, `${remap(587)}:587`, `${remap(993)}:993`];
+    case 'jellyfin':
+      return [`${remap(8096)}:8096`];
+    case 'nextcloud':
+      return [`${remap(8443)}:80`];
+    case 'minio':
+      return [`${remap(9000)}:9000`, `${remap(9001)}:9001`];
+    case 'filebrowser':
+      return [`${remap(8085)}:80`];
+    case 'pgadmin':
+      return [`${remap(5050)}:80`];
     case 'cloudflared':
       return [];
     // DB/cache ports are NOT exposed externally
@@ -442,9 +550,21 @@ function buildComposeService(
     svc.environment = environment;
   }
 
-  // Traefik labels — only when web server is traefik AND service has a subdomain
-  if (webService === 'traefik' && def.traefikLabels) {
+  // Traefik labels — Named Tunnel / local mode (subdomain-based routing)
+  if (
+    webService === 'traefik' &&
+    def.traefikLabels &&
+    state.domain.cloudflare.tunnelMode !== 'quick'
+  ) {
     svc.labels = resolveTraefikLabels(def, domain);
+  }
+
+  // Traefik labels — Quick Tunnel mode (path-prefix routing)
+  if (webService === 'traefik' && state.domain.cloudflare.tunnelMode === 'quick') {
+    const entry = QUICK_TUNNEL_PATH_MAP[def.id];
+    if (entry) {
+      svc.labels = buildQuickTunnelPathLabels(def.id, entry.path, entry.port, entry.noStrip);
+    }
   }
 
   // depends_on
@@ -459,9 +579,49 @@ function buildComposeService(
     svc.healthcheck = hc;
   }
 
-  // Cloudflared command
+  // Traefik command — define entrypoints and enable Docker provider
+  if (def.id === 'traefik') {
+    const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
+    const cmds: string[] = [
+      '--providers.docker=true',
+      '--providers.docker.exposedbydefault=false',
+      '--providers.docker.network=brewnet',
+      '--entrypoints.web.address=:80',
+      '--entrypoints.websecure.address=:443',
+      '--api.insecure=true',
+    ];
+    if (!isQuickTunnel && state.domain.ssl === 'letsencrypt') {
+      cmds.push(
+        '--certificatesresolvers.letsencrypt.acme.tlschallenge=true',
+        '--certificatesresolvers.letsencrypt.acme.email=admin@brewnet.local',
+        '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json',
+      );
+    }
+    svc.command = cmds;
+  }
+
+  // Cloudflared command — branch on tunnelMode
   if (def.id === 'cloudflared') {
-    svc.command = ['tunnel', '--no-autoupdate', 'run'];
+    if (state.domain.cloudflare.tunnelMode === 'quick') {
+      // Quick Tunnel: no account needed, URL is auto-assigned by Cloudflare
+      svc.command = ['tunnel', '--no-autoupdate', '--url', 'http://traefik:80'];
+    } else {
+      // Named Tunnel: requires TUNNEL_TOKEN env var
+      svc.command = ['tunnel', '--no-autoupdate', 'run'];
+    }
+  }
+
+  // Jellyfin Base URL — Quick Tunnel mode requires /jellyfin path prefix.
+  // Jellyfin reads BaseUrl from /config/network.xml; we use entrypoint override to set it.
+  // Ref: https://jellyfin.org/docs/general/post-install/networking — "Base URL"
+  if (def.id === 'jellyfin' && state.domain.cloudflare.tunnelMode === 'quick') {
+    svc.entrypoint = ['/bin/sh', '-c',
+      'mkdir -p /config/config && ' +
+      'if [ ! -f /config/config/network.xml ]; then ' +
+      'echo \'<?xml version="1.0" encoding="utf-8"?><NetworkConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><BaseUrl>/jellyfin</BaseUrl></NetworkConfiguration>\' > /config/config/network.xml; ' +
+      'fi && ' +
+      'exec /jellyfin/jellyfin',
+    ];
   }
 
   // MinIO command
@@ -512,6 +672,38 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
   const webDef = SERVICE_REGISTRY.get(webId);
   if (webDef) {
     services[webId] = buildComposeService(webDef, state);
+  }
+
+  // 1.5. Welcome service — shows "server is running" page at http://localhost:80
+  //      Only added for Traefik (Nginx/Caddy serve their default pages natively).
+  //      Uses traefik/whoami: lightweight container that echoes request info.
+  if (webId === 'traefik') {
+    const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
+    const welcomeLabels: Record<string, string> = {
+      'traefik.enable': 'true',
+      'traefik.http.services.brewnet-welcome.loadbalancer.server.port': '80',
+    };
+
+    if (isQuickTunnel) {
+      // Quick Tunnel: catch-all path prefix with lowest priority
+      // (more specific paths like /git, /files take precedence via Traefik's rule-length priority)
+      welcomeLabels['traefik.http.routers.brewnet-welcome.rule'] = 'PathPrefix(`/`)';
+      welcomeLabels['traefik.http.routers.brewnet-welcome.entrypoints'] = 'web';
+      welcomeLabels['traefik.http.routers.brewnet-welcome.priority'] = '1';
+    } else {
+      // Local / Named Tunnel: respond to Host: localhost requests
+      welcomeLabels['traefik.http.routers.brewnet-welcome.rule'] = 'Host(`localhost`)';
+      welcomeLabels['traefik.http.routers.brewnet-welcome.entrypoints'] = 'web';
+    }
+
+    services['brewnet-welcome'] = {
+      image: 'traefik/whoami:latest',
+      container_name: 'brewnet-welcome',
+      restart: 'unless-stopped',
+      security_opt: ['no-new-privileges:true'],
+      networks: ['brewnet'],
+      labels: welcomeLabels,
+    };
   }
 
   // 2. Git server (required, always enabled)
@@ -600,6 +792,7 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
   const namedVolumes = collectNamedVolumes(services);
 
   return {
+    name: state.projectName || 'brewnet',
     services,
     networks: {
       brewnet: { external: true },
