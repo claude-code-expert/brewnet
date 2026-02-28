@@ -8,6 +8,8 @@
 packages/*/dist/
 packages/*/tsconfig.tsbuildinfo
 
+.claude/git_cli.md
+
 # docs 
 /docs/license
 /docs/spec
