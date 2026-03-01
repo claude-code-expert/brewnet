@@ -17,6 +17,8 @@ export interface ServiceUrlEntry {
   localUrl: string;
   externalUrl?: string;
   healthEndpoint?: string;
+  /** Full URL for health check, overrides localUrl + healthEndpoint when set */
+  healthUrl?: string;
 }
 
 export interface VerifyResult {
@@ -32,20 +34,6 @@ export interface VerifyResult {
 // ---------------------------------------------------------------------------
 // URL building
 // ---------------------------------------------------------------------------
-
-/**
- * Compute the Traefik dashboard host port, matching compose-generator logic.
- * Starts at 8080 but shifts if it collides with remapped HTTP/HTTPS ports.
- */
-function traefikDashboardPort(remap: (p: number) => number): number {
-  const httpHost = remap(80);
-  const httpsHost = remap(443);
-  let port = 8080;
-  while (port === httpHost || port === httpsHost) {
-    port++;
-  }
-  return port;
-}
 
 /**
  * Build the service URL map from wizard state.
@@ -107,15 +95,15 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
     healthEndpoint: '/',
   });
 
-  // Traefik Dashboard — port 8080 (internal), /dashboard/ (trailing slash required)
-  // Ref: https://doc.traefik.io/traefik/getting-started/quick-start
+  // Traefik Dashboard — routed through Traefik labels on the HTTP port (80).
+  // Port 8080 is NOT host-exposed; dashboard is behind BasicAuth on /dashboard/.
+  // Health check hits /api/overview which returns 401 (BasicAuth), treated as ok (< 500).
   if (webService === 'traefik') {
-    const dashPort = traefikDashboardPort(effectivePort);
     entries.push({
       serviceId: 'traefik-dashboard',
       label: 'Traefik Dashboard',
-      localUrl: `http://localhost:${dashPort}/dashboard/`,
-      healthEndpoint: '/api/overview',
+      localUrl: `http://localhost:${httpPort}/dashboard/`,
+      healthUrl: `http://localhost:${httpPort}/api/overview`,
     });
   }
 
@@ -171,12 +159,13 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
   }
 
   // DB Admin UI — pgAdmin: container port 80 → host 5050
+  // SCRIPT_NAME=/pgadmin requires all paths to include /pgadmin prefix.
   // Ref: https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment
   if (servers.dbServer.enabled && servers.dbServer.adminUI && servers.dbServer.primary === 'postgresql') {
     entries.push({
       serviceId: 'pgadmin',
       label: 'pgAdmin',
-      localUrl: `http://localhost:${effectivePort(5050)}`,
+      localUrl: `http://localhost:${effectivePort(5050)}/pgadmin`,
       externalUrl: extUrl('/pgadmin', 'db'),
       healthEndpoint: '/misc/ping',
     });
@@ -211,7 +200,7 @@ export async function verifyServiceAccess(
   options: { timeout?: number; retries?: number } = {},
 ): Promise<VerifyResult> {
   const { timeout = 5000, retries = 2 } = options;
-  const url = entry.localUrl + (entry.healthEndpoint ?? '/');
+  const url = entry.healthUrl ?? (entry.localUrl + (entry.healthEndpoint ?? '/'));
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -297,16 +286,14 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
     loginNote: 'No login required — shows server info page',
   });
 
-  // Traefik Dashboard — --api.insecure=true exposes on port 8080
-  // URL must end with /dashboard/ (trailing slash required)
-  // Ref: https://doc.traefik.io/traefik/getting-started/quick-start
+  // Traefik Dashboard — routed through Traefik labels on port 80 with BasicAuth.
   if (webService === 'traefik') {
-    const dashPort = traefikDashboardPort(remap);
     entries.push({
       serviceId: 'traefik-dashboard',
       label: 'Traefik Dashboard',
-      url: `http://localhost:${dashPort}/dashboard/`,
-      loginNote: 'No auth (--api.insecure) — view routes, services, middleware',
+      url: `http://localhost:${remap(80)}/dashboard/`,
+      loginUser: user,
+      loginNote: `Login: ${user} / <your password> (BasicAuth)`,
     });
   }
 
@@ -371,7 +358,7 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
     entries.push({
       serviceId: 'pgadmin',
       label: 'pgAdmin (DB)',
-      url: `http://localhost:${remap(5050)}`,
+      url: `http://localhost:${remap(5050)}/pgadmin`,
       loginUser: `${user}@brewnet.dev`,
       loginNote: `Login: ${user}@brewnet.dev / <your password>`,
     });
