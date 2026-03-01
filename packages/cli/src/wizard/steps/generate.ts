@@ -34,6 +34,7 @@ import {
 import {
   generateEnvFiles,
   writeEnvFile,
+  writeSecretFiles,
 } from '../../services/env-generator.js';
 import { generateInfraConfigs } from '../../services/config-generator.js';
 import {
@@ -303,13 +304,42 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
     const envExamplePath = join(projectPath, '.env.example');
     writeFileSync(envExamplePath, envResult.envExampleContent, 'utf-8');
 
-    envSpinner.succeed('  .env files generated (chmod 600)');
+    // Write secret files to secrets/ directory (chmod 700 dir, 600 files)
+    writeSecretFiles(projectPath, envResult.secretFiles);
+
+    const secretCount = envResult.secretFiles.length;
+    envSpinner.succeed(
+      `  .env + ${secretCount} secret file(s) generated (chmod 600)`,
+    );
   } catch (err) {
-    envSpinner.fail('  Failed to generate .env files');
+    envSpinner.fail('  Failed to generate .env / secret files');
     if (err instanceof Error) {
       console.log(chalk.dim(`    ${err.message}`));
     }
     return 'error';
+  }
+
+  // -------------------------------------------------------------------------
+  // 3b. Generate .gitignore
+  // -------------------------------------------------------------------------
+  try {
+    const gitignorePath = join(projectPath, '.gitignore');
+    const gitignoreContent = [
+      '.env',
+      '.env.*',
+      '!.env.example',
+      'secrets/',
+      'data/',
+      'backups/',
+      '*.db',
+      '*.sqlite',
+      '*.log',
+      'docker-compose.override.yml',
+      '',
+    ].join('\n');
+    writeFileSync(gitignorePath, gitignoreContent, 'utf-8');
+  } catch {
+    // Non-critical — best-effort
   }
 
   // -------------------------------------------------------------------------

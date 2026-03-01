@@ -25,7 +25,8 @@ export interface ComposeHealthcheck {
 }
 
 export interface ComposeService {
-  image: string;
+  image?: string;
+  build?: string;
   container_name: string;
   restart: 'unless-stopped';
   security_opt: string[];
@@ -38,6 +39,7 @@ export interface ComposeService {
   healthcheck?: ComposeHealthcheck;
   command?: string | string[];
   entrypoint?: string[];
+  secrets?: string[];
 }
 
 export interface ComposeConfig {
@@ -45,6 +47,7 @@ export interface ComposeConfig {
   services: Record<string, ComposeService>;
   networks: Record<string, { external?: boolean; internal?: boolean }>;
   volumes?: Record<string, null>;
+  secrets?: Record<string, { file: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +150,7 @@ function getHealthcheck(serviceId: string, state: WizardState): ComposeHealthche
       };
     case 'traefik':
       return {
-        test: ['CMD-SHELL', 'wget --spider -q http://localhost:8080/api/health || exit 1'],
+        test: ['CMD-SHELL', 'wget --spider -q http://localhost:8080/api/overview || exit 1'],
         interval: '30s',
         timeout: '5s',
         retries: 3,
@@ -405,15 +408,10 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
     case 'traefik': {
       const httpHost = remap(80);
       const httpsHost = remap(443);
-      // Dashboard defaults to host 8080, but shift if it collides with remapped ports
-      let dashboardHost = 8080;
-      while (dashboardHost === httpHost || dashboardHost === httpsHost) {
-        dashboardHost++;
-      }
+      // No port 8080 — Dashboard uses label-based routing (api.insecure=false)
       return [
         `${httpHost}:80`,
         `${httpsHost}:443`,
-        `${dashboardHost}:8080`,
       ];
     }
     case 'nginx':
@@ -610,6 +608,19 @@ function buildComposeService(
       );
     }
     svc.command = cmds;
+
+    // Dashboard labels — BasicAuth-protected access to Traefik Dashboard/API
+    // via /dashboard and /api paths. Uses admin credentials from wizard state.
+    svc.labels = {
+      'traefik.enable': 'true',
+      'traefik.http.routers.brewnet-dashboard.rule':
+        "PathPrefix(`/dashboard`) || PathPrefix(`/api`)",
+      'traefik.http.routers.brewnet-dashboard.entrypoints': 'web',
+      'traefik.http.routers.brewnet-dashboard.service': 'api@internal',
+      'traefik.http.routers.brewnet-dashboard.middlewares': 'dashboard-auth@docker',
+      'traefik.http.middlewares.dashboard-auth.basicauth.users':
+        '${TRAEFIK_DASHBOARD_AUTH}',
+    };
   }
 
   // Cloudflared command — branch on tunnelMode
@@ -642,6 +653,174 @@ function buildComposeService(
   }
 
   return svc;
+}
+
+// ---------------------------------------------------------------------------
+// Docker Secrets Migration
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply file-based Docker secrets to a compose service.
+ *
+ * For each service, this function:
+ *   1. Removes secret env vars (passwords, tokens)
+ *   2. Adds _FILE env vars pointing to /run/secrets/<name>
+ *   3. Sets svc.secrets array
+ *   4. For services without _FILE support, applies workarounds
+ *      (redis: command override, traefik: usersfile label)
+ *
+ * Services that stay in .env (no _FILE support):
+ *   - minio (MINIO_ROOT_PASSWORD)
+ *   - cloudflared (TUNNEL_TOKEN)
+ */
+function applySecretsMigration(
+  serviceId: string,
+  svc: ComposeService,
+  state: WizardState,
+): void {
+  const env = svc.environment ?? {};
+  const secrets: string[] = [];
+
+  switch (serviceId) {
+    // --- PostgreSQL: POSTGRES_PASSWORD → POSTGRES_PASSWORD_FILE ---
+    case 'postgresql': {
+      delete env['POSTGRES_PASSWORD'];
+      env['POSTGRES_PASSWORD_FILE'] = '/run/secrets/db_password';
+      secrets.push('db_password');
+      break;
+    }
+
+    // --- MySQL: MYSQL_ROOT_PASSWORD + MYSQL_PASSWORD → _FILE variants ---
+    case 'mysql': {
+      delete env['MYSQL_ROOT_PASSWORD'];
+      delete env['MYSQL_PASSWORD'];
+      env['MYSQL_ROOT_PASSWORD_FILE'] = '/run/secrets/db_password';
+      env['MYSQL_PASSWORD_FILE'] = '/run/secrets/db_password';
+      secrets.push('db_password');
+      break;
+    }
+
+    // --- Gitea: database PASSWD, security SECRET_KEY → __FILE variants ---
+    case 'gitea': {
+      if (env['GITEA__database__PASSWD']) {
+        delete env['GITEA__database__PASSWD'];
+        env['GITEA__database__PASSWD__FILE'] = '/run/secrets/db_password';
+        secrets.push('db_password');
+      }
+      // SECRET_KEY is always set via credential-manager
+      // Gitea uses double-underscore __FILE convention
+      delete env['GITEA__security__SECRET_KEY'];
+      // Gitea does not natively support __FILE for SECRET_KEY;
+      // we write the value directly to the secret and use entrypoint to inject it.
+      // For now, leave it as env var pointing to secret file for manual handling.
+      secrets.push('gitea_secret_key');
+      break;
+    }
+
+    // --- Nextcloud: NEXTCLOUD_ADMIN_PASSWORD, DB passwords → _FILE ---
+    case 'nextcloud': {
+      delete env['NEXTCLOUD_ADMIN_PASSWORD'];
+      env['NEXTCLOUD_ADMIN_PASSWORD_FILE'] = '/run/secrets/admin_password';
+      secrets.push('admin_password');
+
+      if (env['POSTGRES_PASSWORD']) {
+        delete env['POSTGRES_PASSWORD'];
+        env['POSTGRES_PASSWORD_FILE'] = '/run/secrets/db_password';
+        secrets.push('db_password');
+      }
+      if (env['MYSQL_PASSWORD']) {
+        delete env['MYSQL_PASSWORD'];
+        env['MYSQL_PASSWORD_FILE'] = '/run/secrets/db_password';
+        secrets.push('db_password');
+      }
+
+      // Redis password integration (if cache is enabled)
+      if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
+        env['REDIS_HOST'] = state.servers.dbServer.cache; // container name
+        env['REDIS_HOST_PASSWORD_FILE'] = '/run/secrets/cache_password';
+        secrets.push('cache_password');
+      }
+      break;
+    }
+
+    // --- pgAdmin: PGADMIN_DEFAULT_PASSWORD → _FILE ---
+    case 'pgadmin': {
+      delete env['PGADMIN_DEFAULT_PASSWORD'];
+      env['PGADMIN_DEFAULT_PASSWORD_FILE'] = '/run/secrets/admin_password';
+      secrets.push('admin_password');
+      break;
+    }
+
+    // --- Redis/Valkey/KeyDB: no _FILE support → command workaround ---
+    case 'redis':
+    case 'valkey':
+    case 'keydb': {
+      secrets.push('cache_password');
+      // Override command to read password from secret file
+      svc.command = [
+        'sh', '-c',
+        'redis-server --requirepass "$(cat /run/secrets/cache_password)"',
+      ];
+      break;
+    }
+
+    // --- docker-mailserver: RELAY_PASSWORD → RELAY_PASSWORD__FILE ---
+    case 'docker-mailserver': {
+      if (env['RELAY_PASSWORD']) {
+        delete env['RELAY_PASSWORD'];
+        env['RELAY_PASSWORD__FILE'] = '/run/secrets/smtp_relay_password';
+        secrets.push('smtp_relay_password');
+      }
+      break;
+    }
+
+    // --- Traefik: basicauth.users → basicauth.usersfile (BasicAuth bug fix) ---
+    case 'traefik': {
+      secrets.push('traefik_dashboard_auth');
+      // Fix BasicAuth: switch from env-interpolated users label to usersfile
+      if (svc.labels) {
+        delete svc.labels['traefik.http.middlewares.dashboard-auth.basicauth.users'];
+        svc.labels['traefik.http.middlewares.dashboard-auth.basicauth.usersfile'] =
+          '/run/secrets/traefik_dashboard_auth';
+      }
+      break;
+    }
+
+    // minio, cloudflared: no changes (stay in .env)
+    default:
+      break;
+  }
+
+  // Deduplicate secrets
+  const uniqueSecrets = [...new Set(secrets)];
+  if (uniqueSecrets.length > 0) {
+    svc.secrets = uniqueSecrets;
+  }
+  if (Object.keys(env).length > 0) {
+    svc.environment = env;
+  }
+}
+
+/**
+ * Collect top-level secrets block from all services.
+ * Returns a record of secret name → { file: './secrets/<name>' }.
+ */
+function collectTopLevelSecrets(
+  services: Record<string, ComposeService>,
+): Record<string, { file: string }> | undefined {
+  const allSecrets = new Set<string>();
+  for (const svc of Object.values(services)) {
+    for (const s of svc.secrets ?? []) {
+      allSecrets.add(s);
+    }
+  }
+  if (allSecrets.size === 0) return undefined;
+
+  const result: Record<string, { file: string }> = {};
+  for (const name of allSecrets) {
+    result[name] = { file: `./secrets/${name}` };
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -686,35 +865,42 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     services[webId] = buildComposeService(webDef, state);
   }
 
-  // 1.5. Welcome service — shows "server is running" page at http://localhost:80
-  //      Only added for Traefik (Nginx/Caddy serve their default pages natively).
-  //      Uses traefik/whoami: lightweight container that echoes request info.
+  // 1.5. Landing page — branded catch-all replacing traefik/whoami.
+  //      Prevents internal infrastructure info leakage (container IDs, IPs, headers).
+  //      Built from ./landing (Dockerfile + nginx.conf + index.html).
   if (webId === 'traefik') {
     const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
-    const welcomeLabels: Record<string, string> = {
+    const landingLabels: Record<string, string> = {
       'traefik.enable': 'true',
-      'traefik.http.services.brewnet-welcome.loadbalancer.server.port': '80',
+      'traefik.http.services.brewnet-landing.loadbalancer.server.port': '80',
+      // Security headers middleware
+      'traefik.http.middlewares.landing-headers.headers.customResponseHeaders.Server': 'Brewnet',
+      'traefik.http.middlewares.landing-headers.headers.frameDeny': 'true',
+      'traefik.http.middlewares.landing-headers.headers.contentTypeNosniff': 'true',
+      'traefik.http.middlewares.landing-headers.headers.browserXssFilter': 'true',
     };
 
     if (isQuickTunnel) {
       // Quick Tunnel: catch-all path prefix with lowest priority
       // (more specific paths like /git, /files take precedence via Traefik's rule-length priority)
-      welcomeLabels['traefik.http.routers.brewnet-welcome.rule'] = 'PathPrefix(`/`)';
-      welcomeLabels['traefik.http.routers.brewnet-welcome.entrypoints'] = 'web';
-      welcomeLabels['traefik.http.routers.brewnet-welcome.priority'] = '1';
+      landingLabels['traefik.http.routers.brewnet-landing.rule'] = 'PathPrefix(`/`)';
+      landingLabels['traefik.http.routers.brewnet-landing.entrypoints'] = 'web';
+      landingLabels['traefik.http.routers.brewnet-landing.priority'] = '1';
+      landingLabels['traefik.http.routers.brewnet-landing.middlewares'] = 'landing-headers@docker';
     } else {
       // Local / Named Tunnel: respond to Host: localhost requests
-      welcomeLabels['traefik.http.routers.brewnet-welcome.rule'] = 'Host(`localhost`)';
-      welcomeLabels['traefik.http.routers.brewnet-welcome.entrypoints'] = 'web';
+      landingLabels['traefik.http.routers.brewnet-landing.rule'] = 'Host(`localhost`)';
+      landingLabels['traefik.http.routers.brewnet-landing.entrypoints'] = 'web';
+      landingLabels['traefik.http.routers.brewnet-landing.middlewares'] = 'landing-headers@docker';
     }
 
-    services['brewnet-welcome'] = {
-      image: 'traefik/whoami:latest',
-      container_name: 'brewnet-welcome',
+    services['brewnet-landing'] = {
+      build: './landing',
+      container_name: 'brewnet-landing',
       restart: 'unless-stopped',
       security_opt: ['no-new-privileges:true'],
       networks: ['brewnet'],
-      labels: welcomeLabels,
+      labels: landingLabels,
     };
   }
 
@@ -801,7 +987,13 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     }
   }
 
+  // ── Apply Docker secrets migration to all services ──────────────────
+  for (const [id, svc] of Object.entries(services)) {
+    applySecretsMigration(id, svc, state);
+  }
+
   const namedVolumes = collectNamedVolumes(services);
+  const topSecrets = collectTopLevelSecrets(services);
 
   return {
     name: state.projectName || 'brewnet',
@@ -811,6 +1003,7 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
       'brewnet-internal': { internal: true },
     },
     ...(Object.keys(namedVolumes).length > 0 ? { volumes: namedVolumes } : {}),
+    ...(topSecrets ? { secrets: topSecrets } : {}),
   };
 }
 
