@@ -245,7 +245,7 @@ const DEFAULT_STATE = {
 - MariaDB removed from DATABASE_REGISTRY (primary DB options)
 - `devStack` changed from `{ language: string, framework: string }` to `{ languages: string[], frameworks: Record<string, string>, frontend: string[] }` (multi-select)
 - `servers.fileBrowser` changed from `{ enabled: boolean, service: string }` to `{ enabled: boolean, mode: 'directory' | 'standalone' | '' }` (mode selection)
-- FRONTEND_REGISTRY added: `vuejs`, `reactjs`, `typescript`, `javascript`
+- FRONTEND_REGISTRY added: `vuejs`, `reactjs`, `typescript`, `javascript` (later replaced with `react`, `vue`, `none` in v7)
 - FRAMEWORK_REGISTRY updated: Java (java-pure, spring, springboot), Node.js (+nextjs-api), PHP (new), .NET (new)
 - LANGUAGE_LABELS expanded: `php: 'PHP 8.3'`, `dotnet: '.NET 8'`
 - Step 3 is no longer conditional (always shown, skip button available)

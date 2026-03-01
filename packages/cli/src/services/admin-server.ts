@@ -256,7 +256,7 @@ const docker = new Dockerode();
 
 const REQUIRED_SERVICES = new Set(['traefik', 'nginx', 'caddy', 'gitea']);
 
-const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'cloudflared']);
+const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudflared']);
 
 const WEB_UI_SERVICES = new Set([
   'traefik', 'nginx', 'caddy', 'gitea', 'nextcloud', 'minio',

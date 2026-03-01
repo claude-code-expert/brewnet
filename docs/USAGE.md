@@ -97,16 +97,15 @@ Docker가 없으면 자동 설치를 제안합니다.
 > 관리자 계정은 Pre-Step에서 설정됩니다.
 
 #### Step 3 — 개발 스택 (선택)
-- **백엔드 언어**: Python / Node.js / Java / PHP / .NET / Rust / Go (복수 선택)
-- **언어별 프레임워크 (NEW v2.3)**: 각 언어 선택 후 프레임워크를 **순차적으로** 선택합니다.
+- **백엔드 언어**: Python / Node.js / Java / Rust / Go / Kotlin (복수 선택)
+- **언어별 프레임워크**: 각 언어 선택 후 프레임워크를 **순차적으로** 선택합니다.
   - Python: FastAPI / Django / Flask
-  - Node.js: Next.js / Next.js API / Express / NestJS / Fastify
-  - Java: Pure Java / Spring / Spring Boot
-  - PHP: Laravel / Symfony
-  - .NET: ASP.NET Core / Blazor
-  - Rust: Actix Web / Axum
+  - Node.js: Next.js / Next.js 15.x (App Router) / Express / NestJS
+  - Java: Spring / Spring Boot
+  - Rust: Axum / Actix Web
   - Go: Gin / Echo / Fiber
-- **프론트엔드**: Vue.js / React / TypeScript / JavaScript (복수 선택)
+  - Kotlin: Ktor / Spring Boot (Kotlin)
+- **프론트엔드**: React (TypeScript) / Vue.js (Vite) (단일 선택)
 - **FileBrowser**: 파일 브라우저 컨테이너 (directory / standalone)
 - **보일러플레이트**: 샘플 프로젝트 파일 생성 여부
 

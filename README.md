@@ -247,15 +247,15 @@ brewnet init
 
 #### Step 3 — 개발 스택 선택지
 
-- **백엔드 언어**: Python / Node.js / Java / PHP / .NET / Rust / Go (복수 선택)
+- **백엔드 언어**: Python / Node.js / Java / Rust / Go / Kotlin (복수 선택)
 - **언어별 프레임워크**:
   - Python: FastAPI / Django / Flask
-  - Node.js: Next.js / Express / NestJS / Fastify
-  - Java: Spring Boot / Spring / Pure Java
-  - PHP: Laravel / Symfony
-  - .NET: ASP.NET Core / Blazor
-  - Rust / Go: 프레임워크 없음
-- **프론트엔드**: Vue.js / React / TypeScript / JavaScript (복수 선택)
+  - Node.js: Next.js / Next.js 15.x (App Router) / Express / NestJS
+  - Java: Spring / Spring Boot
+  - Rust: Axum / Actix Web
+  - Go: Gin / Echo / Fiber
+  - Kotlin: Ktor / Spring Boot (Kotlin)
+- **프론트엔드**: React (TypeScript) / Vue.js (Vite) (단일 선택)
 - 필요 없으면 **Skip** 선택
 
 #### Step 4 — Cloudflare Tunnel 설정 방법

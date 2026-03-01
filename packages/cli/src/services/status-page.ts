@@ -708,7 +708,7 @@ function generateStatusHtml(data: StatusPageData): string {
         <button onclick="document.getElementById('pwd-note').style.display='inline'" style="background:#334155;color:#94a3b8;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;">Show hint</button>
       </div>
       <div id="pwd-note" style="display:none;color:#fbbf24;font-size:13px;margin-top:8px;">
-        Full password is in <code>${data.network.domain.replace(/^[^/]+$/, '')}/.env</code>. Run: <code>grep ADMIN_PASSWORD .env</code>
+        Full password is in <code>secrets/admin_password</code>. Run: <code>cat secrets/admin_password</code>
       </div>
     </div>
 
