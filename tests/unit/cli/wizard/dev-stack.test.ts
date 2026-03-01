@@ -159,16 +159,6 @@ describe('TC-05-05: Single-select frontend behavior', () => {
     expect(result.frontend).toBe('vue');
   });
 
-  it('selecting Svelte stores "svelte" in frontend', () => {
-    const result = buildDevStackState({
-      languages: [],
-      frameworks: {},
-      frontend: 'svelte',
-    });
-
-    expect(result.frontend).toBe('svelte');
-  });
-
   it('null frontend means no frontend selected', () => {
     const result = buildDevStackState({
       languages: [],
@@ -583,12 +573,12 @@ describe('buildDevStackState', () => {
     const result = buildDevStackState({
       languages: [],
       frameworks: {},
-      frontend: 'svelte',
+      frontend: 'vue',
     });
 
     expect(result.languages).toEqual([]);
     expect(result.frameworks).toEqual({});
-    expect(result.frontend).toBe('svelte');
+    expect(result.frontend).toBe('vue');
   });
 
   it('strips stale framework entries for deselected languages', () => {

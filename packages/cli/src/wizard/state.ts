@@ -131,8 +131,6 @@ export function loadState(projectName: string): WizardState | null {
           devStack.frontend = 'react';
         } else if (arr.includes('vuejs') || arr.includes('vue')) {
           devStack.frontend = 'vue';
-        } else if (arr.includes('svelte')) {
-          devStack.frontend = 'svelte';
         } else {
           devStack.frontend = null;
         }

@@ -24,7 +24,7 @@ import type { Language, FrontendTech, FrameworkOption } from '../../../../packag
 
 const EXPECTED_LANGUAGES: Language[] = ['python', 'nodejs', 'java', 'rust', 'go', 'kotlin'];
 
-const EXPECTED_FRONTEND_TECHS: FrontendTech[] = ['react', 'vue', 'svelte', 'none'];
+const EXPECTED_FRONTEND_TECHS: FrontendTech[] = ['react', 'vue', 'none'];
 
 const EXPECTED_FRAMEWORKS_BY_LANGUAGE: Record<Language, string[]> = {
   python: ['fastapi', 'django', 'flask'],
@@ -87,9 +87,9 @@ describe('LANGUAGE_REGISTRY', () => {
 // ===========================================================================
 
 describe('FRONTEND_REGISTRY', () => {
-  it('has exactly 4 frontend tech entries', () => {
+  it('has exactly 3 frontend tech entries', () => {
     const keys = Object.keys(FRONTEND_REGISTRY);
-    expect(keys).toHaveLength(4);
+    expect(keys).toHaveLength(3);
   });
 
   it('contains every expected frontend tech key', () => {
@@ -122,9 +122,8 @@ describe('FRONTEND_REGISTRY', () => {
   });
 
   it('has correct display names for each frontend tech', () => {
-    expect(FRONTEND_REGISTRY.react.name).toBe('React (Vite)');
+    expect(FRONTEND_REGISTRY.react.name).toBe('React (TypeScript)');
     expect(FRONTEND_REGISTRY.vue.name).toBe('Vue.js (Vite)');
-    expect(FRONTEND_REGISTRY.svelte.name).toBe('SvelteKit');
     expect(FRONTEND_REGISTRY.none.name).toBe('Skip frontend');
   });
 });
@@ -336,13 +335,13 @@ describe('getAllLanguages()', () => {
 // ===========================================================================
 
 describe('getAllFrontendTechs()', () => {
-  it('returns an array of 4 frontend tech keys', () => {
+  it('returns an array of 3 frontend tech keys', () => {
     const techs = getAllFrontendTechs();
     expect(Array.isArray(techs)).toBe(true);
-    expect(techs).toHaveLength(4);
+    expect(techs).toHaveLength(3);
   });
 
-  it('contains react, vue, svelte, none', () => {
+  it('contains react, vue, none', () => {
     const techs = getAllFrontendTechs();
     for (const tech of EXPECTED_FRONTEND_TECHS) {
       expect(techs).toContain(tech);

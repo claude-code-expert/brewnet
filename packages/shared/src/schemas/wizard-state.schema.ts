@@ -11,7 +11,7 @@ export const languageSchema = z.enum([
 ]);
 
 export const frontendTechSchema = z.enum([
-  'react', 'vue', 'svelte', 'none',
+  'react', 'vue', 'none',
 ]);
 
 export const webServerServiceSchema = z.enum(['traefik', 'nginx', 'caddy']);

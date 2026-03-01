@@ -5,7 +5,7 @@
 
 export type Language = 'python' | 'nodejs' | 'java' | 'rust' | 'go' | 'kotlin';
 
-export type FrontendTech = 'react' | 'vue' | 'svelte' | 'none';
+export type FrontendTech = 'react' | 'vue' | 'none';
 
 export type WebServerService = 'traefik' | 'nginx' | 'caddy';
 
