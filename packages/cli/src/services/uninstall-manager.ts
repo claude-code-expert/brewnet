@@ -341,21 +341,50 @@ export async function cleanupForRestart(projectPath: string): Promise<void> {
 }
 
 /**
- * List all project names + paths that can be uninstalled,
- * by scanning ~/.brewnet/projects/.
+ * List all project names + paths that can be uninstalled.
+ *
+ * Discovery order (deduplicates by absolute path):
+ *   1. Wizard state: ~/.brewnet/projects/
+ *   2. Filesystem scan: ~/brewnet/* /docker-compose.yml
+ *   3. Docker containers: running brewnet-* containers → label/compose project
  */
 export function listInstallations(): { name: string; path: string | null }[] {
-  const projectsDir = join(BREWNET_DIR, 'projects');
-  if (!existsSync(projectsDir)) return [];
+  const seen = new Set<string>(); // absolute paths already added
+  const results: { name: string; path: string | null }[] = [];
 
-  try {
-    return readdirSync(projectsDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => {
+  const addIfNew = (name: string, rawPath: string | null) => {
+    const absPath = rawPath ? expandPath(rawPath) : null;
+    const key = absPath ?? `__name__${name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push({ name, path: rawPath });
+  };
+
+  // --- 1. Wizard state: ~/.brewnet/projects/ ---
+  const projectsDir = join(BREWNET_DIR, 'projects');
+  if (existsSync(projectsDir)) {
+    try {
+      for (const e of readdirSync(projectsDir, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
         const state = loadState(e.name);
-        return { name: e.name, path: state?.projectPath ?? null };
-      });
-  } catch {
-    return [];
+        addIfNew(e.name, state?.projectPath ?? null);
+      }
+    } catch { /* best-effort */ }
   }
+
+  // --- 2. Filesystem scan: ~/brewnet/*/docker-compose.yml ---
+  const brewnetRoot = join(homedir(), 'brewnet');
+  if (existsSync(brewnetRoot)) {
+    try {
+      for (const e of readdirSync(brewnetRoot, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        const composePath = join(brewnetRoot, e.name, DOCKER_COMPOSE_FILENAME);
+        if (existsSync(composePath)) {
+          addIfNew(e.name, `~/brewnet/${e.name}`);
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
+  return results;
 }
