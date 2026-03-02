@@ -224,8 +224,8 @@ export async function runDevStackStep(
       python: 'Python 3.13',
       nodejs: 'Node.js 22 LTS',
       java: 'Java 21 LTS',
-      rust: 'Rust 1.85',
-      go: 'Go 1.24',
+      rust: 'Rust 1.88',
+      go: 'Go 1.22+',
       kotlin: 'Kotlin 2.3',
     };
     console.log(chalk.bold(`  ${versionInfo[lang] ?? LANGUAGE_REGISTRY[lang].name}`));
@@ -324,11 +324,7 @@ export async function runDevStackStep(
   next.boilerplate.generate = generateBoilerplate;
 
   if (generateBoilerplate) {
-    const sampleData = await confirm({
-      message: 'Include sample data / seed files?',
-      default: next.boilerplate.sampleData,
-    });
-    next.boilerplate.sampleData = sampleData;
+    next.boilerplate.sampleData = false;
 
     const devMode = await select<DevMode>({
       message: 'Development mode',
@@ -336,10 +332,12 @@ export async function runDevStackStep(
         {
           name: 'Hot-reload — auto-restart on file changes',
           value: 'hot-reload' as DevMode,
+          description: 'Choose this if you are still developing your app',
         },
         {
           name: 'Production — optimized build',
           value: 'production' as DevMode,
+          description: 'Choose this if you are deploying a production-ready service',
         },
       ],
       default: next.boilerplate.devMode || 'hot-reload',
@@ -392,7 +390,7 @@ export async function runDevStackStep(
   }
 
   if (next.boilerplate.generate) {
-    console.log(chalk.dim(`    Boilerplate: yes (sample data: ${next.boilerplate.sampleData ? 'yes' : 'no'}, mode: ${next.boilerplate.devMode})`));
+    console.log(chalk.dim(`    Boilerplate: yes (mode: ${next.boilerplate.devMode})`));
   } else {
     console.log(chalk.dim('    Boilerplate: no'));
   }

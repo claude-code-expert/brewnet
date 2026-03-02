@@ -141,17 +141,97 @@ describe('getScaffoldTemplate — fallback for unknown language', () => {
   });
 });
 
-describe('getScaffoldTemplate — go / rust', () => {
-  it('returns go template', () => {
-    const tpl = getScaffoldTemplate('go', '');
-    expect(tpl.appDir).toContain('go');
+describe('getScaffoldTemplate — go', () => {
+  it('returns gin template for go/gin', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    expect(tpl.appDir).toBe('gin-app');
     expect(tpl.files.length).toBeGreaterThan(0);
   });
 
-  it('returns rust template', () => {
-    const tpl = getScaffoldTemplate('rust', '');
-    expect(tpl.appDir).toContain('rust');
+  it('returns echo template for go/echo', () => {
+    const tpl = getScaffoldTemplate('go', 'echo');
+    expect(tpl.appDir).toBe('echo-app');
     expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns fiber template for go/fiber', () => {
+    const tpl = getScaffoldTemplate('go', 'fiber');
+    expect(tpl.appDir).toBe('fiber-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns gin template (default) for go/unknown', () => {
+    const tpl = getScaffoldTemplate('go', '');
+    expect(tpl.appDir).toBe('gin-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('gin template includes cmd/server/main.go', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    expect(tpl.files.some((f) => f.path === 'cmd/server/main.go')).toBe(true);
+  });
+
+  it('echo template includes cmd/server/main.go', () => {
+    const tpl = getScaffoldTemplate('go', 'echo');
+    expect(tpl.files.some((f) => f.path === 'cmd/server/main.go')).toBe(true);
+  });
+
+  it('fiber template includes cmd/server/main.go', () => {
+    const tpl = getScaffoldTemplate('go', 'fiber');
+    expect(tpl.files.some((f) => f.path === 'cmd/server/main.go')).toBe(true);
+  });
+
+  it('gin template includes internal/database/database.go', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    expect(tpl.files.some((f) => f.path === 'internal/database/database.go')).toBe(true);
+  });
+
+  it('gin template go.mod references gin', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    const goMod = tpl.files.find((f) => f.path === 'go.mod');
+    expect(goMod?.template).toContain('gin-gonic/gin');
+  });
+
+  it('echo template go.mod references echo', () => {
+    const tpl = getScaffoldTemplate('go', 'echo');
+    const goMod = tpl.files.find((f) => f.path === 'go.mod');
+    expect(goMod?.template).toContain('labstack/echo');
+  });
+
+  it('fiber template go.mod references fiber', () => {
+    const tpl = getScaffoldTemplate('go', 'fiber');
+    const goMod = tpl.files.find((f) => f.path === 'go.mod');
+    expect(goMod?.template).toContain('gofiber/fiber');
+  });
+});
+
+describe('getScaffoldTemplate — rust', () => {
+  it('returns actix-web template for rust/actix-web', () => {
+    const tpl = getScaffoldTemplate('rust', 'actix-web');
+    expect(tpl.appDir).toBe('actix-web-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns axum template for rust/axum', () => {
+    const tpl = getScaffoldTemplate('rust', 'axum');
+    expect(tpl.appDir).toBe('axum-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns actix-web template (default) for rust/unknown', () => {
+    const tpl = getScaffoldTemplate('rust', '');
+    expect(tpl.appDir).toBe('actix-web-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('actix-web template includes src/main.rs', () => {
+    const tpl = getScaffoldTemplate('rust', 'actix-web');
+    expect(tpl.files.some((f) => f.path === 'src/main.rs')).toBe(true);
+  });
+
+  it('axum template includes src/main.rs', () => {
+    const tpl = getScaffoldTemplate('rust', 'axum');
+    expect(tpl.files.some((f) => f.path === 'src/main.rs')).toBe(true);
   });
 });
 
@@ -386,6 +466,52 @@ describe('generateBoilerplate', () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
+  it('generates files for go/gin', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['go'], frameworks: { go: 'gin' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((f) => f.path.includes('gin-app'))).toBe(true);
+  });
+
+  it('generates files for go/echo', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['go'], frameworks: { go: 'echo' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('echo-app'))).toBe(true);
+  });
+
+  it('generates files for go/fiber', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['go'], frameworks: { go: 'fiber' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('fiber-app'))).toBe(true);
+  });
+
+  it('generates files for rust/actix-web', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['rust'], frameworks: { rust: 'actix-web' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('actix-web-app'))).toBe(true);
+  });
+
+  it('generates files for rust/axum', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['rust'], frameworks: { rust: 'axum' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('axum-app'))).toBe(true);
+  });
+
   // ---------------------------------------------------------------------------
   // devMode='hot-reload' for additional frameworks (covers getDevConfig branches)
   // ---------------------------------------------------------------------------
@@ -454,6 +580,47 @@ describe('generateBoilerplate', () => {
     const state = makeState({
       boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
       devStack: { languages: ['rust'], frameworks: {}, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for go/gin hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['go'], frameworks: { go: 'gin' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('go run ./cmd/server');
+  });
+
+  it('generates dev compose for go/echo hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['go'], frameworks: { go: 'echo' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for go/fiber hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['go'], frameworks: { go: 'fiber' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for rust/axum hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['rust'], frameworks: { rust: 'axum' }, frontend: null },
     });
     const files = await generateBoilerplate(state, '/tmp/output');
     const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));

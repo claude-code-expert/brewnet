@@ -25,8 +25,8 @@
 | nodejs | Node.js 22 LTS | 22.x | `node:22-alpine` | 3000 |
 | java | Java 21 LTS (Eclipse Temurin) | 21.x | `eclipse-temurin:21-jre-alpine` | 8080 |
 | kotlin | Kotlin 2.3 (JVM 21) | 2.3.x | `eclipse-temurin:21-jre-alpine` | 8080 |
-| rust | Rust (latest stable) | 1.85.x | `rust:1.85-slim` → multi-stage build | 8080 |
-| go | Go 1.24 | 1.24.x | `golang:1.24-alpine` → multi-stage build | 8080 |
+| rust | Rust 1.88 | 1.88.x | `rust:1.88` → `debian:bookworm-slim` (multi-stage) | 8080 |
+| go | Go 1.22 – 1.25 | 1.22.x (Gin/Echo), 1.25.x (Fiber) | `golang:{ver}-alpine` → `alpine` (multi-stage) | 8080 |
 
 ---
 
@@ -114,7 +114,7 @@ Select Kotlin framework:
 
 ---
 
-### 🦀 Rust (latest stable)
+### 🦀 Rust 1.88
 
 > Sub-Prompt: `Select Rust framework:`
 
@@ -131,7 +131,7 @@ Select Rust framework:
 
 ---
 
-### 🐹 Go 1.24
+### 🐹 Go 1.22 – 1.25
 
 > Sub-Prompt: `Select Go framework:`
 
