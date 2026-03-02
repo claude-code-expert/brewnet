@@ -143,7 +143,7 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
 
       expect(result.projectName).toBe('my-project');
       expect(result.projectPath).toBe('~/brewnet/my-project');
-      expect(result.schemaVersion).toBe(5);
+      expect(result.schemaVersion).toBe(7);
     });
 
     it('should not enable optional services by default', () => {
@@ -295,27 +295,27 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
   // =========================================================================
 
   describe('TC-03-07: Back navigation — returns to Step 0', () => {
-    it('should start at SystemCheck (Step 0)', () => {
+    it('should start at AdminSetup (Step 0)', () => {
       const nav = new WizardNavigation();
 
-      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
+      expect(nav.currentStep).toBe(WizardStep.AdminSetup);
     });
 
-    it('should move to ProjectSetup (Step 1) after goForward()', () => {
+    it('should move to SystemCheck (Step 1) after goForward()', () => {
       const nav = new WizardNavigation();
       nav.goForward();
 
-      expect(nav.currentStep).toBe(WizardStep.ProjectSetup);
+      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
     });
 
-    it('should return to SystemCheck (Step 0) after goBack() from ProjectSetup', () => {
+    it('should return to AdminSetup (Step 0) after goBack() from SystemCheck', () => {
       const nav = new WizardNavigation();
-      nav.goForward(); // Step 0 → Step 1
-      expect(nav.currentStep).toBe(WizardStep.ProjectSetup);
+      nav.goForward(); // AdminSetup → SystemCheck
+      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
 
       const prev = nav.goBack();
-      expect(prev).toBe(WizardStep.SystemCheck);
-      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
+      expect(prev).toBe(WizardStep.AdminSetup);
+      expect(nav.currentStep).toBe(WizardStep.AdminSetup);
     });
 
     it('should return null when calling goBack() at Step 0 (no history)', () => {
@@ -323,69 +323,73 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
       const prev = nav.goBack();
 
       expect(prev).toBeNull();
-      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
+      expect(nav.currentStep).toBe(WizardStep.AdminSetup);
     });
 
     it('should report canGoBack() correctly', () => {
       const nav = new WizardNavigation();
       expect(nav.canGoBack()).toBe(false);
 
-      nav.goForward(); // Step 0 → Step 1
+      nav.goForward(); // AdminSetup → SystemCheck
       expect(nav.canGoBack()).toBe(true);
 
-      nav.goBack(); // Step 1 → Step 0
+      nav.goBack(); // SystemCheck → AdminSetup
       expect(nav.canGoBack()).toBe(false);
     });
 
     it('should support multi-step navigation forward and back', () => {
       const nav = new WizardNavigation();
 
-      nav.goForward(); // → Step 1
-      nav.goForward(); // → Step 2
-      nav.goForward(); // → Step 3
+      nav.goForward(); // → SystemCheck
+      nav.goForward(); // → ProjectSetup
+      nav.goForward(); // → ServerComponents
+      nav.goForward(); // → DevStack
       expect(nav.currentStep).toBe(WizardStep.DevStack);
 
-      nav.goBack(); // → Step 2
+      nav.goBack(); // → ServerComponents
       expect(nav.currentStep).toBe(WizardStep.ServerComponents);
 
-      nav.goBack(); // → Step 1
+      nav.goBack(); // → ProjectSetup
       expect(nav.currentStep).toBe(WizardStep.ProjectSetup);
 
-      nav.goBack(); // → Step 0
+      nav.goBack(); // → SystemCheck
       expect(nav.currentStep).toBe(WizardStep.SystemCheck);
 
-      nav.goBack(); // No-op, still Step 0
-      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
+      nav.goBack(); // → AdminSetup
+      expect(nav.currentStep).toBe(WizardStep.AdminSetup);
+
+      nav.goBack(); // No-op, still AdminSetup
+      expect(nav.currentStep).toBe(WizardStep.AdminSetup);
     });
 
     it('should skip steps correctly during forward navigation', () => {
       const nav = new WizardNavigation();
-      nav.skipStep(WizardStep.ProjectSetup); // Skip Step 1
+      nav.skipStep(WizardStep.SystemCheck); // Skip the step right after start
 
-      nav.goForward(); // Should skip Step 1, go to Step 2
-      expect(nav.currentStep).toBe(WizardStep.ServerComponents);
+      nav.goForward(); // Should skip SystemCheck, go to ProjectSetup
+      expect(nav.currentStep).toBe(WizardStep.ProjectSetup);
     });
 
     it('should go back to original step (not skipped step) after skip-forward + goBack', () => {
       const nav = new WizardNavigation();
-      nav.skipStep(WizardStep.ProjectSetup);
+      nav.skipStep(WizardStep.SystemCheck);
 
-      nav.goForward(); // Step 0 → Step 2 (skipped Step 1)
-      expect(nav.currentStep).toBe(WizardStep.ServerComponents);
+      nav.goForward(); // AdminSetup → ProjectSetup (skipped SystemCheck)
+      expect(nav.currentStep).toBe(WizardStep.ProjectSetup);
 
-      const prev = nav.goBack(); // Should go back to Step 0
-      expect(prev).toBe(WizardStep.SystemCheck);
+      const prev = nav.goBack(); // Should go back to AdminSetup
+      expect(prev).toBe(WizardStep.AdminSetup);
     });
 
     it('should support goToStep for direct navigation', () => {
       const nav = new WizardNavigation();
 
-      nav.goToStep(WizardStep.Review); // Jump directly to Step 5
+      nav.goToStep(WizardStep.Review); // Jump directly to Step 6
       expect(nav.currentStep).toBe(WizardStep.Review);
 
-      // Should be able to go back to Step 0
+      // Should be able to go back to Step 0 (AdminSetup)
       const prev = nav.goBack();
-      expect(prev).toBe(WizardStep.SystemCheck);
+      expect(prev).toBe(WizardStep.AdminSetup);
     });
 
     it('should not go past Complete step', () => {
@@ -397,23 +401,23 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
 
     it('should report correct step names', () => {
       const nav = new WizardNavigation();
-      expect(nav.getStepName()).toBe('System Check');
+      expect(nav.getStepName()).toBe('Admin Account');
 
       nav.goForward();
-      expect(nav.getStepName()).toBe('Project Setup');
+      expect(nav.getStepName()).toBe('System Check');
     });
 
     it('should track progress correctly', () => {
       const nav = new WizardNavigation();
       let progress = nav.getProgress();
       expect(progress.current).toBe(1);
-      expect(progress.total).toBe(8);
+      expect(progress.total).toBe(9);
 
-      nav.goForward(); // → Step 1
+      nav.goForward(); // → SystemCheck
       progress = nav.getProgress();
       expect(progress.current).toBe(2);
 
-      nav.goForward(); // → Step 2
+      nav.goForward(); // → ProjectSetup
       progress = nav.getProgress();
       expect(progress.current).toBe(3);
     });
@@ -504,7 +508,7 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
 
       nav.reset();
       expect(nav.isCancelled).toBe(false);
-      expect(nav.currentStep).toBe(WizardStep.SystemCheck);
+      expect(nav.currentStep).toBe(WizardStep.AdminSetup);
     });
   });
 
@@ -575,9 +579,9 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
   // =========================================================================
 
   describe('State factory — createDefaultWizardState', () => {
-    it('should create state with schemaVersion 5', () => {
+    it('should create state with schemaVersion 7', () => {
       const state = createDefaultWizardState();
-      expect(state.schemaVersion).toBe(5);
+      expect(state.schemaVersion).toBe(7);
     });
 
     it('should have default project name "my-homeserver"', () => {
@@ -615,7 +619,7 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
       const state = createDefaultWizardState();
       expect(state.devStack.languages).toEqual([]);
       expect(state.devStack.frameworks).toEqual({});
-      expect(state.devStack.frontend).toEqual([]);
+      expect(state.devStack.frontend).toBeNull();
     });
 
     it('should have local domain provider', () => {

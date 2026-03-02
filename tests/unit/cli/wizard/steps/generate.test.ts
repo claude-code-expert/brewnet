@@ -3,7 +3,8 @@
  *
  * Tests runGenerateStep with all IO and service dependencies mocked.
  * Verifies success/failure paths for: compose generation, .env generation,
- * infra config generation, image pull, service startup, credential summary.
+ * infra config generation, image pull, service startup, credential summary,
+ * and failure recovery options (continue/restart/clean-restart).
  */
 
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
@@ -85,6 +86,20 @@ jest.unstable_mockModule(
   }),
 );
 
+// Mock service-verifier
+const mockBuildServiceUrlMap = jest.fn<() => unknown[]>(() => []);
+const mockBuildServiceAccessGuide = jest.fn<() => unknown[]>(() => []);
+const mockVerifyServiceAccess = jest.fn();
+
+jest.unstable_mockModule(
+  '../../../../../packages/cli/src/utils/service-verifier.js',
+  () => ({
+    buildServiceUrlMap: mockBuildServiceUrlMap,
+    buildServiceAccessGuide: mockBuildServiceAccessGuide,
+    verifyServiceAccess: mockVerifyServiceAccess,
+  }),
+);
+
 // Mock execa (dynamic import inside generate.ts)
 const mockExeca = jest.fn<() => Promise<{ stdout: string; stderr: string; exitCode: number }>>();
 
@@ -92,13 +107,14 @@ jest.unstable_mockModule('execa', () => ({
   execa: mockExeca,
 }));
 
-// Mock confirm from @inquirer/prompts
+// Mock @inquirer/prompts
 const mockConfirm = jest.fn<() => Promise<boolean>>();
+const mockSelect = jest.fn<() => Promise<string>>();
 
 jest.unstable_mockModule('@inquirer/prompts', () => ({
   confirm: mockConfirm,
   input: jest.fn(),
-  select: jest.fn(),
+  select: mockSelect,
   checkbox: jest.fn(),
   password: jest.fn(),
 }));
@@ -147,7 +163,7 @@ function makeState(overrides: Partial<WizardState> = {}): WizardState {
 
 function mockSuccessfulDockerExeca() {
   mockExeca.mockResolvedValue({
-    stdout: 'done',
+    stdout: '',
     stderr: '',
     exitCode: 0,
   });
@@ -172,13 +188,15 @@ beforeEach(() => {
   mockBuildUpCommand.mockReturnValue({ cmd: 'docker', args: ['compose', 'up', '-d'] });
   mockCollectAllServices.mockReturnValue(['traefik', 'gitea']);
   mockGetCredentialTargets.mockReturnValue(['Gitea']);
+  mockBuildServiceUrlMap.mockReturnValue([]);
+  mockBuildServiceAccessGuide.mockReturnValue([]);
   mockSuccessfulDockerExeca();
 });
 
 describe('runGenerateStep', () => {
-  it('returns true on full success', async () => {
+  it('returns success on full success', async () => {
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(true);
+    expect(result).toBe('success');
   });
 
   it('calls generateComposeConfig with wizard state', async () => {
@@ -242,71 +260,306 @@ describe('runGenerateStep', () => {
     expect(writeCalls.some((p) => String(p).includes('app.ini'))).toBe(true);
   });
 
-  it('returns false when compose generation throws', async () => {
+  // -------------------------------------------------------------------------
+  // Pre-startup errors → 'error'
+  // -------------------------------------------------------------------------
+
+  it('returns error when compose generation throws', async () => {
     mockGenerateComposeConfig.mockImplementation(() => {
       throw new Error('generation failed');
     });
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
+    expect(result).toBe('error');
   });
 
-  it('returns false when env generation throws', async () => {
+  it('returns error when env generation throws', async () => {
     mockGenerateEnvFiles.mockImplementation(() => {
       throw new Error('env failed');
     });
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
+    expect(result).toBe('error');
   });
 
-  it('returns false when infra config generation throws', async () => {
+  it('returns error when infra config generation throws', async () => {
     mockGenerateInfraConfigs.mockImplementation(() => {
       throw new Error('infra failed');
     });
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
+    expect(result).toBe('error');
   });
 
-  it('returns false when user declines after pull failure', async () => {
+  // -------------------------------------------------------------------------
+  // Pull failures
+  // -------------------------------------------------------------------------
+
+  it('returns error when user declines after pull failure', async () => {
     mockExeca
-      .mockResolvedValueOnce({ stdout: '', stderr: 'pull failed', exitCode: 1 }) // pull fails
-    mockConfirm.mockResolvedValue(false); // user declines to continue
+      .mockResolvedValueOnce({ stdout: '', stderr: 'pull failed', exitCode: 1 });
+    mockConfirm.mockResolvedValue(false);
 
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
+    expect(result).toBe('error');
   });
 
   it('continues after pull failure if user confirms', async () => {
     mockExeca
       .mockResolvedValueOnce({ stdout: '', stderr: 'pull error', exitCode: 1 }) // pull fails
       .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });           // up succeeds
-    mockConfirm.mockResolvedValue(true); // user confirms to continue
+    mockConfirm.mockResolvedValue(true);
 
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(true);
+    expect(result).toBe('success');
   });
 
-  it('returns false when service startup fails and user declines rollback', async () => {
+  it('handles pull throwing execa-style error and continues if user confirms', async () => {
+    const execaErr = Object.assign(new Error('docker pull failed'), {
+      stdout: '',
+      stderr: 'network timeout',
+      exitCode: 1,
+    });
     mockExeca
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })          // pull succeeds
-      .mockResolvedValueOnce({ stdout: '', stderr: 'up failed', exitCode: 1 }); // up fails
-    mockConfirm.mockResolvedValue(false); // user declines rollback
+      .mockRejectedValueOnce(execaErr)
+      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });
+    mockConfirm.mockResolvedValue(true);
 
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
+    expect(result).toBe('success');
   });
 
-  it('runs rollback when service startup fails and user confirms', async () => {
-    mockBuildDownCommand.mockReturnValue({ cmd: 'docker', args: ['compose', 'down'] });
+  it('returns error when pull throws plain Error and user declines', async () => {
+    mockExeca.mockRejectedValueOnce(new Error('connection refused'));
+    mockConfirm.mockResolvedValue(false);
+
+    const result = await runGenerateStep(makeState());
+    expect(result).toBe('error');
+  });
+
+  it('continues when pull throws plain Error and user confirms', async () => {
     mockExeca
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })            // pull
-      .mockResolvedValueOnce({ stdout: '', stderr: 'failed', exitCode: 1 })      // up fails
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });            // down (rollback)
-    mockConfirm.mockResolvedValue(true); // user confirms rollback
+      .mockRejectedValueOnce(new Error('connection refused'))
+      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });
+    mockConfirm.mockResolvedValue(true);
 
     const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
-    expect(mockBuildDownCommand).toHaveBeenCalled();
+    expect(result).toBe('success');
   });
+
+  // -------------------------------------------------------------------------
+  // Docker compose up failure — recovery options
+  // -------------------------------------------------------------------------
+
+  describe('compose up failure recovery', () => {
+    beforeEach(() => {
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // pre-cleanup: docker compose down
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: 'up failed', exitCode: 1 }); // up fails
+    });
+
+    it('returns success when user selects continue', async () => {
+      mockSelect.mockResolvedValue('continue');
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+    });
+
+    it('returns restart when user selects restart', async () => {
+      mockSelect.mockResolvedValue('restart');
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('restart');
+    });
+
+    it('returns clean-restart when user selects clean-restart', async () => {
+      mockSelect.mockResolvedValue('clean-restart');
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('clean-restart');
+    });
+  });
+
+  describe('compose up plain Error recovery', () => {
+    it('returns restart when up throws and user selects restart', async () => {
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pre-cleanup: docker compose down
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pre-cleanup: docker ps -a (no stale)
+        .mockRejectedValueOnce(new Error('docker daemon not running'));    // up throws
+      mockSelect.mockResolvedValue('restart');
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('restart');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Pre-cleanup: stale brewnet-* container removal
+  // -------------------------------------------------------------------------
+
+  describe('pre-cleanup stale container removal', () => {
+    it('removes stale brewnet-* containers found by docker ps before starting up', async () => {
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                               // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                               // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                               // compose down
+        .mockResolvedValueOnce({ stdout: 'brewnet-filebrowser\nbrewnet-jellyfin', stderr: '', exitCode: 0 }) // docker ps -a finds stale
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                               // docker rm -f brewnet-filebrowser
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                               // docker rm -f brewnet-jellyfin
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });                              // up succeeds
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+
+      // Verify rm -f called for both stale containers
+      const rmCalls = mockExeca.mock.calls.filter(
+        (c) => c[0] === 'docker' && Array.isArray(c[1]) && (c[1] as string[]).includes('rm'),
+      );
+      expect(rmCalls).toHaveLength(2);
+      expect(rmCalls[0]![1]).toEqual(['rm', '-f', 'brewnet-filebrowser']);
+      expect(rmCalls[1]![1]).toEqual(['rm', '-f', 'brewnet-jellyfin']);
+    });
+
+    it('skips stale removal when docker ps returns nothing', async () => {
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // compose down
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // docker ps -a (empty)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });  // up succeeds
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+
+      // No rm -f calls should exist
+      const rmCalls = mockExeca.mock.calls.filter(
+        (c) => c[0] === 'docker' && Array.isArray(c[1]) && (c[1] as string[]).includes('rm'),
+      );
+      expect(rmCalls).toHaveLength(0);
+    });
+
+    it('continues even when docker ps fails', async () => {
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // compose down
+        .mockRejectedValueOnce(new Error('docker ps failed'))             // docker ps -a throws
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });  // up succeeds
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Container name conflict retry
+  // -------------------------------------------------------------------------
+
+  describe('container name conflict retry', () => {
+    it('removes conflicting containers and retries up successfully', async () => {
+      const conflictStderr =
+        'Error response from daemon: Conflict. The container name "/brewnet-traefik" is already in use by container "abc123". ' +
+        'You have to remove (or rename) that container to be able to reuse that name.';
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: down
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: conflictStderr, exitCode: 1 })    // up fails (conflict)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f brewnet-traefik
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });               // up retry succeeds
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+
+      // Verify docker rm -f was called with the conflicting container name
+      const rmCall = mockExeca.mock.calls.find(
+        (call) => call[0] === 'docker' && Array.isArray(call[1]) && (call[1] as string[]).includes('rm'),
+      );
+      expect(rmCall).toBeDefined();
+      expect(rmCall![1]).toEqual(['rm', '-f', 'brewnet-traefik']);
+    });
+
+    it('handles multiple conflicting containers', async () => {
+      const conflictStderr =
+        'The container name "/brewnet-traefik" is already in use\n' +
+        'The container name "/brewnet-gitea" is already in use';
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: down
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: conflictStderr, exitCode: 1 })    // up fails (conflict)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f brewnet-traefik
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f brewnet-gitea
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });               // up retry succeeds
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+
+      const rmCalls = mockExeca.mock.calls.filter(
+        (call) => call[0] === 'docker' && Array.isArray(call[1]) && (call[1] as string[]).includes('rm'),
+      );
+      expect(rmCalls).toHaveLength(2);
+    });
+
+    it('falls through to failure recovery if retry also fails', async () => {
+      const conflictStderr = 'The container name "/brewnet-traefik" is already in use';
+      mockExeca
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pull
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // network create brewnet
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: down
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: conflictStderr, exitCode: 1 })    // up fails (conflict)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f
+        .mockResolvedValueOnce({ stdout: '', stderr: 'still failing', exitCode: 1 });  // up retry also fails
+      mockSelect.mockResolvedValue('restart');
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('restart');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Health check failure — recovery options
+  // -------------------------------------------------------------------------
+
+  describe('health check failure recovery', () => {
+    beforeEach(() => {
+      mockSuccessfulDockerExeca();
+      mockBuildServiceUrlMap.mockReturnValue([
+        { serviceId: 'traefik', label: 'Web Server', localUrl: 'http://localhost:80', healthEndpoint: '/' },
+      ]);
+      mockVerifyServiceAccess.mockResolvedValue({
+        serviceId: 'traefik',
+        label: 'Web Server',
+        localUrl: 'http://localhost:80',
+        status: 'fail',
+        error: 'ECONNREFUSED',
+      });
+    });
+
+    it('returns success when user selects continue after health check failure', async () => {
+      mockSelect.mockResolvedValue('continue');
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+    });
+
+    it('returns restart when user selects restart after health check failure', async () => {
+      mockSelect.mockResolvedValue('restart');
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('restart');
+    });
+
+    it('returns clean-restart when user selects clean-restart after health check failure', async () => {
+      mockSelect.mockResolvedValue('clean-restart');
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('clean-restart');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Credential propagation
+  // -------------------------------------------------------------------------
 
   it('shows credential propagation targets', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -330,50 +583,100 @@ describe('runGenerateStep', () => {
     consoleSpy.mockRestore();
   });
 
-  it('handles pull throwing execa-style error (with stdout/stderr) and continues if user confirms', async () => {
-    // Trigger execCommand catch: err has 'stdout' property → returns { exitCode: 1 }
-    // Then the outer exitCode !== 0 branch runs and user confirms to continue
-    const execaErr = Object.assign(new Error('docker pull failed'), {
-      stdout: '',
-      stderr: 'network timeout',
-      exitCode: 1,
+  // -------------------------------------------------------------------------
+  // Quick Tunnel URL capture
+  // -------------------------------------------------------------------------
+
+  describe('Quick Tunnel URL capture', () => {
+    function makeQuickTunnelState(): WizardState {
+      const state = makeState();
+      state.domain.cloudflare.tunnelMode = 'quick';
+      state.domain.cloudflare.quickTunnelUrl = '';
+      return state;
+    }
+
+    function createMockSubprocess(emitUrl?: string) {
+      type DataHandler = (data: Buffer | string) => void;
+      const proc: Record<string, unknown> = {
+        stdout: {
+          on: jest.fn((event: string, handler: DataHandler) => {
+            if (event === 'data' && emitUrl) {
+              queueMicrotask(() => handler(emitUrl));
+            }
+          }),
+        },
+        stderr: {
+          on: jest.fn(),
+        },
+        on: jest.fn(),
+        kill: jest.fn(),
+        catch: jest.fn(),
+      };
+      return proc;
+    }
+
+    function createErrorSubprocess(error: Error) {
+      const proc: Record<string, unknown> = {
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event: string, handler: Function) => {
+          if (event === 'error') {
+            queueMicrotask(() => handler(error));
+          }
+          return proc;
+        }),
+        kill: jest.fn(),
+        catch: jest.fn(),
+      };
+      return proc;
+    }
+
+    function setupExecaMockWithSubprocess(subprocess: Record<string, unknown>) {
+      mockExeca.mockImplementation(((_cmd: unknown, args: unknown) => {
+        const argsArr = args as string[];
+        if (argsArr?.[0] === 'logs') {
+          return subprocess;
+        }
+        return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+      }) as Parameters<typeof mockExeca.mockImplementation>[0]);
+    }
+
+    it('captures URL and updates state when tunnelMode is quick', async () => {
+      const tunnelUrl = 'https://test-abc123.trycloudflare.com';
+      const mockProc = createMockSubprocess(tunnelUrl);
+      setupExecaMockWithSubprocess(mockProc);
+
+      const state = makeQuickTunnelState();
+      const result = await runGenerateStep(state);
+
+      expect(result).toBe('success');
+      expect(state.domain.cloudflare.quickTunnelUrl).toBe(tunnelUrl);
+      expect(state.domain.name).toBe('test-abc123.trycloudflare.com');
     });
-    mockExeca
-      .mockRejectedValueOnce(execaErr)                                      // pull → execCommand catch (has stdout)
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });     // up succeeds
-    mockConfirm.mockResolvedValue(true);
 
-    const result = await runGenerateStep(makeState());
-    expect(result).toBe(true);
-  });
+    it('continues with success when URL capture fails', async () => {
+      const mockProc = createErrorSubprocess(new Error('container not found'));
+      setupExecaMockWithSubprocess(mockProc);
 
-  it('returns false when pull throws plain Error and user declines', async () => {
-    // Plain Error (no stdout) → execCommand rethrows → outer catch at lines 189-202
-    mockExeca.mockRejectedValueOnce(new Error('connection refused'));
-    mockConfirm.mockResolvedValue(false);
+      const state = makeQuickTunnelState();
+      const result = await runGenerateStep(state);
 
-    const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
-  });
+      expect(result).toBe('success');
+      expect(state.domain.cloudflare.quickTunnelUrl).toBe('');
+    });
 
-  it('continues when pull throws plain Error and user confirms', async () => {
-    // Plain Error → outer catch → user confirms → up succeeds
-    mockExeca
-      .mockRejectedValueOnce(new Error('connection refused'))               // pull: plain Error rethrown
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });     // up succeeds
-    mockConfirm.mockResolvedValue(true);
+    it('skips URL capture when tunnelMode is not quick', async () => {
+      mockSuccessfulDockerExeca();
 
-    const result = await runGenerateStep(makeState());
-    expect(result).toBe(true);
-  });
+      const state = makeState();
+      const result = await runGenerateStep(state);
 
-  it('returns false when up throws plain Error', async () => {
-    // pull succeeds, up throws plain Error → catch at lines 239-245
-    mockExeca
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })      // pull
-      .mockRejectedValueOnce(new Error('docker daemon not running'));       // up: plain Error
-
-    const result = await runGenerateStep(makeState());
-    expect(result).toBe(false);
+      expect(result).toBe('success');
+      // Verify no docker logs call was made
+      const logsCalls = mockExeca.mock.calls.filter(
+        (call) => Array.isArray(call[1]) && (call[1] as string[])[0] === 'logs',
+      );
+      expect(logsCalls).toHaveLength(0);
+    });
   });
 });

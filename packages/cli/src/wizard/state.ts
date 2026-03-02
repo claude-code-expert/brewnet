@@ -113,6 +113,31 @@ export function loadState(projectName: string): WizardState | null {
 
     const obj = parsed as Record<string, unknown>;
 
+    // Schema migration: v6 → v7 (frontend: array → single value | null)
+    if (
+      typeof obj.schemaVersion === 'number' &&
+      obj.schemaVersion === 6
+    ) {
+      logger.warn(
+        'wizard',
+        `Schema version 6 detected — migrating to v7 (frontend array → single value)`,
+        { projectName },
+      );
+      const devStack = obj.devStack as Record<string, unknown> | undefined;
+      if (devStack && Array.isArray(devStack.frontend)) {
+        const arr = devStack.frontend as string[];
+        // Map old array values to new single values
+        if (arr.includes('reactjs') || arr.includes('react')) {
+          devStack.frontend = 'react';
+        } else if (arr.includes('vuejs') || arr.includes('vue')) {
+          devStack.frontend = 'vue';
+        } else {
+          devStack.frontend = null;
+        }
+      }
+      obj.schemaVersion = SCHEMA_VERSION;
+    }
+
     // Schema migration: version < current → reset
     if (
       typeof obj.schemaVersion === 'number' &&

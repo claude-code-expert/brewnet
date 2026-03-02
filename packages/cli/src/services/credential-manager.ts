@@ -150,7 +150,7 @@ export function generateCredentialEnvEntries(
     s.dbServer.adminUI &&
     s.dbServer.primary === 'postgresql'
   ) {
-    entries['PGADMIN_DEFAULT_EMAIL'] = `${username}@brewnet.local`;
+    entries['PGADMIN_DEFAULT_EMAIL'] = `${username}@brewnet.dev`;
   }
 
   // Nextcloud admin username

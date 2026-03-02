@@ -18,6 +18,33 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { DOCKER_COMPOSE_FILENAME } from '@brewnet/shared';
+
+/**
+ * Augment PATH with common Docker / Homebrew install locations.
+ * Mirrors docker-installer.ts augmentedEnv() to fix PATH issues in uninstall.
+ */
+function augmentedEnv(): NodeJS.ProcessEnv {
+  const base = process.env['PATH'] ?? '/usr/bin:/bin:/usr/sbin:/sbin';
+  const extra = '/usr/local/bin:/opt/homebrew/bin';
+  const combined = extra
+    .split(':')
+    .filter((p) => !base.split(':').includes(p))
+    .concat(base.split(':'))
+    .join(':');
+  return { ...process.env, PATH: combined };
+}
+
+/**
+ * Expand a leading `~` to the user's home directory.
+ * All paths stored in WizardState use `~/...` for portability.
+ * Node.js fs functions and execa do NOT expand `~` automatically.
+ */
+function expandPath(p: string): string {
+  if (p.startsWith('~/') || p === '~') {
+    return join(homedir(), p.slice(1));
+  }
+  return p;
+}
 import { getLastProject, loadState, getProjectDir } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 
@@ -63,13 +90,17 @@ const BREWNET_DIR = join(homedir(), '.brewnet');
 
 /**
  * Resolve project path + name from options or the last saved wizard state.
+ * Always expands `~` so downstream fs / execa calls get an absolute path.
  */
 function resolveProject(options: UninstallOptions): {
   projectPath: string | null;
   projectName: string | null;
 } {
   if (options.projectPath) {
-    return { projectPath: options.projectPath, projectName: options.projectName ?? null };
+    return {
+      projectPath: expandPath(options.projectPath),
+      projectName: options.projectName ?? null,
+    };
   }
 
   const lastProject = getLastProject();
@@ -78,7 +109,10 @@ function resolveProject(options: UninstallOptions): {
   const state = loadState(lastProject);
   if (!state) return { projectPath: null, projectName: lastProject };
 
-  return { projectPath: state.projectPath, projectName: state.projectName };
+  return {
+    projectPath: expandPath(state.projectPath),
+    projectName: state.projectName,
+  };
 }
 
 /**
@@ -89,11 +123,13 @@ export function buildUninstallTargets(
   options: UninstallOptions,
 ): UninstallTarget[] {
   const targets: UninstallTarget[] = [];
+  // Expand tilde so existsSync works on the real path
+  if (projectPath) projectPath = expandPath(projectPath);
 
   // 1. Docker containers + optionally volumes
   if (projectPath && existsSync(join(projectPath, DOCKER_COMPOSE_FILENAME))) {
     targets.push({
-      label: `Docker containers${options.keepData ? '' : ' + volumes'}`,
+      label: `Docker containers${options.keepData ? '' : ' + volumes + images'}`,
       path: join(projectPath, DOCKER_COMPOSE_FILENAME),
       type: 'compose',
     });
@@ -117,16 +153,24 @@ export function buildUninstallTargets(
     });
   }
 
-  // 4. ~/.brewnet/status and ~/.brewnet/state
-  const statusDir = join(BREWNET_DIR, 'status');
-  const stateDir = join(BREWNET_DIR, 'state');
+  // 4. Entire ~/.brewnet/ directory
+  if (existsSync(BREWNET_DIR)) {
+    targets.push({
+      label: '~/.brewnet/ (all data, source, config)',
+      path: BREWNET_DIR,
+      type: 'brewnet-meta',
+    });
+  }
 
-  for (const [label, dir] of [
-    ['~/.brewnet/status', statusDir],
-    ['~/.brewnet/state', stateDir],
-  ] as [string, string][]) {
-    if (existsSync(dir)) {
-      targets.push({ label, path: dir, type: 'brewnet-meta' });
+  // 5. CLI binary (check all known install locations)
+  const possibleBins = [
+    join(homedir(), '.local', 'bin', 'brewnet'),
+    '/usr/local/bin/brewnet',
+    '/usr/bin/brewnet',
+  ];
+  for (const bin of possibleBins) {
+    if (existsSync(bin)) {
+      targets.push({ label: `CLI binary: ${bin}`, path: bin, type: 'brewnet-meta' });
     }
   }
 
@@ -165,10 +209,12 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
   if (projectPath && existsSync(join(projectPath, DOCKER_COMPOSE_FILENAME))) {
     try {
       const downArgs = ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'down'];
-      if (!options.keepData) downArgs.push('--volumes');
+      if (!options.keepData) {
+        downArgs.push('--volumes', '--rmi', 'all');
+      }
 
-      await execa('docker', downArgs, { cwd: projectPath });
-      result.removed.push(`Docker containers${options.keepData ? '' : ' + volumes'}`);
+      await execa('docker', downArgs, { cwd: projectPath, env: augmentedEnv() });
+      result.removed.push(`Docker containers${options.keepData ? '' : ' + volumes + images'}`);
       logger.info('uninstall', 'docker compose down succeeded', { projectPath });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -181,7 +227,8 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
   // --- 2. docker network rm ---
   try {
     await execa('docker', ['network', 'rm', 'brewnet', 'brewnet-internal'], {
-      reject: false, // networks may not exist — ignore exit code
+      reject: false,
+      env: augmentedEnv(),
     });
     result.removed.push('Docker networks: brewnet, brewnet-internal');
   } catch {
@@ -207,23 +254,19 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
     result.skipped.push(`Project directory preserved (--keep-config): ${projectPath ?? 'n/a'}`);
   }
 
-  // --- 4. ~/.brewnet/status + state ---
-  for (const [label, dir] of [
-    ['~/.brewnet/status', join(BREWNET_DIR, 'status')],
-    ['~/.brewnet/state', join(BREWNET_DIR, 'state')],
-  ] as [string, string][]) {
-    if (existsSync(dir)) {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-        result.removed.push(label);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        result.errors.push(`rm ${dir}: ${msg}`);
-      }
+  // --- 4. Remove entire ~/.brewnet/ directory ---
+  if (existsSync(BREWNET_DIR)) {
+    try {
+      rmSync(BREWNET_DIR, { recursive: true, force: true });
+      result.removed.push('~/.brewnet/ (all data, source, config)');
+      logger.info('uninstall', 'Brewnet data directory removed', { dir: BREWNET_DIR });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      result.errors.push(`rm ${BREWNET_DIR}: ${msg}`);
     }
   }
 
-  // --- 5. Clean up wizard state entry ---
+  // --- 5. Remove wizard state entry (fallback if ~/.brewnet/ was partially deleted) ---
   if (projectName) {
     const projectStateDir = getProjectDir(projectName);
     if (existsSync(projectStateDir)) {
@@ -236,26 +279,112 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
     }
   }
 
+  // --- 5.5. Remove CLI binary from all known install locations ---
+  const possibleBins = [
+    join(homedir(), '.local', 'bin', 'brewnet'),
+    '/usr/local/bin/brewnet',
+    '/usr/bin/brewnet',
+  ];
+  for (const bin of possibleBins) {
+    if (existsSync(bin)) {
+      try {
+        rmSync(bin, { force: true });
+        result.removed.push(`CLI binary: ${bin}`);
+        logger.info('uninstall', 'CLI binary removed', { bin });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        result.errors.push(`rm ${bin}: ${msg} (may need sudo)`);
+      }
+    }
+  }
+
   if (result.errors.length > 0) result.success = false;
   return result;
 }
 
 /**
- * List all project names + paths that can be uninstalled,
- * by scanning ~/.brewnet/projects/.
+ * Lightweight cleanup for wizard restart: stop containers, remove networks
+ * and project directory. Does NOT remove ~/.brewnet/ metadata or CLI binary.
+ */
+export async function cleanupForRestart(projectPath: string): Promise<void> {
+  const expanded = expandPath(projectPath);
+  const composePath = join(expanded, DOCKER_COMPOSE_FILENAME);
+
+  // 1. Docker compose down --volumes --remove-orphans
+  if (existsSync(composePath)) {
+    try {
+      await execa('docker', [
+        'compose', '-f', composePath, 'down', '--volumes', '--remove-orphans',
+      ], { env: augmentedEnv() });
+    } catch {
+      // best effort — containers may already be stopped
+    }
+  }
+
+  // 2. Remove docker networks
+  for (const netName of ['brewnet', 'brewnet-internal']) {
+    try {
+      await execa('docker', ['network', 'rm', netName], { env: augmentedEnv() });
+    } catch {
+      // best effort — network may not exist
+    }
+  }
+
+  // 3. Remove project directory
+  if (existsSync(expanded)) {
+    try {
+      rmSync(expanded, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
+}
+
+/**
+ * List all project names + paths that can be uninstalled.
+ *
+ * Discovery order (deduplicates by absolute path):
+ *   1. Wizard state: ~/.brewnet/projects/
+ *   2. Filesystem scan: ~/brewnet/* /docker-compose.yml
+ *   3. Docker containers: running brewnet-* containers → label/compose project
  */
 export function listInstallations(): { name: string; path: string | null }[] {
-  const projectsDir = join(BREWNET_DIR, 'projects');
-  if (!existsSync(projectsDir)) return [];
+  const seen = new Set<string>(); // absolute paths already added
+  const results: { name: string; path: string | null }[] = [];
 
-  try {
-    return readdirSync(projectsDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => {
+  const addIfNew = (name: string, rawPath: string | null) => {
+    const absPath = rawPath ? expandPath(rawPath) : null;
+    const key = absPath ?? `__name__${name}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push({ name, path: rawPath });
+  };
+
+  // --- 1. Wizard state: ~/.brewnet/projects/ ---
+  const projectsDir = join(BREWNET_DIR, 'projects');
+  if (existsSync(projectsDir)) {
+    try {
+      for (const e of readdirSync(projectsDir, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
         const state = loadState(e.name);
-        return { name: e.name, path: state?.projectPath ?? null };
-      });
-  } catch {
-    return [];
+        addIfNew(e.name, state?.projectPath ?? null);
+      }
+    } catch { /* best-effort */ }
   }
+
+  // --- 2. Filesystem scan: ~/brewnet/*/docker-compose.yml ---
+  const brewnetRoot = join(homedir(), 'brewnet');
+  if (existsSync(brewnetRoot)) {
+    try {
+      for (const e of readdirSync(brewnetRoot, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        const composePath = join(brewnetRoot, e.name, DOCKER_COMPOSE_FILENAME);
+        if (existsSync(composePath)) {
+          addIfNew(e.name, `~/brewnet/${e.name}`);
+        }
+      }
+    } catch { /* best-effort */ }
+  }
+
+  return results;
 }

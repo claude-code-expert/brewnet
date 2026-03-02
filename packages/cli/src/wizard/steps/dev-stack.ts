@@ -17,7 +17,7 @@
  * @module wizard/steps/dev-stack
  */
 
-import { checkbox, select, confirm } from '@inquirer/prompts';
+import { select, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import type {
   WizardState,
@@ -34,6 +34,7 @@ import {
   type FrameworkOption,
 } from '../../config/frameworks.js';
 import { applyDevStackAutoEnables } from './server-components.js';
+import { BOILERPLATE_REPO_URL } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
 // Pure Functions
@@ -51,10 +52,10 @@ import { applyDevStackAutoEnables } from './server-components.js';
 export function buildDevStackState(selections: {
   languages: Language[];
   frameworks: Record<string, string>;
-  frontend: FrontendTech[];
+  frontend: FrontendTech | null;
 }): DevStackConfig {
   const languages = [...selections.languages];
-  const frontend = [...selections.frontend];
+  const frontend = selections.frontend;
 
   // Only keep framework entries whose key is in the selected languages
   const frameworks: Record<string, string> = {};
@@ -81,7 +82,7 @@ export function applySkipDevStack(state: WizardState): WizardState {
 
   next.devStack.languages = [];
   next.devStack.frameworks = {};
-  next.devStack.frontend = [];
+  next.devStack.frontend = null;
 
   next.servers.appServer.enabled = false;
   next.servers.fileBrowser.enabled = false;
@@ -92,7 +93,6 @@ export function applySkipDevStack(state: WizardState): WizardState {
 /**
  * Return a record mapping each selected language to its available frameworks
  * from LANGUAGE_REGISTRY. Languages not in selectedLanguages are excluded.
- * Languages with no frameworks (e.g., Rust, Go) get an empty array.
  *
  * @param selectedLanguages - Languages the user has selected
  * @returns Record of language key to FrameworkOption[]
@@ -111,14 +111,14 @@ export function getFilteredFrameworks(
 
 /**
  * Check whether the devStack has any meaningful selections.
- * Returns true when no languages AND no frontend technologies are selected.
+ * Returns true when no languages AND no frontend technology is selected.
  * Ignores stale framework entries — only languages and frontend matter.
  *
  * @param state - Current wizard state
  * @returns true if devStack is empty
  */
 export function isDevStackEmpty(state: WizardState): boolean {
-  return state.devStack.languages.length === 0 && state.devStack.frontend.length === 0;
+  return state.devStack.languages.length === 0 && state.devStack.frontend === null;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,11 +132,11 @@ export function isDevStackEmpty(state: WizardState): boolean {
  * boilerplate preferences. Applies devStack auto-enables at the end.
  *
  * Flow:
- *   1. Display header "Step 3/7 — Dev Stack & Runtime"
+ *   1. Display header "Step 4/8 — Dev Stack & Runtime"
  *   2. Skip prompt (if yes, call applySkipDevStack and return early)
- *   3. Language multi-select (all 7 from LANGUAGE_REGISTRY)
- *   4. Per-language framework selection (only for languages with frameworks)
- *   5. Frontend tech multi-select (from FRONTEND_REGISTRY)
+ *   3. Language single-select (all 8 from LANGUAGE_REGISTRY + Skip option)
+ *   4. Per-language framework selection (─── Framework Selection ─── separator)
+ *   5. Frontend tech single-select (from FRONTEND_REGISTRY)
  *   6. Apply devStack auto-enables (appServer / fileBrowser)
  *   7. FileBrowser mode selection (if appServer auto-enabled)
  *   8. Boilerplate config (generate, sampleData, devMode)
@@ -156,7 +156,7 @@ export async function runDevStackStep(
   // -------------------------------------------------------------------------
   console.log();
   console.log(
-    chalk.bold.cyan('  Step 3/7') + chalk.bold(' — Developer Configuration & Runtime Setup'),
+    chalk.bold.cyan('  Step 4/8') + chalk.bold(' — Developer Configuration & Runtime Setup'),
   );
   console.log(
     chalk.dim(
@@ -171,35 +171,42 @@ export async function runDevStackStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 3. Language multi-select
+  // 3. Language single-select
   // -------------------------------------------------------------------------
-  console.log(chalk.bold('  Backend Languages'));
-  console.log(chalk.dim('  Select one or more languages for your server'));
+  console.log(chalk.bold('  Backend Language'));
+  console.log(chalk.dim('  ↑↓: 이동   Enter: 확정   (추후 추가설정 가능합니다)'));
   console.log();
 
-  const languageChoices = (Object.keys(LANGUAGE_REGISTRY) as Language[]).map(
-    (key) => ({
+  const languageChoices: Array<{ name: string; value: Language | 'skip' }> = [
+    ...(Object.keys(LANGUAGE_REGISTRY) as Language[]).map((key) => ({
       name: LANGUAGE_REGISTRY[key].name,
-      value: key,
-      checked: next.devStack.languages.includes(key),
-    }),
-  );
+      value: key as Language | 'skip',
+    })),
+    { name: 'Skip — 언어 선택 건너뛰기', value: 'skip' as const },
+  ];
 
-  const selectedLanguages = await checkbox<Language>({
-    message: 'Languages',
+  const selectedLang = await select<Language | 'skip'>({
+    message: 'Backend Language',
     choices: languageChoices,
+    default: next.devStack.languages[0] ?? 'skip',
   });
 
+  const selectedLanguages: Language[] =
+    selectedLang === 'skip' ? [] : [selectedLang];
+
+  if (selectedLanguages.length === 0) {
+    console.log(chalk.dim('  (선택 없음 — 프레임워크 선택을 건너뜁니다)'));
+  }
   console.log();
 
   // -------------------------------------------------------------------------
-  // 4. Per-language framework selection
+  // 4. Per-language framework selection (T019-T022 bug fix)
   // -------------------------------------------------------------------------
   const filteredFrameworks = getFilteredFrameworks(selectedLanguages);
   const frameworkSelections: Record<string, string> = {};
 
   if (selectedLanguages.length > 0) {
-    console.log(chalk.bold('  Framework Selection'));
+    console.log(chalk.bold('  ─── Framework Selection ───'));
     console.log(chalk.dim('  Choose a framework for each selected language'));
     console.log();
   }
@@ -207,47 +214,58 @@ export async function runDevStackStep(
   for (const lang of selectedLanguages) {
     const frameworks = filteredFrameworks[lang];
 
+    // T019 guard: skip select() if frameworks array is empty
     if (frameworks.length === 0) {
-      // Languages like Rust and Go have no frameworks
-      console.log(
-        chalk.dim(`  ${LANGUAGE_REGISTRY[lang].name}: no framework needed (bare language)`),
-      );
-      console.log();
       continue;
     }
 
-    console.log(chalk.bold(`  ${LANGUAGE_REGISTRY[lang].name}`));
+    // T021: per-language version header
+    const versionInfo: Record<Language, string> = {
+      python: 'Python 3.13',
+      nodejs: 'Node.js 22 LTS',
+      java: 'Java 21 LTS',
+      rust: 'Rust 1.88',
+      go: 'Go 1.22+',
+      kotlin: 'Kotlin 2.1',
+    };
+    console.log(chalk.bold(`  ${versionInfo[lang] ?? LANGUAGE_REGISTRY[lang].name}`));
+
     const frameworkChoice = await select<string>({
       message: `${LANGUAGE_REGISTRY[lang].name} framework`,
       choices: frameworks.map((fw) => ({
         name: `${fw.name} — ${fw.description}`,
         value: fw.id,
       })),
-      default: next.devStack.frameworks[lang] || frameworks[0].id,
+      // T020 fix: defensive access to frameworks[0]?.id
+      default: next.devStack.frameworks[lang] ?? frameworks[0]?.id ?? '',
     });
     frameworkSelections[lang] = frameworkChoice;
     console.log();
   }
 
   // -------------------------------------------------------------------------
-  // 5. Frontend tech multi-select
+  // 5. Frontend tech single-select (T023-T024)
   // -------------------------------------------------------------------------
-  console.log(chalk.bold('  Frontend Technologies'));
-  console.log(chalk.dim('  Select frontend technologies (optional)'));
+  console.log(chalk.bold('  Frontend Technology'));
+  console.log(chalk.dim('  Select a frontend framework (optional)'));
   console.log();
 
   const frontendChoices = (Object.keys(FRONTEND_REGISTRY) as FrontendTech[]).map(
     (key) => ({
       name: `${FRONTEND_REGISTRY[key].name} — ${FRONTEND_REGISTRY[key].description}`,
       value: key,
-      checked: next.devStack.frontend.includes(key),
     }),
   );
 
-  const selectedFrontend = await checkbox<FrontendTech>({
+  const selectedFrontendRaw = await select<FrontendTech>({
     message: 'Frontend',
     choices: frontendChoices,
+    default: next.devStack.frontend ?? 'none',
   });
+
+  // T024: 'none' maps to null
+  const selectedFrontend: FrontendTech | null =
+    selectedFrontendRaw === 'none' ? null : selectedFrontendRaw;
 
   console.log();
 
@@ -296,6 +314,7 @@ export async function runDevStackStep(
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Boilerplate'));
   console.log(chalk.dim('  Project scaffolding and template settings'));
+  console.log(chalk.dim(`  Templates: ${BOILERPLATE_REPO_URL}`));
   console.log();
 
   const generateBoilerplate = await confirm({
@@ -305,21 +324,17 @@ export async function runDevStackStep(
   next.boilerplate.generate = generateBoilerplate;
 
   if (generateBoilerplate) {
-    const sampleData = await confirm({
-      message: 'Include sample data / seed files?',
-      default: next.boilerplate.sampleData,
-    });
-    next.boilerplate.sampleData = sampleData;
+    next.boilerplate.sampleData = false;
 
     const devMode = await select<DevMode>({
       message: 'Development mode',
       choices: [
         {
-          name: 'Hot-reload — auto-restart on file changes',
+          name: 'Hot-reload — auto-restart on file changes  (choose this if you are still developing your app)',
           value: 'hot-reload' as DevMode,
         },
         {
-          name: 'Production — optimized build',
+          name: 'Production — optimized build  (choose this if you are deploying a production-ready service)',
           value: 'production' as DevMode,
         },
       ],
@@ -334,7 +349,7 @@ export async function runDevStackStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 9. Summary
+  // 9. Summary (T028)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Dev Stack Summary'));
 
@@ -359,11 +374,9 @@ export async function runDevStackStep(
     console.log(chalk.dim('    Languages:  (none)'));
   }
 
-  if (next.devStack.frontend.length > 0) {
-    const feNames = next.devStack.frontend
-      .map((f) => FRONTEND_REGISTRY[f].name)
-      .join(', ');
-    console.log(chalk.dim(`    Frontend:   ${feNames}`));
+  // T028: show single frontend name or "(none)"
+  if (next.devStack.frontend !== null) {
+    console.log(chalk.dim(`    Frontend:   ${FRONTEND_REGISTRY[next.devStack.frontend].name}`));
   } else {
     console.log(chalk.dim('    Frontend:   (none)'));
   }
@@ -375,7 +388,7 @@ export async function runDevStackStep(
   }
 
   if (next.boilerplate.generate) {
-    console.log(chalk.dim(`    Boilerplate: yes (sample data: ${next.boilerplate.sampleData ? 'yes' : 'no'}, mode: ${next.boilerplate.devMode})`));
+    console.log(chalk.dim(`    Boilerplate: yes (mode: ${next.boilerplate.devMode})`));
   } else {
     console.log(chalk.dim('    Boilerplate: no'));
   }

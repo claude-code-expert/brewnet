@@ -380,6 +380,175 @@ export function generateMailConfig(state: WizardState): GeneratedFile[] {
 }
 
 // ---------------------------------------------------------------------------
+// Landing Page — Dockerfile + nginx.conf + index.html
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate the Brewnet landing page files used as Traefik catch-all.
+ *
+ * Replaces traefik/whoami to prevent internal infrastructure info leakage.
+ * Produces three files under `landing/` in the project directory:
+ *   - Dockerfile (nginx:alpine based)
+ *   - nginx.conf (security headers, server_tokens off)
+ *   - index.html (branded landing page)
+ *
+ * @returns Array of GeneratedFile for the landing page build context
+ */
+export function generateLandingPage(): GeneratedFile[] {
+  const dockerfile = `FROM nginx:1.27-alpine
+
+# Remove default config, apply custom
+RUN rm /etc/nginx/conf.d/default.conf
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY index.html /usr/share/nginx/html/index.html
+
+# Non-root permissions
+RUN chown -R nginx:nginx /usr/share/nginx/html && \\
+    chmod -R 755 /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
+    CMD wget -qO- http://127.0.0.1/health || exit 1
+`;
+
+  const nginxConf = `server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Hide server version
+    server_tokens off;
+
+    # Security + cache headers
+    # no-store: prevent browser heuristic caching when transiently served for sub-service paths
+    # (e.g. /git/user/sign_up during Gitea mode switch — without this, browsers cache the landing
+    # page response via ETag heuristic for ~3 hours, persisting even after manual cache-clear)
+    add_header Cache-Control           "no-store"      always;
+    add_header X-Content-Type-Options  "nosniff"       always;
+    add_header X-Frame-Options         "DENY"          always;
+    add_header X-XSS-Protection        "1; mode=block" always;
+    add_header Referrer-Policy         "no-referrer"    always;
+    add_header Permissions-Policy      "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com" always;
+
+    # All paths -> landing page
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # Traefik health check
+    location = /health {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"ok","service":"brewnet-landing"}';
+    }
+
+    # Block hidden files
+    location ~ /\\\\. {
+        deny all;
+        return 404;
+    }
+
+    # Block unnecessary methods
+    if ($request_method !~ ^(GET|HEAD)$) {
+        return 405;
+    }
+}
+`;
+
+  const indexHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brewnet — Your server on tap</title>
+  <meta name="description" content="Brewnet home server management platform">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --amber: #f59e0b; --amber-dim: #b45309; --surface: #0a0a0a;
+      --surface-raised: #141414; --border: #1f1f1f; --text: #e5e5e5;
+      --text-muted: #525252; --green: #22c55e;
+      --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+      --sans: 'DM Sans', system-ui, sans-serif;
+    }
+    body { min-height:100vh; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; font-family:var(--sans); background:var(--surface);
+      color:var(--text); overflow:hidden; }
+    body::after { content:''; position:fixed; inset:0;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+      pointer-events:none; z-index:0; }
+    .glow { position:fixed; width:600px; height:600px; border-radius:50%;
+      background:radial-gradient(circle,rgba(245,158,11,0.04) 0%,transparent 70%);
+      top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:0; }
+    .container { position:relative; z-index:1; text-align:center; padding:2rem;
+      animation:fadeIn .8s ease-out; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    .icon { margin-bottom:1.5rem; filter:drop-shadow(0 0 20px rgba(245,158,11,0.2)); }
+    .icon svg { width:64px; height:64px; color:var(--amber); }
+    h1 { font-family:var(--mono); font-size:clamp(2.2rem,6vw,3.8rem); font-weight:700;
+      letter-spacing:-0.03em; line-height:1; margin-bottom:.4rem; }
+    h1 .brew { color:var(--amber); }
+    h1 .net { color:var(--text); }
+    .tagline { font-family:var(--mono); font-size:.82rem; color:var(--text-muted);
+      letter-spacing:.15em; text-transform:uppercase; margin-bottom:2.5rem; }
+    .status { display:inline-flex; align-items:center; gap:.6rem; padding:.55rem 1.3rem;
+      border:1px solid var(--border); border-radius:100px; font-family:var(--mono);
+      font-size:.78rem; color:#737373; background:var(--surface-raised); transition:border-color .3s; }
+    .status:hover { border-color:#2a2a2a; }
+    .status .dot { width:7px; height:7px; border-radius:50%; background:var(--green);
+      box-shadow:0 0 6px rgba(34,197,94,0.4); animation:pulse 2.5s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 6px rgba(34,197,94,0.4)}
+      50%{opacity:.5;box-shadow:0 0 2px rgba(34,197,94,0.2)} }
+    .footer { position:fixed; bottom:1.2rem; left:0; right:0; text-align:center;
+      font-family:var(--mono); font-size:.65rem; color:#2a2a2a; letter-spacing:.08em; z-index:1; }
+    .footer span { color:#333; }
+    @media(max-width:480px) { .icon{font-size:2.4rem} .status{font-size:.72rem;padding:.45rem 1rem} }
+  </style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="container">
+    <div class="icon">
+      <svg width="64" height="64" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/>
+        <path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/>
+        <circle cx="20" cy="30" r="1.8" fill="currentColor" stroke="none"/>
+        <path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/>
+        <path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/>
+        <path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/>
+      </svg>
+    </div>
+    <h1><span class="brew">Brew</span><span class="net">net</span></h1>
+    <p class="tagline">Your server on tap &middot; Just brew it</p>
+    <div class="status">
+      <span class="dot"></span>
+      systems operational
+    </div>
+  </div>
+  <div class="footer">
+    brewnet.dev <span>&middot;</span> MIT
+  </div>
+</body>
+</html>
+`;
+
+  return [
+    { path: 'landing/Dockerfile', content: dockerfile },
+    { path: 'landing/nginx.conf', content: nginxConf },
+    { path: 'landing/index.html', content: indexHtml },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Orchestrator — generateInfraConfigs
 // ---------------------------------------------------------------------------
 
@@ -406,6 +575,9 @@ export function generateInfraConfigs(state: WizardState): GeneratedFile[] {
 
   // Traefik (always included — web server is required)
   files.push(generateTraefikConfig(state));
+
+  // Landing page (always included — catch-all for Traefik, replaces whoami)
+  files.push(...generateLandingPage());
 
   // Gitea (always included — git server is required)
   files.push(generateGiteaConfig(state));

@@ -1,36 +1,106 @@
 # Brewnet WORKFLOW.md — Development Reference
 
-> **Version**: 2.2
-> **Last Updated**: 2026-02-22
+> **Version**: 2.3
+> **Last Updated**: 2026-02-27
 > **Status**: Draft
 
 ---
 
 ## Context
 
-REQUIREMENT.md (v2.2)와 USER-STORY.md (v2.2), wizard.js 데이터 구조를 교차 분석하여 `brewnet init` 위자드의 전체 플로우를 단계별로 정리한다. 이 문서는 CLI 개발 시 각 단계의 입력/출력/옵션/조건/데이터 흐름을 파악하기 위한 레퍼런스다.
+REQUIREMENT.md (v2.3)와 USER-STORY.md (v2.3), wizard.js 데이터 구조를 교차 분석하여 `brewnet init` 위자드의 전체 플로우를 단계별로 정리한다. 이 문서는 CLI 개발 시 각 단계의 입력/출력/옵션/조건/데이터 흐름을 파악하기 위한 레퍼런스다.
 
 ---
 
-## 전체 위자드 플로우 (8단계: Step 0~7)
+## 전체 위자드 플로우 (v2.3 변경사항)
+
+**v2.3 신규 스펙 요약 (2026-02-27)**:
+1. **Admin 계정 최우선 설정** — Docker 설치 전, 위자드 시작 즉시 admin id/password를 먼저 설정
+2. **프레임워크 선택 Sub-Prompt** — 언어 선택 후 즉시 해당 언어의 프레임워크 선택 화면 표시 (누락 수정)
+3. **서비스별 설치 확인** — 각 컨테이너 기동 후 헬스체크 URL 접속 확인 단계 추가
+4. **포트 충돌 대안 제안** — 포트 충돌 시 자동으로 대체 포트를 제안하여 재설치
+5. **클린 언인스톨** — 모든 서비스 제거 + 디렉토리 삭제 + Docker 제거 여부 확인
+6. **터널링은 마지막에** — Domain & Network를 Step 4로 유지, Step 7에서 로컬+외부 접속 주소 모두 표시
+
+---
+
+## 전체 위자드 플로우 (9단계: Pre-Step + Step 0~7)
 
 ```
-Step 0: System Check
+Pre-Step: Admin Account Setup  ← NEW (Docker 설치 전, 최우선 설정)
+  ↓
+Step 0: System Check (포트 충돌 시 대체 포트 제안)  ← UPDATED
   ↓
 Step 1: Project Setup (name, path, setupType)
   ↓
-Step 2: Admin Account + Server Components (6개 카드, Web+Git 필수)
+Step 2: Server Components (Web+Git 필수, Admin은 Pre-Step에서 이미 설정)
   ↓
-Step 3: Dev Stack & Runtime + FileBrowser ← 항상 표시 (Skip 가능)
+Step 3: Dev Stack & Runtime + FileBrowser ← 항상 표시 (Skip 가능), 언어→프레임워크 Sub-Prompt
   ↓
 Step 4: Domain & Network + Mail Server ← Mail은 조건부: provider !== 'local'
   ↓
 Step 5: Review & Confirm
   ↓
-Step 6: Generate (파일 생성 + 서비스 시작)
+Step 6: Generate + 서비스별 설치 확인  ← UPDATED
   ↓
-Step 7: Complete (엔드포인트 + 자격증명 요약)
+Step 7: Complete (로컬 주소 + 외부 접속 주소 모두 표시)  ← UPDATED
 ```
+
+---
+
+## Pre-Step: Admin Account Setup
+
+> REQ-1.8 / USER-STORY §3.1 — **NEW: 위자드 진입 즉시, Docker 설치 전 실행**
+
+Docker 설치 전에 Brewnet에서 사용할 관리자 계정을 먼저 설정한다.
+이 계정 하나로 이후 설치되는 모든 서비스(DB, Redis, Git, Web Server, File Server 등)의 초기 관리자 자격증명이 통일된다.
+
+### 입력 필드
+
+| 필드 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `admin.username` | string | `'admin'` | 관리자 사용자명 (모든 서비스 공통) |
+| `admin.password` | string | (auto-gen 20자) | 자동 생성 (수락 또는 직접 입력) |
+| `admin.storage` | enum | `'local'` | `.env` 파일 저장 (chmod 600) |
+
+### 표시 예시
+
+```
+╔══════════════════════════════════════════════════════════╗
+║  Brewnet — Admin Account Setup                           ║
+╚══════════════════════════════════════════════════════════╝
+
+  This credential will be used as the default admin login
+  for ALL services: DB, Redis, Gitea, Nextcloud, pgAdmin, etc.
+
+? Admin username: › admin
+? Admin password: › ●●●●●●●●●●●●●●●●●●●●
+  (Auto-generated: Xk9mP2vQ8nL4wR7jTb5s)
+  Press Enter to accept, or type your own password.
+
+  [OK] Credentials will be saved to .env (chmod 600)
+```
+
+### 데이터 저장
+
+```
+state.admin.username = 'admin'
+state.admin.password = '<20-char auto-gen>'
+state.admin.storage  = 'local'
+```
+
+### 크리덴셜 전파 대상 (설치 서비스에 따라)
+
+- **PostgreSQL**: `POSTGRES_USER` / `POSTGRES_PASSWORD`
+- **MySQL**: `MYSQL_ROOT_PASSWORD` / `MYSQL_USER` / `MYSQL_PASSWORD`
+- **Redis**: `REDIS_PASSWORD` (선택적)
+- **Gitea**: `GITEA_ADMIN_USER` / `GITEA_ADMIN_PASSWORD`
+- **Nextcloud**: `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD`
+- **pgAdmin**: `PGADMIN_DEFAULT_EMAIL` / `PGADMIN_DEFAULT_PASSWORD`
+- **Jellyfin**: 최초 실행 시 admin 계정 (first-run 방식)
+- **FileBrowser**: API PUT `/api/users/1` (기동 후 자동 변경)
+- **SSH Server**: `USER_NAME` / `USER_PASSWORD`
+- **Mail Server**: postmaster `admin@{domain}`
 
 ---
 
@@ -55,8 +125,39 @@ Step 7: Complete (엔드포인트 + 자격증명 요약)
 - 하나라도 FAIL → 설치 가이드 표시 후 종료
 - 모두 통과 → Enter로 다음 단계
 
+### 포트 충돌 해결 (v2.3 신규)
+
+포트가 이미 사용 중인 경우, 설치를 중단하지 않고 대체 포트를 자동으로 제안한다:
+
+```
+  [WARN] Port 80: already in use by nginx (PID 1234)
+
+  Suggested alternatives:
+    > 8080   (auto-suggested)
+      8088
+      8000
+      (enter custom port)
+
+? Use port 8080 instead? (Y/n) › Y
+  [OK] Port 80 → 8080 (remapped)
+```
+
+**포트 충돌 처리 규칙**:
+| 포트 | 충돌 시 제안 포트 순서 |
+|------|----------------------|
+| 80 | 8080, 8088, 8000 |
+| 443 | 8443, 4443 |
+| 2222 (SSH) | 2223, 2220 |
+| 3000 (Gitea Web) | 3001, 3100 |
+| 3022 (Gitea SSH) | 3023, 3033 |
+| 5432 (PostgreSQL) | 5433, 5434 |
+| 6379 (Redis) | 6380, 6381 |
+
+충돌이 발생한 포트는 `state.portRemapping` 객체에 기록되어 `docker-compose.yml` 생성 시 반영된다.
+
 ### 데이터 저장
 - 없음 (검증 결과는 저장하지 않음, 통과해야 다음으로 진행)
+- 포트 리맵핑: `state.portRemapping = { 80: 8080, ... }` (선택적)
 
 ---
 
@@ -93,13 +194,15 @@ state.setupType = 'full'
 
 ---
 
-## Step 2: Admin Account + Server Components
+## Step 2: Server Components
 
-> REQ-1.3.3, REQ-1.3.4, REQ-1.5, REQ-1.8, REQ-1.11, REQ-1.13 / USER-STORY §3
+> REQ-1.3.3, REQ-1.3.4, REQ-1.5, REQ-1.11, REQ-1.13 / USER-STORY §3
 
-이 단계는 **Admin Account** 입력 후 **6개 서버 컴포넌트 카드** (Web Server + Git Server 필수, 4개 선택)를 토글/설정한다. App Server는 Step 3에서 자동 설정된다.
+> **v2.3 변경**: Admin Account는 Pre-Step에서 이미 설정됨. Step 2는 서버 컴포넌트 선택만 담당.
 
-### 2-A. Admin Account
+이 단계는 **6개 서버 컴포넌트 카드** (Web Server + Git Server 필수, 4개 선택)를 토글/설정한다. App Server는 Step 3에서 자동 설정된다. Admin 계정은 화면 상단에 요약 표시만 되며(이미 설정됨) 변경 불가(수정하려면 '← 뒤로가기' 사용).
+
+### 2-A. Admin Account (요약 표시 — Pre-Step에서 설정됨)
 
 | 필드 | 타입 | 기본값 | 설명 | REQ |
 |------|------|--------|------|-----|
@@ -266,11 +369,46 @@ state.setupType = 'full'
 | rust | Rust (latest) | 8080 |
 | go | Go 1.22 | 8080 |
 
-### 3-B. Framework Selection (선택된 언어별 1개)
+### 3-B. Framework Selection (선택된 언어별 1개 — Sub-Prompt)
+
+> **v2.3 수정**: 언어 선택 직후, 각 선택된 언어에 대해 **즉시** 프레임워크 선택 Sub-Prompt가 표시된다.
+> 언어 선택 화면과 별도로 순차적으로 표시되어야 하며 이 화면을 누락하면 안 된다.
 
 | 필드 | 타입 | 기본값 |
 |------|------|--------|
 | `devStack.frameworks` | object | `{}` |
+
+각 선택된 언어에 대해 프레임워크를 1개 선택한다. `devStack.frameworks`는 `{ nodejs: 'nextjs', python: 'fastapi' }` 형태의 객체이다.
+
+**UI 플로우 (Sub-Prompt 방식)**:
+```
+Step 3: Dev Stack & Runtime
+
+[1] Select backend languages (multi-select):
+    [x] Python
+    [x] Node.js
+    [ ] Java ...
+
+→ 언어 확인 후 즉시 각 언어별 프레임워크 Sub-Prompt:
+
+[2] Select Python framework:
+    > FastAPI  (default, recommended)
+      Django
+      Flask
+
+[3] Select Node.js framework:
+    > Next.js  (default, recommended)
+      Express
+      NestJS
+      Fastify
+
+→ 모든 선택 언어의 프레임워크 설정 완료 후 Frontend 선택으로 진행
+```
+
+**보일러플레이트 소스 처리 (v2.3)**:
+- 각 프레임워크의 보일러플레이트는 별도의 Git 저장소에서 clone
+- 현재는 Git 주소 미확정 → 설치 테스트 시 git clone 생략 (디렉토리 구조만 생성)
+- Git 주소 확정 후 `FRAMEWORK_BOILERPLATE_REGISTRY` 에 등록하여 자동 clone
 
 각 선택된 언어에 대해 프레임워크를 1개 선택한다. `devStack.frameworks`는 `{ nodejs: 'nextjs', python: 'fastapi' }` 형태의 객체이다.
 
@@ -329,18 +467,17 @@ state.setupType = 'full'
 | echo | Echo | High performance framework | 8080 |
 | fiber | Fiber | Express-inspired framework | 8080 |
 
-### 3-C. Frontend Tech Stack (다중 선택)
+### 3-C. Frontend Tech Stack (단일 선택)
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
-| `devStack.frontend` | string[] | `[]` | `'vuejs'` \| `'reactjs'` \| `'typescript'` \| `'javascript'` |
+| `devStack.frontend` | `FrontendTech \| null` | `null` | `'react'` \| `'vue'` \| `'none'` |
 
 | ID | 이름 | 설명 |
 |----|------|------|
-| vuejs | Vue.js | Progressive framework |
-| reactjs | React.js | UI library by Meta |
-| typescript | TypeScript | Typed JavaScript |
-| javascript | JavaScript | Vanilla JS |
+| react | React (TypeScript) | React SPA with Vite + TypeScript |
+| vue | Vue.js (Vite) | Vue 3 SPA with Vite build tool |
+| none | Skip frontend | No frontend framework |
 
 ### 3-D. App Server (자동 활성화)
 
@@ -374,19 +511,18 @@ state.servers.appServer.enabled = (devStack.languages.length > 0 || devStack.fro
 
 ## Step 4: Domain & Network
 
-> REQ-1.3.6, REQ-1.7, REQ-1.9, REQ-1.10, REQ-1.12 / USER-STORY §5
+> REQ-1.3.6, REQ-1.7, REQ-1.10, REQ-1.12 / USER-STORY §5
 
 ### 4-A. Domain Provider Selection
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
-| `domain.provider` | enum | `'local'` | `'local'` \| `'freedomain'` \| `'custom'` |
+| `domain.provider` | enum | `'local'` | `'local'` \| `'tunnel'` |
 
 | Provider | 도메인 예시 | 외부 접근 | SSL | 비용 |
 |----------|-----------|----------|-----|------|
 | **local** | `brewnet.local` | 불가 (홈 네트워크만) | Self-signed | 무료 |
-| **freedomain** (권장) | `myserver.dpdns.org` | 가능 (Cloudflare Tunnel) | Auto HTTPS | 무료 |
-| **custom** | `homeserver.example.com` | 가능 (Cloudflare Tunnel) | Auto HTTPS | 도메인 비용 |
+| **tunnel** | `homeserver.example.com` | 가능 (Cloudflare Tunnel) | Auto HTTPS | 도메인 비용 |
 
 ### 4-B. Local Only 선택 시
 
@@ -400,37 +536,7 @@ state.servers.appServer.enabled = (devStack.languages.length > 0 || devStack.fro
 - 서브도메인: `{service}.brewnet.local`
 - Mail Server 표시 안 됨 (외부 도메인 필요)
 
-### 4-C. Free Domain (DigitalPlat) 선택 시
-
-**Free Domain TLD 옵션:**
-
-| 필드 | 타입 | 기본값 |
-|------|------|--------|
-| `domain.freeDomainTld` | enum | `'.dpdns.org'` |
-
-| TLD | 설명 | 권장 |
-|-----|------|:----:|
-| `.dpdns.org` | 가장 안정적, 즉시 작동 | **권장** |
-| `.qzz.io` | 짧은 확장자 | — |
-| `.us.kg` | GitHub 계정 인증 필요 | — |
-
-**등록 가이드 (8단계):**
-1. Cloudflare 계정 생성 → dash.cloudflare.com
-2. DigitalPlat FreeDomain 방문 → dash.domain.digitalplat.org
-3. DigitalPlat 계정 등록/로그인
-4. 도메인명 검색 → 가용성 확인
-5. 도메인 등록 (TLD 선택)
-6. Cloudflare 네임서버 설정 → NS 입력
-7. DNS 전파 대기 (15분~24시간)
-8. 위저드로 돌아와 도메인명 입력
-
-| 필드 | 값 |
-|------|-----|
-| `domain.name` | 사용자 입력 (예: `myserver.dpdns.org`) |
-| `domain.ssl` | `'cloudflare'` |
-| `domain.cloudflare.enabled` | `true` (자동) |
-
-### 4-D. Custom Domain 선택 시
+### 4-C. Custom Domain (Tunnel) 선택 시
 
 | 필드 | 값 |
 |------|-----|
@@ -438,7 +544,7 @@ state.servers.appServer.enabled = (devStack.languages.length > 0 || devStack.fro
 | `domain.ssl` | `'cloudflare'` |
 | `domain.cloudflare.enabled` | `true` (자동) |
 
-### 4-E. Cloudflare Tunnel (freedomain / custom 전용)
+### 4-D. Cloudflare Tunnel (tunnel 전용)
 
 > REQ-1.10 / USER-STORY §5.2
 
@@ -459,7 +565,7 @@ state.servers.appServer.enabled = (devStack.languages.length > 0 || devStack.fro
 - 포트포워딩 불필요 — NAT/CGNAT 우회
 - 자동 HTTPS 제공
 
-### 4-F. Mail Server (조건부)
+### 4-E. Mail Server (조건부)
 
 > REQ-1.12 / USER-STORY §5.3
 
@@ -512,16 +618,63 @@ state.servers.appServer.enabled = (devStack.languages.length > 0 || devStack.fro
 
 > REQ-1.3.8, REQ-2.1 / USER-STORY §7
 
-### 6단계 실행 순서
+### 6단계 실행 순서 (v2.3 업데이트)
 
 | # | 단계 | 설명 | REQ |
 |---|------|------|-----|
 | 1 | 파일 생성 | docker-compose.yml, .env, Makefile, 서비스별 설정 파일 | REQ-2.1.1~7 |
-| 2 | Docker 이미지 풀 | `collectAllServices(state)` 기반 이미지 다운로드 | — |
-| 3 | 컨테이너 시작 | `docker-compose up -d` | REQ-2.2.1 |
+| 2 | Docker 이미지 풀 | `collectAllServices(state)` 기반 이미지 다운로드 (progress bar 표시) | — |
+| 3 | 컨테이너 시작 | `docker-compose up -d` (서비스별 progress bar) | REQ-2.2.1 |
 | 4 | 헬스체크 | 모든 컨테이너 healthy 확인 | REQ-2.1.7 |
-| 5 | 크리덴셜 전파 | Admin → Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH, Mail | REQ-1.13.2 |
-| 6 | 외부 접근 검증 | DNS, Tunnel, HTTPS, SSH 포트 확인 (non-local만) | REQ-1.14 |
+| 5 | **서비스별 설치 확인** | 각 컨테이너 기동 후 접속 URL 표시 + 사용자 확인 | **REQ-2.1.8 (신규)** |
+| 6 | 크리덴셜 전파 | Admin → Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH, Mail | REQ-1.13.2 |
+| 7 | 외부 접근 검증 | DNS, Tunnel, HTTPS, SSH 포트 확인 (non-local만) | REQ-1.14 |
+
+### 6-D. 서비스별 설치 확인 (v2.3 신규)
+
+각 컨테이너가 healthy 상태가 되면, 해당 서비스의 접속 URL을 표시하고 사용자가 브라우저에서 직접 확인할 수 있도록 안내한다.
+
+**로컬 접속 주소 우선 표시** (항상 표시):
+```
+Services are running. Verify each service:
+
+  [OK] traefik        → http://localhost:8080          (Traefik Dashboard)
+  [OK] gitea          → http://localhost:3000          (Git Server)
+  [OK] postgres       → localhost:5432                  (DB — use client to connect)
+  [OK] redis          → localhost:6379                  (Cache)
+  [OK] nextcloud      → http://localhost:80/nextcloud   (File Server)
+  [OK] filebrowser    → http://localhost:8081           (File Browser)
+
+  Press Enter to continue, or open each URL to verify.
+```
+
+**외부 접속 주소 (Cloudflare Tunnel 활성화 시):**
+```
+  External access (via Cloudflare Tunnel):
+  [OK] traefik        → https://traefik.myserver.example.com
+  [OK] gitea          → https://git.myserver.example.com
+  [OK] nextcloud      → https://cloud.myserver.example.com
+  [OK] filebrowser    → https://files.myserver.example.com
+```
+
+**서비스별 로컬 접속 URL 매핑**:
+
+| 서비스 | 로컬 URL | 설명 |
+|--------|---------|------|
+| Traefik Dashboard | `http://localhost:8080` | Reverse proxy 현황 |
+| Gitea | `http://localhost:3000` | Git Server 웹 UI |
+| Nextcloud | `http://localhost` (port 80) | 파일 서버 |
+| MinIO | `http://localhost:9000` | Object Storage |
+| Jellyfin | `http://localhost:8096` | 미디어 서버 |
+| pgAdmin | `http://localhost:5050` | DB 관리 UI |
+| FileBrowser | `http://localhost` (내부 port) | 파일 브라우저 |
+| SSH Server | `ssh admin@localhost -p 2222` | SSH 접속 |
+
+**설치 확인 실패 시**:
+```
+  [FAIL] nextcloud → http://localhost:80/nextcloud (timeout after 30s)
+  ? Retry? (Y/n) › Y   ← 재시도 또는 건너뜀
+```
 
 ### 생성 파일 목록
 
@@ -566,7 +719,7 @@ DOMAIN={domain.name}
 DOMAIN_PROVIDER={domain.provider}
 SSL_MODE={domain.ssl}
 
-# Cloudflare (freedomain/custom)
+# Cloudflare (tunnel)
 CLOUDFLARE_TUNNEL_TOKEN={domain.cloudflare.tunnelToken}
 
 # Git Server (required)
@@ -614,7 +767,40 @@ JWT_SECRET=(auto-generated)
 
 ### 표시 항목
 
-**1. 서비스 엔드포인트:**
+**1. 서비스 엔드포인트 (v2.3: 로컬 주소 + 외부 주소 모두 표시):**
+
+| 서비스 | 로컬 접속 주소 | 외부 접속 주소 (Tunnel) | 조건 |
+|--------|--------------|----------------------|------|
+| Web Server (Dashboard) | `http://localhost:8080` | `https://traefik.{DOMAIN}` | 항상 (필수) |
+| Git Server | `http://localhost:3000` | `https://git.{DOMAIN}` | 항상 (필수) |
+| Git SSH | `ssh://git@localhost:3022/` | `ssh://git@{DOMAIN}:3022/` | 항상 (필수) |
+| File Server (Nextcloud) | `http://localhost:80` | `https://cloud.{DOMAIN}` | fileServer.enabled |
+| App | `http://localhost:{port}` | `https://{framework}.{DOMAIN}` | appServer.enabled |
+| FileBrowser | `http://localhost:{port}` | `https://files.{DOMAIN}` | appServer.enabled |
+| Media (Jellyfin) | `http://localhost:8096` | `https://jellyfin.{DOMAIN}` | media.enabled |
+| Webmail | `http://localhost:{port}` | `https://mail.{DOMAIN}` | mailServer.enabled |
+| DB | `localhost:{port}` (외부 미노출) | — | dbServer.enabled |
+| SSH | `ssh admin@localhost -p 2222` | `ssh admin@{DOMAIN} -p 2222` | sshServer.enabled |
+| SFTP | `sftp -P 2222 admin@localhost` | `sftp -P 2222 admin@{DOMAIN}` | sshServer.sftp |
+| SMTP | — | `smtp.{DOMAIN}:587` | mailServer.enabled |
+| IMAP | — | `imap.{DOMAIN}:993` | mailServer.enabled |
+
+> **Local Only 모드**: 외부 주소 컬럼은 표시하지 않음. 로컬 주소만 표시.
+> **Quick/Named Tunnel**: 외부 주소 표시 (Quick Tunnel은 `*.trycloudflare.com` URL)
+
+**1-A. 표시 예시 (Tunnel 활성화 시):**
+```
+  ─── Local Access (direct to container) ──────────────────────
+  Traefik Dashboard   http://localhost:8080
+  Git Server          http://localhost:3000
+  PostgreSQL          localhost:5432   (DB client connection)
+
+  ─── External Access (via Cloudflare Tunnel) ──────────────────
+  Git Server          https://git.myserver.example.com
+  File Server         https://cloud.myserver.example.com
+  Media               https://jellyfin.myserver.example.com
+  SSH                 ssh admin@myserver.example.com -p 2222
+```
 
 | 서비스 | URL 형태 | 조건 |
 |--------|---------|------|
@@ -686,7 +872,7 @@ Step 3: state.devStack.{languages[],frameworks{},frontend[]}
          state.servers.appServer ← (Step 3 devStack 기반 자동)
          state.servers.fileBrowser.{enabled,mode} ← (Step 3에서 선택)
   ↓
-Step 4: state.domain.{provider,name,ssl,freeDomainTld}
+Step 4: state.domain.{provider,name,ssl}
          state.domain.cloudflare.{enabled,tunnelToken,tunnelName}
          state.servers.mailServer.{enabled} ← (조건부: provider !== local)
   ↓
@@ -695,6 +881,85 @@ Step 5: 전체 state 읽기 → 리뷰 표시 (수정 가능)
 Step 6: state → docker-compose.yml, .env, 설정 파일 생성 → 서비스 시작
   ↓
 Step 7: state → 엔드포인트 URL, 크리덴셜 요약 표시
+```
+
+---
+
+## brewnet uninstall — 클린 언인스톨 (v2.3)
+
+> REQ-10.x (신규) / USAGE.md §6
+
+### 언인스톨 실행 순서
+
+```
+brewnet uninstall
+```
+
+| # | 단계 | 설명 |
+|---|------|------|
+| 1 | 설치 프로젝트 감지 | `~/.brewnet/projects/<name>/` 목록 확인 |
+| 2 | 서비스 중지 | `docker compose -f {projectPath}/docker-compose.yml down --volumes` |
+| 3 | Docker 네트워크 제거 | `brewnet`, `brewnet-internal` 네트워크 삭제 |
+| 4 | 프로젝트 디렉토리 삭제 | `rm -rf {projectPath}` (예: `~/brewnet/homeserver`) |
+| 5 | Brewnet 상태 파일 삭제 | `~/.brewnet/projects/<name>/`, `~/.brewnet/status/`, `~/.brewnet/state/` |
+| 6 | **Docker 제거 여부 확인** | `? Remove Docker installation? (y/N)` |
+| 7 | Docker 제거 (선택 시) | 플랫폼별 Docker 제거 수행 |
+
+### Docker 제거 (플랫폼별)
+
+**macOS**:
+```bash
+# Docker Desktop 앱 제거
+brew uninstall --cask docker
+rm -rf ~/Library/Application\ Support/Docker/
+rm -rf ~/.docker/
+```
+
+**Linux (apt)**:
+```bash
+apt-get remove -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+apt-get purge -y docker-ce docker-ce-cli containerd.io
+rm -rf /var/lib/docker /var/lib/containerd
+```
+
+### 언인스톨 옵션
+
+| 명령어 | 설명 |
+|--------|------|
+| `brewnet uninstall` | 기본 제거 (컨테이너 + 볼륨 + 프로젝트 디렉토리) |
+| `brewnet uninstall --keep-data` | Docker 볼륨 보존 (DB 데이터 유지) |
+| `brewnet uninstall --keep-config` | 프로젝트 디렉토리 보존 |
+| `brewnet uninstall --force` | 확인 프롬프트 없이 즉시 제거 |
+| `brewnet uninstall --dry-run` | 삭제 목록만 확인 (실제 삭제 없음) |
+
+### 표시 예시
+
+```
+? Select project to uninstall:
+  > homeserver   (~/brewnet/homeserver — 5 containers running)
+
+? This will permanently delete:
+    - 5 Docker containers + all volumes
+    - ~/brewnet/homeserver directory
+    - ~/.brewnet/projects/homeserver/ state
+
+  ⚠ WARNING: All data (DB, files) will be permanently deleted.
+     Use --keep-data to preserve volumes.
+
+? Proceed with uninstall? (y/N) › y
+
+  [OK] Stopped and removed 5 containers
+  [OK] Removed Docker volumes
+  [OK] Removed networks: brewnet, brewnet-internal
+  [OK] Deleted ~/brewnet/homeserver
+  [OK] Cleaned ~/.brewnet/projects/homeserver/
+
+? Remove Docker installation? (y/N) › y
+
+  [OK] Docker uninstalled successfully
+  [OK] Docker data directories removed
+
+  Brewnet uninstall complete.
 ```
 
 ---
@@ -709,6 +974,8 @@ Step 7: state → 엔드포인트 URL, 크리덴셜 요약 표시
 | `collectAllServices(state)` | state | string[] | docker-compose용 서비스 ID 목록 |
 | `getCredentialTargets(state)` | state | string[] | 크리덴셜 전파 대상 서비스명 |
 | `getImageName(serviceId)` | string | string | 서비스 → Docker 이미지 매핑 |
+| `suggestAlternativePort(port)` | number | number[] | 포트 충돌 시 대체 포트 목록 반환 |
+| `verifyServiceAccess(serviceId, url)` | string, string | boolean | 서비스 접속 확인 |
 
 ---
 

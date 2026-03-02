@@ -20,6 +20,7 @@ import { registerBackupCommand } from './commands/backup.js';
 import { registerRestoreCommand } from './commands/restore.js';
 import { registerAdminCommand } from './commands/admin.js';
 import { registerUninstallCommand } from './commands/uninstall.js';
+import { registerDomainCommand } from './commands/domain.js';
 
 /**
  * Build and return a fully configured Commander.js program with all
@@ -49,6 +50,7 @@ export function createProgram(): Command {
   registerRestoreCommand(program);
   registerAdminCommand(program);
   registerUninstallCommand(program);
+  registerDomainCommand(program);
 
   return program;
 }

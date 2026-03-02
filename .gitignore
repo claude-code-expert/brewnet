@@ -8,8 +8,16 @@
 packages/*/dist/
 packages/*/tsconfig.tsbuildinfo
 
+.claude/git_cli.md
+DEV.md
+
+# docs 
+/docs/license
+/docs/spec
+README.md.bak
 # OS files
 .DS_Store
+
 Thumbs.db
 *.tmp
 *.swp
@@ -26,8 +34,7 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
-/docs/spec
-README.md.bak
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 

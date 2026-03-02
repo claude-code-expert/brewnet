@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brewnet - Verification Build</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Brewnet Landing Page — Dark Theme */
+:root {
+  --bg: #0a0a0b;
+  --bg-surface: #111113;
+  --bg-card: #161618;
+  --bg-hover: #1c1c20;
+  --bg-elevated: #1e1e22;
+  --text: #e0e0e6;
+  --text-muted: #8b8b9e;
+  --text-heading: #f0f0f5;
+  --primary: #58a6ff;
+  --primary-dim: rgba(88, 166, 255, 0.12);
+  --green: #3fb950;
+  --green-dim: rgba(63, 185, 80, 0.12);
+  --red: #f85149;
+  --yellow: #d29922;
+  --cyan: #58a6ff;
+  --purple: #bc8cff;
+  --orange: #f0883e;
+  --border: #27272a;
+  --border-light: #333338;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.4);
+  --gradient: linear-gradient(135deg, #58a6ff, #bc8cff, #3fb950);
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 16px; line-height: 1.6; overflow-x: hidden; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+.gradient-text { background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.section-header { text-align: center; margin-bottom: 56px; }
+.section-badge { display: inline-block; background: var(--primary-dim); color: var(--primary); font-size: 13px; font-weight: 600; padding: 4px 14px; border-radius: 20px; margin-bottom: 16px; letter-spacing: 0.02em; }
+.section-title { font-size: clamp(28px, 5vw, 42px); font-weight: 800; color: var(--text-heading); line-height: 1.2; margin-bottom: 16px; }
+.section-desc { font-size: 17px; color: var(--text-muted); max-width: 560px; margin: 0 auto; line-height: 1.7; }
+.nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(10, 10, 11, 0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid transparent; transition: border-color 0.3s; }
+.nav.scrolled { border-bottom-color: var(--border); }
+.nav-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.nav-logo { color: #f5a623; display: flex; align-items: center; gap: 8px; }
+.nav-logo-icon { color: #f5a623; }
+.nav-logo-text { display: flex; flex-direction: column; font-family: var(--font-mono); font-weight: 800; font-size: 24px; letter-spacing: -0.02em; line-height: 1; }
+.nav-logo-tagline { display: block; font-family: var(--font-sans); font-size: 10px; font-weight: 400; color: #ffffff; letter-spacing: 0.02em; margin-top: 2px; }
+.footer-logo-text { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-weight: 800; font-size: 16px; color: #f5a623; letter-spacing: -0.02em; }
+.nav-links { display: flex; gap: 32px; }
+.nav-links a { font-size: 14px; color: var(--text-muted); font-weight: 500; transition: color 0.2s; }
+.nav-links a:hover { color: var(--text-heading); }
+.nav-actions { display: flex; align-items: center; gap: 12px; }
+.nav-toggle { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 4px; }
+.nav-toggle span { width: 20px; height: 2px; background: var(--text); border-radius: 1px; transition: 0.2s; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: var(--font-sans); font-weight: 600; font-size: 14px; border-radius: var(--radius-sm); border: 1px solid transparent; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btn-sm { padding: 6px 16px; font-size: 13px; }
+.btn-lg { padding: 12px 28px; font-size: 15px; }
+.btn-block { width: 100%; }
+.btn-primary { background: var(--primary); color: #000; border-color: var(--primary); }
+.btn-primary:hover { opacity: 0.9; box-shadow: 0 0 20px rgba(88, 166, 255, 0.3); }
+.btn-outline { background: transparent; color: var(--text); border-color: var(--border-light); }
+.btn-outline:hover { background: var(--bg-hover); border-color: var(--text-muted); }
+.btn-ghost { background: transparent; color: var(--text-muted); border-color: transparent; }
+.btn-ghost:hover { color: var(--text-heading); background: var(--bg-hover); }
+.hero { padding: 140px 0 80px; text-align: center; position: relative; overflow: hidden; }
+.hero::before { content: ''; position: absolute; top: -200px; left: 50%; transform: translateX(-50%); width: 800px; height: 800px; background: radial-gradient(circle, rgba(88,166,255,0.08) 0%, transparent 70%); pointer-events: none; }
+.hero-badge { display: inline-block; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 6px 18px; border-radius: 24px; margin-bottom: 24px; }
+.hero-title { font-size: clamp(24px, 3vw, 36px); font-weight: 800; line-height: 1.1; margin-bottom: 20px; color: var(--text-heading); }
+.hero-title .gradient-text { font-size: clamp(40px, 6vw, 60px); display: block; margin-top: 8px; }
+.hero-desc { font-size: 18px; color: var(--text-muted); max-width: 600px; margin: 0 auto 36px; line-height: 1.7; }
+.hero-split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; max-width: 900px; margin: 0 auto 36px; text-align: left; }
+.hero-split .hero-desc { margin: 0; text-align: left; }
+.hero-stack-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--text-muted); }
+.hero-stack-list li { display: flex; align-items: center; gap: 8px; }
+.stack-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.stack-dot.green { background: #3fb950; } .stack-dot.blue { background: #58a6ff; } .stack-dot.purple { background: #bc8cff; } .stack-dot.orange { background: #f0883e; } .stack-dot.cyan { background: #39d2c0; } .stack-dot.yellow { background: #d29922; } .stack-dot.red { background: #f85149; }
+.stack-more { color: var(--text-muted); opacity: 0.6; font-style: italic; padding-left: 16px; }
+.hero-actions { display: flex; gap: 12px; justify-content: center; margin-bottom: 60px; }
+.hero-terminal { position: relative; max-width: 680px; height: 360px; margin: 0 auto; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lg); text-align: left; }
+.hero-terminal::after { content: ""; position: absolute; right: 0; bottom: 0; width: 55%; height: 65%; background: url("images/brewnet-art.svg") right bottom / contain no-repeat; opacity: 0.3; pointer-events: none; }
+.terminal-bar { position: relative; z-index: 1; background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.red { background: #f85149; }
+.dot.yellow { background: #d29922; }
+.dot.green { background: #3fb950; }
+.terminal-title { color: var(--text-muted); font-family: var(--font-mono); font-size: 12px; margin-left: 8px; }
+.terminal-body { position: relative; z-index: 1; padding: 20px 24px; font-family: var(--font-mono); font-size: 14px; }
+.term-line { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.term-prompt { color: var(--green); font-weight: 600; }
+.term-cmd { color: var(--text-heading); }
+.term-cursor { color: var(--primary); animation: blink 1s step-end infinite; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.term-output { color: var(--text-muted); line-height: 1.7; }
+.term-output .out-green { color: var(--green); }
+.term-output .out-cyan { color: var(--cyan); }
+.term-output .out-yellow { color: var(--yellow); }
+.term-output .out-purple { color: var(--purple); }
+.term-output .out-bold { color: var(--text-heading); font-weight: 600; }
+.term-output .out-muted { color: var(--text-muted); }
+.stats { padding: 40px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; text-align: center; }
+.stat-value { font-size: 32px; font-weight: 800; color: var(--text-heading); display: block; }
+.stat-label { font-size: 14px; color: var(--text-muted); margin-top: 4px; display: block; }
+.features { padding: 100px 0; }
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.feature-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; transition: border-color 0.2s, transform 0.2s; }
+.feature-card:hover { border-color: var(--border-light); transform: translateY(-2px); }
+.feature-icon { width: 44px; height: 44px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 12%, transparent); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; color: var(--accent); }
+.feature-card h3 { font-size: 17px; font-weight: 700; color: var(--text-heading); margin-bottom: 8px; }
+.feature-card h3 .pro-badge { display: inline-block; background: linear-gradient(135deg, #f0883e, #f85149); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; letter-spacing: 0.03em; }
+.feature-card-pro { border-color: rgba(248, 81, 73, 0.3); }
+.feature-card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+.how-it-works { padding: 100px 0; background: var(--bg-surface); }
+.steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 60px; }
+.step-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px 28px; position: relative; }
+.step-number { font-size: 48px; font-weight: 800; color: var(--border-light); line-height: 1; margin-bottom: 16px; font-family: var(--font-mono); }
+.step-content h3 { font-size: 18px; font-weight: 700; color: var(--text-heading); margin-bottom: 8px; }
+.step-content p { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 16px; }
+.code-block { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 16px; font-family: var(--font-mono); font-size: 14px; color: var(--primary); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.copy-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 4px; transition: color 0.2s; flex-shrink: 0; }
+.copy-btn:hover { color: var(--text-heading); }
+.commands-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; }
+.commands-title { font-size: 18px; font-weight: 700; color: var(--text-heading); margin-bottom: 20px; text-align: center; }
+.commands-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.command-item { display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border); }
+.command-item code { font-family: var(--font-mono); font-size: 13px; color: var(--primary); font-weight: 500; }
+.command-item span { font-size: 12px; color: var(--text-muted); }
+.services { padding: 100px 0; }
+.services-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.service-item { display: flex; align-items: center; gap: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px; transition: border-color 0.2s; }
+.service-item:hover { border-color: var(--border-light); }
+.service-icon { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700; flex-shrink: 0; letter-spacing: 0.05em; }
+.service-icon.web { background: rgba(88,166,255,0.12); color: #58a6ff; }
+.service-icon.db { background: rgba(63,185,80,0.12); color: #3fb950; }
+.service-icon.file { background: rgba(240,136,62,0.12); color: #f0883e; }
+.service-icon.media { background: rgba(188,140,255,0.12); color: #bc8cff; }
+.service-icon.git { background: rgba(248,81,73,0.12); color: #f85149; }
+.service-icon.ssh { background: rgba(210,153,34,0.12); color: #d29922; }
+.service-icon.mail { background: rgba(88,166,255,0.12); color: #58a6ff; }
+.service-icon.ssl { background: rgba(63,185,80,0.12); color: #3fb950; }
+.service-icon.runtime { background: rgba(188,140,255,0.12); color: #bc8cff; }
+.service-icon.cache { background: rgba(210,153,34,0.12); color: #d29922; }
+.service-icon.fb { background: rgba(240,136,62,0.12); color: #f0883e; }
+.service-info h4 { font-size: 15px; font-weight: 600; color: var(--text-heading); margin-bottom: 2px; }
+.service-info p { font-size: 13px; color: var(--text-muted); }
+.catalog-table { overflow-x: auto; }
+.catalog-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.catalog-table th { text-align: left; color: var(--text-muted); font-size: 12px; font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.05em; }
+.catalog-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+.catalog-table code { font-family: var(--font-mono); font-size: 12px; color: var(--primary); }
+.contact { padding: 100px 0; }
+.contact-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 56px 40px; }
+.contact-item { display: flex; align-items: flex-start; gap: 16px; padding: 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); transition: border-color 0.3s, background 0.3s, box-shadow 0.3s; }
+.contact-item:hover { border-color: var(--primary); background: var(--bg-hover); box-shadow: 0 0 16px rgba(88, 166, 255, 0.15); }
+.contact-item svg { flex-shrink: 0; color: var(--primary); margin-top: 2px; }
+.contact-item h4 { font-size: 15px; font-weight: 600; color: var(--text-heading); margin-bottom: 2px; }
+.contact-item p { font-size: 13px; color: var(--text-muted); }
+.contact-form { max-width: 700px; margin: 0 auto; }
+.contact-form .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.contact-form .form-full { grid-column: 1 / -1; }
+.contact-form textarea { resize: none; }
+.contact-form input, .contact-form select, .contact-form textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 16px; font-family: var(--font-sans); font-size: 14px; color: var(--text); outline: none; transition: border-color 0.2s; }
+.contact-form input:focus, .contact-form select:focus, .contact-form textarea:focus { border-color: var(--primary); }
+.contact-form input::placeholder, .contact-form textarea::placeholder { color: var(--text-muted); }
+.contact-form label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
+.contact-form .form-submit { margin-top: 16px; }
+.contact-form .form-submit .btn { padding: 14px 28px; }
+.contact-form .form-error { color: var(--red); font-size: 13px; text-align: center; max-height: 0; overflow: hidden; margin: 0; opacity: 0; transition: max-height 0.3s, opacity 0.3s, margin 0.3s; }
+.contact-form .form-error-visible { max-height: 60px; opacity: 1; margin-top: 8px; }
+.toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.95); background: var(--bg-elevated); border: 1px solid var(--green); color: var(--text); padding: 16px 32px; border-radius: var(--radius); font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 10px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.3s, transform 0.3s; }
+.toast svg { color: var(--green); flex-shrink: 0; }
+.toast-visible { opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto; }
+.footer { padding: 32px 0; border-top: 1px solid var(--border); }
+.footer-inner { display: flex; align-items: center; justify-content: space-between; }
+.footer-brand { font-family: var(--font-mono); font-weight: 700; font-size: 15px; color: var(--text-heading); display: flex; align-items: center; gap: 8px; }
+.footer-copy { font-family: var(--font-sans); font-weight: 400; font-size: 13px; color: var(--text-muted); margin-left: 12px; }
+.footer-links { display: flex; gap: 24px; }
+.footer-links a { font-size: 13px; color: var(--text-muted); transition: color 0.2s; }
+.footer-links a:hover { color: var(--text-heading); }
+.wizard-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 24px; }
+.wizard-step { display: flex; gap: 12px; padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.wizard-step-num { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--primary); flex-shrink: 0; width: 28px; }
+.wizard-step-title { font-size: 14px; font-weight: 600; color: var(--text-heading); }
+.wizard-step-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.pain-points { padding: 100px 0; background: var(--bg-surface); }
+.pain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.pain-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; text-align: center; }
+.pain-icon { width: 48px; height: 48px; border-radius: 50%; background: rgba(248, 81, 73, 0.12); color: var(--red); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+.pain-card h3 { font-size: 17px; font-weight: 700; color: var(--text-heading); margin-bottom: 8px; }
+.pain-card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+.faq { padding: 100px 0; background: var(--bg-surface); }
+.faq-list { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.faq-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: border-color 0.2s; }
+.faq-item.open { border-color: var(--border-light); }
+.faq-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; background: none; border: none; color: var(--text-heading); font-family: var(--font-sans); font-size: 16px; font-weight: 600; cursor: pointer; text-align: left; gap: 16px; }
+.faq-toggle:hover { color: var(--primary); }
+.faq-toggle svg { flex-shrink: 0; color: var(--text-muted); transition: transform 0.2s; }
+.faq-item.open .faq-toggle svg { transform: rotate(45deg); }
+.faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+.faq-item.open .faq-answer { max-height: 300px; }
+.faq-answer p { padding: 0 24px 20px; font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+.final-cta { padding: 100px 0; text-align: center; position: relative; overflow: hidden; }
+.final-cta::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; height: 600px; background: radial-gradient(circle, rgba(88,166,255,0.06) 0%, transparent 70%); pointer-events: none; }
+.final-cta h2 { font-size: clamp(28px, 5vw, 42px); font-weight: 800; color: var(--text-heading); margin-bottom: 16px; }
+.final-cta .section-desc { margin-bottom: 32px; }
+.final-cta-actions { display: flex; gap: 12px; justify-content: center; margin-bottom: 16px; }
+.final-cta-note { font-size: 13px; color: var(--text-muted); }
+[id] { scroll-margin-top: 80px; }
+@media (max-width: 1024px) {
+  .features-grid, .services-grid, .pain-grid { grid-template-columns: repeat(2, 1fr); }
+  .commands-grid { grid-template-columns: repeat(2, 1fr); }
+  .wizard-steps { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: var(--bg-surface); border-bottom: 1px solid var(--border); flex-direction: column; padding: 16px 24px; gap: 12px; }
+  .nav-links.open { display: flex; }
+  .nav-toggle { display: flex; }
+  .btn-sm.btn-outline { display: none; }
+  .hero { padding: 120px 0 60px; }
+  .hero-split { grid-template-columns: 1fr; text-align: center; }
+  .hero-split .hero-desc { text-align: center; }
+  .hero-stack-list { margin: 0 auto; }
+  .hero-actions { flex-direction: column; align-items: center; }
+  .hero-terminal { max-width: 100%; height: auto; margin: 0 -8px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .features-grid, .steps-grid, .services-grid, .pain-grid { grid-template-columns: 1fr; }
+  .final-cta-actions { flex-direction: column; align-items: center; }
+  .commands-grid { grid-template-columns: 1fr; }
+  .contact-card { padding: 32px 20px; }
+  .contact-form .form-grid { grid-template-columns: 1fr; }
+  .wizard-steps { grid-template-columns: 1fr; }
+  .footer-inner { flex-direction: column; gap: 16px; text-align: center; }
+  .footer-brand { flex-direction: column; gap: 4px; }
+  .footer-copy { margin-left: 0; }
+}
+@media (max-width: 480px) {
+  .hero-title { font-size: 32px; }
+  .section-title { font-size: 26px; }
+  .stat-value { font-size: 26px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Nav ===== -->
+<nav class="nav" id="nav">
+  <div class="container nav-inner">
+    <a href="#" class="nav-logo" onclick="event.preventDefault();window.scrollTo({top:0,behavior:'smooth'})">
+      <svg class="nav-logo-icon" width="50" height="50" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="currentColor" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg>
+      <span class="nav-logo-text">Brewnet<span class="nav-logo-tagline">Your server on tap. Just brew it.</span></span>
+    </a>
+    <div class="nav-links" id="navLinks">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">Usage</a>
+      <a href="#services">Services</a>
+      <a href="#install-guide">Install</a>
+      <a href="#contact">Contact</a>
+    </div>
+    <div class="nav-actions">
+      <a href="#system-requirements" class="btn btn-sm btn-outline">Get Started</a>
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" onclick="document.getElementById('navLinks').classList.toggle('open')">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== Hero ===== -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">Open Source &middot; Self-Hosted &middot; Docker-Powered</div>
+    <h1 class="hero-title">One command. Your entire server stack, on tap.<br><span class="gradient-text">Just brew it!</span></h1>
+    <div class="hero-split">
+      <p class="hero-desc">Interactive 7-step CLI wizard and Web Dashboard for setting up and managing personal servers with 17 Docker-based services. Build your own home server, skip the hosting fees, and own your data. From zero to a fully configured server in minutes — no cloud subscription required.</p>
+      <ul class="hero-stack-list">
+        <li><span class="stack-dot green"></span>Git Server (Gitea)</li>
+        <li><span class="stack-dot blue"></span>Web Server (Nginx / Traefik)</li>
+        <li><span class="stack-dot purple"></span>Media Server (Jellyfin)</li>
+        <li><span class="stack-dot orange"></span>Runtime Stack (Go, Java, PHP, .NET, Python)</li>
+        <li><span class="stack-dot cyan"></span>Database (PostgreSQL, Redis)</li>
+        <li><span class="stack-dot yellow"></span>Cloud Storage (Nextcloud)</li>
+        <li><span class="stack-dot red"></span>Monitoring (Grafana, Prometheus)</li>
+        <li><span class="stack-dot green"></span>CI/CD Pipeline</li>
+        <li class="stack-more">+ 9 more services</li>
+      </ul>
+    </div>
+    <div class="hero-actions">
+      <a href="#system-requirements" class="btn btn-primary btn-lg">
+        Get Started Free
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="https://github.com/claude-code-expert/brewnet" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <!-- Terminal + Art Showcase -->
+    <div class="hero-terminal">
+      <div class="terminal-bar">
+        <div class="dot red"></div>
+        <div class="dot yellow"></div>
+        <div class="dot green"></div>
+        <span class="terminal-title">brewnet ~ terminal</span>
+      </div>
+      <div class="terminal-body" id="terminalBody">
+        <div class="term-line">
+          <span class="term-prompt">$</span>
+          <span class="term-cmd" id="termCmd"></span>
+          <span class="term-cursor">|</span>
+        </div>
+        <div class="term-output" id="termOutput"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Stats ===== -->
+<section class="stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-item"><span class="stat-value">17</span><span class="stat-label">Docker Services</span></div>
+      <div class="stat-item"><span class="stat-value">7</span><span class="stat-label">Backend Languages</span></div>
+      <div class="stat-item"><span class="stat-value">7</span><span class="stat-label">Wizard Steps</span></div>
+      <div class="stat-item"><span class="stat-value">100%</span><span class="stat-label">Open Source CLI</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Pain Points ===== -->
+<section class="pain-points">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-badge">The Problem</span>
+      <h2 class="section-title">Self-hosting shouldn't be<br><span class="gradient-text">this painful</span></h2>
+      <p class="section-desc">Setting up a personal server means juggling dozens of tools, configs, and security concerns. Sound familiar?</p>
+    </div>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="pain-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
+        <h3>Runtime setup is a nightmare</h3>
+        <p>Installing Go, Java, PHP, .NET, Python — each runtime has its own version manager, dependencies, and conflicts. Brewnet provisions any server runtime in one click with full isolation, zero dependency hell.</p>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <h3>Security is an afterthought</h3>
+        <p>SSH hardening, firewall rules, SSL certificates, credential management — most self-hosters skip these until it's too late. Brewnet enforces security from Step 1: auto-firewall, key-only SSH, encrypted secrets, and Cloudflare Tunnel with zero exposed ports.</p>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></div>
+        <h3>No clean way out</h3>
+        <p>Scattered configs, orphaned containers, leftover volumes — uninstalling self-hosted services leaves a mess. Brewnet tracks every change and offers clean uninstall with --dry-run preview, full backup &amp; restore, and one-command rollback of your entire stack.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Features ===== -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-badge">Features</span>
+      <h2 class="section-title">Everything you need to<br><span class="gradient-text">self-host like a pro</span></h2>
+      <p class="section-desc">Stop paying for cloud hosting. Deploy your projects with one command. No Docker knowledge required.</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#58a6ff"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+        <h3>One-Click Server Stack</h3>
+        <p>Go, Java, PHP, .NET, Python, Node.js — pick your runtime and launch a production-ready web server in one command. No manual dependency setup, no version conflicts.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#3fb950"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <h3>Secure by Default</h3>
+        <p>SSH key-only auth, root login disabled, auto-firewall configuration, and encrypted credential propagation across all services.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#bc8cff"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></div>
+        <h3>Clean Uninstall &amp; Rollback</h3>
+        <p>Every change is tracked. Preview removals with --dry-run before executing. Full backup &amp; restore, one-command rollback, and zero leftover containers, volumes, or configs after uninstall.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#f0883e"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div>
+        <h3>Cloudflare Tunnel Integration</h3>
+        <p>No port forwarding needed. Works behind NAT/CGNAT with automatic HTTPS and DDoS protection. Paste one Cloudflare token and tunnel, ingress rules, and DNS are configured automatically.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#d29922"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
+        <h3>Docker Orchestration</h3>
+        <p>Auto-generates docker-compose.yml for up to 17 services with full container isolation. Each service runs in its own network sandbox with dependency ordering, health checks, and secure credential propagation.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#39d353"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div>
+        <h3>Slack &amp; Telegram Notifications</h3>
+        <p>Get real-time alerts on service status, deployments, and errors — directly to Slack or Telegram. No database required. Just paste your webhook URL or bot token and start receiving notifications.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#58a6ff"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+        <h3>Build, Deploy &amp; Connect</h3>
+        <p>Server setup is just the start. Run your apps, connect custom domains, automate builds, deploy in one command, and monitor everything — the full DevOps lifecycle without the DevOps team.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="--accent:#e3b341"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 16.1A5 5 0 0115.9 6L16 6a5 5 0 011 9.9M12 12v9"/><polyline points="8 17 12 21 16 17"/></svg></div>
+        <h3>Cross-Platform Support</h3>
+        <p>macOS 12+ and Ubuntu 20.04+ officially supported. Brewnet auto-detects your OS, adjusts package managers, and handles platform-specific differences so you don't have to.</p>
+      </div>
+      <div class="feature-card feature-card-pro">
+        <div class="feature-icon" style="--accent:#f85149"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>
+        <h3>Web Dashboard &amp; Monitoring <span class="pro-badge">Pro</span></h3>
+        <p>Browser-based setup wizard, real-time service monitoring, web terminal, and a visual interface for managing your entire server stack.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== How It Works ===== -->
+<section class="how-it-works" id="how-it-works">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-badge">Usage</span>
+      <h2 class="section-title">Get started in<br><span class="gradient-text">3 simple steps</span></h2>
+      <p class="section-desc">From installation to a fully running server. The CLI wizard handles everything.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-number">01</div>
+        <div class="step-content">
+          <h3>Install Brewnet</h3>
+          <p>Install via curl (recommended) or npm. Requires Node.js 20+ and Docker 27+. Supports macOS 12+ and Ubuntu 20.04+.</p>
+          <div class="code-block"><code>curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-number">02</div>
+        <div class="step-content">
+          <h3>Run the Wizard</h3>
+          <p>The interactive 7-step wizard walks you through: system check, project setup, admin account &amp; server components, dev stack &amp; runtime, domain &amp; network, review, and generation &amp; deployment.</p>
+          <div class="code-block"><code>brewnet init</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-number">03</div>
+        <div class="step-content">
+          <h3>Manage Services</h3>
+          <p>Add, remove, start, stop, and monitor services with simple commands. Check logs, manage domains, deploy apps.</p>
+          <div class="code-block"><code>brewnet status</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+        </div>
+      </div>
+    </div>
+    <div class="commands-section">
+      <h3 class="commands-title">CLI Commands</h3>
+      <div class="commands-grid">
+        <div class="command-item"><code>brewnet init</code><span>Interactive setup wizard</span></div>
+        <div class="command-item"><code>brewnet add &lt;service&gt;</code><span>Add a service</span></div>
+        <div class="command-item"><code>brewnet remove &lt;service&gt;</code><span>Remove a service</span></div>
+        <div class="command-item"><code>brewnet up / down</code><span>Start / Stop all services</span></div>
+        <div class="command-item"><code>brewnet status</code><span>Show service status</span></div>
+        <div class="command-item"><code>brewnet logs [service]</code><span>View logs</span></div>
+        <div class="command-item"><code>brewnet deploy &lt;path&gt;</code><span>Deploy an application</span></div>
+        <div class="command-item"><code>brewnet domain add</code><span>Add custom domain</span></div>
+        <div class="command-item"><code>brewnet domain tunnel</code><span>Manage Cloudflare Tunnel</span></div>
+        <div class="command-item"><code>brewnet backup</code><span>Create backup</span></div>
+        <div class="command-item"><code>brewnet restore &lt;id&gt;</code><span>Restore from backup</span></div>
+        <div class="command-item"><code>brewnet ssh enable</code><span>Enable SSH server</span></div>
+        <div class="command-item"><code>brewnet create-app &lt;name&gt;</code><span>Scaffold a new app</span></div>
+        <div class="command-item"><code>brewnet uninstall</code><span>Remove all services &amp; data</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Services ===== -->
+<section class="services" id="services">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-badge">Services</span>
+      <h2 class="section-title">All your server needs,<br><span class="gradient-text">one platform</span></h2>
+      <p class="section-desc">17 Docker services covering web servers, databases, file storage, media streaming, SSH, mail, and more.</p>
+    </div>
+    <div class="services-grid">
+      <div class="service-item"><div class="service-icon web">WEB</div><div class="service-info"><h4>Web Server</h4><p>Traefik, Nginx, Caddy</p></div></div>
+      <div class="service-item"><div class="service-icon git">GIT</div><div class="service-info"><h4>Git Server</h4><p>Gitea with SSH access (port 3022)</p></div></div>
+      <div class="service-item"><div class="service-icon db">DB</div><div class="service-info"><h4>Database</h4><p>PostgreSQL, MySQL, SQLite</p></div></div>
+      <div class="service-item"><div class="service-icon cache">CACHE</div><div class="service-info"><h4>Cache</h4><p>Redis, Valkey, KeyDB</p></div></div>
+      <div class="service-item"><div class="service-icon file">FILE</div><div class="service-info"><h4>File Storage</h4><p>Nextcloud, MinIO (S3)</p></div></div>
+      <div class="service-item"><div class="service-icon media">MEDIA</div><div class="service-info"><h4>Media Server</h4><p>Jellyfin streaming</p></div></div>
+      <div class="service-item"><div class="service-icon ssh">SSH</div><div class="service-info"><h4>SSH Server</h4><p>OpenSSH, key-based auth, SFTP</p></div></div>
+      <div class="service-item"><div class="service-icon mail">MAIL</div><div class="service-info"><h4>Mail Server</h4><p>docker-mailserver (SMTP/IMAP)</p></div></div>
+      <div class="service-item"><div class="service-icon ssl">TUNNEL</div><div class="service-info"><h4>Cloudflare Tunnel</h4><p>Automatic HTTPS, DDoS protection</p></div></div>
+      <div class="service-item"><div class="service-icon fb">FB</div><div class="service-info"><h4>FileBrowser</h4><p>Web-based file management UI</p></div></div>
+      <div class="service-item"><div class="service-icon runtime">DEV</div><div class="service-info"><h4>Dev Stack</h4><p>Node.js, Python, Go, Java, PHP, .NET, Rust</p></div></div>
+    </div>
+
+    <!-- Server Catalog -->
+    <div class="commands-section" style="margin-top:48px">
+      <h3 class="commands-title">Complete Service Catalog</h3>
+      <p style="text-align:center;color:var(--text-muted);font-size:14px;margin-bottom:20px">All 17 Docker services with images, ports, and resource requirements.</p>
+      <div class="catalog-table">
+        <table>
+          <thead><tr><th>Category</th><th>Service</th><th>Docker Image</th><th>Ports</th><th>RAM</th></tr></thead>
+          <tbody>
+            <tr><td>Web Server</td><td>Traefik (default)</td><td><code>traefik:v3.0</code></td><td>80, 443, 8080</td><td>~45 MB</td></tr>
+            <tr><td>Web Server</td><td>Nginx</td><td><code>nginx:1.25-alpine</code></td><td>80, 443</td><td>~20 MB</td></tr>
+            <tr><td>Web Server</td><td>Caddy</td><td><code>caddy:2-alpine</code></td><td>80, 443</td><td>~30 MB</td></tr>
+            <tr><td>Git Server</td><td>Gitea (required)</td><td><code>gitea/gitea:latest</code></td><td>3000, 3022</td><td>~120 MB</td></tr>
+            <tr><td>Database</td><td>PostgreSQL</td><td><code>postgres:17-alpine</code></td><td>5432</td><td>~120 MB</td></tr>
+            <tr><td>Database</td><td>MySQL</td><td><code>mysql:8.4</code></td><td>3306</td><td>~256 MB</td></tr>
+            <tr><td>Cache</td><td>Redis (default)</td><td><code>redis:7-alpine</code></td><td>6379</td><td>~12 MB</td></tr>
+            <tr><td>Cache</td><td>Valkey</td><td><code>valkey/valkey:7-alpine</code></td><td>6379</td><td>~12 MB</td></tr>
+            <tr><td>Cache</td><td>KeyDB</td><td><code>eqalpha/keydb:latest</code></td><td>6379</td><td>~16 MB</td></tr>
+            <tr><td>DB Admin</td><td>pgAdmin</td><td><code>dpage/pgadmin4:latest</code></td><td>5050</td><td>~128 MB</td></tr>
+            <tr><td>File Server</td><td>Nextcloud</td><td><code>nextcloud:29-apache</code></td><td>443</td><td>~256 MB</td></tr>
+            <tr><td>File Server</td><td>MinIO</td><td><code>minio/minio:latest</code></td><td>9000, 9001</td><td>~256 MB</td></tr>
+            <tr><td>Media</td><td>Jellyfin</td><td><code>jellyfin/jellyfin:latest</code></td><td>8096</td><td>~256 MB</td></tr>
+            <tr><td>Utility</td><td>FileBrowser</td><td><code>filebrowser/filebrowser:latest</code></td><td>80</td><td>~32 MB</td></tr>
+            <tr><td>SSH</td><td>OpenSSH</td><td><code>linuxserver/openssh-server:latest</code></td><td>2222</td><td>~16 MB</td></tr>
+            <tr><td>Mail</td><td>docker-mailserver</td><td><code>ghcr.io/docker-mailserver/docker-mailserver:latest</code></td><td>25, 587, 993</td><td>~256 MB</td></tr>
+            <tr><td>Tunnel</td><td>Cloudflared</td><td><code>cloudflare/cloudflared:latest</code></td><td>outbound only</td><td>~32 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:12px;font-style:italic">Note: SQLite is an embedded DB (no Docker container). pgAdmin is shown only when PostgreSQL is selected.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Installation Manual ===== -->
+<section class="how-it-works" id="install-guide">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-badge">Installation</span>
+      <h2 class="section-title">Get up and running<br><span class="gradient-text">in minutes</span></h2>
+      <p class="section-desc">Complete installation guide from prerequisites to your first running server.</p>
+    </div>
+
+    <!-- System Requirements -->
+    <div id="system-requirements" class="commands-section" style="margin-bottom:32px">
+      <h3 class="commands-title">System Requirements</h3>
+      <div class="catalog-table">
+        <table>
+          <thead><tr><th>Requirement</th><th>Minimum</th><th>Recommended</th></tr></thead>
+          <tbody>
+            <tr><td>OS</td><td>macOS 12+ / Ubuntu 20.04+</td><td>Latest stable</td></tr>
+            <tr><td>Node.js</td><td>20+</td><td>22 LTS</td></tr>
+            <tr><td>Docker</td><td>27+</td><td>Latest (auto-installed if missing)</td></tr>
+            <tr><td>RAM</td><td>2 GB</td><td>4 GB+</td></tr>
+            <tr><td>Disk</td><td>20 GB</td><td>50 GB+ (for media usage)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:12px;font-style:italic">Docker is not required before installation &mdash; brewnet init auto-detects and installs it.</p>
+    </div>
+
+    <!-- Installation Methods -->
+    <div class="steps-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:32px">
+      <div class="step-card">
+        <div class="step-number" style="font-size:24px">01</div>
+        <div class="step-content">
+          <h3>curl (Recommended)</h3>
+          <p>One-line install script that handles everything.</p>
+          <div class="code-block"><code style="font-size:12px">curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-number" style="font-size:24px">02</div>
+        <div class="step-content">
+          <h3>npm</h3>
+          <p>Install globally via npm package manager.</p>
+          <div class="code-block"><code>npm install -g brewnet</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+          <div class="code-block" style="margin-top:8px"><code>brewnet --version</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wizard Overview -->
+    <div class="commands-section" style="margin-bottom:32px">
+      <h3 class="commands-title">7-Step Wizard Overview</h3>
+      <div class="wizard-steps">
+        <div class="wizard-step"><div class="wizard-step-num">1</div><div><div class="wizard-step-title">System Check</div><div class="wizard-step-desc">OS, Docker, ports (80/443), disk, RAM verification</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">2</div><div><div class="wizard-step-title">Project Setup</div><div class="wizard-step-desc">Project name, path, install type (Full / Partial)</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">3</div><div><div class="wizard-step-title">Admin &amp; Servers</div><div class="wizard-step-desc">Admin account, Web/File/DB/Media/SSH selection</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">4</div><div><div class="wizard-step-title">Dev Stack</div><div class="wizard-step-desc">Backend language, framework, frontend, FileBrowser (optional)</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">5</div><div><div class="wizard-step-title">Domain &amp; Network</div><div class="wizard-step-desc">Local (LAN) or Cloudflare Tunnel, Mail Server (conditional)</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">6</div><div><div class="wizard-step-title">Review &amp; Confirm</div><div class="wizard-step-desc">Full config review, credential propagation targets, resource estimate</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">7</div><div><div class="wizard-step-title">Generate &amp; Deploy</div><div class="wizard-step-desc">docker-compose.yml generation, image pull, container start, access verification</div></div></div>
+      </div>
+    </div>
+
+    <!-- Post-Setup Commands -->
+    <div class="commands-section" style="margin-bottom:32px">
+      <h3 class="commands-title">Post-Setup Commands</h3>
+      <div class="commands-grid">
+        <div class="command-item"><code>brewnet status</code><span>Check service status</span></div>
+        <div class="command-item"><code>brewnet up</code><span>Start all services</span></div>
+        <div class="command-item"><code>brewnet down</code><span>Stop all services (data preserved)</span></div>
+        <div class="command-item"><code>brewnet logs [service]</code><span>View service logs</span></div>
+        <div class="command-item"><code>brewnet add &lt;service&gt;</code><span>Add a service</span></div>
+        <div class="command-item"><code>brewnet backup</code><span>Create backup</span></div>
+      </div>
+    </div>
+
+    <!-- Uninstall -->
+    <div class="commands-section">
+      <h3 class="commands-title">Uninstall</h3>
+      <p style="text-align:center;color:var(--text-muted);font-size:14px;margin-bottom:16px">Remove all Brewnet services, Docker volumes, and project files. Use flags to control what gets removed.</p>
+      <div class="commands-grid" style="grid-template-columns:1fr 1fr">
+        <div class="command-item"><code>brewnet uninstall --dry-run</code><span>Preview what will be removed (no changes)</span></div>
+        <div class="command-item"><code>brewnet uninstall</code><span>Full interactive removal</span></div>
+        <div class="command-item"><code>brewnet uninstall --keep-data</code><span>Preserve DB/file volumes</span></div>
+        <div class="command-item"><code>brewnet uninstall --keep-config</code><span>Preserve project directory, stop containers only</span></div>
+        <div class="command-item"><code>brewnet uninstall --force</code><span>Skip confirmation prompt</span></div>
+      </div>
+      <p style="color:var(--red);font-size:12px;margin-top:12px;font-style:italic">Note: Cloudflare Tunnel DNS records are not automatically deleted. Remove them manually at dash.cloudflare.com.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FAQ ===== -->
+<section class="faq" id="faq">
+  <div class="container">
+    <div class="section-header">
+      <span class="section-badge">FAQ</span>
+      <h2 class="section-title">Frequently asked<br><span class="gradient-text">questions</span></h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-toggle" onclick="this.parentElement.classList.toggle('open')">Do I need to know Docker to use Brewnet?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <div class="faq-answer"><p>Not at all. Brewnet's interactive wizard handles all Docker configuration automatically — from installing Docker itself to generating docker-compose.yml and starting containers. You just answer simple questions.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-toggle" onclick="this.parentElement.classList.toggle('open')">Which operating systems are supported?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <div class="faq-answer"><p>macOS 12+ and Ubuntu 20.04+ are officially supported. Brewnet auto-detects your OS and adjusts installation steps accordingly. Other Linux distros may work but are not officially tested.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-toggle" onclick="this.parentElement.classList.toggle('open')">Is my data safe? Can I back up and restore?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <div class="faq-answer"><p>Yes. All data lives in Docker volumes on your own machine — nothing is sent to external servers. Brewnet includes built-in backup and restore commands, and you can preview any uninstall with --dry-run before making changes.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-toggle" onclick="this.parentElement.classList.toggle('open')">Can I use Brewnet behind NAT or CGNAT?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <div class="faq-answer"><p>Absolutely. Brewnet has built-in Cloudflare Tunnel support. Just paste your Cloudflare token and it automatically configures the tunnel, ingress rules, and DNS — no port forwarding needed.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-toggle" onclick="this.parentElement.classList.toggle('open')">Is Brewnet free to use?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <div class="faq-answer"><p>The CLI tool is 100% open source and free. You can self-host as many services as your hardware supports. A Pro tier with a web dashboard for real-time monitoring is planned for the future.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Contact ===== -->
+<section class="contact" id="contact">
+  <div class="container">
+    <div class="contact-card">
+      <div class="contact-form">
+        <!-- Toast -->
+        <div class="toast" id="toast">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          Thank you! We'll get back to you within 24 hours.
+        </div>
+
+        <div class="section-header" style="margin-bottom:24px">
+          <span class="section-badge">Get In Touch</span>
+          <h3 class="section-title" style="font-size:24px">Developer Contact Form</h3>
+          <p class="section-desc" style="font-size:14px">Have a specific inquiry? Send us a message directly. We'll respond via email or Telegram.</p>
+        </div>
+        <form id="contactForm">
+          <div class="form-grid">
+            <div>
+              <label>Email *</label>
+              <input type="email" name="email" required placeholder="your@email.com">
+            </div>
+            <div>
+              <label>Phone</label>
+              <input type="tel" name="phone" placeholder="+82-10-0000-0000">
+            </div>
+            <div class="form-full">
+              <label>Subject *</label>
+              <select name="subject" required>
+                <option value="" disabled selected>-- Select a topic --</option>
+                <option value="general">General Inquiry</option>
+                <option value="bug">Bug Report</option>
+                <option value="feature">Feature Request</option>
+                <option value="partnership">Partnership</option>
+                <option value="enterprise">Enterprise / Team Plan</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-full">
+              <label>Message *</label>
+              <textarea name="message" rows="5" required minlength="10" placeholder="Tell us about your project or question..."></textarea>
+            </div>
+            <div class="form-full form-submit">
+              <button type="submit" class="btn btn-primary btn-block" id="submitBtn">Send Message</button>
+            </div>
+          </div>
+          <p class="form-error" id="formError">Something went wrong. Please try again or email us at hello@brewnet.dev.</p>
+        </form>
+        <div style="margin-top:24px">
+          <a href="https://t.me/brewnetdev" class="contact-item" target="_blank" rel="noopener noreferrer">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+            <div>
+              <h4>Join our Telegram</h4>
+              <p>Chat with the team and community in real-time</p>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Final CTA ===== -->
+<section class="final-cta">
+  <div class="container">
+    <h2>Ready to <span class="gradient-text">brew your server?</span></h2>
+    <p class="section-desc">One command to set up your entire server stack. No credit card, no vendor lock-in, no Docker expertise required.</p>
+    <div class="final-cta-actions">
+      <a href="#system-requirements" class="btn btn-primary btn-lg">
+        Get Started Free
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="https://github.com/claude-code-expert/brewnet" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+    <p class="final-cta-note">Free &amp; open source forever. Cancel anytime. Your data stays on your machine.</p>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="footer-logo-text"><svg class="footer-logo-icon" width="16" height="16" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="currentColor" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg>Brewnet</span>
+        <span class="footer-copy">&copy; 2025-2026 Brewnet (codevillain). All rights reserved.</span>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/claude-code-expert/brewnet" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/claude-code-expert/brewnet#readme" target="_blank" rel="noopener">Docs</a>
+        <a href="https://github.com/claude-code-expert/brewnet/blob/main/LICENSE" target="_blank" rel="noopener">License (MIT)</a>
+        <a href="#">Privacy</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ===== Nav scroll effect =====
+(function(){
+  var nav = document.getElementById('nav');
+  var scrolled = false;
+  window.addEventListener('scroll', function(){
+    var s = window.scrollY > 20;
+    if(s !== scrolled){ scrolled = s; nav.classList.toggle('scrolled', s); }
+  }, {passive:true});
+
+  // Smooth scroll for anchor links
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener('click', function(e){
+      var href = a.getAttribute('href');
+      if(href === '#'){ e.preventDefault(); window.scrollTo({top:0,behavior:'smooth'}); }
+      else if(href.startsWith('#')){
+        e.preventDefault();
+        var el = document.querySelector(href);
+        if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+        document.getElementById('navLinks').classList.remove('open');
+      }
+    });
+  });
+})();
+
+// ===== Copy button =====
+function copyCode(btn){
+  var code = btn.parentElement.querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(function(){
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+    setTimeout(function(){
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+    }, 2000);
+  });
+}
+
+// ===== Contact form (mock for verification) =====
+(function(){
+  var form = document.getElementById('contactForm');
+  var btn = document.getElementById('submitBtn');
+  var toast = document.getElementById('toast');
+  var err = document.getElementById('formError');
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    btn.textContent = 'Sending...';
+    btn.disabled = true;
+    // Simulate API call
+    setTimeout(function(){
+      form.reset();
+      btn.textContent = 'Send Message';
+      btn.disabled = false;
+      toast.classList.add('toast-visible');
+      err.classList.remove('form-error-visible');
+      setTimeout(function(){ toast.classList.remove('toast-visible'); }, 4000);
+    }, 1000);
+  });
+})();
+
+// ===== Terminal Animation =====
+(function(){
+  var commands = [
+    {
+      cmd: 'npx brewnet init',
+      output: [
+        '<span class="out-green">&#10003;</span> <span class="out-bold">System Check</span> <span class="out-muted">&mdash; OS: Linux, Docker: v27.0, Ports: Available</span>',
+        '<span class="out-green">&#10003;</span> <span class="out-bold">Project Setup</span> <span class="out-muted">&mdash; Name: my-server, Path: ~/brewnet-server</span>',
+        '<span class="out-green">&#10003;</span> <span class="out-bold">Server Components</span> <span class="out-muted">&mdash; Traefik, PostgreSQL, Nextcloud, Gitea</span>',
+        '<span class="out-green">&#10003;</span> <span class="out-bold">Domain</span> <span class="out-muted">&mdash; my-server.cloudflare.dev + Cloudflare Tunnel</span>',
+        '<span class="out-green">&#10003;</span> <span class="out-bold">Docker Compose</span> <span class="out-muted">&mdash; Generated &amp; services started</span>',
+        '',
+        '<span class="out-cyan">&#9670;</span> <span class="out-bold">Server is ready!</span>',
+        '  Dashboard  <span class="out-cyan">https://my-server.cloudflare.dev</span>',
+        '  Nextcloud  <span class="out-cyan">https://files.my-server.cloudflare.dev</span>',
+        '  Gitea      <span class="out-cyan">https://git.my-server.cloudflare.dev</span>'
+      ]
+    },
+    {
+      cmd: 'brewnet status',
+      output: [
+        '<span class="out-bold">SERVICE        STATUS      PORT    URL</span>',
+        '<span class="out-green">traefik</span>        <span class="out-green">running</span>     80/443  <span class="out-cyan">my-server.cloudflare.dev</span>',
+        '<span class="out-green">postgresql</span>     <span class="out-green">running</span>     5432    <span class="out-muted">internal</span>',
+        '<span class="out-green">nextcloud</span>      <span class="out-green">running</span>     8080    <span class="out-cyan">files.my-server.cloudflare.dev</span>',
+        '<span class="out-green">gitea</span>          <span class="out-green">running</span>     3000    <span class="out-cyan">git.my-server.cloudflare.dev</span>',
+        '<span class="out-green">redis</span>          <span class="out-green">running</span>     6379    <span class="out-muted">internal</span>',
+        '',
+        '<span class="out-muted">5 services running | Uptime: 3d 12h | Tunnel: active</span>'
+      ]
+    },
+    {
+      cmd: 'brewnet add jellyfin',
+      output: [
+        '<span class="out-cyan">&#9654;</span> Pulling jellyfin/jellyfin:latest...',
+        '<span class="out-green">&#10003;</span> Image pulled successfully',
+        '<span class="out-cyan">&#9654;</span> Updating docker-compose.yml...',
+        '<span class="out-green">&#10003;</span> Service added: <span class="out-bold">jellyfin</span>',
+        '<span class="out-cyan">&#9654;</span> Configuring reverse proxy...',
+        '<span class="out-green">&#10003;</span> Route: <span class="out-cyan">https://media.my-server.cloudflare.dev</span>',
+        '',
+        '<span class="out-green">&#10003;</span> <span class="out-bold">Jellyfin is ready!</span> <span class="out-muted">Open the URL above to get started.</span>'
+      ]
+    }
+  ];
+
+  var cmdEl = document.getElementById('termCmd');
+  var outputEl = document.getElementById('termOutput');
+  var idx = 0;
+
+  function runCommand(){
+    var c = commands[idx % commands.length];
+    idx++;
+    cmdEl.textContent = '';
+    outputEl.innerHTML = '';
+    var i = 0;
+    function typeChar(){
+      if(i < c.cmd.length){
+        cmdEl.textContent += c.cmd[i];
+        i++;
+        setTimeout(typeChar, 40 + Math.random()*30);
+      } else {
+        setTimeout(showOutput, 400);
+      }
+    }
+    var lineIdx = 0;
+    function showOutput(){
+      if(lineIdx < c.output.length){
+        var div = document.createElement('div');
+        div.innerHTML = c.output[lineIdx] || '&nbsp;';
+        outputEl.appendChild(div);
+        lineIdx++;
+        setTimeout(showOutput, 80);
+      } else {
+        setTimeout(runCommand, 3000);
+      }
+    }
+    typeChar();
+  }
+  runCommand();
+})();
+</script>
+</body>
+</html>

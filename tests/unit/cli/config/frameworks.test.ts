@@ -22,18 +22,17 @@ import type { Language, FrontendTech, FrameworkOption } from '../../../../packag
 // Expected constants for assertions
 // ---------------------------------------------------------------------------
 
-const EXPECTED_LANGUAGES: Language[] = ['python', 'nodejs', 'java', 'php', 'dotnet', 'rust', 'go'];
+const EXPECTED_LANGUAGES: Language[] = ['python', 'nodejs', 'java', 'rust', 'go', 'kotlin'];
 
-const EXPECTED_FRONTEND_TECHS: FrontendTech[] = ['vuejs', 'reactjs', 'typescript', 'javascript'];
+const EXPECTED_FRONTEND_TECHS: FrontendTech[] = ['react', 'vue', 'none'];
 
 const EXPECTED_FRAMEWORKS_BY_LANGUAGE: Record<Language, string[]> = {
   python: ['fastapi', 'django', 'flask'],
-  nodejs: ['nextjs', 'nextjs-api', 'express', 'nestjs', 'fastify'],
-  java: ['java-pure', 'spring', 'springboot'],
-  php: ['laravel', 'symfony'],
-  dotnet: ['aspnet', 'blazor'],
-  rust: [],
-  go: [],
+  nodejs: ['nextjs', 'nextjs-app', 'express', 'nestjs'],
+  java: ['spring', 'springboot'],
+  rust: ['axum', 'actix-web'],
+  go: ['gin', 'echo', 'fiber'],
+  kotlin: ['ktor', 'springboot-kt'],
 };
 
 // ===========================================================================
@@ -41,9 +40,9 @@ const EXPECTED_FRAMEWORKS_BY_LANGUAGE: Record<Language, string[]> = {
 // ===========================================================================
 
 describe('LANGUAGE_REGISTRY', () => {
-  it('has exactly 7 language entries', () => {
+  it('has exactly 6 language entries', () => {
     const keys = Object.keys(LANGUAGE_REGISTRY);
-    expect(keys).toHaveLength(7);
+    expect(keys).toHaveLength(6);
   });
 
   it('contains every expected language key', () => {
@@ -77,10 +76,9 @@ describe('LANGUAGE_REGISTRY', () => {
     expect(LANGUAGE_REGISTRY.python.name).toBe('Python');
     expect(LANGUAGE_REGISTRY.nodejs.name).toBe('Node.js');
     expect(LANGUAGE_REGISTRY.java.name).toBe('Java');
-    expect(LANGUAGE_REGISTRY.php.name).toBe('PHP');
-    expect(LANGUAGE_REGISTRY.dotnet.name).toBe('.NET');
     expect(LANGUAGE_REGISTRY.rust.name).toBe('Rust');
     expect(LANGUAGE_REGISTRY.go.name).toBe('Go');
+    expect(LANGUAGE_REGISTRY.kotlin.name).toBe('Kotlin');
   });
 });
 
@@ -89,9 +87,9 @@ describe('LANGUAGE_REGISTRY', () => {
 // ===========================================================================
 
 describe('FRONTEND_REGISTRY', () => {
-  it('has exactly 4 frontend tech entries', () => {
+  it('has exactly 3 frontend tech entries', () => {
     const keys = Object.keys(FRONTEND_REGISTRY);
-    expect(keys).toHaveLength(4);
+    expect(keys).toHaveLength(3);
   });
 
   it('contains every expected frontend tech key', () => {
@@ -124,10 +122,9 @@ describe('FRONTEND_REGISTRY', () => {
   });
 
   it('has correct display names for each frontend tech', () => {
-    expect(FRONTEND_REGISTRY.vuejs.name).toBe('Vue.js');
-    expect(FRONTEND_REGISTRY.reactjs.name).toBe('React');
-    expect(FRONTEND_REGISTRY.typescript.name).toBe('TypeScript');
-    expect(FRONTEND_REGISTRY.javascript.name).toBe('JavaScript');
+    expect(FRONTEND_REGISTRY.react.name).toBe('React (TypeScript)');
+    expect(FRONTEND_REGISTRY.vue.name).toBe('Vue.js (Vite)');
+    expect(FRONTEND_REGISTRY.none.name).toBe('Skip frontend');
   });
 });
 
@@ -198,41 +195,45 @@ describe('getFrameworksForLanguage()', () => {
 
   // -- Node.js (TC-05-02) --------------------------------------------------
   describe('nodejs', () => {
-    it('returns exactly 5 frameworks', () => {
+    it('returns exactly 4 frameworks', () => {
       const frameworks = getFrameworksForLanguage('nodejs');
-      expect(frameworks).toHaveLength(5);
+      expect(frameworks).toHaveLength(4);
     });
 
-    it('returns Next.js, Next.js API, Express, NestJS, and Fastify', () => {
+    it('returns Next.js, Next.js 15.x (App Router), Express, and NestJS', () => {
       const ids = getFrameworksForLanguage('nodejs').map((fw) => fw.id);
       expect(ids).toContain('nextjs');
-      expect(ids).toContain('nextjs-api');
+      expect(ids).toContain('nextjs-app');
       expect(ids).toContain('express');
       expect(ids).toContain('nestjs');
-      expect(ids).toContain('fastify');
+    });
+
+    it('does not include removed frameworks (nextjs-api, fastify)', () => {
+      const ids = getFrameworksForLanguage('nodejs').map((fw) => fw.id);
+      expect(ids).not.toContain('nextjs-api');
+      expect(ids).not.toContain('fastify');
     });
 
     it('does not include frameworks from other languages', () => {
       const ids = getFrameworksForLanguage('nodejs').map((fw) => fw.id);
       expect(ids).not.toContain('fastapi');
       expect(ids).not.toContain('django');
-      expect(ids).not.toContain('laravel');
       expect(ids).not.toContain('spring');
     });
   });
 
   // -- Java (TC-05-02) -----------------------------------------------------
   describe('java', () => {
-    it('returns exactly 3 frameworks', () => {
+    it('returns exactly 2 frameworks', () => {
       const frameworks = getFrameworksForLanguage('java');
-      expect(frameworks).toHaveLength(3);
+      expect(frameworks).toHaveLength(2);
     });
 
-    it('returns Pure Java, Spring, and Spring Boot', () => {
+    it('returns Spring and Spring Boot (java-pure removed)', () => {
       const ids = getFrameworksForLanguage('java').map((fw) => fw.id);
-      expect(ids).toContain('java-pure');
       expect(ids).toContain('spring');
       expect(ids).toContain('springboot');
+      expect(ids).not.toContain('java-pure');
     });
 
     it('does not include frameworks from other languages', () => {
@@ -243,55 +244,44 @@ describe('getFrameworksForLanguage()', () => {
     });
   });
 
-  // -- PHP -----------------------------------------------------------------
-  describe('php', () => {
-    it('returns exactly 2 frameworks', () => {
-      const frameworks = getFrameworksForLanguage('php');
-      expect(frameworks).toHaveLength(2);
-    });
-
-    it('returns Laravel and Symfony', () => {
-      const ids = getFrameworksForLanguage('php').map((fw) => fw.id);
-      expect(ids).toContain('laravel');
-      expect(ids).toContain('symfony');
-    });
-  });
-
-  // -- .NET ----------------------------------------------------------------
-  describe('dotnet', () => {
-    it('returns exactly 2 frameworks', () => {
-      const frameworks = getFrameworksForLanguage('dotnet');
-      expect(frameworks).toHaveLength(2);
-    });
-
-    it('returns ASP.NET Core and Blazor', () => {
-      const ids = getFrameworksForLanguage('dotnet').map((fw) => fw.id);
-      expect(ids).toContain('aspnet');
-      expect(ids).toContain('blazor');
-    });
-  });
-
-  // -- Rust (TC-05-03: empty frameworks) -----------------------------------
+  // -- Rust (TC-05-03: Rust frameworks) -----------------------------------
   describe('rust', () => {
-    it('returns an empty array (no frameworks available)', () => {
+    it('returns Axum (index 0, default) and Actix Web (index 1)', () => {
       const frameworks = getFrameworksForLanguage('rust');
-      expect(frameworks).toEqual([]);
+      expect(frameworks[0].id).toBe('axum');
+      expect(frameworks[1].id).toBe('actix-web');
     });
 
-    it('returns an array type even when empty', () => {
+    it('returns an array type', () => {
       expect(Array.isArray(getFrameworksForLanguage('rust'))).toBe(true);
     });
   });
 
-  // -- Go (TC-05-03: empty frameworks) -------------------------------------
+  // -- Go (TC-05-03: Go frameworks) ----------------------------------------
   describe('go', () => {
-    it('returns an empty array (no frameworks available)', () => {
-      const frameworks = getFrameworksForLanguage('go');
-      expect(frameworks).toEqual([]);
+    it('returns Gin, Echo, and Fiber frameworks', () => {
+      const ids = getFrameworksForLanguage('go').map((fw) => fw.id);
+      expect(ids).toContain('gin');
+      expect(ids).toContain('echo');
+      expect(ids).toContain('fiber');
     });
 
-    it('returns an array type even when empty', () => {
+    it('returns an array type', () => {
       expect(Array.isArray(getFrameworksForLanguage('go'))).toBe(true);
+    });
+  });
+
+  // -- Kotlin (new) --------------------------------------------------------
+  describe('kotlin', () => {
+    it('returns exactly 2 frameworks', () => {
+      const frameworks = getFrameworksForLanguage('kotlin');
+      expect(frameworks).toHaveLength(2);
+    });
+
+    it('returns Ktor (index 0, default) and Spring Boot Kotlin', () => {
+      const frameworks = getFrameworksForLanguage('kotlin');
+      expect(frameworks[0].id).toBe('ktor');
+      expect(frameworks[1].id).toBe('springboot-kt');
     });
   });
 
@@ -312,13 +302,13 @@ describe('getFrameworksForLanguage()', () => {
 // ===========================================================================
 
 describe('getAllLanguages()', () => {
-  it('returns an array of 7 language keys', () => {
+  it('returns an array of 6 language keys', () => {
     const languages = getAllLanguages();
     expect(Array.isArray(languages)).toBe(true);
-    expect(languages).toHaveLength(7);
+    expect(languages).toHaveLength(6);
   });
 
-  it('contains every expected language key', () => {
+  it('contains every expected language key including kotlin', () => {
     const languages = getAllLanguages();
     for (const lang of EXPECTED_LANGUAGES) {
       expect(languages).toContain(lang);
@@ -345,13 +335,13 @@ describe('getAllLanguages()', () => {
 // ===========================================================================
 
 describe('getAllFrontendTechs()', () => {
-  it('returns an array of 4 frontend tech keys', () => {
+  it('returns an array of 3 frontend tech keys', () => {
     const techs = getAllFrontendTechs();
     expect(Array.isArray(techs)).toBe(true);
-    expect(techs).toHaveLength(4);
+    expect(techs).toHaveLength(3);
   });
 
-  it('contains every expected frontend tech key', () => {
+  it('contains react, vue, none', () => {
     const techs = getAllFrontendTechs();
     for (const tech of EXPECTED_FRONTEND_TECHS) {
       expect(techs).toContain(tech);
@@ -404,11 +394,11 @@ describe('Framework ID uniqueness', () => {
 // ===========================================================================
 
 describe('Total framework count', () => {
-  it('has 15 frameworks across all languages (3+5+3+2+2+0+0)', () => {
+  it('has 16 frameworks across all languages (3+4+2+2+3+2=16)', () => {
     let total = 0;
     for (const lang of EXPECTED_LANGUAGES) {
       total += getFrameworksForLanguage(lang).length;
     }
-    expect(total).toBe(15);
+    expect(total).toBe(16);
   });
 });

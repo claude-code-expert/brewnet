@@ -28,6 +28,13 @@ export interface ServiceRoute {
   port: number;
 }
 
+export interface RetryConfig {
+  /** Maximum number of retry attempts (default: 3) */
+  maxRetries?: number;
+  /** Base delay in ms before first retry (default: 1000) */
+  baseDelayMs?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -39,6 +46,119 @@ function cfHeaders(apiToken: string): Record<string, string> {
     'Authorization': `Bearer ${apiToken}`,
     'Content-Type': 'application/json',
   };
+}
+
+// ---------------------------------------------------------------------------
+// fetchWithRetry
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrapper around `fetch` with exponential backoff retry logic.
+ *
+ * Retry conditions:
+ *   - Network errors (fetch throws)
+ *   - HTTP 5xx responses
+ *   - HTTP 429 (rate limit)
+ *
+ * No retry conditions:
+ *   - HTTP 400 / 401 / 403 (client errors — retrying won't help)
+ *   - Other 4xx responses
+ *
+ * Backoff: baseDelay * 2^attempt ± 10% jitter (default: 1s → 2s → 4s)
+ */
+export async function fetchWithRetry(
+  url: string,
+  init?: RequestInit,
+  config: RetryConfig = {},
+): Promise<Response> {
+  const maxRetries = config.maxRetries ?? 3;
+  const baseDelayMs = config.baseDelayMs ?? 1000;
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, init);
+
+      // No retry for auth/client errors
+      if (response.status === 400 || response.status === 401 || response.status === 403) {
+        return response;
+      }
+
+      // Retry on 5xx or 429
+      if (response.status >= 500 || response.status === 429) {
+        if (attempt < maxRetries) {
+          await retryDelay(attempt, baseDelayMs);
+          continue;
+        }
+        return response;
+      }
+
+      return response;
+    } catch (err) {
+      // Network error — retry
+      lastError = err;
+      if (attempt < maxRetries) {
+        await retryDelay(attempt, baseDelayMs);
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new Error('fetchWithRetry: exhausted retries');
+}
+
+function retryDelay(attempt: number, baseDelayMs: number): Promise<void> {
+  const jitterFactor = 0.9 + Math.random() * 0.2; // ±10%
+  const delay = baseDelayMs * Math.pow(2, attempt) * jitterFactor;
+  return new Promise((resolve) => setTimeout(resolve, delay));
+}
+
+// ---------------------------------------------------------------------------
+// deleteTunnel
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete a Cloudflare Tunnel via the API.
+ *
+ * DELETE /client/v4/accounts/{accountId}/cfd_tunnel/{tunnelId}
+ *
+ * Throws with a descriptive error if the tunnel has active connections
+ * (HTTP 400) or if the request fails for any other reason.
+ *
+ * Used during auto-rollback when tunnel setup fails partway through.
+ */
+export async function deleteTunnel(
+  apiToken: string,
+  accountId: string,
+  tunnelId: string,
+): Promise<void> {
+  const url = `${CF_BASE}/accounts/${accountId}/cfd_tunnel/${tunnelId}`;
+
+  const response = await fetchWithRetry(url, {
+    method: 'DELETE',
+    headers: cfHeaders(apiToken),
+  });
+
+  if (response.status === 404) {
+    // Already deleted — treat as success
+    return;
+  }
+
+  const data = (await response.json()) as {
+    success: boolean;
+    errors?: Array<{ message: string; code?: number }>;
+  };
+
+  if (!response.ok || !data.success) {
+    const errMsg = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
+    if (response.status === 400 && errMsg.toLowerCase().includes('active connection')) {
+      throw new Error(
+        `터널 삭제 실패: 활성 연결이 있습니다. cloudflared 컨테이너를 먼저 중지하세요. (${errMsg})`,
+      );
+    }
+    throw new Error(`터널 삭제 실패: ${errMsg}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +383,54 @@ export async function createDnsRecord(
       throw new Error(`DNS record creation failed: ${msg}`);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// getTunnelHealth
+// ---------------------------------------------------------------------------
+
+/**
+ * Query the health of a Cloudflare Tunnel.
+ *
+ * GET /client/v4/accounts/{accountId}/cfd_tunnel/{tunnelId}
+ *
+ * Returns the tunnel status and number of active connectors.
+ * Used for health verification after tunnel creation and for `brewnet domain tunnel status`.
+ */
+export async function getTunnelHealth(
+  apiToken: string,
+  accountId: string,
+  tunnelId: string,
+): Promise<{ status: 'healthy' | 'degraded' | 'inactive'; connectorCount: number }> {
+  const url = `${CF_BASE}/accounts/${accountId}/cfd_tunnel/${tunnelId}`;
+
+  const response = await fetchWithRetry(url, {
+    headers: cfHeaders(apiToken),
+  });
+
+  const data = (await response.json()) as {
+    success: boolean;
+    result?: {
+      status: string;
+      connections?: Array<unknown>;
+    };
+    errors?: Array<{ message: string }>;
+  };
+
+  if (!response.ok || !data.success) {
+    const msg = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
+    throw new Error(`Failed to get tunnel health: ${msg}`);
+  }
+
+  const rawStatus = data.result?.status ?? 'inactive';
+  const connectorCount = data.result?.connections?.length ?? 0;
+
+  const status: 'healthy' | 'degraded' | 'inactive' =
+    rawStatus === 'healthy' ? 'healthy'
+    : rawStatus === 'degraded' ? 'degraded'
+    : 'inactive';
+
+  return { status, connectorCount };
 }
 
 // ---------------------------------------------------------------------------

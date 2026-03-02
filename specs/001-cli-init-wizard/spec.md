@@ -112,7 +112,7 @@ A user selects backend languages, frameworks, frontend tech stack, and configure
 
 ### User Story 6 - Domain & Network Configuration (Priority: P2)
 
-A user selects domain provider (Local / FreeDomain / Custom), configures Cloudflare Tunnel for external access, and optionally enables Mail Server.
+A user selects domain provider (Local / Custom with Cloudflare Tunnel), configures Cloudflare Tunnel for external access, and optionally enables Mail Server.
 
 **Why this priority**: Domain and network determine how services are accessed. Critical for production use but local-only is a valid fallback.
 
@@ -190,7 +190,7 @@ A user manages running services after initial setup: checking status, adding/rem
 - **FR-04**: System MUST auto-generate admin credentials (20-char password, confusion-free charset), store in `.env` (chmod 600), and propagate to all enabled services (Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH, Mail)
 - **FR-05**: System MUST provide 6 server component toggle cards (Web Server required, Git Server required, File Server, DB Server, Media, SSH Server) with conditional logic (SFTP auto-suggest when File/Media enabled, Mail hidden for local domain, App Server auto-enabled from devStack)
 - **FR-06**: System MUST support multi-select language/framework/frontend selection with per-language framework filtering, boilerplate generation, FileBrowser configuration, and Skip option
-- **FR-07**: System MUST support 3 domain providers (local, freedomain with .dpdns.org/.qzz.io/.us.kg TLDs, custom) with Cloudflare Tunnel integration (token validation) and conditional Mail Server
+- **FR-07**: System MUST support 2 domain providers (local, tunnel with custom domain + Cloudflare Named Tunnel) with token validation and conditional Mail Server
 - **FR-08**: System MUST generate docker-compose.yml, .env, .env.example, infrastructure configs, and boilerplate scaffolds based on wizard selections, with Traefik routing labels and Docker network definitions
 - **FR-09**: System MUST pull Docker images, start services in dependency order, run health checks (max 120s per service), propagate credentials, and verify external access for non-local domains
 - **FR-10**: System MUST provide post-setup management commands: `status` (table output), `add` (service addition with routing), `remove` (with data preservation option), `backup` (tar.gz archive), `restore` (from backup ID)

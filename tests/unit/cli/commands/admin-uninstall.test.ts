@@ -356,7 +356,7 @@ describe('uninstall command action', () => {
     expect(output).toContain('Removed:');
     expect(output).toContain('Docker containers');
     expect(output).toContain('Uninstall complete');
-    expect(output).toContain('brewnet init');
+    expect(output).toContain('install.sh');
 
     consoleSpy.mockRestore();
   });

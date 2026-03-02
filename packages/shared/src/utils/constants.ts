@@ -3,7 +3,7 @@
 // ─── Schema & Versioning ────────────────────────────────────────────────────
 
 /** Current wizard state schema version */
-export const SCHEMA_VERSION = 5 as const;
+export const SCHEMA_VERSION = 7 as const;
 
 /** Minimum schema version that can be migrated (older versions are reset) */
 export const MIN_MIGRATABLE_SCHEMA_VERSION = 3;
@@ -115,11 +115,13 @@ export const DEFAULT_WEB_SERVER = 'traefik' as const;
 
 export const DEFAULT_DOMAIN_PROVIDER = 'local' as const;
 export const DEFAULT_SSL_MODE = 'self-signed' as const;
-export const DEFAULT_FREE_DOMAIN_TLD = '.dpdns.org' as const;
 
 // ─── Boilerplate Defaults ────────────────────────────────────────────────────
 
 export const DEFAULT_DEV_MODE = 'hot-reload' as const;
+
+/** Git repository URL for Brewnet boilerplate templates (not yet populated) */
+export const BOILERPLATE_REPO_URL = 'https://github.com/claude-code-expert/brewnet-boilerplate.git';
 
 // ─── CLI Metadata ────────────────────────────────────────────────────────────
 

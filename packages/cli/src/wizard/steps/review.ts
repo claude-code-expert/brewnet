@@ -149,8 +149,8 @@ export function generateReviewSections(state: WizardState): ReviewSection[] {
       }
     }
   }
-  if (state.devStack.frontend.length > 0) {
-    devItems.push({ label: 'Frontend', value: state.devStack.frontend.join(', ') });
+  if (state.devStack.frontend !== null) {
+    devItems.push({ label: 'Frontend', value: state.devStack.frontend });
   }
   if (devItems.length === 0) {
     devItems.push({ label: 'Dev Stack', value: 'Skipped' });
@@ -190,7 +190,7 @@ export function generateReviewSections(state: WizardState): ReviewSection[] {
   });
 
   // --- Resource Estimate section ---
-  const resources = estimateResources(state as any);
+  const resources = estimateResources(state);
   const resourceItems: ReviewItem[] = [
     { label: 'Containers', value: String(resources.containers) },
     { label: 'Estimated RAM', value: resources.ramGB },
@@ -204,7 +204,7 @@ export function generateReviewSections(state: WizardState): ReviewSection[] {
   });
 
   // --- Credential Propagation section ---
-  const targets = getCredentialTargets(state as any);
+  const targets = getCredentialTargets(state);
   if (targets.length > 0) {
     sections.push({
       id: 'credentials',
@@ -263,7 +263,6 @@ export function exportConfig(state: WizardState, projectPath: string): string {
       provider: state.domain.provider,
       name: state.domain.name,
       ssl: state.domain.ssl,
-      freeDomainTld: state.domain.freeDomainTld,
       cloudflare: {
         enabled: state.domain.cloudflare.enabled,
         tunnelName: state.domain.cloudflare.tunnelName,
@@ -333,6 +332,8 @@ export function importConfig(configPath: string): WizardState {
       cloudflare: {
         enabled: config.domain.cloudflare.enabled,
         tunnelName: config.domain.cloudflare.tunnelName,
+        tunnelMode: 'none' as const, // reset after import — re-run domain setup to activate
+        quickTunnelUrl: '',           // ephemeral, not preserved across sessions
         accountId: '',
         apiToken: '',
         tunnelId: '',
@@ -368,7 +369,7 @@ export async function runReviewStep(state: WizardState): Promise<ReviewResult> {
   // -------------------------------------------------------------------------
   console.log();
   console.log(
-    chalk.bold.cyan('  Step 5/7') + chalk.bold(' — Review & Confirm'),
+    chalk.bold.cyan('  Step 6/8') + chalk.bold(' — Review & Confirm'),
   );
   console.log(chalk.dim('  Review your selections before generating'));
   console.log();

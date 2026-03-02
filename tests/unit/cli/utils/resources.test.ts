@@ -59,7 +59,7 @@ function createBaseState(overrides?: DeepPartial<WizardState>): WizardState {
     devStack: {
       languages: [],
       frameworks: {},
-      frontend: [],
+      frontend: null,
     },
     boilerplate: {
       generate: false,
@@ -68,7 +68,6 @@ function createBaseState(overrides?: DeepPartial<WizardState>): WizardState {
     },
     domain: {
       provider: 'local',
-      freeDomainTld: '',
       name: 'localhost',
       ssl: 'none',
       cloudflare: {
@@ -500,7 +499,6 @@ describe('estimateResources', () => {
     const state = createBaseState({
       domain: {
         provider: 'custom',
-        freeDomainTld: '',
         name: 'example.com',
         ssl: 'cloudflare',
         cloudflare: { enabled: true, tunnelToken: 'tok', tunnelName: 'my-tunnel' },
@@ -551,7 +549,6 @@ describe('estimateResources', () => {
       devStack: { languages: ['nodejs', 'python'] },
       domain: {
         provider: 'custom',
-        freeDomainTld: '',
         name: 'example.com',
         ssl: 'letsencrypt',
         cloudflare: { enabled: true, tunnelToken: 'tok', tunnelName: 'tunnel' },
@@ -705,7 +702,6 @@ describe('collectAllServices', () => {
     const state = createBaseState({
       domain: {
         provider: 'custom',
-        freeDomainTld: '',
         name: 'example.com',
         ssl: 'cloudflare',
         cloudflare: { enabled: true, tunnelToken: 'tok', tunnelName: 'tunnel' },
@@ -741,7 +737,6 @@ describe('collectAllServices', () => {
       },
       domain: {
         provider: 'custom',
-        freeDomainTld: '',
         name: 'example.com',
         ssl: 'cloudflare',
         cloudflare: { enabled: true, tunnelToken: 'tok', tunnelName: 'tunnel' },

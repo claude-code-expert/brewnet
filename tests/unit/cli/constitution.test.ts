@@ -105,9 +105,9 @@ function getAllServices(config: ComposeConfig): Array<[string, ComposeService]> 
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('TC-C-01: Zero Config — default state produces a valid configuration', () => {
-  it('should produce a state with schemaVersion 5', () => {
+  it('should produce a state with schemaVersion 7', () => {
     const state = createDefaultWizardState();
-    expect(state.schemaVersion).toBe(5);
+    expect(state.schemaVersion).toBe(7);
   });
 
   it('should have a non-empty projectName', () => {

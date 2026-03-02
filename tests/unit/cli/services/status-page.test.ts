@@ -239,7 +239,6 @@ describe('generateAndOpenStatusPage — HTML content: local domain', () => {
         provider: 'local',
         name: 'myserver.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: false,
           accountId: '',
@@ -264,7 +263,6 @@ describe('generateAndOpenStatusPage — HTML content: local domain', () => {
         provider: 'local',
         name: 'myhome.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: false,
           accountId: '',
@@ -289,7 +287,6 @@ describe('generateAndOpenStatusPage — HTML content: local domain', () => {
         provider: 'local',
         name: 'myhome.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: false,
           accountId: '',
@@ -322,9 +319,8 @@ describe('generateAndOpenStatusPage — HTML content: tunnel domain', () => {
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: true,
           accountId: 'acc-123',
@@ -339,7 +335,7 @@ describe('generateAndOpenStatusPage — HTML content: tunnel domain', () => {
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('https://www.example.com');
+    expect(html).toContain('https://example.com');
     expect(html).toContain('https://git.example.com');
   });
 
@@ -348,9 +344,8 @@ describe('generateAndOpenStatusPage — HTML content: tunnel domain', () => {
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: true,
           accountId: 'acc-123',
@@ -365,7 +360,7 @@ describe('generateAndOpenStatusPage — HTML content: tunnel domain', () => {
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('Cloudflare Tunnel');
+    expect(html).toContain('Cloudflare Named Tunnel');
   });
 
   it('includes tunnel name in the network section', async () => {
@@ -373,9 +368,8 @@ describe('generateAndOpenStatusPage — HTML content: tunnel domain', () => {
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
           enabled: true,
           accountId: 'acc-123',
@@ -419,7 +413,7 @@ describe('generateAndOpenStatusPage — HTML content: file server (Nextcloud)', 
     expect(html).toContain('Nextcloud');
   });
 
-  it('does not include Nextcloud when file server is disabled', async () => {
+  it('does not include Nextcloud service card when file server is disabled', async () => {
     const base = createDefaultWizardState();
     const state = makeState({
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
@@ -430,7 +424,7 @@ describe('generateAndOpenStatusPage — HTML content: file server (Nextcloud)', 
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).not.toContain('Nextcloud');
+    expect(html).not.toContain("showServiceModal('Nextcloud')");
   });
 });
 
@@ -455,7 +449,7 @@ describe('generateAndOpenStatusPage — HTML content: file server (MinIO)', () =
     expect(html).toContain('MinIO');
   });
 
-  it('does not include MinIO when file server uses nextcloud', async () => {
+  it('does not include MinIO Console service card when file server uses nextcloud', async () => {
     const base = createDefaultWizardState();
     const state = makeState({
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
@@ -466,7 +460,7 @@ describe('generateAndOpenStatusPage — HTML content: file server (MinIO)', () =
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).not.toContain('MinIO');
+    expect(html).not.toContain("showServiceModal('MinIO Console')");
   });
 });
 
@@ -491,7 +485,7 @@ describe('generateAndOpenStatusPage — HTML content: media (Jellyfin)', () => {
     expect(html).toContain('Jellyfin');
   });
 
-  it('does not include Jellyfin when media is disabled', async () => {
+  it('does not include Jellyfin service card when media is disabled', async () => {
     const base = createDefaultWizardState();
     const state = makeState({
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
@@ -502,10 +496,10 @@ describe('generateAndOpenStatusPage — HTML content: media (Jellyfin)', () => {
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).not.toContain('Jellyfin');
+    expect(html).not.toContain("showServiceModal('Jellyfin')");
   });
 
-  it('does not include Jellyfin when media is enabled but services list is empty', async () => {
+  it('does not include Jellyfin service card when media is enabled but services list is empty', async () => {
     const base = createDefaultWizardState();
     const state = makeState({
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
@@ -516,7 +510,7 @@ describe('generateAndOpenStatusPage — HTML content: media (Jellyfin)', () => {
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).not.toContain('Jellyfin');
+    expect(html).not.toContain("showServiceModal('Jellyfin')");
   });
 });
 
@@ -555,7 +549,7 @@ describe('generateAndOpenStatusPage — HTML content: SSH server', () => {
     expect(html).toContain('ssh://localhost:2222');
   });
 
-  it('does not include SSH Server when sshServer is disabled', async () => {
+  it('does not include SSH Server service card when sshServer is disabled', async () => {
     const base = createDefaultWizardState();
     const state = makeState({
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
@@ -566,7 +560,7 @@ describe('generateAndOpenStatusPage — HTML content: SSH server', () => {
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).not.toContain('SSH Server');
+    expect(html).not.toContain("showServiceModal('SSH Server')");
   });
 });
 
@@ -591,7 +585,7 @@ describe('generateAndOpenStatusPage — HTML content: FileBrowser', () => {
     expect(html).toContain('FileBrowser');
   });
 
-  it('does not include FileBrowser when fileBrowser is disabled', async () => {
+  it('does not include FileBrowser service card when fileBrowser is disabled', async () => {
     const base = createDefaultWizardState();
     const state = makeState({
       admin: { username: 'admin', password: 'pass1234', storage: 'local' },
@@ -602,7 +596,7 @@ describe('generateAndOpenStatusPage — HTML content: FileBrowser', () => {
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).not.toContain('FileBrowser');
+    expect(html).not.toContain("showServiceModal('FileBrowser')");
   });
 });
 
@@ -627,7 +621,7 @@ describe('generateAndOpenStatusPage — HTML content: always-present services', 
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('traefik');
+    expect(html).toContain('Traefik');
   });
 
   it('always includes Gitea in the service list', async () => {
@@ -665,33 +659,315 @@ describe('generateAndOpenStatusPage — HTML content: credentials', () => {
     mockExeca.mockReset();
   });
 
-  it('includes the admin username in the credentials section', async () => {
+  it('includes the masked admin username in the credentials section', async () => {
     const state = makeState({
       admin: { username: 'homeadmin', password: 'pass1234', storage: 'local' },
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('homeadmin');
+    // "homeadmin" (9 chars) → slice(0,-2)="homeadm" + "**" → "homeadm**"
+    expect(html).toContain('homeadm**');
+    expect(html).not.toContain('"username":"homeadmin"');
   });
 
-  it('masks the password showing only the last 4 chars', async () => {
+  it('masks the password showing only the first char', async () => {
     const state = makeState({
       admin: { username: 'admin', password: 'supersecret5678', storage: 'local' },
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    // Should show ••••••5678 (last 4 chars of password)
-    expect(html).toContain('••••••5678');
+    // "supersecret5678" → first char + 14 asterisks → "s**************"
+    expect(html).toContain('s**************');
     // Should NOT expose the full password
     expect(html).not.toContain('supersecret5678');
   });
 
-  it('uses a generic mask for short passwords (4 chars or fewer)', async () => {
+  it('uses a generic mask for single-char passwords', async () => {
     const state = makeState({
-      admin: { username: 'admin', password: 'ab12', storage: 'local' },
+      admin: { username: 'admin', password: 'x', storage: 'local' },
     });
     await generateAndOpenStatusPage(state, { noOpen: true });
     const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
-    expect(html).toContain('••••••••');
+    expect(html).toContain('********');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service Detail Modal — HTML structure
+// ---------------------------------------------------------------------------
+
+const { SERVICE_DETAIL_MAP } = await import(
+  '../../../../packages/cli/src/services/status-page.js'
+);
+
+describe('Service Detail Modal — HTML structure', () => {
+  beforeEach(() => {
+    mockMkdirSync.mockReset();
+    mockWriteFileSync.mockReset();
+    mockExeca.mockReset();
+  });
+
+  it('embeds SERVICE_DETAILS JSON in a <script> block', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('var SERVICE_DETAILS =');
+  });
+
+  it('includes showServiceModal function', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('function showServiceModal(');
+  });
+
+  it('includes closeServiceModal function', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('function closeServiceModal(');
+  });
+
+  it('includes escapeHtml function for XSS prevention', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('function escapeHtml(');
+  });
+
+  it('includes modal-overlay CSS class', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('.modal-overlay');
+  });
+
+  it('includes modal-terminal CSS class', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('.modal-terminal');
+  });
+
+  it('includes modal-titlebar CSS class with dot elements', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('.modal-titlebar');
+    expect(html).toContain('.modal-dot.red');
+    expect(html).toContain('.modal-dot.yellow');
+    expect(html).toContain('.modal-dot.green');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service Detail Modal — clickable service names
+// ---------------------------------------------------------------------------
+
+describe('Service Detail Modal — clickable service names', () => {
+  beforeEach(() => {
+    mockMkdirSync.mockReset();
+    mockWriteFileSync.mockReset();
+    mockExeca.mockReset();
+  });
+
+  it('renders Traefik service name with svc-name-link class', async () => {
+    const state = makeState({
+      admin: { username: 'admin', password: 'pass1234', storage: 'local' },
+      servers: {
+        ...createDefaultWizardState().servers,
+        webServer: { enabled: true, service: 'traefik' },
+      },
+    });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('class="svc-name-link"');
+    expect(html).toContain("onclick=\"showServiceModal('Traefik')\"");
+  });
+
+  it('renders Gitea service name with onclick handler', async () => {
+    const state = makeState({
+      admin: { username: 'admin', password: 'pass1234', storage: 'local' },
+    });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain("onclick=\"showServiceModal('Gitea')\"");
+  });
+
+  it('renders Traefik Dashboard with onclick handler', async () => {
+    const state = makeState({
+      admin: { username: 'admin', password: 'pass1234', storage: 'local' },
+      servers: {
+        ...createDefaultWizardState().servers,
+        webServer: { enabled: true, service: 'traefik' },
+      },
+    });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain("onclick=\"showServiceModal('Traefik Dashboard')\"");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service Detail Modal — SERVICE_DETAIL_MAP data completeness
+// ---------------------------------------------------------------------------
+
+describe('Service Detail Modal — data completeness', () => {
+  it('contains Traefik key', () => {
+    expect(SERVICE_DETAIL_MAP).toHaveProperty('Traefik');
+  });
+
+  it('contains Gitea key', () => {
+    expect(SERVICE_DETAIL_MAP).toHaveProperty('Gitea');
+  });
+
+  it('contains Cloudflared key', () => {
+    expect(SERVICE_DETAIL_MAP).toHaveProperty('Cloudflared');
+  });
+
+  it('has all required fields for every entry', () => {
+    for (const [key, info] of Object.entries(SERVICE_DETAIL_MAP)) {
+      const detail = info as { description: string; license: string; features: string[]; credentials: { method: string; summary: string }; tips: string[] };
+      expect(typeof detail.description).toBe('string');
+      expect(detail.description.length).toBeGreaterThan(0);
+      expect(typeof detail.license).toBe('string');
+      expect(detail.license.length).toBeGreaterThan(0);
+      expect(Array.isArray(detail.features)).toBe(true);
+      expect(detail.features.length).toBeGreaterThanOrEqual(2);
+      expect(typeof detail.credentials.method).toBe('string');
+      expect(['env', 'wizard', 'cli', 'basicauth', 'none']).toContain(detail.credentials.method);
+      expect(typeof detail.credentials.summary).toBe('string');
+      expect(detail.credentials.summary.length).toBeGreaterThan(0);
+      expect(Array.isArray(detail.tips)).toBe(true);
+      expect(detail.tips.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('contains all 16 service entries', () => {
+    const expectedKeys = [
+      'Traefik', 'Traefik Dashboard', 'Gitea', 'Nextcloud',
+      'PostgreSQL', 'MySQL', 'Redis', 'pgAdmin',
+      'Jellyfin', 'SSH Server', 'Mail Server', 'FileBrowser',
+      'MinIO Console', 'Cloudflared', 'Nginx', 'Caddy',
+    ];
+    for (const key of expectedKeys) {
+      expect(SERVICE_DETAIL_MAP).toHaveProperty(key);
+    }
+    expect(Object.keys(SERVICE_DETAIL_MAP)).toHaveLength(16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service Detail Modal — access URLs and admin credentials in modal
+// ---------------------------------------------------------------------------
+
+describe('Service Detail Modal — access URLs in modal', () => {
+  beforeEach(() => {
+    mockMkdirSync.mockReset();
+    mockWriteFileSync.mockReset();
+    mockExeca.mockReset();
+  });
+
+  it('embeds SERVICE_URLS JSON in the script block', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('var SERVICE_URLS =');
+  });
+
+  it('embeds ADMIN_CREDS JSON in the script block', async () => {
+    const state = makeState({ admin: { username: 'myadmin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('var ADMIN_CREDS =');
+    // Username "myadmin" → masked last 2 chars → "myadm**"
+    expect(html).toContain('"username":"myadm**"');
+  });
+
+  it('includes SERVICE_URLS entries matching service card data', async () => {
+    const base = createDefaultWizardState();
+    const state = makeState({
+      admin: { username: 'admin', password: 'pass1234', storage: 'local' },
+      servers: {
+        ...base.servers,
+        webServer: { enabled: true, service: 'traefik' },
+        fileServer: { enabled: true, service: 'nextcloud' },
+      },
+    });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    // Traefik local URL
+    expect(html).toContain('"Traefik"');
+    expect(html).toContain('"localUrl":"http://localhost:80"');
+    // Nextcloud local URL
+    expect(html).toContain('"Nextcloud"');
+    expect(html).toContain('"localUrl":"http://localhost:8443"');
+  });
+
+  it('includes external URLs in SERVICE_URLS when provider is tunnel', async () => {
+    const base = createDefaultWizardState();
+    const state = makeState({
+      admin: { username: 'admin', password: 'pass1234', storage: 'local' },
+      servers: {
+        ...base.servers,
+        fileServer: { enabled: true, service: 'nextcloud' },
+      },
+      domain: {
+        provider: 'tunnel',
+        name: 'myserver.example.com',
+        ssl: 'cloudflare',
+        cloudflare: {
+          enabled: true,
+          accountId: 'acc-123',
+          apiToken: '',
+          tunnelId: 'tun-abc',
+          tunnelToken: 'eyJ...',
+          tunnelName: 'my-tunnel',
+          zoneId: 'zone-xyz',
+          zoneName: 'example.com',
+        },
+      },
+    });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('"externalUrl":"https://cloud.example.com"');
+  });
+
+  it('showServiceModal references SERVICE_URLS for access section', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('SERVICE_URLS[name]');
+    expect(html).toContain('modal-url-link');
+    expect(html).toContain('$ access');
+  });
+
+  it('showServiceModal shows admin credentials for env/basicauth services', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('ADMIN_CREDS.username');
+    expect(html).toContain('ADMIN_CREDS.passwordHint');
+    expect(html).toContain('modal-cred-box');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Service Detail Modal — keyboard accessibility
+// ---------------------------------------------------------------------------
+
+describe('Service Detail Modal — keyboard accessibility', () => {
+  beforeEach(() => {
+    mockMkdirSync.mockReset();
+    mockWriteFileSync.mockReset();
+    mockExeca.mockReset();
+  });
+
+  it('includes handleModalEsc function for ESC key support', async () => {
+    const state = makeState({ admin: { username: 'admin', password: 'pass1234', storage: 'local' } });
+    await generateAndOpenStatusPage(state, { noOpen: true });
+    const [, html] = mockWriteFileSync.mock.calls[0] as [string, string, string];
+    expect(html).toContain('function handleModalEsc(');
+    expect(html).toContain("e.key === 'Escape'");
   });
 });

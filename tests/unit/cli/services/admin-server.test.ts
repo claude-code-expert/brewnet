@@ -470,6 +470,82 @@ describe('POST /api/backup', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET / — service detail modal and external URLs
+// ---------------------------------------------------------------------------
+
+describe('GET / — modal and external URL features', () => {
+  it('HTML contains SERVICE_DETAILS JSON for modal', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var SERVICE_DETAILS =');
+  });
+
+  it('HTML contains ADMIN_CREDS JSON', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var ADMIN_CREDS =');
+  });
+
+  it('HTML contains DOMAIN_CONFIG JSON', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var DOMAIN_CONFIG =');
+  });
+
+  it('HTML contains showServiceModal function', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('function showServiceModal(');
+  });
+
+  it('HTML contains closeServiceModal function', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('function closeServiceModal(');
+  });
+
+  it('HTML contains escapeHtml function', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('function escapeHtml(');
+  });
+
+  it('HTML contains handleModalEsc for ESC key support', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('function handleModalEsc(');
+  });
+
+  it('HTML contains External column header', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('<th>External</th>');
+  });
+
+  it('HTML contains modal-overlay CSS class', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('.modal-overlay');
+  });
+
+  it('HTML contains svc-link CSS class for clickable names', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('.svc-link');
+  });
+
+  it('HTML contains getExternalUrl function', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('function getExternalUrl(');
+  });
+
+  it('HTML contains EXT_PATHS for external URL routing', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var EXT_PATHS');
+    expect(res.body).toContain('gitea');
+    expect(res.body).toContain('nextcloud');
+    expect(res.body).toContain('pgadmin');
+  });
+
+  it('HTML contains NAME_ALIASES for service name mapping', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var NAME_ALIASES');
+    expect(res.body).toContain('OpenSSH Server');
+    expect(res.body).toContain('SSH Server');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 404 fallback
 // ---------------------------------------------------------------------------
 

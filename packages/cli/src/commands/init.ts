@@ -9,8 +9,8 @@
  *   Step 0: System Check
  *   Step 1: Project Setup
  *   Step 2: Server Components (T052-T058)
- *   Step 3: Dev Stack & Runtime (placeholder — not yet implemented)
- *   Step 4: Domain & Network (placeholder — not yet implemented)
+ *   Step 3: Dev Stack & Runtime (T081)
+ *   Step 4: Domain & Network (T082)
  *   Step 5: Review & Confirm (T070)
  *   Step 6: Generate & Start (T071)
  *   Step 7: Complete (T072)
@@ -22,7 +22,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { confirm } from '@inquirer/prompts';
+import { runAdminSetupStep } from '../wizard/steps/admin-setup.js';
 import { runSystemCheckStep } from '../wizard/steps/system-check.js';
 import { runProjectSetupStep } from '../wizard/steps/project-setup.js';
 import { runServerComponentsStep } from '../wizard/steps/server-components.js';
@@ -30,18 +30,17 @@ import { runDevStackStep } from '../wizard/steps/dev-stack.js';
 import { runDomainNetworkStep } from '../wizard/steps/domain-network.js';
 import { runReviewStep, importConfig } from '../wizard/steps/review.js';
 import { runGenerateStep } from '../wizard/steps/generate.js';
+import type { GenerateResult } from '../wizard/steps/generate.js';
+import { cleanupForRestart } from '../services/uninstall-manager.js';
 import { runCompleteStep } from '../wizard/steps/complete.js';
 import {
   WizardNavigation,
   WizardStep,
-  STEP_NAMES,
   setupCancelHandler,
 } from '../wizard/navigation.js';
 import {
   createState,
   saveState,
-  loadState,
-  hasResumeState,
 } from '../wizard/state.js';
 import type { WizardState } from '@brewnet/shared';
 import { generatePassword } from '../utils/password.js';
@@ -84,14 +83,24 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
   // 1. Display welcome banner
   // -----------------------------------------------------------------------
   console.log();
-  console.log(chalk.bold.cyan('  Brewnet') + chalk.bold(' — Your Home Server, Brewed Fresh'));
-  console.log(chalk.dim('  Interactive setup wizard'));
+  console.log(chalk.cyan([
+    '   ____                                _   ',
+    '  | __ ) _ __ _____      ___ __   ___| |_ ',
+    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|',
+    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_ ',
+    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|',
+  ].join('\n')));
+  console.log();
+  console.log(chalk.bold('  Brewnet') + chalk.dim(' — One command. Your entire server stack, on tap. Just brew it!'));
+  console.log(chalk.dim('  v1.0.1  •  MIT License'));
+  console.log(chalk.dim('  https://brewnet.dev  •  https://github.com/claude-code-expert/brewnet'));
+  console.log(chalk.dim('  brewnet.dev@gmail.com'));
   console.log();
 
   // -----------------------------------------------------------------------
   // 2. Set up navigation and state
   // -----------------------------------------------------------------------
-  const nav = new WizardNavigation(WizardStep.SystemCheck);
+  const nav = new WizardNavigation(WizardStep.AdminSetup);
   let state: WizardState = createState();
 
   // -----------------------------------------------------------------------
@@ -144,8 +153,8 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
     console.log();
 
     // Skip directly to generate step
-    const success = await runGenerateStep(state);
-    if (success) {
+    const result = await runGenerateStep(state);
+    if (result === 'success') {
       await runCompleteStep(state, { noOpen: options.open === false });
     }
     return;
@@ -179,6 +188,16 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
     while (!nav.isCancelled && nav.currentStep <= WizardStep.Complete) {
       switch (nav.currentStep) {
         // -----------------------------------------------------------------
+        // Pre-Step: Admin Account
+        // -----------------------------------------------------------------
+        case WizardStep.AdminSetup: {
+          state = await runAdminSetupStep(state);
+          saveState(state);
+          nav.goForward();
+          break;
+        }
+
+        // -----------------------------------------------------------------
         // Step 0: System Check
         // -----------------------------------------------------------------
         case WizardStep.SystemCheck: {
@@ -194,6 +213,15 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
             return;
           }
 
+          // Merge any port remapping choices into state
+          if (Object.keys(checkResult.portRemapping).length > 0) {
+            state = {
+              ...state,
+              portRemapping: { ...state.portRemapping, ...checkResult.portRemapping },
+            };
+            saveState(state);
+          }
+
           nav.goForward();
           break;
         }
@@ -202,27 +230,6 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
         // Step 1: Project Setup
         // -----------------------------------------------------------------
         case WizardStep.ProjectSetup: {
-          // Check for resume state before collecting input
-          // We use the default project name for resume detection
-          const defaultName = state.projectName || 'my-homeserver';
-
-          if (hasResumeState(defaultName)) {
-            const shouldResume = await confirm({
-              message: `Resume previous setup for "${defaultName}"?`,
-              default: true,
-            });
-
-            if (shouldResume) {
-              const loaded = loadState(defaultName);
-              if (loaded) {
-                state = loaded;
-                console.log();
-                console.log(chalk.green('  Resumed previous session.'));
-                console.log();
-              }
-            }
-          }
-
           state = await runProjectSetupStep(state);
 
           // Save state after this step
@@ -295,17 +302,40 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
         // Step 6: Generate & Start (T071)
         // -----------------------------------------------------------------
         case WizardStep.Generate: {
-          const success = await runGenerateStep(state);
+          const generateResult: GenerateResult = await runGenerateStep(state);
 
-          if (success) {
-            nav.goForward();
-          } else {
-            // On failure, go back to Review so user can modify or retry
-            console.log(
-              chalk.yellow('  Returning to Review step.'),
-            );
-            console.log();
-            nav.goToStep(WizardStep.Review);
+          switch (generateResult) {
+            case 'success':
+              nav.goForward();
+              break;
+
+            case 'error':
+              console.log(chalk.yellow('  Returning to Review step.'));
+              console.log();
+              nav.goToStep(WizardStep.Review);
+              break;
+
+            case 'restart':
+              console.log(chalk.cyan('  Restarting wizard from the beginning...'));
+              console.log();
+              nav.goToStep(WizardStep.AdminSetup);
+              break;
+
+            case 'clean-restart': {
+              console.log(chalk.cyan('  Cleaning up before restart...'));
+              try {
+                await cleanupForRestart(state.projectPath);
+                console.log(chalk.green('  Cleanup complete.'));
+              } catch (err) {
+                console.log(chalk.yellow('  Cleanup encountered errors (continuing anyway).'));
+                if (err instanceof Error) {
+                  console.log(chalk.dim(`    ${err.message}`));
+                }
+              }
+              console.log();
+              nav.goToStep(WizardStep.AdminSetup);
+              break;
+            }
           }
 
           break;

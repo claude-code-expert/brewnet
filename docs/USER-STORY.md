@@ -1,7 +1,7 @@
 # Brewnet USER-STORY
 
-> **Version**: 2.2
-> **Last Updated**: 2026-02-22
+> **Version**: 2.3
+> **Last Updated**: 2026-02-27
 > **Status**: Draft
 
 ---
@@ -10,7 +10,7 @@
 
 This document walks through the complete user journey of Brewnet — from installation to a fully running home server. It serves as a step-by-step manual showing every option, selection, and outcome.
 
-Wizard는 총 8단계(STEP 0~7)로 구성되며, 이전 버전(9단계) 대비 간소화된 구조를 따른다.
+Wizard는 총 **9단계** (Pre-Step + STEP 0~7)로 구성된다. v2.3에서 Docker 설치 이전에 Admin 계정을 먼저 설정하는 Pre-Step이 추가되었다.
 
 ---
 
@@ -52,13 +52,14 @@ brewnet --version
 
 ---
 
-## STEP 1: Launch the Setup Wizard
+## PRE-STEP: Admin Account Setup (NEW v2.3)
 
 ```bash
 brewnet init
 ```
 
-The interactive wizard starts with a system check banner:
+`brewnet init` 실행 시 **가장 먼저** 관리자 계정을 설정한다.
+Docker 설치 이전에 단일 admin credential을 설정하고, 이후 모든 서비스에 전파한다.
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
@@ -66,7 +67,41 @@ The interactive wizard starts with a system check banner:
 ║    Brewnet v1.0.0                                                ║
 ║    Your Home Server, Brewed Fresh                                ║
 ║                                                                  ║
-║    License: BUSL-1.1                                             ║
+╚══════════════════════════════════════════════════════════════════╝
+
+─── Admin Account Setup ──────────────────────────────────────────
+
+  Set up your Brewnet admin credentials.
+  This single credential will be used for ALL services:
+  Nextcloud, Gitea, pgAdmin, Jellyfin, FileBrowser, SSH, Mail.
+
+? Admin username: › admin
+? Admin password: › ••••••••••••••••••••
+  Password auto-generated: Xk9mP2vQ8nL4wR7jTb5s
+  Press Enter to accept, or type your own.
+
+  [OK] Credentials will be saved to .env (chmod 600)
+```
+
+**이 계정은 다음 서비스에 자동으로 전파된다:**
+- Gitea admin, PostgreSQL user, Redis password
+- Nextcloud admin, MinIO root user
+- pgAdmin login, Jellyfin admin
+- FileBrowser admin, SSH login, Mail postmaster
+
+---
+
+## STEP 1: System Check (STEP 0/7)
+
+The wizard then performs a system check banner:
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║    Brewnet v1.0.0                                                ║
+║    Your Home Server, Brewed Fresh                                ║
+║                                                                  ║
+║    License: MIT                                                  ║
 ║    GitHub:  https://github.com/codevillain/brewnet               ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
@@ -87,6 +122,20 @@ All checks passed! Press Enter to continue...
 ```
 
 > If any check fails (e.g., Docker not installed), the wizard shows an error message with installation instructions and exits.
+
+**Port Conflict Scenario (NEW v2.3)**: 포트 충돌이 감지되면 자동으로 대안을 제안한다:
+
+```
+  [WARN] Port 80 is in use by another process.
+
+  Suggested alternatives:
+    > Use port 8080  (recommended)
+      Use port 8088
+      Use port 8000
+      Enter custom port
+
+  [OK] Port 80 → 8080 remapped. Will be applied to docker-compose.yml.
+```
 
 ---
 
@@ -406,7 +455,10 @@ Multiple selections are supported.
 
 **Example selection**: User selects `Python` and `Java`.
 
-### 4.2 Framework Selection
+### 4.2 Framework Selection (Sub-Prompt per Language — NEW v2.3)
+
+**[v2.3 FIX]** 언어 다중 선택 후, 선택된 각 언어에 대해 **순차적으로** 프레임워크 Sub-Prompt가 표시된다.
+예시: Python + Java를 선택하면 Python 프레임워크 → Java 프레임워크 순서로 묻는다.
 
 선택한 언어에 따라 프레임워크 옵션이 표시된다:
 
@@ -481,15 +533,14 @@ Multiple selections are supported.
     Blazor             — Full-stack web UI (MIT)
 ```
 
-### 4.2.1 Frontend Tech Stack (Multi-select)
+### 4.2.1 Frontend Tech Stack (Single-select)
 
 ```
-? Select frontend technologies (multi-select):
+? Select frontend (optional):
 
-  [ ] Vue.js           — Progressive framework
-  [ ] React.js         — UI library by Meta
-  [ ] TypeScript       — Typed JavaScript
-  [ ] JavaScript       — Vanilla JS
+  > Skip frontend (API only)
+    React (TypeScript)  — React SPA with Vite + TypeScript
+    Vue.js (Vite)       — Vue 3 SPA with Vite build tool
 ```
 
 ### 4.3 Boilerplate Options
@@ -586,20 +637,18 @@ Configure your domain and network access method.
 
 ### 5.1 Domain Provider Selection
 
-도메인 접근 방식을 3가지 옵션 중 선택한다:
+도메인 접근 방식을 2가지 옵션 중 선택한다:
 
 ```
 ? How would you like to access your server?
 
     Local Only (.local)       — Home network only, no external access
-  > Free Domain (DigitalPlat) — Get a free domain (.dpdns.org) [RECOMMENDED]
-    Own Domain                — Use your existing domain
+  > Own Domain                — Use your existing domain with Cloudflare Tunnel
 ```
 
 | Provider | Description | External Access | Cost |
 |----------|-------------|:---------------:|------|
 | **Local Only** | `.local` 도메인으로 홈 네트워크 내에서만 접근 | No | Free |
-| **Free Domain (DigitalPlat)** | DigitalPlat FreeDomain에서 무료 도메인 발급 (.dpdns.org 추천) | Yes | Free |
 | **Own Domain** | 사용자가 이미 보유한 도메인 사용 | Yes | Varies |
 
 #### Scenario A: Local Only (.local)
@@ -620,55 +669,7 @@ Configure your domain and network access method.
   Cloudflare Tunnel: Not available (local only)
 ```
 
-#### Scenario B: Free Domain (DigitalPlat) — RECOMMENDED
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Free Domain Setup Guide (8 Steps)                      │
-│                                                         │
-│  1. Cloudflare 계정 생성                                │
-│     → dash.cloudflare.com (무료)                        │
-│                                                         │
-│  2. DigitalPlat FreeDomain 방문                         │
-│     → dash.domain.digitalplat.org                       │
-│                                                         │
-│  3. DigitalPlat 계정 등록/로그인                        │
-│                                                         │
-│  4. 도메인명 검색                                       │
-│     → 원하는 이름 입력, 가용성 확인                    │
-│                                                         │
-│  5. 도메인 등록 (TLD 선택)                              │
-│     → .dpdns.org (권장) / .qzz.io / .us.kg             │
-│                                                         │
-│  6. Cloudflare 네임서버 설정                            │
-│     → DigitalPlat 패널에서 Cloudflare NS 입력          │
-│     → NS: xxx.ns.cloudflare.com                        │
-│                                                         │
-│  7. DNS 전파 대기 (15분~24시간)                         │
-│     → 확인: dig +short NS mydomain.dpdns.org           │
-│                                                         │
-│  8. 위저드로 돌아와 도메인명 입력                       │
-└─────────────────────────────────────────────────────────┘
-
-  Tip: .dpdns.org domains are free and work immediately
-       with Cloudflare for DNS and Tunnel.
-
-? Have you completed the steps above? (Y/n) › Y
-
-? Enter your free domain: › myserver.dpdns.org
-
-  Subdomains will be auto-configured:
-    traefik.myserver.dpdns.org
-    git.myserver.dpdns.org
-    nextcloud.myserver.dpdns.org
-    jellyfin.myserver.dpdns.org
-    fastapi.myserver.dpdns.org
-    files.myserver.dpdns.org
-```
-
-**Example selection**: User registers at DigitalPlat and enters `myserver.dpdns.org`.
-
-#### Scenario C: Own Domain
+#### Scenario B: Own Domain
 
 ```
 ? Enter your domain name: › homeserver.example.com
@@ -687,7 +688,7 @@ Configure your domain and network access method.
 
 ### 5.2 Cloudflare Tunnel
 
-Free Domain 또는 Own Domain을 선택한 경우, Cloudflare Tunnel이 기본으로 활성화된다. Tunnel은 외부 접근을 위한 필수 요소로, 포트 포워딩 없이 NAT/CGNAT 환경에서도 서비스를 외부에 노출할 수 있다.
+Own Domain을 선택한 경우, Cloudflare Tunnel이 기본으로 활성화된다. Tunnel은 외부 접근을 위한 필수 요소로, 포트 포워딩 없이 NAT/CGNAT 환경에서도 서비스를 외부에 노출할 수 있다.
 
 ```
 ─── Cloudflare Tunnel ─────────────────────────────────────────────
@@ -712,17 +713,16 @@ Free Domain 또는 Own Domain을 선택한 경우, Cloudflare Tunnel이 기본�
   [OK] cloudflared container will be auto-configured
 ```
 
-> Cloudflare Tunnel은 Free Domain과 Own Domain 선택 시 기본 ON이며, "Required for external access"로 표시된다. Local Only 선택 시에는 표시되지 않는다.
+> Cloudflare Tunnel은 Own Domain 선택 시 기본 ON이며, "Required for external access"로 표시된다. Local Only 선택 시에는 표시되지 않는다.
 
 | Provider | Tunnel Default | SSL |
 |----------|:--------------:|-----|
 | **Local Only** | N/A (not shown) | Self-signed (auto) |
-| **Free Domain** | ON (required) | Auto HTTPS via Cloudflare |
 | **Own Domain** | ON (required) | Auto HTTPS via Cloudflare |
 
 ### 5.3 Mail Server (Conditional)
 
-Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에만 표시된다. Free Domain 또는 Own Domain을 선택한 경우 메일 서버를 활성화할 수 있다.
+Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에만 표시된다. Own Domain을 선택한 경우 메일 서버를 활성화할 수 있다.
 
 ```
 ─── Mail Server ──────────────────────────────────────────────────
@@ -740,14 +740,14 @@ Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에�
   ├────────────────────────────────────────────────────────────────┤
   │  SMTP:           Port 587 (STARTTLS)                           │
   │  IMAP:           Port 993 (SSL/TLS)                            │
-  │  Postmaster:     admin@myserver.dpdns.org                      │
+  │  Postmaster:     admin@myserver.example.com                      │
   │                  (using admin credentials from Step 2)          │
   │                                                                │
   │  [ON]  Webmail   Roundcube web interface                       │
-  │        Access:   https://mail.myserver.dpdns.org               │
+  │        Access:   https://mail.myserver.example.com               │
   └────────────────────────────────────────────────────────────────┘
 
-  [OK] Postmaster account: admin@myserver.dpdns.org
+  [OK] Postmaster account: admin@myserver.example.com
   [OK] Admin credentials will be used for postmaster login
 ```
 
@@ -759,20 +759,20 @@ Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에�
 
 ```
   Subdomains will be auto-configured:
-    traefik.myserver.dpdns.org
-    git.myserver.dpdns.org
-    nextcloud.myserver.dpdns.org
-    jellyfin.myserver.dpdns.org
-    fastapi.myserver.dpdns.org
-    files.myserver.dpdns.org
-    mail.myserver.dpdns.org          (webmail)
+    traefik.myserver.example.com
+    git.myserver.example.com
+    nextcloud.myserver.example.com
+    jellyfin.myserver.example.com
+    fastapi.myserver.example.com
+    files.myserver.example.com
+    mail.myserver.example.com          (webmail)
 
   SSH Access:
-    ssh admin@myserver.dpdns.org -p 2222
+    ssh admin@myserver.example.com -p 2222
 
   Mail Endpoints:
-    SMTP: smtp.myserver.dpdns.org:587
-    IMAP: imap.myserver.dpdns.org:993
+    SMTP: smtp.myserver.example.com:587
+    IMAP: imap.myserver.example.com:993
 ```
 
 ### 5.4 Domain Summary
@@ -780,12 +780,12 @@ Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에�
 ```
 Domain & Network Configuration:
 
-  Provider:      Free Domain (DigitalPlat)
-  Domain:        myserver.dpdns.org
+  Provider:      Custom Domain (Tunnel)
+  Domain:        myserver.example.com
   Tunnel:        Cloudflare Tunnel (enabled)
   SSL:           Auto HTTPS via Cloudflare
   Mail Server:   Enabled (docker-mailserver)
-  Postmaster:    admin@myserver.dpdns.org
+  Postmaster:    admin@myserver.example.com
 
 ? Proceed? (Y/n) › Y
 ```
@@ -809,14 +809,14 @@ Domain & Network Configuration:
 
   ─── Server Components ──────────────────────────────────────────
   Web Server:    Traefik v3.0
-  Git Server:    Gitea (required, git.myserver.dpdns.org)
+  Git Server:    Gitea (required, git.myserver.example.com)
   File Server:   Nextcloud
   App Server:    Enabled
-  FileBrowser:   Enabled (files.myserver.dpdns.org)
+  FileBrowser:   Enabled (files.myserver.example.com)
   DB Server:     PostgreSQL 16 + Redis 7 (brewnet_db)
   Media:         Jellyfin
   SSH Server:    Enabled (port 2222, key-based auth, SFTP on)
-  Mail Server:   Enabled (docker-mailserver, postmaster@myserver.dpdns.org)
+  Mail Server:   Enabled (docker-mailserver, postmaster@myserver.example.com)
 
   ─── Runtime & Boilerplate ──────────────────────────────────────
   Language:      Python 3.12
@@ -825,8 +825,8 @@ Domain & Network Configuration:
   Dev Mode:      Hot-reload enabled
 
   ─── Domain & Network ───────────────────────────────────────────
-  Provider:      Free Domain (DigitalPlat)
-  Domain:        myserver.dpdns.org
+  Provider:      Custom Domain (Tunnel)
+  Domain:        myserver.example.com
   Tunnel:        Cloudflare Tunnel (enabled)
   SSL:           Auto HTTPS via Cloudflare
 
@@ -838,7 +838,7 @@ Domain & Network Configuration:
     • Gitea          — Admin login
     • FileBrowser    — Admin login
     • SSH Server     — Admin user (key-based + optional password)
-    • Mail Server    — Postmaster (admin@myserver.dpdns.org)
+    • Mail Server    — Postmaster (admin@myserver.example.com)
 
   ─── Resources ──────────────────────────────────────────────────
   Total Containers: 10
@@ -1007,7 +1007,7 @@ Starting services...
   Configuring Mail Server...
     [OK] Generated postfix configuration (main.cf)
     [OK] Generated dovecot configuration (dovecot.conf)
-    [OK] Created postmaster account (admin@myserver.dpdns.org)
+    [OK] Created postmaster account (admin@myserver.example.com)
     [OK] Configured Roundcube webmail
 
   Propagating credentials...
@@ -1017,7 +1017,7 @@ Starting services...
     [OK] Admin credentials → Gitea (admin login)
     [OK] Admin credentials → FileBrowser (admin login)
     [OK] Admin credentials → SSH Server (admin user)
-    [OK] Admin credentials → Mail Server (postmaster@myserver.dpdns.org)
+    [OK] Admin credentials → Mail Server (postmaster@myserver.example.com)
 
   Starting containers...
     [OK] brewnet-traefik         (web server / reverse proxy)
@@ -1037,7 +1037,7 @@ Starting services...
 
   Verifying external access...
     [OK] Cloudflare Tunnel connected
-    [OK] DNS records configured for myserver.dpdns.org
+    [OK] DNS records configured for myserver.example.com
     [OK] HTTPS certificate active
     [OK] SSH port 2222 reachable via tunnel
     [OK] Mail ports (587, 993) configured
@@ -1049,53 +1049,59 @@ Starting services...
 
 ## STEP 8: Access Your Services (STEP 7/7)
 
-After setup completes, the wizard displays all available endpoints:
+After setup completes, the wizard displays all available endpoints — **both local and external access URLs** (NEW v2.3):
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║  Your Home Server is Ready!                                      ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-  Domain: myserver.dpdns.org (via Cloudflare Tunnel)
+  Domain: myserver.example.com (via Cloudflare Tunnel)
 
   ─── Admin Account ──────────────────────────────────────────────
   Username:         admin
   Password:         (see .env file — ADMIN_PASSWORD)
   Used by:          Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, etc.
 
-  ─── Applications ─────────────────────────────────────────────
-  FastAPI App       https://fastapi.myserver.dpdns.org
-  FastAPI Docs      https://fastapi.myserver.dpdns.org/docs   (Swagger UI)
-  FileBrowser       https://files.myserver.dpdns.org
+  ─── Local Access (same network) ─────────────────────────────────
+  Traefik           http://localhost:80
+  Gitea             http://localhost:3000
+  Nextcloud         http://localhost:8080
+  Jellyfin          http://localhost:8096
+  pgAdmin           http://localhost:5050
+  FileBrowser       http://localhost:8085
+  FastAPI App       http://localhost:8000
+  FastAPI Docs      http://localhost:8000/docs   (Swagger UI)
 
-  ─── Web Server ─────────────────────────────────────────────
-  Traefik           https://traefik.myserver.dpdns.org
+  ─── External Access (via Cloudflare Tunnel) ──────────────────────
+  Traefik           https://myserver.example.com
+  Gitea Web UI      https://git.myserver.example.com
+  Nextcloud         https://files.myserver.example.com
+  Jellyfin          https://media.myserver.example.com
+  pgAdmin           https://db.myserver.example.com
+  FileBrowser       https://fb.myserver.example.com
+  FastAPI App       https://fastapi.myserver.example.com
+  FastAPI Docs      https://fastapi.myserver.example.com/docs
 
-  ─── File Server ─────────────────────────────────────────────
-  Nextcloud         https://nextcloud.myserver.dpdns.org
+  ─── Git Access ──────────────────────────────────────────────────
+  Git SSH           ssh://git@myserver.example.com:3022/{user}/{repo}.git
+  Git HTTP          https://git.myserver.example.com/{user}/{repo}.git
 
-  ─── Media ───────────────────────────────────────────────────
-  Jellyfin          https://jellyfin.myserver.dpdns.org
-
-  ─── Git Server ───────────────────────────────────────────────
-  Gitea Web UI      https://git.myserver.dpdns.org
-  Git SSH           ssh://git@myserver.dpdns.org:3022/{user}/{repo}.git
-  Git HTTP          https://git.myserver.dpdns.org/{user}/{repo}.git
-
-  ─── Databases ────────────────────────────────────────────────
+  ─── Databases (internal only) ────────────────────────────────────
   PostgreSQL        localhost:5432   (user: brewnet)
   Redis             localhost:6379
 
-  ─── Remote Access (SSH) ──────────────────────────────────────
-  SSH:              ssh admin@myserver.dpdns.org -p 2222
-  SFTP:             sftp -P 2222 admin@myserver.dpdns.org
+  ─── Remote Access (SSH) ──────────────────────────────────────────
+  SSH Local:        ssh admin@localhost -p 2222
+  SSH External:     ssh admin@myserver.example.com -p 2222
+  SFTP:             sftp -P 2222 admin@myserver.example.com
   Auth:             Key-based (password auth: off)
 
-  ─── Mail ─────────────────────────────────────────────────────
-  SMTP:             smtp.myserver.dpdns.org:587 (STARTTLS)
-  IMAP:             imap.myserver.dpdns.org:993 (SSL/TLS)
-  Webmail:          https://mail.myserver.dpdns.org
-  Postmaster:       admin@myserver.dpdns.org
+  ─── Mail ─────────────────────────────────────────────────────────
+  SMTP:             smtp.myserver.example.com:587 (STARTTLS)
+  IMAP:             imap.myserver.example.com:993 (SSL/TLS)
+  Webmail:          https://mail.myserver.example.com
+  Postmaster:       admin@myserver.example.com
 
   ─── Credentials Summary ─────────────────────────────────────
   Admin credentials are used across all services:
@@ -1109,8 +1115,8 @@ After setup completes, the wizard displays all available endpoints:
   │ Gitea           │ admin / (see .env ADMIN_PASSWORD)          │
   │ FileBrowser     │ admin / (see .env ADMIN_PASSWORD)          │
   │ SSH Server      │ admin (key-based auth)                     │
-  │ Mail Server     │ admin@myserver.dpdns.org / ADMIN_PASSWORD  │
-  │ Roundcube       │ admin@myserver.dpdns.org / ADMIN_PASSWORD  │
+  │ Mail Server     │ admin@myserver.example.com / ADMIN_PASSWORD  │
+  │ Roundcube       │ admin@myserver.example.com / ADMIN_PASSWORD  │
   └─────────────────┴────────────────────────────────────────────┘
 
   All passwords stored in .env (chmod 600).
@@ -1120,11 +1126,11 @@ After setup completes, the wizard displays all available endpoints:
   Verify your server is accessible from the internet:
 
   1. DNS Resolution:
-     $ dig myserver.dpdns.org +short
+     $ dig myserver.example.com +short
      # Should return Cloudflare IP
 
   2. HTTPS Access:
-     $ curl -I https://fastapi.myserver.dpdns.org
+     $ curl -I https://fastapi.myserver.example.com
      # Should return HTTP/2 200
 
   3. Tunnel Status:
@@ -1132,7 +1138,7 @@ After setup completes, the wizard displays all available endpoints:
      # Should show "connected"
 
   4. SSH Access:
-     $ ssh -p 2222 admin@myserver.dpdns.org "echo connected"
+     $ ssh -p 2222 admin@myserver.example.com "echo connected"
      # Should print "connected"
 
   5. Mail Server:
@@ -1206,8 +1212,8 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=Xk9mP2vQ8nL4wR7jTb5s    # auto-generated (20 chars)
 
 # Domain
-DOMAIN=myserver.dpdns.org
-DOMAIN_PROVIDER=freedomain              # local | freedomain | custom
+DOMAIN=myserver.example.com
+DOMAIN_PROVIDER=tunnel                  # local | tunnel
 SSL_MODE=cloudflare                     # self-signed | letsencrypt | cloudflare
 
 # Cloudflare Tunnel
@@ -1227,8 +1233,8 @@ SSH_AUTH_METHOD=key                 # key | password | both
 SSH_SFTP_ENABLED=true
 
 # Mail Server
-MAIL_DOMAIN=myserver.dpdns.org
-MAIL_POSTMASTER=admin@myserver.dpdns.org
+MAIL_DOMAIN=myserver.example.com
+MAIL_POSTMASTER=admin@myserver.example.com
 MAIL_SMTP_PORT=587
 MAIL_IMAP_PORT=993
 
@@ -1473,16 +1479,16 @@ This skips the wizard and directly generates files based on the saved configurat
 | `brewnet git repo create <name>` | Git 저장소 생성 |
 | `brewnet git repo list` | Git 저장소 목록 |
 | `brewnet git hook setup <repo>` | Webhook 자동 배포 설정 |
-| `brewnet domain free register <name>` | 무료 도메인 등록 (DigitalPlat) |
 | `brewnet domain tunnel status` | Cloudflare Tunnel 상태 확인 |
 | `brewnet credentials` | 전체 서비스 자격증명 표시 |
 | `brewnet mail test <email>` | 테스트 메일 전송 |
 | `brewnet mail dns-check` | 메일 DNS 레코드 확인 (MX, SPF, DKIM, DMARC) |
 | `brewnet storage monitor` | 스토리지 사용량 모니터링 |
 | `brewnet backup verify <id>` | 백업 무결성 검증 |
-| `brewnet uninstall` | 전체 서비스 제거 (컨테이너 + 볼륨 + 설정) |
+| `brewnet uninstall` | 전체 서비스 제거 (컨테이너 + 볼륨 + 설정) + Docker 제거 여부 확인 |
 | `brewnet uninstall --dry-run` | 삭제 대상 목록만 확인 (실제 삭제 없음) |
 | `brewnet uninstall --keep-data` | 데이터 볼륨 보존, 컨테이너만 제거 |
+| `brewnet uninstall --remove-docker` | 서비스 제거 후 Docker도 자동 제거 (확인 없음) |
 | `brewnet --help` | Show help |
 
 ---
@@ -1492,14 +1498,15 @@ This skips the wizard and directly generates files based on the saved configurat
 | Step | Title | Description |
 |------|-------|-------------|
 | STEP 0 | Installation | 시스템 요구사항 확인, CLI 설치 |
-| STEP 1 | System Check | `brewnet init` 실행, 시스템 체크 |
+| **PRE-STEP** | **Admin Setup** | **[NEW v2.3]** admin username/password 설정 — Docker 설치 이전, 모든 서비스에 전파 |
+| STEP 1 | System Check | `brewnet init` 실행, 시스템 체크 (포트 충돌 시 대안 포트 제안) |
 | STEP 2 (1/7) | Project Setup | 프로젝트 이름, 위치, Setup Type (Full/Partial) |
-| STEP 3 (2/7) | Server Components | Admin 계정 설정 + 6개 서버 컴포넌트 토글 카드 (Web/File/Git/DB/Media/SSH), credential propagation |
-| STEP 4 (3/7) | Dev Stack & Runtime | 다중 언어/프레임워크 선택, Frontend 기술 스택, FileBrowser, boilerplate 옵션 — 항상 표시 |
-| STEP 5 (4/7) | Domain & Network | 도메인 프로바이더 선택 (Local/.dpdns.org/Own), Cloudflare Tunnel, Mail Server 설정 |
+| STEP 3 (2/7) | Server Components | 6개 서버 컴포넌트 토글 카드 (Web/File/Git/DB/Media/SSH) — Admin은 Pre-Step에서 설정 |
+| STEP 4 (3/7) | Dev Stack & Runtime | 다중 언어 선택 후 **언어별 프레임워크 Sub-Prompt 순차 표시**, Frontend 기술 스택, FileBrowser, boilerplate 옵션 |
+| STEP 5 (4/7) | Domain & Network | 도메인 프로바이더 선택 (Local/Named Tunnel/Quick Tunnel), Mail Server 설정 |
 | STEP 6 (5/7) | Review | 전체 설정 검토 (SSH/Mail/Credential Propagation 포함), Generate/Modify/Export 선택 |
-| STEP 7 (6/7) | Generate | 파일 생성 (SSH/Mail 포함), credential propagation, external access verification, 서비스 시작 |
-| STEP 8 (7/7) | Complete | 서비스 접속 정보 (Remote Access, Mail, Credentials Summary, External Access Verification, SSH tips 포함) |
+| STEP 7 (6/7) | Generate | 파일 생성 + 서비스 시작 + **서비스별 접속 확인 (로컬 + 외부 URL 표시)** |
+| STEP 8 (7/7) | Complete | 서비스 접속 정보 — **로컬 접속 URL + 외부 접속 URL 모두 표시** |
 
 ---
 

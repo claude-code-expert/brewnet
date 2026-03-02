@@ -8,9 +8,10 @@
  */
 
 import type { WizardState } from '@brewnet/shared';
+import { SCHEMA_VERSION } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
-// Factory — creates a blank default WizardState (schema v5)
+// Factory — creates a blank default WizardState
 // ---------------------------------------------------------------------------
 
 /**
@@ -21,7 +22,7 @@ import type { WizardState } from '@brewnet/shared';
  */
 export function createDefaultWizardState(): WizardState {
   return {
-    schemaVersion: 5,
+    schemaVersion: SCHEMA_VERSION,
     projectName: 'my-homeserver',
     projectPath: '~/brewnet/my-homeserver',
     setupType: 'full',
@@ -44,6 +45,7 @@ export function createDefaultWizardState(): WizardState {
         dbUser: 'brewnet',
         dbPassword: '',
         adminUI: true,
+        pgadminEmail: '',
         cache: 'redis',
       },
       media: { enabled: false, services: [] },
@@ -62,15 +64,17 @@ export function createDefaultWizardState(): WizardState {
       fileBrowser: { enabled: false, mode: '' },
     },
 
+    portRemapping: {},
+
     devStack: {
       languages: [],
       frameworks: {},
-      frontend: [],
+      frontend: null,
     },
 
     boilerplate: {
       generate: true,
-      sampleData: true,
+      sampleData: false,
       devMode: 'hot-reload',
     },
 
@@ -78,9 +82,10 @@ export function createDefaultWizardState(): WizardState {
       provider: 'local',
       name: 'brewnet.local',
       ssl: 'self-signed',
-      freeDomainTld: '.dpdns.org',
       cloudflare: {
         enabled: false,
+        tunnelMode: 'none',
+        quickTunnelUrl: '',
         accountId: '',
         apiToken: '',
         tunnelId: '',
@@ -119,6 +124,7 @@ export function applyFullInstallDefaults(state: WizardState): WizardState {
         dbName: 'brewnet_db',
         dbUser: 'brewnet',
         adminUI: true,
+        pgadminEmail: '',
         cache: 'redis',
       },
     },
@@ -148,6 +154,7 @@ export function applyPartialInstallDefaults(state: WizardState): WizardState {
         dbUser: '',
         dbPassword: '',
         adminUI: false,
+        pgadminEmail: '',
         cache: '',
       },
       media: { enabled: false, services: [] },

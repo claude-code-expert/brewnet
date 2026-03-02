@@ -59,7 +59,10 @@ describe('isDockerInstalled', () => {
     mockExeca.mockReturnValue(makeExecaSuccess('Docker version 24.0.0'));
     const result = await isDockerInstalled();
     expect(result).toBe(true);
-    expect(mockExeca).toHaveBeenCalledWith('docker', ['--version']);
+    // Third argument is { env: augmentedEnv() } — use expect.objectContaining to be flexible
+    expect(mockExeca).toHaveBeenCalledWith('docker', ['--version'], expect.objectContaining({
+      env: expect.objectContaining({ PATH: expect.stringContaining('/usr/local/bin') }),
+    }));
   });
 
   it('returns false when docker --version throws', async () => {

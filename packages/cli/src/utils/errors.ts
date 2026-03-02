@@ -7,7 +7,6 @@
  * @module utils/errors
  */
 
-// TODO: Import BrewnetErrorCode from @brewnet/shared once shared types are published
 export type BrewnetErrorCode =
   | 'BN001'
   | 'BN002'

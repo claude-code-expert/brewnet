@@ -7,11 +7,11 @@ import type { WizardState } from '../types/wizard-state.js';
 // ─── Primitive Schemas ───────────────────────────────────────────────────────
 
 export const languageSchema = z.enum([
-  'python', 'nodejs', 'java', 'php', 'dotnet', 'rust', 'go',
+  'python', 'nodejs', 'java', 'rust', 'go', 'kotlin',
 ]);
 
 export const frontendTechSchema = z.enum([
-  'vuejs', 'reactjs', 'typescript', 'javascript',
+  'react', 'vue', 'none',
 ]);
 
 export const webServerServiceSchema = z.enum(['traefik', 'nginx', 'caddy']);
@@ -22,11 +22,9 @@ export const dbPrimarySchema = z.enum(['postgresql', 'mysql', 'sqlite', '']);
 
 export const cacheServiceSchema = z.enum(['redis', 'valkey', 'keydb', '']);
 
-export const domainProviderSchema = z.enum(['local', 'tunnel']);
+export const domainProviderSchema = z.enum(['local', 'tunnel', 'quick-tunnel']);
 
 export const sslModeSchema = z.enum(['self-signed', 'letsencrypt', 'cloudflare']);
-
-export const freeDomainTldSchema = z.enum(['.dpdns.org', '.qzz.io', '.us.kg']);
 
 export const setupTypeSchema = z.enum(['full', 'partial']);
 
@@ -67,6 +65,7 @@ export const dbServerConfigSchema = z.object({
   dbUser: z.string(),
   dbPassword: z.string(),
   adminUI: z.boolean(),
+  pgadminEmail: z.string(),
   cache: cacheServiceSchema,
 });
 
@@ -119,7 +118,7 @@ export const serverComponentsSchema = z.object({
 export const devStackConfigSchema = z.object({
   languages: z.array(languageSchema),
   frameworks: z.record(z.string(), z.string()),
-  frontend: z.array(frontendTechSchema),
+  frontend: frontendTechSchema.nullable(),
 });
 
 export const boilerplateConfigSchema = z.object({
@@ -128,8 +127,12 @@ export const boilerplateConfigSchema = z.object({
   devMode: devModeSchema,
 });
 
+export const tunnelModeSchema = z.enum(['quick', 'named', 'none']);
+
 export const cloudflareConfigSchema = z.object({
   enabled: z.boolean(),
+  tunnelMode: tunnelModeSchema,
+  quickTunnelUrl: z.string(),
   accountId: z.string(),
   apiToken: z.string(),
   tunnelId: z.string(),
@@ -143,14 +146,13 @@ export const domainConfigSchema = z.object({
   provider: domainProviderSchema,
   name: z.string(),
   ssl: sslModeSchema,
-  freeDomainTld: freeDomainTldSchema,
   cloudflare: cloudflareConfigSchema,
 });
 
 // ─── Root Schema ─────────────────────────────────────────────────────────────
 
 export const wizardStateSchema = z.object({
-  schemaVersion: z.literal(5),
+  schemaVersion: z.literal(7),
   projectName: z.string().min(1, 'Project name is required').regex(
     /^[a-z0-9][a-z0-9-]*$/,
     'Project name must start with a lowercase letter or number and contain only lowercase letters, numbers, and hyphens',
@@ -162,6 +164,7 @@ export const wizardStateSchema = z.object({
   devStack: devStackConfigSchema,
   boilerplate: boilerplateConfigSchema,
   domain: domainConfigSchema,
+  portRemapping: z.record(z.coerce.number(), z.number().int().min(1).max(65535)),
 }) satisfies z.ZodType<WizardState>;
 
 export type ValidatedWizardState = z.infer<typeof wizardStateSchema>;

@@ -28,6 +28,8 @@ const {
   createTunnel,
   configureTunnelIngress,
   createDnsRecord,
+  fetchWithRetry,
+  deleteTunnel,
 } = await import('../../../../packages/cli/src/services/cloudflare-client.js');
 
 const { createDefaultWizardState } = await import(
@@ -394,5 +396,159 @@ describe('createDnsRecord', () => {
     await expect(
       createDnsRecord('token', 'zone-1', 'tunnel-1', 'git', 'example.com'),
     ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchWithRetry — T032
+// ---------------------------------------------------------------------------
+
+describe('fetchWithRetry', () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it('returns response immediately on success', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ ok: true }, true, 200));
+
+    const res = await fetchWithRetry('https://api.example.com/test', undefined, { baseDelayMs: 1 });
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on HTTP 500 and returns final success', async () => {
+    mockFetch
+      .mockResolvedValueOnce(makeFetchResponse({}, false, 500))
+      .mockResolvedValueOnce(makeFetchResponse({}, false, 500))
+      .mockResolvedValueOnce(makeFetchResponse({ ok: true }, true, 200));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, { baseDelayMs: 1 });
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws after exhausting all retries on repeated 500', async () => {
+    mockFetch.mockResolvedValue(makeFetchResponse({}, false, 500));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, {
+      maxRetries: 2,
+      baseDelayMs: 1,
+    });
+    // After exhausting retries, returns the last 500 response (does not throw)
+    expect(res.status).toBe(500);
+    expect(mockFetch).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+  });
+
+  it('does NOT retry on HTTP 401 (auth error)', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: false }, false, 401));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, { baseDelayMs: 1 });
+    expect(res.status).toBe(401);
+    expect(mockFetch).toHaveBeenCalledTimes(1); // no retry
+  });
+
+  it('does NOT retry on HTTP 403 (forbidden)', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: false }, false, 403));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, { baseDelayMs: 1 });
+    expect(res.status).toBe(403);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT retry on HTTP 400 (bad request)', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: false }, false, 400));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, { baseDelayMs: 1 });
+    expect(res.status).toBe(400);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on HTTP 429 (rate limit) and succeeds on next attempt', async () => {
+    mockFetch
+      .mockResolvedValueOnce(makeFetchResponse({}, false, 429))
+      .mockResolvedValueOnce(makeFetchResponse({ ok: true }, true, 200));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, { baseDelayMs: 1 });
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries on network error (fetch throws)', async () => {
+    mockFetch
+      .mockRejectedValueOnce(new TypeError('network error'))
+      .mockRejectedValueOnce(new TypeError('network error'))
+      .mockResolvedValueOnce(makeFetchResponse({ ok: true }, true, 200));
+
+    const res = await fetchWithRetry('https://api.example.com/', undefined, {
+      maxRetries: 3,
+      baseDelayMs: 1,
+    });
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws after all retries exhausted on repeated network errors', async () => {
+    mockFetch.mockRejectedValue(new TypeError('connection refused'));
+
+    await expect(
+      fetchWithRetry('https://api.example.com/', undefined, { maxRetries: 2, baseDelayMs: 1 }),
+    ).rejects.toThrow('connection refused');
+    expect(mockFetch).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deleteTunnel — T033
+// ---------------------------------------------------------------------------
+
+describe('deleteTunnel', () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it('resolves on HTTP 200 success', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: true }));
+
+    await expect(
+      deleteTunnel('token', 'acc-1', 'tunnel-1'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('resolves on HTTP 404 (already deleted — treat as success)', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({}, false, 404));
+
+    await expect(
+      deleteTunnel('token', 'acc-1', 'tunnel-nonexistent'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws descriptive error when HTTP 400 with active connection', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({
+      success: false,
+      errors: [{ message: 'Tunnel has active connections' }],
+    }, false, 400));
+
+    await expect(
+      deleteTunnel('token', 'acc-1', 'tunnel-active'),
+    ).rejects.toThrow(/active/i);
+  });
+
+  it('throws generic error on non-400 failure (e.g. 422)', async () => {
+    // Use 422 (not 500) to avoid retry delays — 500 would trigger retries with real sleep
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({
+      success: false,
+      errors: [{ message: 'Unprocessable Entity' }],
+    }, false, 422));
+
+    await expect(
+      deleteTunnel('token', 'acc-1', 'tunnel-1'),
+    ).rejects.toThrow('Unprocessable Entity');
+  });
+
+  it('sends DELETE method to the correct CF API endpoint', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: true }));
+
+    await deleteTunnel('my-token', 'my-account', 'my-tunnel');
+
+    const [calledUrl, calledInit] = (mockFetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toContain('/accounts/my-account/cfd_tunnel/my-tunnel');
+    expect(calledInit.method).toBe('DELETE');
+    expect((calledInit.headers as Record<string, string>)['Authorization']).toBe('Bearer my-token');
   });
 });

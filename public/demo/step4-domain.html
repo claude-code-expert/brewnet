@@ -194,21 +194,13 @@
           <div class="pc-desc">Access from your home network only. No external access or domain needed.</div>
         </div>
 
-        <div class="provider-card" data-provider="freedomain" onclick="selectProvider('freedomain')">
+        <div class="provider-card" data-provider="tunnel" onclick="selectProvider('tunnel')">
           <div class="pc-header">
             <span class="pc-radio"></span>
-            <span class="pc-title">Free Domain (DigitalPlat)</span>
+            <span class="pc-title">Own Domain (Cloudflare Tunnel)</span>
             <span class="pc-tag tag-rec">Recommended</span>
           </div>
-          <div class="pc-desc">Get a free domain (.dpdns.org) via DigitalPlat + Cloudflare. Best for home servers.</div>
-        </div>
-
-        <div class="provider-card" data-provider="custom" onclick="selectProvider('custom')">
-          <div class="pc-header">
-            <span class="pc-radio"></span>
-            <span class="pc-title">Own Domain</span>
-          </div>
-          <div class="pc-desc">Use a domain you already own (e.g., example.com).</div>
+          <div class="pc-desc">Use your own domain with Cloudflare Tunnel. Full control, auto HTTPS, hides real IP.</div>
         </div>
       </div>
 
@@ -223,40 +215,8 @@
         </div>
       </div>
 
-      <!-- Free Domain Config -->
-      <div class="provider-config" id="config-freedomain">
-        <div class="config-row">
-          <span class="config-label">Your hostname:</span>
-          <input class="config-input" id="fdHostname" placeholder="my-homeserver" oninput="updateFreeDomain()">
-        </div>
-        <div class="config-row">
-          <span class="config-label">TLD:</span>
-          <select class="config-select" id="fdTld" onchange="updateFreeDomain()"></select>
-        </div>
-        <div class="config-row">
-          <span class="config-label">Full domain:</span>
-          <span id="fdFullDomain" style="color:#58a6ff;font-family:'SF Mono',monospace;font-size:13px">—</span>
-        </div>
-
-        <div id="fdAvailability" style="display:none;margin-top:8px;padding:6px 10px;border-radius:4px;font-size:12px"></div>
-
-        <div class="tunnel-steps" style="margin-top:10px">
-          <strong style="color:#e6edf3">Setup Steps (8 Steps):</strong>
-          <ol>
-            <li>Create a free <a href="https://www.cloudflare.com/" target="_blank">Cloudflare</a> account (dash.cloudflare.com)</li>
-            <li>Visit <a href="https://dash.domain.digitalplat.org/" target="_blank">DigitalPlat FreeDomain</a></li>
-            <li>Register / login to DigitalPlat</li>
-            <li>Search for your desired domain name</li>
-            <li>Register domain (select TLD: .dpdns.org recommended)</li>
-            <li>Set Cloudflare nameservers in DigitalPlat panel</li>
-            <li>Wait for DNS propagation (15min ~ 24hrs, verify: <code>dig +short NS your-domain</code>)</li>
-            <li>Return here and enter your domain name above</li>
-          </ol>
-        </div>
-      </div>
-
-      <!-- Custom Domain Config -->
-      <div class="provider-config" id="config-custom">
+      <!-- Tunnel (Own Domain) Config -->
+      <div class="provider-config" id="config-tunnel">
         <div class="config-row">
           <span class="config-label">Domain name:</span>
           <input class="config-input" id="customDomain" placeholder="example.com" oninput="updateCustomDomain()">
@@ -272,7 +232,7 @@
         </div>
       </div>
 
-      <!-- Cloudflare Tunnel Section (always visible for freedomain/custom) -->
+      <!-- Cloudflare Tunnel Section (always visible for tunnel provider) -->
       <div class="tunnel-section" id="tunnelSection" style="display:none">
         <div class="ts-header">
           <span class="ts-title">Cloudflare Tunnel</span>
@@ -382,30 +342,12 @@
     var domainState = state.domain || structuredClone(DEFAULT_STATE.domain);
 
     function init() {
-      // Build TLD dropdown
-      var tldSelect = document.getElementById('fdTld');
-      tldSelect.innerHTML = '';
-      for (var p of FREE_DOMAIN_PROVIDERS) {
-        var opt = document.createElement('option');
-        opt.value = p.tld;
-        opt.textContent = p.name + (p.recommended ? ' (Recommended)' : '');
-        if (p.tld === (domainState.freeDomainTld || '.dpdns.org')) opt.selected = true;
-        tldSelect.appendChild(opt);
-      }
-
       // Restore provider selection
-      var provider = domainState.provider || 'freedomain';
+      var provider = domainState.provider || 'local';
       selectProvider(provider, true);
 
-      // Restore free domain hostname
-      if (provider === 'freedomain') {
-        var hostname = (domainState.name || '').replace(domainState.freeDomainTld || '.dpdns.org', '');
-        document.getElementById('fdHostname').value = hostname;
-        updateFreeDomain();
-      }
-
-      // Restore custom domain
-      if (provider === 'custom') {
+      // Restore tunnel domain
+      if (provider === 'tunnel') {
         document.getElementById('customDomain').value = domainState.name || '';
         var sslSelect = document.getElementById('customSsl');
         for (var i = 0; i < sslSelect.options.length; i++) {
@@ -437,10 +379,9 @@
 
       // Show/hide config panels
       document.getElementById('config-local').classList.toggle('visible', provider === 'local');
-      document.getElementById('config-freedomain').classList.toggle('visible', provider === 'freedomain');
-      document.getElementById('config-custom').classList.toggle('visible', provider === 'custom');
+      document.getElementById('config-tunnel').classList.toggle('visible', provider === 'tunnel');
 
-      // Show tunnel section for freedomain and custom
+      // Show tunnel section for tunnel provider
       var tunnelSection = document.getElementById('tunnelSection');
       tunnelSection.style.display = (provider === 'local') ? 'none' : 'block';
 
@@ -450,13 +391,7 @@
           domainState.name = 'brewnet.local';
           domainState.ssl = 'none';
           domainState.cloudflare.enabled = false;
-        } else if (provider === 'freedomain') {
-          domainState.ssl = 'cloudflare';
-          domainState.cloudflare.enabled = true;
-          document.getElementById('tunnelToggle').classList.add('on');
-          document.getElementById('tunnelConfig').style.display = 'block';
-          updateFreeDomain();
-        } else if (provider === 'custom') {
+        } else if (provider === 'tunnel') {
           domainState.ssl = 'cloudflare';
           domainState.cloudflare.enabled = true;
           document.getElementById('tunnelToggle').classList.add('on');
@@ -466,43 +401,6 @@
 
       updatePreview();
       updateMailSection();
-    }
-
-    var fdCheckTimer = null;
-    function updateFreeDomain() {
-      var hostname = (document.getElementById('fdHostname').value || '').trim();
-      var tld = document.getElementById('fdTld').value;
-      domainState.freeDomainTld = tld;
-
-      if (hostname) {
-        domainState.name = hostname + tld;
-      } else {
-        domainState.name = 'my-server' + tld;
-      }
-      document.getElementById('fdFullDomain').textContent = domainState.name;
-      updatePreview();
-
-      // Simulated domain availability check
-      var availEl = document.getElementById('fdAvailability');
-      if (hostname && hostname.length >= 3) {
-        availEl.style.display = 'block';
-        availEl.style.background = 'rgba(227, 179, 65, 0.1)';
-        availEl.innerHTML = '<span style="color:#e3b341">&#9679;</span> Checking availability...';
-        clearTimeout(fdCheckTimer);
-        fdCheckTimer = setTimeout(function() {
-          // Simulate: "taken" names for demo, all others "available"
-          var taken = ['test', 'admin', 'server', 'home', 'demo'];
-          if (taken.indexOf(hostname.toLowerCase()) !== -1) {
-            availEl.style.background = 'rgba(248, 81, 73, 0.1)';
-            availEl.innerHTML = '<span style="color:#f85149">&#10007;</span> <span style="color:#f85149"><strong>' + escapeHtml(domainState.name) + '</strong> is already taken. Try another name.</span>';
-          } else {
-            availEl.style.background = 'rgba(63, 185, 80, 0.1)';
-            availEl.innerHTML = '<span style="color:#3fb950">&#10003;</span> <span style="color:#3fb950"><strong>' + escapeHtml(domainState.name) + '</strong> is available!</span>';
-          }
-        }, 600);
-      } else {
-        availEl.style.display = 'none';
-      }
     }
 
     function updateCustomDomain() {

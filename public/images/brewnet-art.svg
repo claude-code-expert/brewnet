@@ -1,0 +1,281 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1200" width="1600" height="1200">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;family=Inter:wght@400;700&amp;display=swap');
+      .mono { font-family: 'JetBrains Mono', 'Courier New', monospace; }
+      .sans { font-family: 'Inter', 'Arial', sans-serif; }
+    </style>
+    <!-- Glow filter for WiFi -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-strong">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Grid pattern -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#131920" stroke-width="0.5"/>
+    </pattern>
+    <!-- Beer gradient -->
+    <linearGradient id="beer-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="chrome-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#D6D3D1"/>
+      <stop offset="40%" stop-color="#A8A29E"/>
+      <stop offset="100%" stop-color="#78716C"/>
+    </linearGradient>
+    <linearGradient id="foam-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFBEB"/>
+      <stop offset="100%" stop-color="#FEF3C7"/>
+    </linearGradient>
+    <radialGradient id="drop-grad">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1600" height="1200" fill="#0D1117"/>
+  <rect width="1600" height="1200" fill="url(#grid)"/>
+
+  <!-- ==================== TITLE ==================== -->
+  <text x="60" y="65" class="sans" font-size="48" font-weight="700" fill="#F59E0B">BREWNET</text>
+  <text x="60" y="100" class="sans" font-size="20" fill="#8B949E">Where every packet is freshly brewed</text>
+  <line x1="60" y1="118" x2="500" y2="118" stroke="#D97706" stroke-width="2"/>
+
+  <!-- Version info top right -->
+  <text x="1410" y="50" class="mono" font-size="13" fill="#8B949E">v1.0.0</text>
+  <text x="1410" y="68" class="mono" font-size="13" fill="#8B949E">HOME SERVER</text>
+  <text x="1410" y="86" class="mono" font-size="13" fill="#8B949E">MGMT SYSTEM</text>
+
+  <!-- Mini beer mugs top right -->
+  <g transform="translate(1370, 38)">
+    <rect x="0" y="4" width="12" height="16" rx="2" fill="#78350F" stroke="#D97706" stroke-width="1"/>
+    <rect x="-1" y="0" width="14" height="6" rx="2" fill="#FEF3C7"/>
+    <path d="M12,8 Q18,8 18,14 Q18,16 12,16" fill="none" stroke="#D97706" stroke-width="1.5"/>
+  </g>
+  <g transform="translate(1395, 42)">
+    <rect x="0" y="4" width="12" height="16" rx="2" fill="#78350F" stroke="#D97706" stroke-width="1"/>
+    <rect x="-1" y="0" width="14" height="6" rx="2" fill="#FEF3C7"/>
+    <path d="M12,8 Q18,8 18,14 Q18,16 12,16" fill="none" stroke="#D97706" stroke-width="1.5"/>
+  </g>
+  <g transform="translate(1420, 36)">
+    <rect x="0" y="4" width="12" height="16" rx="2" fill="#78350F" stroke="#D97706" stroke-width="1"/>
+    <rect x="-1" y="0" width="14" height="6" rx="2" fill="#FEF3C7"/>
+    <path d="M12,8 Q18,8 18,14 Q18,16 12,16" fill="none" stroke="#D97706" stroke-width="1.5"/>
+  </g>
+
+  <!-- ==================== MONITOR ==================== -->
+  <g id="monitor">
+    <!-- Monitor body -->
+    <rect x="280" y="280" width="620" height="420" rx="16" fill="#1E2530" stroke="#2D3748" stroke-width="2"/>
+    <!-- Screen -->
+    <rect x="300" y="300" width="580" height="360" rx="8" fill="#0A0E14"/>
+    
+    <!-- Terminal content - brewnet themed -->
+    <text x="318" y="330" class="mono" font-size="13" fill="#10B981">$ brewnet tap core</text>
+    <text x="318" y="356" class="mono" font-size="13" fill="#F59E0B">==&gt; Tapping brewnet/core...</text>
+    <text x="318" y="382" class="mono" font-size="13" fill="#FCD34D">🍺 Pouring fresh packets...</text>
+    
+    <!-- WiFi signal bar -->
+    <text x="318" y="408" class="mono" font-size="13" fill="#06B6D4">==&gt; WiFi signal: </text>
+    <rect x="463" y="396" width="60" height="14" rx="2" fill="#1A1A2E" stroke="#30363D" stroke-width="1"/>
+    <rect x="464" y="397" width="48" height="12" rx="1" fill="#06B6D4"/>
+    <text x="530" y="408" class="mono" font-size="13" fill="#06B6D4"> 82%</text>
+    
+    <text x="318" y="434" class="mono" font-size="13" fill="#10B981">==&gt; Network brewnet: READY</text>
+    <text x="318" y="466" class="mono" font-size="13" fill="#E6EDF3">$ ping home.local</text>
+    <text x="318" y="492" class="mono" font-size="13" fill="#8B949E">  64 bytes: seq=1 ttl=64 time=0.42ms</text>
+    <text x="318" y="518" class="mono" font-size="13" fill="#8B949E">  64 bytes: seq=2 ttl=64 time=0.38ms</text>
+    <text x="318" y="550" class="mono" font-size="13" fill="#E6EDF3">$ brewnet serve --port 8080</text>
+    <text x="318" y="576" class="mono" font-size="13" fill="#F59E0B">==&gt; Serving fresh brewnet on :8080 🍻</text>
+    
+    <!-- Blinking cursor -->
+    <rect x="318" y="590" width="10" height="16" fill="#10B981">
+      <animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- Camera dot -->
+    <circle cx="590" cy="668" r="4" fill="#4A5568"/>
+    
+    <!-- Stand -->
+    <rect x="550" y="700" width="80" height="30" fill="#2D3748"/>
+    <rect x="510" y="730" width="160" height="10" rx="3" fill="#2D3748" stroke="#3D4A5C" stroke-width="1"/>
+  </g>
+
+  <!-- ==================== CONNECTION PIPE ==================== -->
+  <rect x="895" y="425" width="60" height="20" rx="6" fill="#78716C" stroke="#A8A29E" stroke-width="2"/>
+
+  <!-- ==================== BEER TAP ==================== -->
+  <g id="beer-tap" transform="translate(930, 300)">
+    <!-- Tap tower base -->
+    <rect x="0" y="100" width="80" height="280" rx="12" fill="#44403C" stroke="#78716C" stroke-width="3"/>
+    
+    <!-- Tap tower body (chrome) -->
+    <rect x="10" y="60" width="60" height="140" rx="10" fill="url(#chrome-grad)" stroke="#D6D3D1" stroke-width="2"/>
+    <!-- Chrome highlight -->
+    <rect x="18" y="70" width="17" height="120" rx="6" fill="#D6D3D1" opacity="0.6"/>
+    
+    <!-- Tap handle -->
+    <rect x="28" y="0" width="24" height="80" rx="8" fill="#1C1917" stroke="#44403C" stroke-width="2"/>
+    <!-- Handle top knob (amber) -->
+    <ellipse cx="40" cy="-10" rx="16" ry="15" fill="#F59E0B" stroke="#D97706" stroke-width="2"/>
+    <text x="40" y="-5" class="mono" font-size="8" fill="#1C1917" text-anchor="middle" font-weight="700">BN</text>
+    
+    <!-- Tap spout -->
+    <polygon points="25,200 55,200 50,240 30,240" fill="#A8A29E" stroke="#D6D3D1" stroke-width="2"/>
+    
+    <!-- Beer drops with animation -->
+    <circle cx="40" cy="250" r="5" fill="url(#drop-grad)">
+      <animate attributeName="cy" values="250;330" dur="1.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="1;0" dur="1.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="40" cy="270" r="4" fill="#FBBF24">
+      <animate attributeName="cy" values="270;340" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="1;0" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="40" cy="290" r="3" fill="#FCD34D">
+      <animate attributeName="cy" values="290;350" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.8;0" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    
+    <!-- Beer glass -->
+    <polygon points="0,360 70,360 58,450 12,450" fill="url(#beer-grad)" opacity="0.9"/>
+    <!-- Glass highlight -->
+    <polygon points="8,365 30,365 25,440 14,440" fill="#92400E" opacity="0.5"/>
+    <!-- Foam -->
+    <ellipse cx="35" cy="360" rx="40" ry="12" fill="url(#foam-grad)" stroke="#FDE68A" stroke-width="1"/>
+    <!-- Foam bubbles -->
+    <circle cx="18" cy="356" r="5" fill="#FFFBEB" opacity="0.8"/>
+    <circle cx="35" cy="352" r="7" fill="#FFFBEB" opacity="0.7"/>
+    <circle cx="52" cy="358" r="4" fill="#FFFBEB" opacity="0.8"/>
+    <circle cx="28" cy="362" r="3" fill="#FFFBEB" opacity="0.6"/>
+  </g>
+
+  <!-- ==================== WIFI SIGNAL ==================== -->
+  <g id="wifi" transform="translate(970, 245)" filter="url(#glow)">
+    <!-- WiFi arcs -->
+    <path d="M-80,0 A80,80 0 0,1 80,0" fill="none" stroke="#3B82F6" stroke-width="4" stroke-linecap="round" opacity="0.5">
+      <animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M-56,0 A56,56 0 0,1 56,0" fill="none" stroke="#60A5FA" stroke-width="4" stroke-linecap="round" opacity="0.6">
+      <animate attributeName="opacity" values="0.4;0.8;0.4" dur="2s" begin="0.3s" repeatCount="indefinite"/>
+    </path>
+    <path d="M-32,0 A32,32 0 0,1 32,0" fill="none" stroke="#06B6D4" stroke-width="4" stroke-linecap="round" opacity="0.8">
+      <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" begin="0.6s" repeatCount="indefinite"/>
+    </path>
+    <!-- Center dot -->
+    <circle cx="0" cy="8" r="6" fill="#06B6D4"/>
+  </g>
+
+  <!-- Signal particles -->
+  <g id="particles" filter="url(#glow)">
+    <circle cx="890" cy="200" r="2.5" fill="#06B6D4" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s" repeatCount="indefinite"/></circle>
+    <circle cx="920" cy="170" r="2" fill="#60A5FA" opacity="0.5"><animate attributeName="opacity" values="0.3;0.7;0.3" dur="2.5s" repeatCount="indefinite"/></circle>
+    <circle cx="1050" cy="190" r="3" fill="#FCD34D" opacity="0.5"><animate attributeName="opacity" values="0.2;0.6;0.2" dur="2.8s" repeatCount="indefinite"/></circle>
+    <circle cx="1070" cy="220" r="2" fill="#06B6D4" opacity="0.4"><animate attributeName="opacity" values="0.3;0.8;0.3" dur="3.2s" repeatCount="indefinite"/></circle>
+    <circle cx="850" cy="230" r="2" fill="#FCD34D" opacity="0.5"><animate attributeName="opacity" values="0.2;0.7;0.2" dur="2.2s" repeatCount="indefinite"/></circle>
+    <circle cx="940" cy="150" r="1.5" fill="#60A5FA" opacity="0.4"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="4s" repeatCount="indefinite"/></circle>
+    <circle cx="1000" cy="160" r="2" fill="#06B6D4" opacity="0.5"><animate attributeName="opacity" values="0.3;0.9;0.3" dur="2.6s" repeatCount="indefinite"/></circle>
+  </g>
+
+  <!-- Data flow: beer-colored + data-colored packets from WiFi to network -->
+  <g id="data-flow" opacity="0.6">
+    <circle cx="1060" cy="235" r="6" fill="#FCD34D" opacity="0.7"><animate attributeName="cx" values="1060;1080" dur="3s" repeatCount="indefinite"/></circle>
+    <circle cx="1060" cy="235" r="3" fill="white" opacity="0.5"/>
+    <circle cx="1090" cy="210" r="5" fill="#06B6D4" opacity="0.6"><animate attributeName="cx" values="1090;1110" dur="2.5s" repeatCount="indefinite"/></circle>
+    <circle cx="1090" cy="210" r="2.5" fill="white" opacity="0.4"/>
+    <circle cx="860" cy="215" r="5" fill="#FCD34D" opacity="0.6"><animate attributeName="cx" values="860;840" dur="2.8s" repeatCount="indefinite"/></circle>
+    <circle cx="860" cy="215" r="2.5" fill="white" opacity="0.4"/>
+    <circle cx="840" cy="245" r="4" fill="#06B6D4" opacity="0.5"><animate attributeName="cx" values="840;820" dur="3.5s" repeatCount="indefinite"/></circle>
+  </g>
+
+  <!-- ==================== NETWORK TOPOLOGY ==================== -->
+  <g id="network">
+    <!-- Connection lines (dotted) -->
+    <line x1="1200" y1="215" x2="1100" y2="340" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1200" y1="215" x2="1300" y2="340" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1100" y1="370" x2="1050" y2="490" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1100" y1="370" x2="1200" y2="490" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1300" y1="370" x2="1200" y2="490" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1300" y1="370" x2="1350" y2="490" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1050" y1="520" x2="1200" y2="640" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1200" y1="520" x2="1200" y2="640" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+    <line x1="1350" y1="520" x2="1200" y2="640" stroke="#30363D" stroke-width="1" stroke-dasharray="4,4"/>
+
+    <!-- Node: ROUTER -->
+    <circle cx="1200" cy="195" r="20" fill="#1A1F2B"/>
+    <circle cx="1200" cy="195" r="14" fill="#161B22" stroke="#F59E0B" stroke-width="2"/>
+    <circle cx="1200" cy="195" r="4" fill="#F59E0B"/>
+    <text x="1200" y="230" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">ROUTER</text>
+
+    <!-- Node: NAS -->
+    <circle cx="1100" cy="350" r="20" fill="#1A1F2B"/>
+    <circle cx="1100" cy="350" r="14" fill="#161B22" stroke="#3B82F6" stroke-width="2"/>
+    <circle cx="1100" cy="350" r="4" fill="#3B82F6"/>
+    <text x="1100" y="385" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">NAS</text>
+
+    <!-- Node: DOCKER -->
+    <circle cx="1300" cy="350" r="20" fill="#1A1F2B"/>
+    <circle cx="1300" cy="350" r="14" fill="#161B22" stroke="#10B981" stroke-width="2"/>
+    <circle cx="1300" cy="350" r="4" fill="#10B981"/>
+    <text x="1300" y="385" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">DOCKER</text>
+
+    <!-- Node: CI/CD -->
+    <circle cx="1050" cy="500" r="20" fill="#1A1F2B"/>
+    <circle cx="1050" cy="500" r="14" fill="#161B22" stroke="#06B6D4" stroke-width="2"/>
+    <circle cx="1050" cy="500" r="4" fill="#06B6D4"/>
+    <text x="1050" y="535" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">CI/CD</text>
+
+    <!-- Node: GIT -->
+    <circle cx="1200" cy="500" r="20" fill="#1A1F2B"/>
+    <circle cx="1200" cy="500" r="14" fill="#161B22" stroke="#60A5FA" stroke-width="2"/>
+    <circle cx="1200" cy="500" r="4" fill="#60A5FA"/>
+    <text x="1200" y="535" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">GIT</text>
+
+    <!-- Node: MONITOR -->
+    <circle cx="1350" cy="500" r="20" fill="#1A1F2B"/>
+    <circle cx="1350" cy="500" r="14" fill="#161B22" stroke="#FCD34D" stroke-width="2"/>
+    <circle cx="1350" cy="500" r="4" fill="#FCD34D"/>
+    <text x="1350" y="535" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">MONITOR</text>
+
+    <!-- Node: HOME -->
+    <circle cx="1200" cy="650" r="20" fill="#1A1F2B"/>
+    <circle cx="1200" cy="650" r="14" fill="#161B22" stroke="#10B981" stroke-width="2"/>
+    <circle cx="1200" cy="650" r="4" fill="#10B981"/>
+    <text x="1200" y="685" class="mono" font-size="11" fill="#8B949E" text-anchor="middle">HOME</text>
+  </g>
+
+  <!-- ==================== DATA FLOW: monitor → network ==================== -->
+  <g id="monitor-to-network" opacity="0.7">
+    <circle r="3" fill="#F59E0B">
+      <animateMotion dur="3s" repeatCount="indefinite" path="M900,400 Q1000,350 1100,300 T1200,220"/>
+    </circle>
+    <circle r="2" fill="#06B6D4">
+      <animateMotion dur="4s" repeatCount="indefinite" path="M900,420 Q1020,380 1120,320 T1200,240"/>
+    </circle>
+  </g>
+
+  <!-- ==================== BOTTOM STATUS BAR ==================== -->
+  <rect x="0" y="1120" width="1600" height="80" fill="#161B22"/>
+  <line x1="0" y1="1120" x2="1600" y2="1120" stroke="#30363D" stroke-width="1"/>
+  
+  <circle cx="50" cy="1160" r="4" fill="#10B981"/>
+  <text x="62" y="1165" class="mono" font-size="14" fill="#10B981">BREWNET SERVER</text>
+  
+  <circle cx="290" cy="1160" r="4" fill="#06B6D4"/>
+  <text x="302" y="1165" class="mono" font-size="14" fill="#06B6D4">WIFI 5GHz</text>
+  
+  <circle cx="490" cy="1160" r="4" fill="#F59E0B"/>
+  <text x="502" y="1165" class="mono" font-size="14" fill="#F59E0B">PACKETS FLOWING</text>
+  
+  <circle cx="730" cy="1160" r="4" fill="#60A5FA"/>
+  <text x="742" y="1165" class="mono" font-size="14" fill="#60A5FA">HOME NETWORK</text>
+  
+  <circle cx="950" cy="1160" r="4" fill="#10B981"/>
+  <text x="962" y="1165" class="mono" font-size="14" fill="#10B981">UPTIME 99.97%</text>
+</svg>

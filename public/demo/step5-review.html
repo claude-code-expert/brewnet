@@ -192,7 +192,7 @@
       html += '<div class="summary-box">';
       html += '<div class="summary-section">Domain & Network</div>';
       var d = state.domain || {};
-      var providerLabels = { local: 'Local Only', freedomain: 'Free Domain (DigitalPlat)', custom: 'Own Domain' };
+      var providerLabels = { local: 'Local Only', tunnel: 'Own Domain (Cloudflare Tunnel)' };
       html += row('Provider', providerLabels[d.provider] || d.provider || 'Local');
       html += row('Domain', d.name || 'brewnet.local');
       var sslLabel = { none: 'None (HTTP)', 'self-signed': 'Self-signed', letsencrypt: "Let's Encrypt", cloudflare: 'Cloudflare (auto)' };

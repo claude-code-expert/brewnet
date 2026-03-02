@@ -415,7 +415,7 @@ describe('runUninstall — missing projectPath', () => {
     const result = await runUninstall({ dryRun: true, projectPath: undefined });
 
     // No project dir target since projectPath is null
-    const hasProjectDir = result.removed.some((r) => r.includes('/'));
+    const hasProjectDir = result.removed.some((r) => r.startsWith('Project directory:'));
     expect(hasProjectDir).toBe(false);
   });
 });

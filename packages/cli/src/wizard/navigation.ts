@@ -2,7 +2,7 @@
  * T023 — Wizard Navigation State Machine
  *
  * Manages step progression, history stack, forward/backward navigation,
- * step skipping, and cancellation for the 8-step wizard flow.
+ * step skipping, and cancellation for the 9-step wizard flow.
  *
  * @module wizard/navigation
  */
@@ -12,19 +12,21 @@
 // ---------------------------------------------------------------------------
 
 export enum WizardStep {
-  SystemCheck = 0,
-  ProjectSetup = 1,
-  ServerComponents = 2,
-  DevStack = 3,
-  DomainNetwork = 4,
-  Review = 5,
-  Generate = 6,
-  Complete = 7,
+  AdminSetup = 0,
+  SystemCheck = 1,
+  ProjectSetup = 2,
+  ServerComponents = 3,
+  DevStack = 4,
+  DomainNetwork = 5,
+  Review = 6,
+  Generate = 7,
+  Complete = 8,
 }
 
-export const TOTAL_STEPS = 8;
+export const TOTAL_STEPS = 9;
 
 export const STEP_NAMES: Record<WizardStep, string> = {
+  [WizardStep.AdminSetup]: 'Admin Account',
   [WizardStep.SystemCheck]: 'System Check',
   [WizardStep.ProjectSetup]: 'Project Setup',
   [WizardStep.ServerComponents]: 'Server Components',
@@ -45,7 +47,7 @@ export class WizardNavigation {
   private _skippedSteps: Set<WizardStep>;
   private _cancelled: boolean;
 
-  constructor(startStep: WizardStep = WizardStep.SystemCheck) {
+  constructor(startStep: WizardStep = WizardStep.AdminSetup) {
     this._currentStep = startStep;
     this._history = [];
     this._skippedSteps = new Set();
@@ -159,7 +161,7 @@ export class WizardNavigation {
 
   /** Reset navigation to the initial state. */
   reset(): void {
-    this._currentStep = WizardStep.SystemCheck;
+    this._currentStep = WizardStep.AdminSetup;
     this._history = [];
     this._skippedSteps.clear();
     this._cancelled = false;

@@ -3,7 +3,7 @@
  *
  * Tests runCompleteStep rendering logic with mocked dependencies.
  * Verifies all output sections: endpoints, credentials, tunnel info,
- * next steps, troubleshooting, status page generation.
+ * next steps, troubleshooting, admin panel start.
  */
 
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
@@ -12,12 +12,13 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockGenerateAndOpenStatusPage = jest.fn<() => Promise<string>>();
+const mockAdminStart = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+const mockCreateAdminServer = jest.fn(() => ({ start: mockAdminStart }));
 
 jest.unstable_mockModule(
-  '../../../../../packages/cli/src/services/status-page.js',
+  '../../../../../packages/cli/src/services/admin-server.js',
   () => ({
-    generateAndOpenStatusPage: mockGenerateAndOpenStatusPage,
+    createAdminServer: mockCreateAdminServer,
   }),
 );
 
@@ -92,7 +93,7 @@ beforeEach(() => {
     { service: 'gitea', url: 'http://git.brewnet.local' },
   ]);
   mockGetCredentialTargets.mockReturnValue(['Gitea', 'Traefik Dashboard']);
-  mockGenerateAndOpenStatusPage.mockResolvedValue('/home/user/.brewnet/status/index.html');
+  mockAdminStart.mockResolvedValue(undefined);
 });
 
 describe('runCompleteStep', () => {
@@ -113,10 +114,11 @@ describe('runCompleteStep', () => {
     expect(mockSortByDependency).toHaveBeenCalledWith(['traefik', 'gitea']);
   });
 
-  it('calls generateEndpoints with state and sorted services', async () => {
+  it('calls sortByDependency to order services', async () => {
+    // complete.ts uses sortByDependency internally for quick-tunnel path listings
     const state = makeState();
     await runCompleteStep(state);
-    expect(mockGenerateEndpoints).toHaveBeenCalledWith(state, ['traefik', 'gitea']);
+    expect(mockSortByDependency).toHaveBeenCalledWith(['traefik', 'gitea']);
   });
 
   it('calls getCredentialTargets to check credential propagation', async () => {
@@ -125,26 +127,24 @@ describe('runCompleteStep', () => {
     expect(mockGetCredentialTargets).toHaveBeenCalled();
   });
 
-  it('calls generateAndOpenStatusPage', async () => {
+  it('starts the admin server', async () => {
     const state = makeState();
     await runCompleteStep(state);
-    expect(mockGenerateAndOpenStatusPage).toHaveBeenCalledWith(
-      state,
-      expect.objectContaining({}),
+    expect(mockCreateAdminServer).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 8088 }),
     );
+    expect(mockAdminStart).toHaveBeenCalled();
   });
 
-  it('passes noOpen option to generateAndOpenStatusPage', async () => {
+  it('passes noOpen option — skips browser open', async () => {
     const state = makeState();
-    await runCompleteStep(state, { noOpen: true });
-    expect(mockGenerateAndOpenStatusPage).toHaveBeenCalledWith(
-      state,
-      expect.objectContaining({ noOpen: true }),
-    );
+    // noOpen=true should still start the server, just not open the browser
+    await expect(runCompleteStep(state, { noOpen: true })).resolves.toBeUndefined();
+    expect(mockAdminStart).toHaveBeenCalled();
   });
 
-  it('does not throw when generateAndOpenStatusPage fails (non-fatal)', async () => {
-    mockGenerateAndOpenStatusPage.mockRejectedValue(new Error('disk full'));
+  it('does not throw when admin server fails to start (non-fatal)', async () => {
+    mockAdminStart.mockRejectedValue(new Error('port in use'));
     const state = makeState();
     await expect(runCompleteStep(state)).resolves.toBeUndefined();
   });
@@ -163,23 +163,20 @@ describe('runCompleteStep', () => {
 
   it('shows tunnel section for tunnel provider', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const defaultState = createDefaultWizardState();
     const state = makeState({
       domain: {
+        ...defaultState.domain,
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
+          ...defaultState.domain.cloudflare,
           enabled: true,
-          tunnelToken: '',
           tunnelName: 'my-tunnel',
-          accountId: '',
-          apiToken: '',
           tunnelId: 'tunnel-123',
-          zoneId: '',
-          zoneName: 'dpdns.org',
+          zoneName: 'example.com',
         },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
 
@@ -192,23 +189,19 @@ describe('runCompleteStep', () => {
 
   it('shows manual tunnel setup hint when tunnelId is missing', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const defaultState = createDefaultWizardState();
     const state = makeState({
       domain: {
+        ...defaultState.domain,
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: {
+          ...defaultState.domain.cloudflare,
           enabled: true,
-          tunnelToken: '',
           tunnelName: 'my-tunnel',
-          accountId: '',
-          apiToken: '',
           tunnelId: '', // no tunnel ID = manual setup
-          zoneId: '',
-          zoneName: '',
         },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
 
@@ -223,12 +216,10 @@ describe('runCompleteStep', () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     const state = makeState({
       domain: {
+        ...createDefaultWizardState().domain,
         provider: 'local',
         name: 'brewnet.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
-        cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
 

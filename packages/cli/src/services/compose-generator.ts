@@ -25,7 +25,8 @@ export interface ComposeHealthcheck {
 }
 
 export interface ComposeService {
-  image: string;
+  image?: string;
+  build?: string;
   container_name: string;
   restart: 'unless-stopped';
   security_opt: string[];
@@ -37,12 +38,16 @@ export interface ComposeService {
   depends_on?: string[];
   healthcheck?: ComposeHealthcheck;
   command?: string | string[];
+  entrypoint?: string[];
+  secrets?: string[];
 }
 
 export interface ComposeConfig {
+  name: string;
   services: Record<string, ComposeService>;
   networks: Record<string, { external?: boolean; internal?: boolean }>;
   volumes?: Record<string, null>;
+  secrets?: Record<string, { file: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,7 +64,7 @@ function getServiceVolumes(serviceId: string): string[] {
   switch (serviceId) {
     case 'traefik':
       return [
-        '/var/run/docker.sock:/var/run/docker.sock:ro',
+        '/var/run/docker.sock:/var/run/docker.sock',
         `${BREWNET_PREFIX}_traefik_certs:/letsencrypt`,
       ];
     case 'gitea':
@@ -99,6 +104,7 @@ function getServiceVolumes(serviceId: string): string[] {
       return [
         `${BREWNET_PREFIX}_filebrowser_data:/srv`,
         `${BREWNET_PREFIX}_filebrowser_db:/database`,
+        `${BREWNET_PREFIX}_filebrowser_config:/config`,
       ];
     case 'cloudflared':
       return [];
@@ -145,7 +151,7 @@ function getHealthcheck(serviceId: string, state: WizardState): ComposeHealthche
       };
     case 'traefik':
       return {
-        test: ['CMD-SHELL', 'wget --spider -q http://localhost:8080/api/health || exit 1'],
+        test: ['CMD-SHELL', 'wget --spider -q http://localhost:8080/api/overview || exit 1'],
         interval: '30s',
         timeout: '5s',
         retries: 3,
@@ -198,6 +204,14 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
     USER_GID: '1000',
   };
 
+  // Quick Tunnel: ROOT_URL must include /git/ sub-path so Gitea generates /git/assets/... links.
+  // Use Traefik's port (80) not Gitea's port (3000) — Gitea generates root-relative links (/git/...)
+  // that browsers resolve against the current origin (localhost:80 or tunnel domain).
+  // Traefik then routes /git/assets/... → strips /git → /assets/... to Gitea ✓
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['GITEA__server__ROOT_URL'] = 'http://localhost/git/';
+  }
+
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
     const dbType = state.servers.dbServer.primary === 'postgresql' ? 'postgres' : 'mysql';
     const dbHost = state.servers.dbServer.primary === 'postgresql' ? 'postgresql' : 'mysql';
@@ -205,15 +219,27 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
 
     env['GITEA__database__DB_TYPE'] = dbType;
     env['GITEA__database__HOST'] = `${dbHost}:${dbPort}`;
-    env['GITEA__database__NAME'] = state.servers.dbServer.dbName || 'brewnet_db';
+    // Gitea uses a dedicated 'gitea_db' to avoid schema conflicts with Nextcloud (oc_* tables)
+    // which also shares the same PostgreSQL instance under brewnet_db.
+    env['GITEA__database__NAME'] = 'gitea_db';
     env['GITEA__database__USER'] = state.servers.dbServer.dbUser || 'brewnet';
     env['GITEA__database__PASSWD'] = state.servers.dbServer.dbPassword || '${DB_PASSWORD}';
   }
 
   if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
     const cacheId = state.servers.dbServer.cache;
+    // Cache password env var name differs by adapter (REDIS_PASSWORD / VALKEY_PASSWORD / KEYDB_PASSWORD).
+    // Docker Compose interpolates ${VAR} from .env at runtime, keeping the password out of the image.
+    const cachePwVar =
+      cacheId === 'valkey' ? 'VALKEY_PASSWORD'
+      : cacheId === 'keydb' ? 'KEYDB_PASSWORD'
+      : 'REDIS_PASSWORD';
+    const cacheUrl = `redis://:\${${cachePwVar}}@${cacheId}:6379/0`;
     env['GITEA__cache__ADAPTER'] = 'redis';
-    env['GITEA__cache__HOST'] = `redis://${cacheId}:6379/0`;
+    env['GITEA__cache__HOST'] = cacheUrl;
+    // Gitea also uses Redis for async task queue — use the same authenticated URL.
+    env['GITEA__queue__TYPE'] = 'redis';
+    env['GITEA__queue__CONN_STR'] = cacheUrl;
   }
 
   return env;
@@ -225,6 +251,23 @@ function getNextcloudEnv(state: WizardState): Record<string, string> {
     NEXTCLOUD_ADMIN_PASSWORD: state.admin.password || '${ADMIN_PASSWORD}',
     NEXTCLOUD_TRUSTED_DOMAINS: state.domain.name,
   };
+
+  // Quick Tunnel: Nextcloud behind Traefik at /cloud path prefix.
+  // OVERWRITEWEBROOT makes NC generate URLs with /cloud prefix.
+  // Traefik strips /cloud before forwarding, so NC receives clean paths.
+  // Protocol detection: TRUSTED_PROXIES + Traefik forwardedHeaders.insecure
+  // lets Nextcloud read X-Forwarded-Proto from cloudflared (https for tunnel,
+  // http for local), so we do NOT hardcode OVERWRITEPROTOCOL.
+  // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['OVERWRITEWEBROOT'] = '/cloud';
+    env['NEXTCLOUD_TRUSTED_PROXIES'] = 'traefik';
+    // Include localhost variants for direct-port access; tunnel domain is
+    // added post-install via `occ` once the Quick Tunnel URL is known.
+    const portMap = state.portRemapping ?? {};
+    const ncPort = portMap[8443] ?? 8443;
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${state.domain.name} localhost localhost:${ncPort}`;
+  }
 
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
     if (state.servers.dbServer.primary === 'postgresql') {
@@ -277,13 +320,37 @@ function getMailEnv(state: WizardState): Record<string, string> {
 }
 
 function getPgadminEnv(state: WizardState): Record<string, string> {
-  return {
-    PGADMIN_DEFAULT_EMAIL: `${state.admin.username || 'admin'}@${state.domain.name}`,
+  const env: Record<string, string> = {
+    PGADMIN_DEFAULT_EMAIL: state.servers.dbServer.pgadminEmail || `${state.admin.username || 'admin'}@brewnet.dev`,
     PGADMIN_DEFAULT_PASSWORD: state.admin.password || '${ADMIN_PASSWORD}',
   };
+  // In Quick Tunnel mode pgadmin is served under /pgadmin path prefix,
+  // so SCRIPT_NAME must be set so pgadmin generates correct relative URLs.
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['SCRIPT_NAME'] = '/pgadmin';
+  }
+  return env;
 }
 
-function getCloudflaredEnv(state: WizardState): Record<string, string> {
+// FB_USERNAME / FB_PASSWORD are only applied on first boot when no DB exists.
+// FB_BASEURL must match the path prefix Traefik uses so login redirects work.
+// Ref: https://filebrowser.org/configuration
+function getFilebrowserEnv(state: WizardState): Record<string, string> {
+  const env: Record<string, string> = {
+    FB_USERNAME: state.admin.username || 'admin',
+    FB_PASSWORD: state.admin.password || '${ADMIN_PASSWORD}',
+  };
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['FB_BASEURL'] = '/files';
+  }
+  return env;
+}
+
+function getCloudflaredEnv(state: WizardState): Record<string, string> | undefined {
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    // Quick Tunnel needs no TUNNEL_TOKEN env var
+    return undefined;
+  }
   return {
     TUNNEL_TOKEN: state.domain.cloudflare.tunnelToken || '${TUNNEL_TOKEN}',
   };
@@ -306,27 +373,150 @@ function resolveTraefikLabels(
   return resolved;
 }
 
+/**
+ * Traefik path-prefix routing labels for Quick Tunnel mode.
+ *
+ * Quick Tunnel exposes all services under the same *.trycloudflare.com URL
+ * using path prefixes:  /files → filebrowser, /git → gitea, /cloud → nextcloud, etc.
+ *
+ * @param serviceId  The compose service identifier
+ * @param path       The URL path prefix (e.g. "/files")
+ * @param port       The container HTTP port (must be explicit to avoid Traefik picking the wrong port)
+ * @param noStrip    When true, the path prefix is NOT stripped before forwarding.
+ *                   WSGI apps (pgadmin) rely on SCRIPT_NAME and need the full path intact.
+ */
+function buildQuickTunnelPathLabels(
+  serviceId: string,
+  path: string,
+  port: number,
+  noStrip = false,
+): Record<string, string> {
+  const name = `quicktunnel-${serviceId}`;
+  const labels: Record<string, string> = {
+    'traefik.enable': 'true',
+    [`traefik.http.routers.${name}.rule`]: `PathPrefix(\`${path}\`)`,
+    [`traefik.http.routers.${name}.entrypoints`]: 'web',
+    [`traefik.http.services.${name}.loadbalancer.server.port`]: String(port),
+  };
+  if (!noStrip) {
+    labels[`traefik.http.middlewares.${name}-strip.stripprefix.prefixes`] = path;
+    labels[`traefik.http.routers.${name}.middlewares`] = `${name}-strip`;
+  }
+  return labels;
+}
+
+interface QuickTunnelEntry {
+  path: string;
+  port: number;
+  /** When true, prefix is preserved in the upstream request (needed by WSGI apps using SCRIPT_NAME). */
+  noStrip?: boolean;
+  /**
+   * Extra root-level paths this service must also handle.
+   * Used for FileBrowser: its Vite build always emits /static/... asset paths regardless of FB_BASEURL.
+   * Without routing /static → FileBrowser, browsers hit the landing-page catch-all and the app fails.
+   */
+  extraPaths?: string[];
+}
+
+function buildQuickTunnelExtraPathLabels(
+  serviceId: string,
+  extraPath: string,
+  port: number,
+): Record<string, string> {
+  const slug = extraPath.replace(/\//g, '').replace(/[^a-z0-9]/gi, '');
+  const routerName = `quicktunnel-${serviceId}-${slug}`;
+  const serviceName = `quicktunnel-${serviceId}-${slug}`;
+  return {
+    // Explicit service link required when the container has multiple service definitions
+    [`traefik.http.routers.quicktunnel-${serviceId}.service`]: `quicktunnel-${serviceId}`,
+    [`traefik.http.routers.${routerName}.rule`]: `PathPrefix(\`${extraPath}\`)`,
+    [`traefik.http.routers.${routerName}.entrypoints`]: 'web',
+    // Priority 10 > landing-page explicit priority 1 so this route takes precedence
+    [`traefik.http.routers.${routerName}.priority`]: '10',
+    [`traefik.http.routers.${routerName}.service`]: serviceName,
+    [`traefik.http.services.${serviceName}.loadbalancer.server.port`]: String(port),
+  };
+}
+
+// Path-prefix routing map for Quick Tunnel mode
+const QUICK_TUNNEL_PATH_MAP: Record<string, QuickTunnelEntry> = {
+  // Gitea: Traefik strips /git before forwarding to Gitea (strip-prefix).
+  // ROOT_URL must include /git/ sub-path so Gitea generates /git/assets/... links.
+  // ROOT_URL host must be Traefik's port (80) not Gitea's port (3000):
+  //   - Gitea generates root-relative links: /git/assets/...
+  //   - Browser resolves them against current origin (both local :80 and external tunnel)
+  //   - Traefik receives /git/assets/... → strips /git → sends /assets/... to Gitea ✓
+  gitea:         { path: '/git',     port: 3000 },
+  // FileBrowser: Vite build emits /static/... asset paths regardless of FB_BASEURL.
+  // A companion route for /static is required so browsers can load CSS/JS.
+  // See: buildQuickTunnelExtraPathLabels for the /static → filebrowser routing.
+  filebrowser:   { path: '/files',   port: 80, extraPaths: ['/static'] },
+  'uptime-kuma': { path: '/status',  port: 3001 },
+  grafana:       { path: '/grafana', port: 3000 },
+  // pgadmin: WSGI app — SCRIPT_NAME handles path; no strip needed
+  pgadmin:       { path: '/pgadmin', port: 80, noStrip: true },
+  // Nextcloud: OVERWRITEWEBROOT env makes NC generate prefixed URLs; strip prefix so NC gets clean paths
+  // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
+  nextcloud:     { path: '/cloud',   port: 80 },
+  // Jellyfin: Base URL setting handles path natively; no strip needed
+  // Ref: https://jellyfin.org/docs/general/post-install/networking — "Base URL"
+  jellyfin:      { path: '/jellyfin', port: 8096, noStrip: true },
+  // MinIO Console: pre-built React SPA without sub-path awareness; use noStrip so the app
+  // receives the full path and Traefik does not alter the prefix.
+  minio:         { path: '/minio',    port: 9001, noStrip: true },
+};
+
 // ---------------------------------------------------------------------------
 // Port mapping builders
 // ---------------------------------------------------------------------------
 
 function getServicePorts(serviceId: string, state: WizardState): string[] {
+  // Apply portRemapping: maps default host port → user-selected alternative host port
+  const portMap = state.portRemapping ?? {};
+  const remap = (hostPort: number): number => portMap[hostPort] ?? hostPort;
+
   switch (serviceId) {
-    case 'traefik':
-      return ['80:80', '443:443', '8080:8080'];
-    case 'nginx':
-      return ['80:80', '443:443'];
-    case 'caddy':
-      return ['80:80', '443:443'];
-    case 'gitea':
+    case 'traefik': {
+      const httpHost = remap(80);
+      const httpsHost = remap(443);
+      // No port 8080 — Dashboard uses label-based routing (api.insecure=false)
       return [
-        `${state.servers.gitServer.port}:3000`,
-        `${state.servers.gitServer.sshPort}:22`,
+        `${httpHost}:80`,
+        `${httpsHost}:443`,
       ];
+    }
+    case 'nginx':
+      return [`${remap(80)}:80`, `${remap(443)}:443`];
+    case 'caddy':
+      return [`${remap(80)}:80`, `${remap(443)}:443`];
+    case 'gitea': {
+      // Quick Tunnel: ROOT_URL=http://localhost/git/ sets AppSubUrl=/git/.
+      // Gitea generates /git/assets/... links but its HTTP router handles routes WITHOUT the prefix.
+      // Traefik strips /git/ before forwarding → Gitea receives bare /assets/... paths ✓
+      // Direct port access (localhost:3000) returns HTML with /git/assets/... links but
+      // Gitea cannot serve /git/assets/... locally → 404 on assets → CSS broken.
+      // Therefore in Quick Tunnel mode: HTTP port is NOT host-exposed; use localhost/git/ (Traefik).
+      // Named Tunnel / no tunnel: ROOT_URL has no sub-path → direct port access works fine.
+      const ports = [`${remap(state.servers.gitServer.sshPort)}:22`];
+      if (state.domain.cloudflare.tunnelMode !== 'quick') {
+        ports.unshift(`${remap(state.servers.gitServer.port)}:3000`);
+      }
+      return ports;
+    }
     case 'openssh-server':
-      return [`${state.servers.sshServer.port}:2222`];
+      return [`${remap(state.servers.sshServer.port)}:2222`];
     case 'docker-mailserver':
-      return ['25:25', '587:587', '993:993'];
+      return [`${remap(25)}:25`, `${remap(587)}:587`, `${remap(993)}:993`];
+    case 'jellyfin':
+      return [`${remap(8096)}:8096`];
+    case 'nextcloud':
+      return [`${remap(8443)}:80`];
+    case 'minio':
+      return [`${remap(9000)}:9000`, `${remap(9001)}:9001`];
+    case 'filebrowser':
+      return [`${remap(8085)}:80`];
+    case 'pgadmin':
+      return [`${remap(5050)}:80`];
     case 'cloudflared':
       return [];
     // DB/cache ports are NOT exposed externally
@@ -397,6 +587,8 @@ function getServiceEnvironment(
       return getMailEnv(state);
     case 'pgadmin':
       return getPgadminEnv(state);
+    case 'filebrowser':
+      return getFilebrowserEnv(state);
     case 'cloudflared':
       return getCloudflaredEnv(state);
     default:
@@ -442,9 +634,24 @@ function buildComposeService(
     svc.environment = environment;
   }
 
-  // Traefik labels — only when web server is traefik AND service has a subdomain
-  if (webService === 'traefik' && def.traefikLabels) {
+  // Traefik labels — Named Tunnel / local mode (subdomain-based routing)
+  if (
+    webService === 'traefik' &&
+    def.traefikLabels &&
+    state.domain.cloudflare.tunnelMode !== 'quick'
+  ) {
     svc.labels = resolveTraefikLabels(def, domain);
+  }
+
+  // Traefik labels — Quick Tunnel mode (path-prefix routing)
+  if (webService === 'traefik' && state.domain.cloudflare.tunnelMode === 'quick') {
+    const entry = QUICK_TUNNEL_PATH_MAP[def.id];
+    if (entry) {
+      svc.labels = buildQuickTunnelPathLabels(def.id, entry.path, entry.port, entry.noStrip);
+      for (const extraPath of (entry.extraPaths ?? [])) {
+        Object.assign(svc.labels, buildQuickTunnelExtraPathLabels(def.id, extraPath, entry.port));
+      }
+    }
   }
 
   // depends_on
@@ -459,9 +666,75 @@ function buildComposeService(
     svc.healthcheck = hc;
   }
 
-  // Cloudflared command
+  // Traefik command — define entrypoints and enable Docker provider
+  if (def.id === 'traefik') {
+    const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
+    const cmds: string[] = [
+      '--providers.docker=true',
+      '--providers.docker.exposedbydefault=false',
+      '--providers.docker.network=brewnet',
+      '--entrypoints.web.address=:80',
+      '--entrypoints.websecure.address=:443',
+      '--api.insecure=true',
+    ];
+    if (isQuickTunnel) {
+      // Preserve X-Forwarded-Proto from cloudflared so services behind Traefik
+      // (e.g. Nextcloud) can detect the original protocol without hardcoding
+      // OVERWRITEPROTOCOL.  cloudflared sets X-Forwarded-Proto: https for
+      // tunnel traffic; local access gets http from the entrypoint.
+      cmds.push('--entrypoints.web.forwardedHeaders.insecure=true');
+    }
+    if (!isQuickTunnel && state.domain.ssl === 'letsencrypt') {
+      cmds.push(
+        '--certificatesresolvers.letsencrypt.acme.tlschallenge=true',
+        '--certificatesresolvers.letsencrypt.acme.email=admin@brewnet.local',
+        '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json',
+      );
+    }
+    svc.command = cmds;
+
+    // Dashboard labels — BasicAuth-protected access to Traefik Dashboard/API
+    // via /dashboard and /api paths. Uses admin credentials from wizard state.
+    svc.labels = {
+      'traefik.enable': 'true',
+      'traefik.http.routers.brewnet-dashboard.rule':
+        "PathPrefix(`/dashboard`) || PathPrefix(`/api`)",
+      'traefik.http.routers.brewnet-dashboard.entrypoints': 'web',
+      'traefik.http.routers.brewnet-dashboard.service': 'api@internal',
+      // Redirect /dashboard (no trailing slash) → /dashboard/ before auth.
+      // api@internal returns 404 for paths without trailing slash.
+      'traefik.http.routers.brewnet-dashboard.middlewares': 'dashboard-slash-redirect@docker,dashboard-auth@docker',
+      'traefik.http.middlewares.dashboard-slash-redirect.redirectregex.regex': '^(https?://[^/]+)/dashboard$',
+      'traefik.http.middlewares.dashboard-slash-redirect.redirectregex.replacement': '$${1}/dashboard/',
+      'traefik.http.middlewares.dashboard-slash-redirect.redirectregex.permanent': 'false',
+      'traefik.http.middlewares.dashboard-auth.basicauth.users':
+        '${TRAEFIK_DASHBOARD_AUTH}',
+    };
+  }
+
+  // Cloudflared command — branch on tunnelMode
   if (def.id === 'cloudflared') {
-    svc.command = ['tunnel', '--no-autoupdate', 'run'];
+    if (state.domain.cloudflare.tunnelMode === 'quick') {
+      // Quick Tunnel: no account needed, URL is auto-assigned by Cloudflare
+      svc.command = ['tunnel', '--no-autoupdate', '--url', 'http://traefik:80'];
+    } else {
+      // Named Tunnel: requires TUNNEL_TOKEN env var
+      svc.command = ['tunnel', '--no-autoupdate', 'run'];
+    }
+  }
+
+  // Jellyfin Base URL — Traefik always routes Jellyfin via /jellyfin with noStrip,
+  // so Jellyfin must always know its BaseUrl is /jellyfin regardless of tunnel mode.
+  // Jellyfin reads BaseUrl from /config/config/network.xml; we inject it via entrypoint.
+  // Ref: https://jellyfin.org/docs/general/post-install/networking — "Base URL"
+  if (def.id === 'jellyfin') {
+    svc.entrypoint = ['/bin/sh', '-c',
+      'mkdir -p /config/config && ' +
+      'if [ ! -f /config/config/network.xml ]; then ' +
+      'echo \'<?xml version="1.0" encoding="utf-8"?><NetworkConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><BaseUrl>/jellyfin</BaseUrl></NetworkConfiguration>\' > /config/config/network.xml; ' +
+      'fi && ' +
+      'exec /jellyfin/jellyfin',
+    ];
   }
 
   // MinIO command
@@ -470,6 +743,174 @@ function buildComposeService(
   }
 
   return svc;
+}
+
+// ---------------------------------------------------------------------------
+// Docker Secrets Migration
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply file-based Docker secrets to a compose service.
+ *
+ * For each service, this function:
+ *   1. Removes secret env vars (passwords, tokens)
+ *   2. Adds _FILE env vars pointing to /run/secrets/<name>
+ *   3. Sets svc.secrets array
+ *   4. For services without _FILE support, applies workarounds
+ *      (redis: command override, traefik: usersfile label)
+ *
+ * Services that stay in .env (no _FILE support):
+ *   - minio (MINIO_ROOT_PASSWORD)
+ *   - cloudflared (TUNNEL_TOKEN)
+ */
+function applySecretsMigration(
+  serviceId: string,
+  svc: ComposeService,
+  state: WizardState,
+): void {
+  const env = svc.environment ?? {};
+  const secrets: string[] = [];
+
+  switch (serviceId) {
+    // --- PostgreSQL: POSTGRES_PASSWORD → POSTGRES_PASSWORD_FILE ---
+    case 'postgresql': {
+      delete env['POSTGRES_PASSWORD'];
+      env['POSTGRES_PASSWORD_FILE'] = '/run/secrets/db_password';
+      secrets.push('db_password');
+      break;
+    }
+
+    // --- MySQL: MYSQL_ROOT_PASSWORD + MYSQL_PASSWORD → _FILE variants ---
+    case 'mysql': {
+      delete env['MYSQL_ROOT_PASSWORD'];
+      delete env['MYSQL_PASSWORD'];
+      env['MYSQL_ROOT_PASSWORD_FILE'] = '/run/secrets/db_password';
+      env['MYSQL_PASSWORD_FILE'] = '/run/secrets/db_password';
+      secrets.push('db_password');
+      break;
+    }
+
+    // --- Gitea: database PASSWD, security SECRET_KEY → __FILE variants ---
+    case 'gitea': {
+      if (env['GITEA__database__PASSWD']) {
+        delete env['GITEA__database__PASSWD'];
+        env['GITEA__database__PASSWD__FILE'] = '/run/secrets/db_password';
+        secrets.push('db_password');
+      }
+      // SECRET_KEY is always set via credential-manager
+      // Gitea uses double-underscore __FILE convention
+      delete env['GITEA__security__SECRET_KEY'];
+      // Gitea does not natively support __FILE for SECRET_KEY;
+      // we write the value directly to the secret and use entrypoint to inject it.
+      // For now, leave it as env var pointing to secret file for manual handling.
+      secrets.push('gitea_secret_key');
+      break;
+    }
+
+    // --- Nextcloud: NEXTCLOUD_ADMIN_PASSWORD, DB passwords → _FILE ---
+    case 'nextcloud': {
+      delete env['NEXTCLOUD_ADMIN_PASSWORD'];
+      env['NEXTCLOUD_ADMIN_PASSWORD_FILE'] = '/run/secrets/admin_password';
+      secrets.push('admin_password');
+
+      if (env['POSTGRES_PASSWORD']) {
+        delete env['POSTGRES_PASSWORD'];
+        env['POSTGRES_PASSWORD_FILE'] = '/run/secrets/db_password';
+        secrets.push('db_password');
+      }
+      if (env['MYSQL_PASSWORD']) {
+        delete env['MYSQL_PASSWORD'];
+        env['MYSQL_PASSWORD_FILE'] = '/run/secrets/db_password';
+        secrets.push('db_password');
+      }
+
+      // Redis password integration (if cache is enabled)
+      if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
+        env['REDIS_HOST'] = state.servers.dbServer.cache; // container name
+        env['REDIS_HOST_PASSWORD_FILE'] = '/run/secrets/cache_password';
+        secrets.push('cache_password');
+      }
+      break;
+    }
+
+    // --- pgAdmin: PGADMIN_DEFAULT_PASSWORD → _FILE ---
+    case 'pgadmin': {
+      delete env['PGADMIN_DEFAULT_PASSWORD'];
+      env['PGADMIN_DEFAULT_PASSWORD_FILE'] = '/run/secrets/admin_password';
+      secrets.push('admin_password');
+      break;
+    }
+
+    // --- Redis/Valkey/KeyDB: no _FILE support → command workaround ---
+    case 'redis':
+    case 'valkey':
+    case 'keydb': {
+      secrets.push('cache_password');
+      // Override command to read password from secret file
+      svc.command = [
+        'sh', '-c',
+        'redis-server --requirepass "$(cat /run/secrets/cache_password)"',
+      ];
+      break;
+    }
+
+    // --- docker-mailserver: RELAY_PASSWORD → RELAY_PASSWORD__FILE ---
+    case 'docker-mailserver': {
+      if (env['RELAY_PASSWORD']) {
+        delete env['RELAY_PASSWORD'];
+        env['RELAY_PASSWORD__FILE'] = '/run/secrets/smtp_relay_password';
+        secrets.push('smtp_relay_password');
+      }
+      break;
+    }
+
+    // --- Traefik: basicauth.users → basicauth.usersfile (BasicAuth bug fix) ---
+    case 'traefik': {
+      secrets.push('traefik_dashboard_auth');
+      // Fix BasicAuth: switch from env-interpolated users label to usersfile
+      if (svc.labels) {
+        delete svc.labels['traefik.http.middlewares.dashboard-auth.basicauth.users'];
+        svc.labels['traefik.http.middlewares.dashboard-auth.basicauth.usersfile'] =
+          '/run/secrets/traefik_dashboard_auth';
+      }
+      break;
+    }
+
+    // minio, cloudflared: no changes (stay in .env)
+    default:
+      break;
+  }
+
+  // Deduplicate secrets
+  const uniqueSecrets = [...new Set(secrets)];
+  if (uniqueSecrets.length > 0) {
+    svc.secrets = uniqueSecrets;
+  }
+  if (Object.keys(env).length > 0) {
+    svc.environment = env;
+  }
+}
+
+/**
+ * Collect top-level secrets block from all services.
+ * Returns a record of secret name → { file: './secrets/<name>' }.
+ */
+function collectTopLevelSecrets(
+  services: Record<string, ComposeService>,
+): Record<string, { file: string }> | undefined {
+  const allSecrets = new Set<string>();
+  for (const svc of Object.values(services)) {
+    for (const s of svc.secrets ?? []) {
+      allSecrets.add(s);
+    }
+  }
+  if (allSecrets.size === 0) return undefined;
+
+  const result: Record<string, { file: string }> = {};
+  for (const name of allSecrets) {
+    result[name] = { file: `./secrets/${name}` };
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -512,6 +953,45 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
   const webDef = SERVICE_REGISTRY.get(webId);
   if (webDef) {
     services[webId] = buildComposeService(webDef, state);
+  }
+
+  // 1.5. Landing page — branded catch-all replacing traefik/whoami.
+  //      Prevents internal infrastructure info leakage (container IDs, IPs, headers).
+  //      Built from ./landing (Dockerfile + nginx.conf + index.html).
+  if (webId === 'traefik') {
+    const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
+    const landingLabels: Record<string, string> = {
+      'traefik.enable': 'true',
+      'traefik.http.services.brewnet-landing.loadbalancer.server.port': '80',
+      // Security headers middleware
+      'traefik.http.middlewares.landing-headers.headers.customResponseHeaders.Server': 'Brewnet',
+      'traefik.http.middlewares.landing-headers.headers.frameDeny': 'true',
+      'traefik.http.middlewares.landing-headers.headers.contentTypeNosniff': 'true',
+      'traefik.http.middlewares.landing-headers.headers.browserXssFilter': 'true',
+    };
+
+    if (isQuickTunnel) {
+      // Quick Tunnel: catch-all path prefix with lowest priority
+      // (more specific paths like /git, /files take precedence via Traefik's rule-length priority)
+      landingLabels['traefik.http.routers.brewnet-landing.rule'] = 'PathPrefix(`/`)';
+      landingLabels['traefik.http.routers.brewnet-landing.entrypoints'] = 'web';
+      landingLabels['traefik.http.routers.brewnet-landing.priority'] = '1';
+      landingLabels['traefik.http.routers.brewnet-landing.middlewares'] = 'landing-headers@docker';
+    } else {
+      // Local / Named Tunnel: respond to Host: localhost requests
+      landingLabels['traefik.http.routers.brewnet-landing.rule'] = 'Host(`localhost`)';
+      landingLabels['traefik.http.routers.brewnet-landing.entrypoints'] = 'web';
+      landingLabels['traefik.http.routers.brewnet-landing.middlewares'] = 'landing-headers@docker';
+    }
+
+    services['brewnet-landing'] = {
+      build: './landing',
+      container_name: 'brewnet-landing',
+      restart: 'unless-stopped',
+      security_opt: ['no-new-privileges:true'],
+      networks: ['brewnet'],
+      labels: landingLabels,
+    };
   }
 
   // 2. Git server (required, always enabled)
@@ -597,15 +1077,23 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     }
   }
 
+  // ── Apply Docker secrets migration to all services ──────────────────
+  for (const [id, svc] of Object.entries(services)) {
+    applySecretsMigration(id, svc, state);
+  }
+
   const namedVolumes = collectNamedVolumes(services);
+  const topSecrets = collectTopLevelSecrets(services);
 
   return {
+    name: state.projectName || 'brewnet',
     services,
     networks: {
       brewnet: { external: true },
       'brewnet-internal': { internal: true },
     },
     ...(Object.keys(namedVolumes).length > 0 ? { volumes: namedVolumes } : {}),
+    ...(topSecrets ? { secrets: topSecrets } : {}),
   };
 }
 

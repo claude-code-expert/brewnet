@@ -20,6 +20,10 @@ export type {
   BoilerplateConfig,
   DomainConfig,
   CloudflareConfig,
+  // Tunnel event types
+  TunnelLogEvent,
+  TunnelHealth,
+  TunnelServiceStatus,
   // Primitive types
   Language,
   FrontendTech,
@@ -29,7 +33,6 @@ export type {
   CacheService,
   DomainProvider,
   SslMode,
-  FreeDomainTld,
   SetupType,
   FileBrowserMode,
   DevMode,
@@ -93,7 +96,6 @@ export {
   cacheServiceSchema,
   domainProviderSchema,
   sslModeSchema,
-  freeDomainTldSchema,
   setupTypeSchema,
   fileBrowserModeSchema,
   devModeSchema,
@@ -164,8 +166,8 @@ export {
   DEFAULT_WEB_SERVER,
   DEFAULT_DOMAIN_PROVIDER,
   DEFAULT_SSL_MODE,
-  DEFAULT_FREE_DOMAIN_TLD,
   DEFAULT_DEV_MODE,
+  BOILERPLATE_REPO_URL,
   // CLI Metadata
   CLI_NAME,
   CLI_DESCRIPTION,

@@ -56,7 +56,7 @@
 - [x] T014 [P] Implement BrewnetError class extending Error with code, httpStatus, remediation fields and factory methods for each BN code in `packages/cli/src/utils/errors.ts`
 - [x] T015 [P] Implement structured logger (info/warn/error → `~/.brewnet/logs/` as daily JSON files) in `packages/cli/src/utils/logger.ts`
 - [x] T016 [P] Implement password generation (confusion-free charset, configurable length 16/20) in `packages/cli/src/utils/password.ts`
-- [x] T017 [P] Implement input validation helpers (validateProjectName, validateDomainName, validateTunnelToken, validateFreeDomainTld) in `packages/cli/src/utils/validation.ts`
+- [x] T017 [P] Implement input validation helpers (validateProjectName, validateDomainName, validateTunnelToken) in `packages/cli/src/utils/validation.ts`
 - [x] T018 [P] Implement resource estimation functions (countSelectedServices, estimateResources, collectAllServices, getCredentialTargets, getImageName) in `packages/cli/src/utils/resources.ts`
 
 ### Config Registries
@@ -74,7 +74,7 @@
 
 - [x] T023a [P] Unit tests for BrewnetError factory methods (all BN001–BN010 codes, messages, remediation) in `tests/unit/cli/utils/errors.test.ts`
 - [x] T023b [P] Unit tests for password generation (length, charset, confusion-free exclusions) in `tests/unit/cli/utils/password.test.ts`
-- [x] T023c [P] Unit tests for validation helpers (projectName valid/invalid/empty, domainName, tunnelToken, freeDomainTld) in `tests/unit/cli/utils/validation.test.ts`
+- [x] T023c [P] Unit tests for validation helpers (projectName valid/invalid/empty, domainName, tunnelToken) in `tests/unit/cli/utils/validation.test.ts`
 - [x] T023d [P] Unit tests for resource estimation (countSelectedServices, estimateResources, getCredentialTargets) in `tests/unit/cli/utils/resources.test.ts`
 - [x] T023e [P] Unit tests for service registry (17 entries, correct images/ports/RAM) in `tests/unit/cli/config/services.test.ts`
 - [x] T023f [P] Unit tests for WizardState management (create, save, load, reset, schema migration, resume detection) in `tests/unit/cli/wizard/state.test.ts`
@@ -248,20 +248,19 @@
 
 ## Phase 9: User Story 6 — Domain & Network Configuration (Priority: P2)
 
-**Goal**: Step 4 domain provider selection (local/freedomain/custom), Cloudflare Tunnel config with token validation, conditional Mail Server
+**Goal**: Step 4 domain provider selection (local/tunnel), Cloudflare Tunnel config with token validation, conditional Mail Server
 
 **Independent Test**: Select each provider → verify SSL mode, tunnel config, mail visibility rules
 
 ### Tests for User Story 6 (TDD)
 
-- [x] T083 [P] [US6] Unit tests for domain config logic (local=no SSL/no tunnel, freedomain=tunnel ON, custom=SSL options, TLD validation, tunnel token validation) in `tests/unit/cli/wizard/domain-network.test.ts` — covers TC-06-01 through TC-06-04, TC-06-07, TC-06-08
+- [x] T083 [P] [US6] Unit tests for domain config logic (local=no SSL/no tunnel, tunnel=SSL options + tunnel ON, tunnel token validation) in `tests/unit/cli/wizard/domain-network.test.ts` — covers TC-06-01, TC-06-03, TC-06-05, TC-06-07, TC-06-08
 - [x] T084 [P] [US6] Integration tests for cloudflared compose block generation and Mail Server compose block generation in `tests/integration/domain-config.test.ts` — covers TC-06-05, TC-06-06, TC-06-09
 
 ### Implementation for User Story 6
 
-- [x] T085 [US6] Implement Step 4 wizard step: domain provider select (local/freedomain/custom), domain name input with provider-specific validation in `packages/cli/src/wizard/steps/domain-network.ts`
-- [x] T086 [US6] Implement freedomain flow: TLD select (.dpdns.org/.qzz.io/.us.kg), 8-step setup guide display, domain name input in `packages/cli/src/wizard/steps/domain-network.ts`
-- [x] T087 [US6] Implement Cloudflare Tunnel config: tunnel token input with validation (shown only when provider !== 'local'), auto-enable tunnel for freedomain/custom in `packages/cli/src/wizard/steps/domain-network.ts`
+- [x] T085 [US6] Implement Step 4 wizard step: domain provider select (local/tunnel), domain name input with provider-specific validation in `packages/cli/src/wizard/steps/domain-network.ts`
+- [x] T087 [US6] Implement Cloudflare Tunnel config: tunnel token input with validation (shown only when provider !== 'local'), auto-enable tunnel for tunnel provider in `packages/cli/src/wizard/steps/domain-network.ts`
 - [x] T088 [US6] Implement conditional Mail Server section: toggle (shown only when provider !== 'local'), docker-mailserver with SMTP/IMAP ports, postmaster from admin creds in `packages/cli/src/wizard/steps/domain-network.ts`
 - [x] T089 [US6] Wire Step 3 → Step 4 navigation in init orchestrator in `packages/cli/src/commands/init.ts`
 

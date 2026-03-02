@@ -1,6 +1,6 @@
 /**
  * Brewnet CLI Demo — Wizard State Management (v5)
- * Server components + Admin + FreeDomain + Cloudflare Tunnel + SSH/SFTP + Mail
+ * Server components + Admin + Cloudflare Tunnel + SSH/SFTP + Mail
  * v2.2: Multi-select dev stack, Frontend registry, FileBrowser, MariaDB removed
  */
 
@@ -60,12 +60,11 @@ const DEFAULT_STATE = {
 
   // Step 4: Domain & Network
   domain: {
-    provider: 'local',      // 'local' | 'freedomain' | 'custom'
-    freeDomainTld: '.dpdns.org',
+    provider: 'local',      // 'local' | 'tunnel'
     name: 'brewnet.local',
     ssl: 'none',            // 'none' | 'self-signed' | 'letsencrypt' | 'cloudflare'
     cloudflare: {
-      enabled: false,       // auto-enabled when provider is 'freedomain' or 'custom'
+      enabled: false,       // auto-enabled when provider is 'tunnel'
       tunnelToken: '',
       tunnelName: '',
     },
@@ -145,13 +144,6 @@ const CATEGORY_LABELS = {
   media: 'Media Server',
 };
 
-/* ─── Free Domain Providers ─── */
-const FREE_DOMAIN_PROVIDERS = [
-  { tld: '.dpdns.org', name: 'DigitalPlat (.dpdns.org)', recommended: true, desc: 'Most stable, recommended' },
-  { tld: '.qzz.io', name: 'DigitalPlat (.qzz.io)', desc: 'Short extension' },
-  { tld: '.us.kg', name: 'DigitalPlat (.us.kg)', desc: 'Requires GitHub account approval' },
-];
-
 /* ─── Framework Registry (v2.2) ─── */
 const FRAMEWORK_REGISTRY = {
   python: [
@@ -161,23 +153,14 @@ const FRAMEWORK_REGISTRY = {
   ],
   nodejs: [
     { id: 'nextjs', name: 'Next.js', desc: 'React full-stack framework (SSR/SSG)', license: 'MIT', port: 3000 },
-    { id: 'nextjs-api', name: 'Next.js API Routes', desc: 'API-only backend with Next.js', license: 'MIT', port: 3000 },
+    { id: 'nextjs-app', name: 'Next.js 15.x (App Router)', desc: 'Next.js 15 App Router with Server Components', license: 'MIT', port: 3000 },
     { id: 'express', name: 'Express', desc: 'Minimal web framework', license: 'MIT', port: 3000 },
     { id: 'nestjs', name: 'NestJS', desc: 'Enterprise Node.js framework', license: 'MIT', port: 3000 },
-    { id: 'fastify', name: 'Fastify', desc: 'Fast web framework', license: 'MIT', port: 3000 },
   ],
   java: [
     { id: 'java-pure', name: 'Pure Java', desc: 'No framework, standard Java SE', license: 'GPL-2.0+CE', port: 8080 },
     { id: 'spring', name: 'Spring', desc: 'Enterprise Java framework', license: 'Apache-2.0', port: 8080 },
     { id: 'springboot', name: 'Spring Boot', desc: 'Opinionated Spring with auto-config', license: 'Apache-2.0', port: 8080 },
-  ],
-  php: [
-    { id: 'laravel', name: 'Laravel', desc: 'Full-stack PHP framework', license: 'MIT', port: 8000 },
-    { id: 'symfony', name: 'Symfony', desc: 'Enterprise PHP framework', license: 'MIT', port: 8000 },
-  ],
-  dotnet: [
-    { id: 'aspnet', name: 'ASP.NET Core', desc: 'Cross-platform web framework', license: 'MIT', port: 5000 },
-    { id: 'blazor', name: 'Blazor', desc: 'Interactive web UI with C#', license: 'MIT', port: 5000 },
   ],
   rust: [
     { id: 'actix', name: 'Actix Web', desc: 'High performance', license: 'MIT', port: 8080 },
@@ -188,16 +171,19 @@ const FRAMEWORK_REGISTRY = {
     { id: 'echo', name: 'Echo', desc: 'High performance framework', license: 'MIT', port: 8080 },
     { id: 'fiber', name: 'Fiber', desc: 'Express-inspired framework', license: 'MIT', port: 8080 },
   ],
+  kotlin: [
+    { id: 'ktor', name: 'Ktor', desc: 'Asynchronous Kotlin web framework', license: 'Apache-2.0', port: 8080 },
+    { id: 'springboot-kt', name: 'Spring Boot (Kotlin)', desc: 'Spring Boot with Kotlin DSL', license: 'Apache-2.0', port: 8080 },
+  ],
 };
 
 const LANGUAGE_LABELS = {
-  python: 'Python 3.12',
-  nodejs: 'Node.js 20 LTS',
+  python: 'Python 3.13',
+  nodejs: 'Node.js 22 LTS',
   java: 'Java 21 (Eclipse Temurin)',
-  php: 'PHP 8.3',
-  dotnet: '.NET 8',
-  rust: 'Rust (latest)',
-  go: 'Go 1.22',
+  rust: 'Rust 1.85',
+  go: 'Go 1.24',
+  kotlin: 'Kotlin 2.3',
 };
 
 /* ─── Frontend Tech Stack Registry (v2.2) ─── */

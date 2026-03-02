@@ -159,7 +159,7 @@ describe('runReviewStep', () => {
 
     await runReviewStep(makeState());
     const output = logs.join('\n');
-    expect(output).toContain('Step 5/7');
+    expect(output).toContain('Step 6/8');
 
     consoleSpy.mockRestore();
   });

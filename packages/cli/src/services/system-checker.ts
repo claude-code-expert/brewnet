@@ -340,7 +340,9 @@ export async function checkMemory(minGB: number = 2): Promise<CheckResult> {
 // T040 — checkPort
 // ---------------------------------------------------------------------------
 
-export async function checkPort(port: number): Promise<CheckResult> {
+export async function checkPort(port: number, service?: string): Promise<CheckResult> {
+  const label = service ? `Port ${port} — ${service}` : `Port ${port}`;
+
   return new Promise<CheckResult>((resolve) => {
     try {
       const server = createServer();
@@ -352,25 +354,29 @@ export async function checkPort(port: number): Promise<CheckResult> {
 
         if (err.code === 'EADDRINUSE') {
           resolve({
-            name: `Port ${port}`,
+            name: label,
             status: 'warn',
             message: `Port ${port} is already in use`,
-            details: `Port ${port} is in use (EADDRINUSE). Another process is bound to this port.`,
+            details: service
+              ? `${service} needs port ${port}, but another process is using it.`
+              : `Port ${port} is in use (EADDRINUSE). Another process is bound to this port.`,
             critical: false,
             remediation: `lsof -i :${port} 으로 프로세스 확인 후 종료하세요.`,
           });
         } else if (err.code === 'EACCES') {
           resolve({
-            name: `Port ${port}`,
+            name: label,
             status: 'warn',
             message: `Port ${port} requires elevated permissions`,
-            details: `Port ${port} permission denied (EACCES). Try running with sudo or use a port >= 1024.`,
+            details: service
+              ? `${service} needs port ${port}, but permission denied (EACCES).`
+              : `Port ${port} permission denied (EACCES). Try running with sudo or use a port >= 1024.`,
             critical: false,
             remediation: `sudo brewnet init 으로 재시도하거나 포트를 변경하세요.`,
           });
         } else {
           resolve({
-            name: `Port ${port}`,
+            name: label,
             status: 'warn',
             message: `Port ${port} check failed: ${err.message}`,
             details: `Port ${port}: ${err.code ?? err.message}`,
@@ -386,10 +392,10 @@ export async function checkPort(port: number): Promise<CheckResult> {
         resolved = true;
         server.close(() => {
           resolve({
-            name: `Port ${port}`,
+            name: label,
             status: 'pass',
             message: `Port ${port} is available`,
-            details: `Port ${port}`,
+            details: service ? `${service} — Port ${port}` : `Port ${port}`,
             critical: false,
           });
         });
@@ -438,7 +444,12 @@ export async function checkGit(): Promise<CheckResult> {
 // Orchestrator — runAllChecks
 // ---------------------------------------------------------------------------
 
-const DEFAULT_PORTS = [80, 443, 2222];
+/** Maps default ports to the Brewnet service that needs them. */
+const DEFAULT_PORTS: Array<{ port: number; service: string }> = [
+  { port: 80, service: 'Traefik (Web Server)' },
+  { port: 443, service: 'Traefik (HTTPS)' },
+  { port: 2222, service: 'SSH Server' },
+];
 
 export async function runAllChecks(): Promise<RunAllChecksResult> {
   const results: CheckResult[] = [];
@@ -500,12 +511,12 @@ export async function runAllChecks(): Promise<RunAllChecksResult> {
   }
 
   // Check default ports
-  for (const port of DEFAULT_PORTS) {
+  for (const { port, service } of DEFAULT_PORTS) {
     try {
-      results.push(await checkPort(port));
+      results.push(await checkPort(port, service));
     } catch {
       results.push({
-        name: `Port ${port}`,
+        name: `Port ${port} — ${service}`,
         status: 'warn',
         message: `Port ${port} check failed unexpectedly`,
         critical: false,

@@ -198,10 +198,13 @@ describe('buildPullCommand', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildUpCommand', () => {
-  it('returns docker compose up -d command', () => {
+  it('returns docker compose up -d --force-recreate --remove-orphans command', () => {
     const result = buildUpCommand('/project/docker-compose.yml');
     expect(result.cmd).toBe('docker');
-    expect(result.args).toEqual(['compose', '-f', '/project/docker-compose.yml', 'up', '-d']);
+    expect(result.args).toEqual([
+      'compose', '-f', '/project/docker-compose.yml',
+      'up', '-d', '--force-recreate', '--remove-orphans',
+    ]);
   });
 });
 
@@ -241,9 +244,8 @@ describe('generateEndpoints', () => {
     const state = makeState({
       domain: {
         provider: 'tunnel',
-        name: 'myserver.dpdns.org',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
-        freeDomainTld: '.dpdns.org',
         cloudflare: { enabled: true, tunnelToken: '', tunnelName: 'my-tunnel', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
         mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
@@ -262,7 +264,6 @@ describe('generateEndpoints', () => {
         provider: 'local',
         name: 'brewnet.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
         cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
         mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
@@ -292,7 +293,6 @@ describe('generateEndpoints', () => {
         provider: 'local',
         name: 'brewnet.local',
         ssl: 'self-signed',
-        freeDomainTld: '.dpdns.org',
         cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
         mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },

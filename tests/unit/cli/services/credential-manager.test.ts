@@ -389,7 +389,7 @@ describe('generateCredentialEnvEntries', () => {
     });
 
     const entries = generateCredentialEnvEntries(state);
-    expect(entries['PGADMIN_DEFAULT_EMAIL']).toBe('admin@brewnet.local');
+    expect(entries['PGADMIN_DEFAULT_EMAIL']).toBe('admin@brewnet.dev');
     expect(entries['PGADMIN_DEFAULT_PASSWORD']).toBe('AdminPass');
   });
 

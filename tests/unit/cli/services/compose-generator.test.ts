@@ -509,8 +509,8 @@ describe('ComposeGenerator — Cloudflare tunnel (TC-08-06)', () => {
   it('should include cloudflared service when cloudflare.enabled is true', () => {
     const state = buildState({
       domain: {
-        provider: 'freedomain',
-        name: 'myserver.dpdns.org',
+        provider: 'tunnel',
+        name: 'myserver.example.com',
         ssl: 'cloudflare',
         cloudflare: {
           enabled: true,
@@ -1599,12 +1599,108 @@ describe('ComposeGenerator — Mail Server with relay provider', () => {
           relayPassword: 'SG.testtoken',
         },
       },
-      domain: { provider: 'tunnel', name: 'test.dpdns.org' },
+      domain: { provider: 'tunnel', name: 'test.example.com' },
     });
     const config = generateComposeConfig(state);
     expect(config.services).toHaveProperty('docker-mailserver');
     const mailService = config.services['docker-mailserver'];
     const env = mailService?.environment as Record<string, string> | undefined;
     expect(env?.['DEFAULT_RELAY_HOST']).toContain('smtp.sendgrid.net');
+  });
+});
+
+// =========================================================================
+// Port remapping verification
+// =========================================================================
+
+describe('ComposeGenerator — portRemapping', () => {
+  it('applies portRemapping to traefik ports (80→8080, 443→8443)', () => {
+    const state = buildState({
+      servers: {
+        webServer: { enabled: true, service: 'traefik' },
+      },
+    });
+    state.portRemapping = { 80: 8080, 443: 8443 };
+
+    const config = generateComposeConfig(state);
+    const traefik = config.services['traefik'];
+
+    expect(traefik?.ports).toContain('8080:80');
+    expect(traefik?.ports).toContain('8443:443');
+    expect(traefik?.ports).not.toContain('80:80');
+    expect(traefik?.ports).not.toContain('443:443');
+    // Dashboard port must NOT collide with remapped HTTP port 8080
+    expect(traefik?.ports).toContain('8081:8080');
+    expect(traefik?.ports).not.toContain('8080:8080');
+  });
+
+  it('applies portRemapping to SSH port (2222→2223)', () => {
+    const state = buildState({
+      servers: {
+        webServer: { enabled: true, service: 'traefik' },
+        sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: false },
+      },
+    });
+    state.portRemapping = { 2222: 2223 };
+
+    const config = generateComposeConfig(state);
+    const ssh = config.services['openssh-server'];
+
+    expect(ssh).toBeDefined();
+    expect(ssh?.ports).toContain('2223:2222');
+    expect(ssh?.ports).not.toContain('2222:2222');
+  });
+
+  it('applies portRemapping to jellyfin port (8096→9096)', () => {
+    const state = buildState({
+      servers: {
+        webServer: { enabled: true, service: 'traefik' },
+        media: { enabled: true, services: ['jellyfin'] },
+      },
+    });
+    state.portRemapping = { 8096: 9096 };
+
+    const config = generateComposeConfig(state);
+    const jellyfin = config.services['jellyfin'];
+
+    expect(jellyfin).toBeDefined();
+    expect(jellyfin?.ports).toContain('9096:8096');
+    expect(jellyfin?.ports).not.toContain('8096:8096');
+  });
+
+  it('uses default ports when portRemapping is empty', () => {
+    const state = buildState({
+      servers: {
+        webServer: { enabled: true, service: 'traefik' },
+      },
+    });
+    state.portRemapping = {};
+
+    const config = generateComposeConfig(state);
+    const traefik = config.services['traefik'];
+
+    expect(traefik?.ports).toContain('80:80');
+    expect(traefik?.ports).toContain('443:443');
+  });
+
+  it('portRemapping survives JSON serialization (string keys)', () => {
+    const state = buildState({
+      servers: {
+        webServer: { enabled: true, service: 'traefik' },
+        sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: false },
+      },
+    });
+    state.portRemapping = { 80: 8080, 443: 8443, 2222: 2223 };
+
+    // Simulate JSON round-trip (saveState → loadState)
+    const serialized = JSON.parse(JSON.stringify(state)) as WizardState;
+
+    const config = generateComposeConfig(serialized);
+    const traefik = config.services['traefik'];
+    const ssh = config.services['openssh-server'];
+
+    expect(traefik?.ports).toContain('8080:80');
+    expect(traefik?.ports).toContain('8443:443');
+    expect(ssh?.ports).toContain('2223:2222');
   });
 });

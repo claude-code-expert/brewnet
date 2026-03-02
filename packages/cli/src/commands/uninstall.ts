@@ -10,7 +10,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { confirm } from '@inquirer/prompts';
+import { confirm, select } from '@inquirer/prompts';
 import {
   buildUninstallTargets,
   listInstallations,
@@ -54,8 +54,27 @@ export function registerUninstallCommand(program: Command): void {
       }) => {
         // --- Gather project info ---
         const installations = listInstallations();
-        const lastProject = getLastProject();
-        const state = lastProject ? loadState(lastProject) : null;
+        let lastProject = getLastProject();
+        let state = lastProject ? loadState(lastProject) : null;
+        let discoveredPath: string | null = null;
+
+        // If wizard state is missing but filesystem scan found installations,
+        // pick the target from discovered projects instead.
+        if (!state && installations.length > 0) {
+          let picked = installations[0];
+          if (installations.length > 1) {
+            picked = await select({
+              message: '삭제할 프로젝트를 선택하세요',
+              choices: installations.map((inst) => ({
+                value: inst,
+                name: `${inst.name}  ${chalk.dim(inst.path ?? '')}`,
+              })),
+            });
+          }
+          lastProject = picked.name;
+          state = lastProject ? loadState(lastProject) : null;
+          discoveredPath = picked.path ?? null;
+        }
 
         // --- Dry-run banner ---
         if (options.dryRun) {
@@ -65,6 +84,10 @@ export function registerUninstallCommand(program: Command): void {
         // --- Show what is installed ---
         if (installations.length === 0) {
           console.log(chalk.yellow('No Brewnet installations found.'));
+          console.log(chalk.dim(
+            '  If Docker containers are still running, stop them manually:\n' +
+            '  docker ps  →  docker compose down (in your project directory)',
+          ));
           return;
         }
 
@@ -76,8 +99,16 @@ export function registerUninstallCommand(program: Command): void {
           );
         }
 
+        console.log(
+          chalk.yellow(
+            '\n  ⚠  CAUTION: This is a clean uninstall. All Brewnet services,\n' +
+            '     containers, volumes, and project files will be removed.\n',
+          ),
+        );
+
         // --- Build target list ---
-        const projectPath = state?.projectPath ?? null;
+        // Use wizard state path first, then discovered filesystem path
+        const projectPath = state?.projectPath ?? discoveredPath ?? null;
         const targets = buildUninstallTargets(projectPath, {
           keepData: options.keepData,
           keepConfig: options.keepConfig,
@@ -128,7 +159,7 @@ export function registerUninstallCommand(program: Command): void {
           keepConfig: options.keepConfig,
           force: options.force,
           projectPath: projectPath ?? undefined,
-          projectName: lastProject,
+          projectName: lastProject || undefined,
         });
 
         // --- Display results ---
@@ -149,16 +180,38 @@ export function registerUninstallCommand(program: Command): void {
           process.exitCode = 1;
         }
 
-        // --- Cloudflare notice ---
-        console.log(
-          chalk.dim(
-            '  Note: Cloudflare Tunnel records are not automatically removed.\n' +
-              '        Delete them manually at https://dash.cloudflare.com\n',
-          ),
-        );
+        // --- Cloudflare Tunnel notice (context-aware) ---
+        const tunnelMode = state?.domain?.cloudflare?.tunnelMode;
+        if (tunnelMode === 'named') {
+          const tunnelName = state?.domain?.cloudflare?.tunnelName ?? '';
+          const zoneName = state?.domain?.cloudflare?.zoneName ?? '';
+          console.log(chalk.yellow('  ⚠  Cloudflare Named Tunnel 리소스가 남아있습니다.'));
+          console.log(chalk.dim('     API 토큰이 저장되지 않아 자동 삭제가 불가합니다.'));
+          console.log(chalk.dim('     아래 항목을 CF 대시보드에서 수동 삭제하세요:\n'));
+          console.log(chalk.dim('     1. 터널 삭제:'));
+          console.log(chalk.dim('        → https://one.dash.cloudflare.com → Networks → Tunnels'));
+          if (tunnelName) {
+            console.log(chalk.dim(`        → "${tunnelName}" 선택 → Delete`));
+          }
+          if (zoneName) {
+            console.log(chalk.dim('     2. DNS CNAME 레코드 삭제:'));
+            console.log(chalk.dim(`        → ${zoneName} → DNS → Records`));
+            console.log(chalk.dim('        → *.cfargotunnel.com 을 가리키는 CNAME 삭제'));
+          }
+          console.log(chalk.dim('\n     삭제하지 않으면 inactive 상태로 남습니다.'));
+          console.log();
+        } else if (tunnelMode === 'quick') {
+          console.log(chalk.dim('  Quick Tunnel은 계정 연동이 없어 CF 측 정리가 필요 없습니다.'));
+          console.log();
+        }
 
         // --- Re-install hint ---
-        console.log(chalk.dim(`  Run ${chalk.bold('brewnet init')} to set up a new installation.`));
+        console.log(
+          chalk.dim(
+            '  To reinstall, run:\n' +
+              `  ${chalk.bold('curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash')}`,
+          ),
+        );
       },
     );
 }

@@ -32,6 +32,8 @@ jest.unstable_mockModule('../../../../../packages/cli/src/services/cloudflare-cl
   createTunnel: jest.fn(),
   configureTunnelIngress: jest.fn(),
   createDnsRecord: jest.fn(),
+  deleteTunnel: jest.fn(),
+  getTunnelHealth: jest.fn(),
   buildTokenCreationUrl: jest.fn(() => 'https://dash.cloudflare.com/profile/api-tokens'),
   getActiveServiceRoutes: jest.fn(() => []),
 }));
@@ -76,9 +78,10 @@ function makeDomainConfig(overrides: Partial<DomainConfig> = {}): DomainConfig {
     provider: 'local',
     name: 'test.local',
     ssl: 'self-signed',
-    freeDomainTld: '.dpdns.org',
     cloudflare: {
       enabled: false,
+      tunnelMode: 'none',
+      quickTunnelUrl: '',
       tunnelToken: '',
       tunnelName: '',
       accountId: '',

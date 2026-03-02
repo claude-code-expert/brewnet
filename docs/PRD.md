@@ -31,7 +31,7 @@ npm install -g brewnet
 brewnet init
 ```
 
-8단계(Step 0-7) 인터랙티브 위저드를 통해 서비스를 선택하면, 최적화된 docker-compose.yml이 자동 생성되고 서비스가 기동된다. 관리자 계정이 자동 생성되며, DigitalPlat 무료 도메인과 Cloudflare Tunnel을 통해 포트포워딩 없이 외부 접근이 가능하다.
+8단계(Step 0-7) 인터랙티브 위저드를 통해 서비스를 선택하면, 최적화된 docker-compose.yml이 자동 생성되고 서비스가 기동된다. 관리자 계정이 자동 생성되며, Cloudflare Tunnel을 통해 포트포워딩 없이 외부 접근이 가능하다.
 
 ### 1.3 Value Proposition
 
@@ -43,7 +43,6 @@ brewnet init
 | 수동 SSL 갱신 | 자동 발급/갱신 (Pro) |
 | 분산된 도구들 | 통합 CLI + Dashboard (Pro) |
 | 포트포워딩/NAT 설정 | Cloudflare Tunnel 자동 구성 (기본 ON) |
-| 도메인 구매 필요 | DigitalPlat 무료 도메인 제공 |
 | 서비스별 계정 설정 | 관리자 계정 자동 생성 + 서비스 연동 |
 
 ---
@@ -95,11 +94,8 @@ brewnet init
 
 ### 3.2 License
 
-- **License**: BUSL-1.1 (Business Source License 1.1)
+- **License**: MIT
 - **Licensor**: Brewnet (codevillain)
-- **Change Date**: 2029-01-01
-- **Change License**: Apache License 2.0
-- 개인 비상업적 사용 자유, 상업적 사용 시 별도 라이선스 필요
 
 ---
 
@@ -127,7 +123,7 @@ brewnet init
 #   Step 1: 프로젝트 설정 (이름, 경로, Full Install / Partial Install)
 #   Step 2: 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media/SSH)
 #   Step 3: Dev Stack & 런타임 (다중 선택, Frontend, FileBrowser) — 항상 표시
-#   Step 4: 도메인 & 네트워크 (Local/FreeDomain/Custom, Cloudflare Tunnel, Mail Server)
+#   Step 4: 도메인 & 네트워크 (Local/Custom, Cloudflare Tunnel, Mail Server)
 #   Step 5: 리뷰 & 확인 (자격증명 전파 대상, 리소스 추정, 설정 내보내기)
 #   Step 6: 생성 & 시작 (docker-compose.yml, 이미지 풀, 컨테이너 시작, 헬스체크)
 #   Step 7: 완료 (엔드포인트, 자격증명, 외부 접근 검증, 다음 단계)
@@ -170,10 +166,6 @@ git push brewnet main         # → 자동 빌드/배포
 ### 4.5 도메인 + Cloudflare
 
 ```bash
-# 무료 도메인 등록 (DigitalPlat FreeDomain)
-brewnet domain free register myserver.dpdns.org
-# → 지원 TLD: .dpdns.org (권장), .qzz.io, .us.kg
-
 # 기존 도메인 사용
 brewnet domain add app.example.com --app my-app
 
@@ -227,7 +219,6 @@ brewnet domain ssl app.example.com
 | SSH 서버 | OpenSSH Server (`linuxserver/openssh-server:latest`) — 포트 2222, 키 기반 인증, SFTP 서브시스템, 관리자 크리덴셜 사용 |
 | 메일 서버 | docker-mailserver (`ghcr.io/docker-mailserver/docker-mailserver:latest`) — SMTP 587, IMAP 993, 도메인 필수, 관리자 계정을 postmaster로 사용 |
 | 터널/프록시 | Cloudflare Tunnel (`cloudflare/cloudflared:latest`) — 기본 활성화 |
-| 도메인 | DigitalPlat FreeDomain (.dpdns.org, .qzz.io, .us.kg) + Cloudflare DNS |
 
 ### 5.3 Cloudflare Tunnel Architecture
 
@@ -278,32 +269,7 @@ docker-compose 생성 시 활성화된 서비스에 대해 Cloudflare Tunnel ing
 | 터널 연결 끊김 | 토큰 만료 또는 네트워크 문제 | `docker logs brewnet-cloudflared` 확인, 토큰 재발급 |
 | DNS 미전파 | 전파 대기 중 (15분~48시간) | `https://dnschecker.org`에서 전파 상태 확인 |
 
-### 5.4 Free Domain Registration Flow (DigitalPlat)
-
-DigitalPlat FreeDomain + Cloudflare DNS를 통한 무료 도메인 등록 플로우:
-
-#### 지원 TLD
-
-| TLD | 특징 | 권장 |
-|-----|------|:----:|
-| `.dpdns.org` | 가장 안정적, 즉시 등록 | **권장** |
-| `.qzz.io` | 짧은 도메인, 즉시 등록 | O |
-| `.us.kg` | 무료, GitHub 승인 필요 | △ |
-
-#### 등록 8단계
-
-1. **Cloudflare 계정 생성** — dash.cloudflare.com 에서 무료 계정 생성
-2. **DigitalPlat 가입** — dash.domain.digitalplat.org 에서 계정 생성
-3. **도메인 검색** — 원하는 도메인명 + TLD 선택
-4. **도메인 등록** — DigitalPlat에서 도메인 등록 완료
-5. **Cloudflare NS 위임** — DigitalPlat 패널에서 Cloudflare 네임서버 설정
-6. **DNS 전파 대기** — 15분~24시간 (확인: `dig +short NS mydomain.dpdns.org`)
-7. **Cloudflare Tunnel 생성** — Zero Trust Dashboard에서 터널 생성, 토큰 복사
-8. **Brewnet 설정** — 위저드 Step 4에서 도메인 + 터널 토큰 입력
-
-> **참고**: DigitalPlat은 현재 공개 API를 제공하지 않습니다. 위저드에서 가이드를 제공하고, 향후 API 연동을 계획합니다.
-
-### 5.5 External Access Strategy
+### 5.4 External Access Strategy
 
 Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare Tunnel을 채택했다.
 
@@ -348,8 +314,6 @@ Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare 
 | | 서비스 기본 인증 연동 | O | O | O |
 | **Cloudflare Tunnel** | 외부 접근 터널 (기본 ON, NAT/CGNAT 지원) | O | O | O |
 | | 자동 HTTPS (Cloudflare) | O | O | O |
-| **무료 도메인** | DigitalPlat FreeDomain (.dpdns.org, .qzz.io, .us.kg) | O | O | O |
-| | Cloudflare DNS 자동 연동 | O | O | O |
 | **SSH 서버** | OpenSSH Server (포트 2222, 키 기반 인증) | O | O | O |
 | | SFTP 서브시스템 | O | O | O |
 | **메일 서버** | docker-mailserver (SMTP/IMAP, 도메인 필수) | O | O | O |
