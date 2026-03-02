@@ -66,6 +66,8 @@ const NAME_ALIASES: Record<string, string> = {
   'Docker Mailserver': 'Mail Server',
   'Cloudflare Tunnel': 'Cloudflared',
   'MinIO': 'MinIO Console',
+  'valkey': 'Valkey',
+  'keydb': 'KeyDB',
 };
 
 function generateDashboardHtml(config: DashboardConfig): string {
@@ -78,7 +80,7 @@ function generateDashboardHtml(config: DashboardConfig): string {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
-h1{color:#58a6ff;margin-bottom:4px;font-size:20px;display:flex;align-items:center;gap:8px}
+h1{color:#f5a623;margin-bottom:4px;font-size:20px;display:flex;align-items:center;gap:10px}
 .sub{color:#8b949e;margin-bottom:24px;font-size:12px}
 table{width:100%;border-collapse:collapse;margin-bottom:24px}
 th{text-align:left;padding:8px 12px;background:#161b22;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d}
@@ -103,7 +105,7 @@ tr:hover td{background:#161b22}
 .svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
 .svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
 .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
-.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;font-family:'Courier New',monospace;font-size:14px;color:#c9d1d9}
+.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:740px;width:90%;max-height:80vh;overflow-y:auto;font-family:'Courier New',monospace;font-size:14px;color:#c9d1d9}
 .modal-titlebar{background:#0d1117;padding:10px 16px;display:flex;align-items:center;gap:8px;border-radius:10px 10px 0 0;position:sticky;top:0;z-index:1}
 .modal-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
 .modal-dot.r{background:#f85149}.modal-dot.y{background:#e3b341}.modal-dot.g{background:#3fb950}
@@ -132,7 +134,7 @@ tr:hover td{background:#161b22}
 <body>
 <div class="header">
   <div>
-    <h1><svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#58a6ff" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#58a6ff" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg> Brewnet Admin</h1>
+    <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
   <span class="refresh" onclick="loadServices()">&#8635; Refresh</span>
@@ -195,6 +197,7 @@ function showServiceModal(name,localUrl,externalUrl){
       '<div class="modal-sh">$ features</div>'+featHtml+
       '<div class="modal-sh">$ credentials</div>'+credHtml+
       '<div class="modal-sh">$ tips</div>'+tipsHtml+
+      (info.homepage?'<div class="modal-sh">$ homepage</div><div class="modal-url"><a href="'+escapeHtml(info.homepage)+'" target="_blank" class="modal-url-a">'+escapeHtml(info.homepage)+'</a> — Refer to the official documentation for usage manual</div>':'')+
     '</div></div>';
   document.body.appendChild(ov);
   document.addEventListener('keydown',handleModalEsc);
@@ -266,12 +269,17 @@ const WEB_UI_SERVICES = new Set([
 // Services that must be accessed through Traefik path-prefix routing.
 // Their OVERWRITEWEBROOT / SCRIPT_NAME settings make direct-port access broken.
 const TRAEFIK_PATH_SERVICES: Record<string, string> = {
+  gitea: 'http://localhost/git',
   nextcloud: 'http://localhost/cloud',
+  pgadmin: 'http://localhost:5050/pgadmin',
 };
+
+// Known SSH ports that should never be used as the primary HTTP port.
+const KNOWN_SSH_PORTS = new Set([22, 2222, 3022]);
 
 function getPrimaryPort(container: Dockerode.ContainerInfo): number | null {
   const tcp = (container.Ports ?? [])
-    .filter((p) => p.Type === 'tcp' && p.PublicPort)
+    .filter((p) => p.Type === 'tcp' && p.PublicPort && !KNOWN_SSH_PORTS.has(p.PublicPort))
     .sort((a, b) => a.PublicPort! - b.PublicPort!);
   return tcp[0]?.PublicPort ?? null;
 }
@@ -300,6 +308,7 @@ async function handleGetServices(
   _parts: string[],
   _body: string,
   _projectPath: string,
+  urlMap: Record<string, string> = TRAEFIK_PATH_SERVICES,
 ): Promise<void> {
   try {
     const allContainers = await docker.listContainers({ all: true });
@@ -325,7 +334,7 @@ async function handleGetServices(
         uptime: c.Status?.startsWith('Up') ? c.Status.replace(/^Up /, '') : '—',
         port: port ?? null,
         url: WEB_UI_SERVICES.has(composeService) && port
-          ? TRAEFIK_PATH_SERVICES[composeService] ?? `http://localhost:${port}`
+          ? urlMap[composeService] ?? `http://localhost:${port}`
           : null,
         removable: !REQUIRED_SERVICES.has(composeService),
       });
@@ -526,17 +535,18 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 } {
   const port = options.port ?? 8088;
 
-  // Resolve project path and wizard state
+  // Resolve project path and wizard state.
+  // Always load wizard state from the last project — options.projectPath only
+  // overrides the filesystem path, not whether state is loaded.
   let projectPath = options.projectPath ?? process.cwd();
   let wizardState: WizardState | null = null;
-  if (!options.projectPath) {
-    const last = getLastProject();
-    if (last) {
-      const state = loadState(last);
-      if (state) {
-        wizardState = state;
-        if (state.projectPath) projectPath = state.projectPath;
-      }
+  const last = getLastProject();
+  if (last) {
+    const state = loadState(last);
+    if (state) {
+      wizardState = state;
+      // Only fall back to state.projectPath when caller didn't supply one
+      if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
     }
   }
 
@@ -554,6 +564,17 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     domainProvider: wizardState?.domain?.provider ?? 'local',
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
+  };
+
+  // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
+  // Jellyfin local URL always uses direct port 8096 (bypasses Traefik).
+  // Reason: Traefik's catch-all landing page router returns HTTP 200 for any
+  // unmapped path (including /System/Info/Public), which confuses Jellyfin SPA's
+  // server auto-detection. Direct port access lets Jellyfin redirect unmapped
+  // paths to ../../jellyfin/web/, giving the SPA a correct base URL hint.
+  const runtimeUrlMap: Record<string, string> = {
+    ...TRAEFIK_PATH_SERVICES,
+    jellyfin: 'http://localhost:8096/jellyfin/web/',
   };
 
   // Cache for dashboard HTML (regenerated when Quick Tunnel URL is detected)
@@ -658,7 +679,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         if (parts[1] === 'services') {
           if (req.method === 'GET' && parts.length === 2) {
-            await handleGetServices(req, res, parts, body, projectPath);
+            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap);
             return;
           }
           if (req.method === 'POST' && parts[2] === 'install') {

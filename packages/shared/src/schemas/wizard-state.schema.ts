@@ -65,6 +65,7 @@ export const dbServerConfigSchema = z.object({
   dbUser: z.string(),
   dbPassword: z.string(),
   adminUI: z.boolean(),
+  pgadminEmail: z.string(),
   cache: cacheServiceSchema,
 });
 

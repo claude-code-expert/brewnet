@@ -45,6 +45,7 @@ export function createDefaultWizardState(): WizardState {
         dbUser: 'brewnet',
         dbPassword: '',
         adminUI: true,
+        pgadminEmail: '',
         cache: 'redis',
       },
       media: { enabled: false, services: [] },
@@ -73,7 +74,7 @@ export function createDefaultWizardState(): WizardState {
 
     boilerplate: {
       generate: true,
-      sampleData: true,
+      sampleData: false,
       devMode: 'hot-reload',
     },
 
@@ -123,6 +124,7 @@ export function applyFullInstallDefaults(state: WizardState): WizardState {
         dbName: 'brewnet_db',
         dbUser: 'brewnet',
         adminUI: true,
+        pgadminEmail: '',
         cache: 'redis',
       },
     },
@@ -152,6 +154,7 @@ export function applyPartialInstallDefaults(state: WizardState): WizardState {
         dbUser: '',
         dbPassword: '',
         adminUI: false,
+        pgadminEmail: '',
         cache: '',
       },
       media: { enabled: false, services: [] },

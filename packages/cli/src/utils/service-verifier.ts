@@ -19,6 +19,8 @@ export interface ServiceUrlEntry {
   healthEndpoint?: string;
   /** Full URL for health check, overrides localUrl + healthEndpoint when set */
   healthUrl?: string;
+  /** Milliseconds to wait before the first health check attempt (for slow-starting services) */
+  startupDelay?: number;
 }
 
 export interface VerifyResult {
@@ -107,13 +109,17 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
     });
   }
 
-  // Gitea — direct host port (default 3000)
+  // Gitea — Quick Tunnel: port 3000 is not host-exposed; access via Traefik path /git
+  //         Named Tunnel / no tunnel: direct host port (default 3000)
   // Ref: Gitea app.ini [server] HTTP_PORT = 3000
   const giteaPort = effectivePort(servers.gitServer.port);
+  const giteaLocalUrl = isQuickTunnel
+    ? `http://localhost:${httpPort}/git`
+    : `http://localhost:${giteaPort}`;
   entries.push({
     serviceId: 'gitea',
     label: 'Gitea (Git)',
-    localUrl: `http://localhost:${giteaPort}`,
+    localUrl: giteaLocalUrl,
     externalUrl: extUrl('/git', 'git'),
     healthEndpoint: '/',
   });
@@ -130,6 +136,7 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
         localUrl: `http://localhost:${effectivePort(8443)}`,
         externalUrl: extUrl('/cloud', 'cloud'),
         healthEndpoint: '/status.php',
+        startupDelay: 30000,
       });
     } else if (servers.fileServer.service === 'minio') {
       // MinIO Console: port 9001, API: port 9000
@@ -146,15 +153,25 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
   }
 
   // Media — Jellyfin: port 8096
-  // Quick Tunnel: path /jellyfin with Base URL config (no strip prefix)
+  // Quick Tunnel: BaseUrl=/jellyfin → access via Traefik (port 80) so the web app
+  //   auto-detects the server URL as http://localhost/jellyfin (matching BaseUrl).
+  //   Direct port access (localhost:8096) causes the web app to detect http://localhost:8096
+  //   as the server URL, which mismatches BaseUrl=/jellyfin → first-screen fails to load.
+  //   Health check still uses the direct port (more reliable, bypasses Traefik startup timing).
+  // Named Tunnel / no tunnel: BaseUrl not set; direct port access is correct.
   // Ref: https://jellyfin.org/docs/general/post-install/networking
   if (servers.media.enabled) {
+    const jellyfinLocalUrl = isQuickTunnel
+      ? `http://localhost:${httpPort}/jellyfin/web/#/wizard/start`
+      : `http://localhost:${effectivePort(8096)}/web/#/wizard/start`;
     entries.push({
       serviceId: 'jellyfin',
       label: 'Jellyfin',
-      localUrl: `http://localhost:${effectivePort(8096)}`,
+      localUrl: jellyfinLocalUrl,
       externalUrl: extUrl('/jellyfin', 'media'),
-      healthEndpoint: '/health',
+      healthUrl: isQuickTunnel
+        ? `http://localhost:${effectivePort(8096)}/jellyfin/health`
+        : `http://localhost:${effectivePort(8096)}/health`,
     });
   }
 
@@ -168,6 +185,7 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
       localUrl: `http://localhost:${effectivePort(5050)}/pgadmin`,
       externalUrl: extUrl('/pgadmin', 'db'),
       healthEndpoint: '/misc/ping',
+      startupDelay: 15000,
     });
   }
 
@@ -201,6 +219,10 @@ export async function verifyServiceAccess(
 ): Promise<VerifyResult> {
   const { timeout = 5000, retries = 2 } = options;
   const url = entry.healthUrl ?? (entry.localUrl + (entry.healthEndpoint ?? '/'));
+
+  if (entry.startupDelay) {
+    await new Promise((r) => setTimeout(r, entry.startupDelay));
+  }
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -258,6 +280,7 @@ export interface ServiceAccessInfo {
   url: string;
   loginUser?: string;
   loginNote: string;
+  homepage: string;
 }
 
 /**
@@ -284,6 +307,7 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
           : 'Web Server (Caddy)',
     url: `http://localhost:${httpPort}`,
     loginNote: 'No login required — shows server info page',
+    homepage: webService === 'traefik' ? 'https://traefik.io/traefik/' : webService === 'nginx' ? 'https://nginx.org/' : 'https://caddyserver.com/',
   });
 
   // Traefik Dashboard — routed through Traefik labels on port 80 with BasicAuth.
@@ -294,19 +318,26 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
       url: `http://localhost:${remap(80)}/dashboard/`,
       loginUser: user,
       loginNote: `Login: ${user} / <your password> (BasicAuth)`,
+      homepage: 'https://doc.traefik.io/traefik/operations/dashboard/',
     });
   }
 
-  // Gitea — default HTTP_PORT 3000
+  // Gitea — Quick Tunnel: port 3000 not host-exposed, access via Traefik /git
+  //         Named Tunnel / no tunnel: direct host port (default 3000)
   // First visit: installation wizard (DB, admin account, site settings)
   // Ref: Gitea docs [server] HTTP_PORT = 3000
+  const isQuickTunnelGuide = state.domain.cloudflare.tunnelMode === 'quick';
   const giteaPort = remap(state.servers.gitServer.port);
+  const giteaUrl = isQuickTunnelGuide
+    ? `http://localhost:${httpPort}/git/`
+    : `http://localhost:${giteaPort}`;
   entries.push({
     serviceId: 'gitea',
     label: 'Gitea (Git)',
-    url: `http://localhost:${giteaPort}`,
+    url: giteaUrl,
     loginUser: user,
     loginNote: `First visit: installation wizard → then login as ${user}`,
+    homepage: 'https://about.gitea.com/',
   });
 
   // Nextcloud — container port 80 → host 8443
@@ -320,6 +351,7 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
         url: `http://localhost:${remap(8443)}`,
         loginUser: user,
         loginNote: `Login: ${user} / <your password>`,
+        homepage: 'https://nextcloud.com/',
       });
     } else if (state.servers.fileServer.service === 'minio') {
       // MinIO Console: port 9001 (--console-address :9001)
@@ -331,19 +363,27 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
         url: `http://localhost:${remap(9001)}`,
         loginUser: user,
         loginNote: `Login: ${user} / <your password> (API: localhost:${remap(9000)})`,
+        homepage: 'https://min.io/',
       });
     }
   }
 
   // Jellyfin — port 8096
-  // First visit: setup wizard (language, admin account, media libraries)
+  // Quick Tunnel: BaseUrl=/jellyfin → web UI at /jellyfin/web/#/wizard/start (first visit)
+  // /jellyfin/web/#/home causes "Server Mismatch" when localStorage has a different server URL.
+  // Use /wizard/start to avoid mismatch and force fresh setup flow.
   // Ref: https://jellyfin.org/docs/general/post-install/networking
   if (state.servers.media.enabled) {
+    const isQuickTunnelAccess = state.domain.cloudflare.tunnelMode === 'quick';
+    const jellyfinLocalUrl = isQuickTunnelAccess
+      ? `http://localhost:${remap(8096)}/jellyfin/web/#/wizard/start`
+      : `http://localhost:${remap(8096)}/web/#/wizard/start`;
     entries.push({
       serviceId: 'jellyfin',
       label: 'Jellyfin (Media)',
-      url: `http://localhost:${remap(8096)}`,
+      url: jellyfinLocalUrl,
       loginNote: 'First visit: setup wizard — choose language, create admin account',
+      homepage: 'https://jellyfin.org/',
     });
   }
 
@@ -361,6 +401,7 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
       url: `http://localhost:${remap(5050)}/pgadmin`,
       loginUser: `${user}@brewnet.dev`,
       loginNote: `Login: ${user}@brewnet.dev / <your password>`,
+      homepage: 'https://www.pgadmin.org/',
     });
   }
 
@@ -374,6 +415,7 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
       url: `http://localhost:${remap(8085)}`,
       loginUser: user,
       loginNote: `Login: ${user} / <your password>`,
+      homepage: 'https://filebrowser.org/',
     });
   }
 

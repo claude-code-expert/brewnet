@@ -104,6 +104,7 @@ function getServiceVolumes(serviceId: string): string[] {
       return [
         `${BREWNET_PREFIX}_filebrowser_data:/srv`,
         `${BREWNET_PREFIX}_filebrowser_db:/database`,
+        `${BREWNET_PREFIX}_filebrowser_config:/config`,
       ];
     case 'cloudflared':
       return [];
@@ -203,6 +204,14 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
     USER_GID: '1000',
   };
 
+  // Quick Tunnel: ROOT_URL must include /git/ sub-path so Gitea generates /git/assets/... links.
+  // Use Traefik's port (80) not Gitea's port (3000) — Gitea generates root-relative links (/git/...)
+  // that browsers resolve against the current origin (localhost:80 or tunnel domain).
+  // Traefik then routes /git/assets/... → strips /git → /assets/... to Gitea ✓
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['GITEA__server__ROOT_URL'] = 'http://localhost/git/';
+  }
+
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
     const dbType = state.servers.dbServer.primary === 'postgresql' ? 'postgres' : 'mysql';
     const dbHost = state.servers.dbServer.primary === 'postgresql' ? 'postgresql' : 'mysql';
@@ -210,15 +219,27 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
 
     env['GITEA__database__DB_TYPE'] = dbType;
     env['GITEA__database__HOST'] = `${dbHost}:${dbPort}`;
-    env['GITEA__database__NAME'] = state.servers.dbServer.dbName || 'brewnet_db';
+    // Gitea uses a dedicated 'gitea_db' to avoid schema conflicts with Nextcloud (oc_* tables)
+    // which also shares the same PostgreSQL instance under brewnet_db.
+    env['GITEA__database__NAME'] = 'gitea_db';
     env['GITEA__database__USER'] = state.servers.dbServer.dbUser || 'brewnet';
     env['GITEA__database__PASSWD'] = state.servers.dbServer.dbPassword || '${DB_PASSWORD}';
   }
 
   if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
     const cacheId = state.servers.dbServer.cache;
+    // Cache password env var name differs by adapter (REDIS_PASSWORD / VALKEY_PASSWORD / KEYDB_PASSWORD).
+    // Docker Compose interpolates ${VAR} from .env at runtime, keeping the password out of the image.
+    const cachePwVar =
+      cacheId === 'valkey' ? 'VALKEY_PASSWORD'
+      : cacheId === 'keydb' ? 'KEYDB_PASSWORD'
+      : 'REDIS_PASSWORD';
+    const cacheUrl = `redis://:\${${cachePwVar}}@${cacheId}:6379/0`;
     env['GITEA__cache__ADAPTER'] = 'redis';
-    env['GITEA__cache__HOST'] = `redis://${cacheId}:6379/0`;
+    env['GITEA__cache__HOST'] = cacheUrl;
+    // Gitea also uses Redis for async task queue — use the same authenticated URL.
+    env['GITEA__queue__TYPE'] = 'redis';
+    env['GITEA__queue__CONN_STR'] = cacheUrl;
   }
 
   return env;
@@ -300,15 +321,27 @@ function getMailEnv(state: WizardState): Record<string, string> {
 
 function getPgadminEnv(state: WizardState): Record<string, string> {
   const env: Record<string, string> = {
-    // pgAdmin v8+ validates email domain strictly — .local TLD is rejected.
-    // Always use @brewnet.dev to avoid startup crash.
-    PGADMIN_DEFAULT_EMAIL: `${state.admin.username || 'admin'}@brewnet.dev`,
+    PGADMIN_DEFAULT_EMAIL: state.servers.dbServer.pgadminEmail || `${state.admin.username || 'admin'}@brewnet.dev`,
     PGADMIN_DEFAULT_PASSWORD: state.admin.password || '${ADMIN_PASSWORD}',
   };
   // In Quick Tunnel mode pgadmin is served under /pgadmin path prefix,
   // so SCRIPT_NAME must be set so pgadmin generates correct relative URLs.
   if (state.domain.cloudflare.tunnelMode === 'quick') {
     env['SCRIPT_NAME'] = '/pgadmin';
+  }
+  return env;
+}
+
+// FB_USERNAME / FB_PASSWORD are only applied on first boot when no DB exists.
+// FB_BASEURL must match the path prefix Traefik uses so login redirects work.
+// Ref: https://filebrowser.org/configuration
+function getFilebrowserEnv(state: WizardState): Record<string, string> {
+  const env: Record<string, string> = {
+    FB_USERNAME: state.admin.username || 'admin',
+    FB_PASSWORD: state.admin.password || '${ADMIN_PASSWORD}',
+  };
+  if (state.domain.cloudflare.tunnelMode === 'quick') {
+    env['FB_BASEURL'] = '/files';
   }
   return env;
 }
@@ -377,12 +410,47 @@ interface QuickTunnelEntry {
   port: number;
   /** When true, prefix is preserved in the upstream request (needed by WSGI apps using SCRIPT_NAME). */
   noStrip?: boolean;
+  /**
+   * Extra root-level paths this service must also handle.
+   * Used for FileBrowser: its Vite build always emits /static/... asset paths regardless of FB_BASEURL.
+   * Without routing /static → FileBrowser, browsers hit the landing-page catch-all and the app fails.
+   */
+  extraPaths?: string[];
+}
+
+function buildQuickTunnelExtraPathLabels(
+  serviceId: string,
+  extraPath: string,
+  port: number,
+): Record<string, string> {
+  const slug = extraPath.replace(/\//g, '').replace(/[^a-z0-9]/gi, '');
+  const routerName = `quicktunnel-${serviceId}-${slug}`;
+  const serviceName = `quicktunnel-${serviceId}-${slug}`;
+  return {
+    // Explicit service link required when the container has multiple service definitions
+    [`traefik.http.routers.quicktunnel-${serviceId}.service`]: `quicktunnel-${serviceId}`,
+    [`traefik.http.routers.${routerName}.rule`]: `PathPrefix(\`${extraPath}\`)`,
+    [`traefik.http.routers.${routerName}.entrypoints`]: 'web',
+    // Priority 10 > landing-page explicit priority 1 so this route takes precedence
+    [`traefik.http.routers.${routerName}.priority`]: '10',
+    [`traefik.http.routers.${routerName}.service`]: serviceName,
+    [`traefik.http.services.${serviceName}.loadbalancer.server.port`]: String(port),
+  };
 }
 
 // Path-prefix routing map for Quick Tunnel mode
 const QUICK_TUNNEL_PATH_MAP: Record<string, QuickTunnelEntry> = {
+  // Gitea: Traefik strips /git before forwarding to Gitea (strip-prefix).
+  // ROOT_URL must include /git/ sub-path so Gitea generates /git/assets/... links.
+  // ROOT_URL host must be Traefik's port (80) not Gitea's port (3000):
+  //   - Gitea generates root-relative links: /git/assets/...
+  //   - Browser resolves them against current origin (both local :80 and external tunnel)
+  //   - Traefik receives /git/assets/... → strips /git → sends /assets/... to Gitea ✓
   gitea:         { path: '/git',     port: 3000 },
-  filebrowser:   { path: '/files',   port: 80 },
+  // FileBrowser: Vite build emits /static/... asset paths regardless of FB_BASEURL.
+  // A companion route for /static is required so browsers can load CSS/JS.
+  // See: buildQuickTunnelExtraPathLabels for the /static → filebrowser routing.
+  filebrowser:   { path: '/files',   port: 80, extraPaths: ['/static'] },
   'uptime-kuma': { path: '/status',  port: 3001 },
   grafana:       { path: '/grafana', port: 3000 },
   // pgadmin: WSGI app — SCRIPT_NAME handles path; no strip needed
@@ -393,6 +461,9 @@ const QUICK_TUNNEL_PATH_MAP: Record<string, QuickTunnelEntry> = {
   // Jellyfin: Base URL setting handles path natively; no strip needed
   // Ref: https://jellyfin.org/docs/general/post-install/networking — "Base URL"
   jellyfin:      { path: '/jellyfin', port: 8096, noStrip: true },
+  // MinIO Console: pre-built React SPA without sub-path awareness; use noStrip so the app
+  // receives the full path and Traefik does not alter the prefix.
+  minio:         { path: '/minio',    port: 9001, noStrip: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -419,10 +490,18 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
     case 'caddy':
       return [`${remap(80)}:80`, `${remap(443)}:443`];
     case 'gitea': {
-      return [
-        `${remap(state.servers.gitServer.port)}:3000`,
-        `${remap(state.servers.gitServer.sshPort)}:22`,
-      ];
+      // Quick Tunnel: ROOT_URL=http://localhost/git/ sets AppSubUrl=/git/.
+      // Gitea generates /git/assets/... links but its HTTP router handles routes WITHOUT the prefix.
+      // Traefik strips /git/ before forwarding → Gitea receives bare /assets/... paths ✓
+      // Direct port access (localhost:3000) returns HTML with /git/assets/... links but
+      // Gitea cannot serve /git/assets/... locally → 404 on assets → CSS broken.
+      // Therefore in Quick Tunnel mode: HTTP port is NOT host-exposed; use localhost/git/ (Traefik).
+      // Named Tunnel / no tunnel: ROOT_URL has no sub-path → direct port access works fine.
+      const ports = [`${remap(state.servers.gitServer.sshPort)}:22`];
+      if (state.domain.cloudflare.tunnelMode !== 'quick') {
+        ports.unshift(`${remap(state.servers.gitServer.port)}:3000`);
+      }
+      return ports;
     }
     case 'openssh-server':
       return [`${remap(state.servers.sshServer.port)}:2222`];
@@ -508,6 +587,8 @@ function getServiceEnvironment(
       return getMailEnv(state);
     case 'pgadmin':
       return getPgadminEnv(state);
+    case 'filebrowser':
+      return getFilebrowserEnv(state);
     case 'cloudflared':
       return getCloudflaredEnv(state);
     default:
@@ -567,6 +648,9 @@ function buildComposeService(
     const entry = QUICK_TUNNEL_PATH_MAP[def.id];
     if (entry) {
       svc.labels = buildQuickTunnelPathLabels(def.id, entry.path, entry.port, entry.noStrip);
+      for (const extraPath of (entry.extraPaths ?? [])) {
+        Object.assign(svc.labels, buildQuickTunnelExtraPathLabels(def.id, extraPath, entry.port));
+      }
     }
   }
 
@@ -617,7 +701,12 @@ function buildComposeService(
         "PathPrefix(`/dashboard`) || PathPrefix(`/api`)",
       'traefik.http.routers.brewnet-dashboard.entrypoints': 'web',
       'traefik.http.routers.brewnet-dashboard.service': 'api@internal',
-      'traefik.http.routers.brewnet-dashboard.middlewares': 'dashboard-auth@docker',
+      // Redirect /dashboard (no trailing slash) → /dashboard/ before auth.
+      // api@internal returns 404 for paths without trailing slash.
+      'traefik.http.routers.brewnet-dashboard.middlewares': 'dashboard-slash-redirect@docker,dashboard-auth@docker',
+      'traefik.http.middlewares.dashboard-slash-redirect.redirectregex.regex': '^(https?://[^/]+)/dashboard$',
+      'traefik.http.middlewares.dashboard-slash-redirect.redirectregex.replacement': '$${1}/dashboard/',
+      'traefik.http.middlewares.dashboard-slash-redirect.redirectregex.permanent': 'false',
       'traefik.http.middlewares.dashboard-auth.basicauth.users':
         '${TRAEFIK_DASHBOARD_AUTH}',
     };
@@ -634,10 +723,11 @@ function buildComposeService(
     }
   }
 
-  // Jellyfin Base URL — Quick Tunnel mode requires /jellyfin path prefix.
-  // Jellyfin reads BaseUrl from /config/network.xml; we use entrypoint override to set it.
+  // Jellyfin Base URL — Traefik always routes Jellyfin via /jellyfin with noStrip,
+  // so Jellyfin must always know its BaseUrl is /jellyfin regardless of tunnel mode.
+  // Jellyfin reads BaseUrl from /config/config/network.xml; we inject it via entrypoint.
   // Ref: https://jellyfin.org/docs/general/post-install/networking — "Base URL"
-  if (def.id === 'jellyfin' && state.domain.cloudflare.tunnelMode === 'quick') {
+  if (def.id === 'jellyfin') {
     svc.entrypoint = ['/bin/sh', '-c',
       'mkdir -p /config/config && ' +
       'if [ ! -f /config/config/network.xml ]; then ' +

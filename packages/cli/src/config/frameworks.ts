@@ -32,8 +32,8 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
   nodejs: {
     name: 'Node.js',
     frameworks: [
-      { id: 'nextjs', name: 'Next.js', description: 'Full-stack React framework' },
-      { id: 'nextjs-app', name: 'Next.js 15.x (App Router)', description: 'Next.js 15 App Router with Server Components' },
+      { id: 'nextjs', name: 'Next.js (Full-Stack)', description: 'Server Components + Client Components + API Routes — full-stack in one project' },
+      { id: 'nextjs-app', name: 'Next.js (API Routes)', description: 'API Routes as backend — minimal UI, CORS-free, fast MVP' },
       { id: 'express', name: 'Express', description: 'Minimal web framework' },
       { id: 'nestjs', name: 'NestJS', description: 'Progressive Node.js framework' },
     ],

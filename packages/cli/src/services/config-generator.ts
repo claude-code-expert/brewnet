@@ -423,7 +423,11 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
     # Hide server version
     server_tokens off;
 
-    # Security headers
+    # Security + cache headers
+    # no-store: prevent browser heuristic caching when transiently served for sub-service paths
+    # (e.g. /git/user/sign_up during Gitea mode switch — without this, browsers cache the landing
+    # page response via ETag heuristic for ~3 hours, persisting even after manual cache-clear)
+    add_header Cache-Control           "no-store"      always;
     add_header X-Content-Type-Options  "nosniff"       always;
     add_header X-Frame-Options         "DENY"          always;
     add_header X-XSS-Protection        "1; mode=block" always;

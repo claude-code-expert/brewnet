@@ -291,6 +291,16 @@ export async function runServerComponentsStep(
         default: next.servers.dbServer.adminUI,
       });
       next.servers.dbServer.adminUI = adminUI;
+
+      if (adminUI && dbPrimary === 'postgresql') {
+        console.log(chalk.dim('  ℹ  pgAdmin password = brewnet admin password (set in Pre-Step)'));
+        const pgadminEmail = await input({
+          message: 'pgAdmin login email',
+          default: next.servers.dbServer.pgadminEmail || '',
+          validate: (v) => v.includes('@') || 'Please enter a valid email address',
+        });
+        next.servers.dbServer.pgadminEmail = pgadminEmail;
+      }
     } else {
       next.servers.dbServer.primaryVersion = '3';
       next.servers.dbServer.adminUI = false;

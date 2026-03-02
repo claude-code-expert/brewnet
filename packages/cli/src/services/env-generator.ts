@@ -244,6 +244,12 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
   }
 
   // ── Split entries into .env (non-secret) and secret files ──────────
+  // Cache passwords (REDIS_PASSWORD / VALKEY_PASSWORD / KEYDB_PASSWORD) are
+  // dual-written: to .env (for Docker Compose ${VAR} interpolation in Gitea's
+  // redis:// URL) AND to secrets/cache_password (for the Redis container's
+  // --requirepass startup override via Docker secrets).
+  const CACHE_PASSWORD_KEYS = new Set(['REDIS_PASSWORD', 'VALKEY_PASSWORD', 'KEYDB_PASSWORD']);
+
   const envEntries: Record<string, string> = {};
   const secretFileMap = new Map<string, string>(); // relativePath → content
 
@@ -254,6 +260,11 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
       // (e.g. GITEA_ADMIN_PASSWORD, NEXTCLOUD_ADMIN_PASSWORD → admin_password)
       if (!secretFileMap.has(secretPath)) {
         secretFileMap.set(secretPath, value);
+      }
+      // Cache passwords also go into .env so Docker Compose can interpolate
+      // ${REDIS_PASSWORD} in the Gitea redis:// connection URL.
+      if (CACHE_PASSWORD_KEYS.has(key)) {
+        envEntries[key] = value;
       }
     } else {
       envEntries[key] = value;

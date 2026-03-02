@@ -446,6 +446,70 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
     // best-effort — Docker may not be available yet
   }
 
+  // -------------------------------------------------------------------------
+  // 7-pre-db. If Gitea + PostgreSQL: start PostgreSQL first, wait for ready,
+  // then create gitea_db BEFORE starting all services.
+  // (docker compose up starts Gitea immediately, which needs gitea_db to exist)
+  // -------------------------------------------------------------------------
+  const needsGiteaDb =
+    state.servers.gitServer?.enabled &&
+    state.servers.dbServer.enabled &&
+    state.servers.dbServer.primary === 'postgresql';
+
+  if (needsGiteaDb) {
+    const pgPreSpinner = ora('  Starting PostgreSQL (pre-init for gitea_db)...').start();
+    try {
+      const { execa: execaFn } = await import('execa');
+
+      // 1. Start only PostgreSQL
+      await execaFn('docker', [
+        'compose', '-f', composePath, 'up', '-d', '--force-recreate', 'postgresql',
+      ]);
+      pgPreSpinner.text = '  Waiting for PostgreSQL to be ready...';
+
+      // 2. Poll pg_isready — max 30 seconds
+      const dbUser = state.servers.dbServer.dbUser || 'brewnet';
+      let ready = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          const result = await execaFn('docker', [
+            'exec', 'brewnet-postgresql',
+            'pg_isready', '-U', dbUser,
+          ]);
+          if (result.exitCode === 0) { ready = true; break; }
+        } catch { /* not ready yet */ }
+      }
+
+      if (!ready) {
+        pgPreSpinner.warn('  PostgreSQL did not become ready in 30s — gitea_db may not be created');
+      } else {
+        // 3. Check if gitea_db already exists
+        // NOTE: CREATE DATABASE cannot run inside a transaction block (DO $$...$$),
+        // so we use a two-step approach: check existence, then create outside a transaction.
+        const checkResult = await execaFn('docker', [
+          'exec', 'brewnet-postgresql',
+          'psql', '-U', dbUser, '-d', 'postgres',
+          '-tAc', `SELECT 1 FROM pg_database WHERE datname = 'gitea_db'`,
+        ]);
+        if (checkResult.stdout.trim() !== '1') {
+          // 4. Create gitea_db — must run outside a transaction block
+          await execaFn('docker', [
+            'exec', 'brewnet-postgresql',
+            'psql', '-U', dbUser, '-d', 'postgres',
+            '-c', `CREATE DATABASE gitea_db OWNER ${dbUser}`,
+          ]);
+        }
+        pgPreSpinner.succeed('  gitea_db ready');
+      }
+    } catch (err) {
+      pgPreSpinner.warn('  gitea_db pre-creation failed — Gitea may prompt for manual DB setup');
+      if (err instanceof Error) {
+        console.log(chalk.dim(`    ${err.message}`));
+      }
+    }
+  }
+
   const upSpinner = ora('  Starting services (docker compose up -d)').start();
   try {
     const upCmd = buildUpCommand(composePath);
@@ -525,6 +589,25 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       state.domain.cloudflare.quickTunnelUrl = tunnelUrl;
       state.domain.name = new URL(tunnelUrl).hostname;
       tunnelSpinner.succeed(`  Quick Tunnel: ${tunnelUrl}`);
+
+      // Immediately register the specific tunnel hostname in Nextcloud trusted_domains.
+      // The regex pattern at index 4 handles future restarts; index 5 ensures this
+      // exact hostname works right now without relying on NC29 regex matching.
+      if (
+        state.servers.fileServer.enabled &&
+        state.servers.fileServer.service === 'nextcloud'
+      ) {
+        try {
+          const { execa: execaFn } = await import('execa');
+          const occQuick = (args: string[]) =>
+            execaFn('docker', ['exec', '-u', 'www-data', 'brewnet-nextcloud', 'php', 'occ', ...args]);
+          await occQuick(['config:system:set', 'trusted_domains', '5',
+            `--value=${state.domain.name}`,
+          ]);
+        } catch {
+          // Non-critical — regex fallback at index 4 remains
+        }
+      }
     } catch (err) {
       tunnelSpinner.fail('  Quick Tunnel URL 캡처 실패');
       if (err instanceof Error) {
@@ -532,6 +615,82 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       }
       console.log(chalk.dim('  서비스는 정상 시작되었으나 외부 URL을 가져오지 못했습니다.'));
       console.log(chalk.dim('  `docker logs brewnet-cloudflared` 로 확인하세요.'));
+    }
+
+    // Post-install FileBrowser: force credentials to wizard admin values.
+    // FB_USERNAME/FB_PASSWORD only apply on first boot (no DB).
+    // When DB already exists, the running process holds an exclusive BoltDB lock —
+    // docker exec will always timeout. Fix: stop container, run one-off command
+    // against the DB volume, then restart.
+    if (state.servers.fileBrowser.enabled) {
+      const fbSpinner = ora({ text: '  Applying FileBrowser credentials...', indent: 2 }).start();
+      try {
+        const { execa: execaFn } = await import('execa');
+
+        // Find the DB and config volume names from the running container
+        const { stdout } = await execaFn('docker', [
+          'inspect', 'brewnet-filebrowser',
+          '--format',
+          '{{range .Mounts}}{{.Destination}}={{.Name}}\n{{end}}',
+        ]);
+        const mountMap: Record<string, string> = {};
+        for (const line of stdout.trim().split('\n')) {
+          const [dest, name] = line.split('=');
+          if (dest && name) mountMap[dest.trim()] = name.trim();
+        }
+        const dbVolume = mountMap['/database'];
+        const configVolume = mountMap['/config'];
+
+        if (dbVolume) {
+          // Stop to release DB lock, update via temp container, restart
+          await execaFn('docker', ['stop', 'brewnet-filebrowser']);
+
+          // In Quick Tunnel mode, write settings.json with baseURL=/files into the /config volume.
+          // settings.json takes priority over DB values — the DB config set alone is not enough.
+          // Without baseURL in settings.json, window.FileBrowser.BaseURL="" → post-login redirect to / → 404.
+          if (state.domain.cloudflare.tunnelMode === 'quick' && configVolume) {
+            const settingsJson = JSON.stringify({
+              port: 80,
+              baseURL: '/files',
+              address: '',
+              log: 'stdout',
+              database: '/database/filebrowser.db',
+              root: '/srv',
+            });
+            await execaFn('docker', [
+              'run', '--rm',
+              '-v', `${configVolume}:/config`,
+              'busybox',
+              'sh', '-c', `printf '%s' '${settingsJson}' > /config/settings.json`,
+            ]);
+          }
+
+          // Relax minimum password length (default 12) to match brewnet admin password
+          await execaFn('docker', [
+            'run', '--rm',
+            '-v', `${dbVolume}:/database`,
+            'filebrowser/filebrowser:latest',
+            '--database', '/database/filebrowser.db',
+            'config', 'set', '--minimumPasswordLength', '6',
+          ]);
+          await execaFn('docker', [
+            'run', '--rm',
+            '-v', `${dbVolume}:/database`,
+            'filebrowser/filebrowser:latest',
+            '--database', '/database/filebrowser.db',
+            'users', 'update', '1',
+            '--username', state.admin.username || 'admin',
+            '--password', state.admin.password || '',
+          ]);
+          await execaFn('docker', ['start', 'brewnet-filebrowser']);
+          fbSpinner.succeed('  FileBrowser credentials applied');
+        } else {
+          fbSpinner.warn('  FileBrowser: DB volume not found — change password via UI');
+        }
+      } catch (err) {
+        fbSpinner.warn('  FileBrowser credentials not applied — change password via UI');
+        if (err instanceof Error) console.log(chalk.dim(`    ${err.message}`));
+      }
     }
 
     // Post-install Nextcloud configuration.
@@ -553,11 +712,14 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         // from Traefik.  Without this, protocol detection falls back to HTTP.
         await occ(['config:system:set', 'trusted_proxies', '0', '--value=172.16.0.0/12']);
 
-        // Add Quick Tunnel hostname to trusted_domains
-        if (state.domain.cloudflare.quickTunnelUrl) {
-          const tunnelHost = new URL(state.domain.cloudflare.quickTunnelUrl).hostname;
-          await occ(['config:system:set', 'trusted_domains', '2', '--value=' + tunnelHost]);
-        }
+        // Trust all *.trycloudflare.com subdomains permanently via Nextcloud regex syntax.
+        // Quick Tunnel URL changes on every cloudflared restart; trusting only the specific
+        // hostname at install time would break on subsequent restarts.
+        // Nextcloud 25+ supports regex patterns in trusted_domains when wrapped with /.
+        // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/config_sample_php_parameters.html
+        await occ(['config:system:set', 'trusted_domains', '4',
+          '--value=/.*\\.trycloudflare\\.com/',
+        ]);
       } catch {
         // Non-critical — user can add manually via occ
       }
@@ -666,10 +828,12 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
     for (const info of accessGuide) {
       // Clickable URL via OSC 8 hyperlink
       const linkUrl = `\x1b]8;;${info.url}\x07${info.url}\x1b]8;;\x07`;
+      const homepageLink = `\x1b]8;;${info.homepage}\x07${info.homepage}\x1b]8;;\x07`;
       console.log(
         `  ${chalk.bold.white(info.label.padEnd(26))}  ${chalk.cyan(linkUrl)}`,
       );
       console.log(`  ${chalk.dim('ℹ')}  ${chalk.dim(info.loginNote)}`);
+      console.log(`  ${chalk.dim('⌂')}  ${chalk.dim(`Homepage: ${homepageLink} — Refer to the official documentation for usage manual`)}`);
       console.log();
     }
     console.log(chalk.dim('  ─────────────────────────────────────────────────'));
@@ -677,7 +841,44 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
   }
 
   // -------------------------------------------------------------------------
-  // 10. Success
+  // 10. Secrets & credentials location notice
+  // -------------------------------------------------------------------------
+  console.log(chalk.bold('  Auto-generated Secrets'));
+  console.log(chalk.dim('  ─────────────────────────────────────────────────'));
+  console.log(chalk.dim(`  Location: ${projectPath}/secrets/`));
+  console.log();
+  console.log(
+    chalk.dim('  ') + chalk.yellow('Admin password  ') +
+    chalk.dim(`${projectPath}/secrets/admin_password`) +
+    chalk.dim('  →  ') + chalk.white(state.admin.password || '(see file)'),
+  );
+  if (state.servers.dbServer.enabled && state.servers.dbServer.dbPassword) {
+    console.log(
+      chalk.dim('  ') + chalk.yellow('DB password     ') +
+      chalk.dim(`${projectPath}/secrets/db_password`) +
+      chalk.dim('  →  ') + chalk.white(state.servers.dbServer.dbPassword),
+    );
+  }
+  console.log();
+  if (state.servers.gitServer.enabled) {
+    console.log(chalk.bold.yellow('  Gitea 초기 설정 안내'));
+    console.log(chalk.dim('  Gitea 최초 접속 시 설치 마법사가 실행됩니다.'));
+    console.log(chalk.dim('  아래 값을 입력하세요:'));
+    console.log();
+    console.log(chalk.dim('    Database Type : PostgreSQL'));
+    console.log(chalk.dim('    Host          : postgresql:5432'));
+    console.log(chalk.dim('    Username      : ' + (state.servers.dbServer.dbUser || 'brewnet')));
+    console.log(chalk.dim('    Password      : ' + (state.servers.dbServer.dbPassword || '(secrets/db_password 파일 참조)')));
+    console.log(chalk.dim('    Database Name : gitea_db'));
+    console.log(chalk.dim('    Gitea Base URL: ' + (state.domain.cloudflare.tunnelMode === 'quick' ? 'http://localhost/git/' : `http://localhost/git/`)));
+    console.log(chalk.dim('    SSH Domain    : localhost'));
+    console.log();
+  }
+  console.log(chalk.dim('  ─────────────────────────────────────────────────'));
+  console.log();
+
+  // -------------------------------------------------------------------------
+  // 11. Success
   // -------------------------------------------------------------------------
   console.log(chalk.green('  All files generated and services started successfully.'));
   console.log();
