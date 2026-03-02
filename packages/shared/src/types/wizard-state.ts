@@ -5,7 +5,7 @@
 
 export type Language = 'python' | 'nodejs' | 'java' | 'rust' | 'go' | 'kotlin';
 
-export type FrontendTech = 'react' | 'vue' | 'svelte' | 'none';
+export type FrontendTech = 'react' | 'vue' | 'none';
 
 export type WebServerService = 'traefik' | 'nginx' | 'caddy';
 
@@ -74,6 +74,8 @@ export interface DbServerConfig {
   dbPassword: string;
   /** Whether to enable a database admin UI (e.g., pgAdmin, phpMyAdmin) */
   adminUI: boolean;
+  /** Login email for pgAdmin (only used when adminUI is true and primary is postgresql) */
+  pgadminEmail: string;
   /** Cache layer, empty string when no cache is selected */
   cache: CacheService;
 }

@@ -577,7 +577,7 @@ describe('TC-04-16: Language selected → App Server auto-enabled', () => {
   });
 
   it('works with each individual frontend option', () => {
-    const frontendOptions = ['react', 'vue', 'svelte'] as const;
+    const frontendOptions = ['react', 'vue'] as const;
 
     for (const fe of frontendOptions) {
       const state = buildState({
@@ -635,7 +635,7 @@ describe('TC-04-17: App Server auto-enabled → FileBrowser auto-enabled', () =>
       devStack: {
         languages: ['java'],
         frameworks: { java: 'spring' },
-        frontend: 'svelte',
+        frontend: 'vue',
       },
     });
 
@@ -915,7 +915,7 @@ describe('Edge cases', () => {
 
   it('applyDevStackAutoEnables can be called multiple times idempotently', () => {
     const state = buildState({
-      devStack: { languages: ['go'], frameworks: {}, frontend: 'svelte' },
+      devStack: { languages: ['go'], frameworks: {}, frontend: 'vue' },
     });
 
     const first = applyDevStackAutoEnables(state);

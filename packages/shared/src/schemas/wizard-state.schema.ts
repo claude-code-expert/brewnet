@@ -11,7 +11,7 @@ export const languageSchema = z.enum([
 ]);
 
 export const frontendTechSchema = z.enum([
-  'react', 'vue', 'svelte', 'none',
+  'react', 'vue', 'none',
 ]);
 
 export const webServerServiceSchema = z.enum(['traefik', 'nginx', 'caddy']);
@@ -65,6 +65,7 @@ export const dbServerConfigSchema = z.object({
   dbUser: z.string(),
   dbPassword: z.string(),
   adminUI: z.boolean(),
+  pgadminEmail: z.string(),
   cache: cacheServiceSchema,
 });
 

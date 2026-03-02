@@ -24,11 +24,13 @@ interface StatusService {
   localUrl: string;
   externalUrl?: string;
   note?: string;
+  homepage?: string;
 }
 
 export interface ServiceDetailInfo {
   description: string;
   license: string;
+  homepage: string;
   features: string[];
   credentials: {
     method: 'env' | 'wizard' | 'cli' | 'basicauth' | 'none';
@@ -42,6 +44,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Traefik: {
     description: 'Go-based open-source reverse proxy and load balancer',
     license: 'MIT',
+    homepage: 'https://traefik.io/traefik/',
     features: [
       'Docker label-based automatic service discovery',
       'Let\'s Encrypt certificate auto-renewal',
@@ -63,6 +66,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'Traefik Dashboard': {
     description: 'Built-in Traefik web UI for monitoring routes, services, and middleware',
     license: 'MIT',
+    homepage: 'https://doc.traefik.io/traefik/operations/dashboard/',
     features: [
       'Real-time view of HTTP/TCP routers',
       'Service health and load balancer status',
@@ -80,6 +84,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Gitea: {
     description: 'Lightweight self-hosted Git service written in Go',
     license: 'MIT',
+    homepage: 'https://about.gitea.com/',
     features: [
       'GitHub-like web UI with issues, PRs, wiki, project boards',
       'Gitea Actions — GitHub Actions compatible CI/CD',
@@ -101,6 +106,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Nextcloud: {
     description: 'Self-hosted cloud storage platform (Google Drive/Dropbox alternative)',
     license: 'AGPL-3.0',
+    homepage: 'https://nextcloud.com/',
     features: [
       'File sync, sharing, and collaboration',
       '200+ app extensions: calendar, contacts, notes, office docs',
@@ -121,6 +127,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   PostgreSQL: {
     description: 'Advanced open-source relational database',
     license: 'PostgreSQL (BSD-like)',
+    homepage: 'https://www.postgresql.org/',
     features: [
       'Full ACID compliance with MVCC',
       'Native JSON/JSONB support',
@@ -141,6 +148,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   MySQL: {
     description: 'Popular open-source relational database',
     license: 'GPL-2.0',
+    homepage: 'https://www.mysql.com/',
     features: [
       'InnoDB storage engine with ACID transactions',
       'JSON support and document store',
@@ -161,6 +169,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Redis: {
     description: 'In-memory key-value store for caching and message brokering',
     license: 'BSD-3',
+    homepage: 'https://redis.io/',
     features: [
       'Session storage, cache, message queue, Pub/Sub',
       'Single-threaded event loop — 100K+ ops/sec',
@@ -181,6 +190,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   pgAdmin: {
     description: 'Web-based administration tool for PostgreSQL',
     license: 'PostgreSQL (BSD-like)',
+    homepage: 'https://www.pgadmin.org/',
     features: [
       'SQL editor with query execution and plan visualization',
       'Table, index, view, and function GUI management',
@@ -200,6 +210,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Jellyfin: {
     description: 'Open-source media server (Plex/Emby free alternative)',
     license: 'GPL-2.0',
+    homepage: 'https://jellyfin.org/',
     features: [
       'Movies, TV, music, photos, and live TV/DVR',
       'Hardware transcoding (Intel QSV, NVIDIA NVENC, VAAPI)',
@@ -219,6 +230,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'SSH Server': {
     description: 'Industry-standard remote access via OpenSSH in Docker',
     license: 'BSD',
+    homepage: 'https://www.openssh.com/',
     features: [
       'Key-based authentication (more secure than passwords)',
       'Built-in SFTP — no separate FTP server needed',
@@ -239,6 +251,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'Mail Server': {
     description: 'Full mail stack in a single container (Postfix + Dovecot + Rspamd)',
     license: 'MIT',
+    homepage: 'https://docker-mailserver.github.io/docker-mailserver/',
     features: [
       'SMTP (Postfix) + IMAP (Dovecot) + spam filter (Rspamd)',
       'DKIM, SPF, DMARC support',
@@ -259,6 +272,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   FileBrowser: {
     description: 'Lightweight web-based file manager written in Go',
     license: 'Apache-2.0',
+    homepage: 'https://filebrowser.org/',
     features: [
       'Upload, download, edit, and delete files via browser',
       'Multi-user support with per-user directory scoping',
@@ -279,6 +293,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'MinIO Console': {
     description: 'S3-compatible object storage with a web console',
     license: 'AGPL-3.0',
+    homepage: 'https://min.io/',
     features: [
       'Amazon S3-compatible API',
       'Web console for bucket and object management',
@@ -298,6 +313,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Cloudflared: {
     description: 'Cloudflare Tunnel daemon — exposes local services to the internet securely',
     license: 'Apache-2.0',
+    homepage: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
     features: [
       'No port forwarding or public IP required',
       'Automatic SSL/TLS via Cloudflare',
@@ -317,6 +333,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Nginx: {
     description: 'High-performance HTTP and reverse proxy server',
     license: 'BSD-2',
+    homepage: 'https://nginx.org/',
     features: [
       'Event-driven architecture — handles 10K+ concurrent connections',
       'Static file serving and reverse proxy',
@@ -336,6 +353,7 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Caddy: {
     description: 'Modern web server with automatic HTTPS',
     license: 'Apache-2.0',
+    homepage: 'https://caddyserver.com/',
     features: [
       'Automatic HTTPS with Let\'s Encrypt (zero config)',
       'HTTP/2 and HTTP/3 support out of the box',
@@ -350,6 +368,48 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       'Caddyfile syntax is simpler than Nginx — great for small setups',
       'Automatic certificate management requires ports 80 and 443',
       'Use caddy reload for config changes without downtime',
+    ],
+  },
+  Valkey: {
+    description: 'Open-source, high-performance Redis-compatible in-memory data store (Linux Foundation fork)',
+    license: 'BSD-3',
+    homepage: 'https://valkey.io/',
+    features: [
+      'Drop-in Redis replacement — fully API compatible',
+      'Session storage, cache, message queue, Pub/Sub',
+      'RDB + AOF persistence support',
+      'Active community-driven development post Redis license change',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with --requirepass flag.',
+      command: 'docker exec -it brewnet-valkey valkey-cli ping',
+    },
+    tips: [
+      'Set --maxmemory and --maxmemory-policy to prevent unbounded memory growth',
+      'Internal network only — no host port exposed',
+      'Use OBJECT ENCODING to inspect memory layout of individual keys',
+    ],
+  },
+  KeyDB: {
+    description: 'Multithreaded Redis-compatible in-memory database with higher throughput',
+    license: 'BSD-3',
+    homepage: 'https://docs.keydb.dev/',
+    features: [
+      'Multi-threaded architecture — higher throughput than Redis on multi-core CPUs',
+      'Active-Active replication for multi-master setups',
+      'FLASH storage support for large datasets exceeding RAM',
+      'Drop-in Redis replacement — fully API compatible',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with requirepass config.',
+      command: 'docker exec -it brewnet-keydb keydb-cli ping',
+    },
+    tips: [
+      'Set server-threads to number of CPU cores for best performance',
+      'Internal network only — no host port exposed',
+      'Use keydb-cli --stat to monitor live throughput',
     ],
   },
 };
@@ -409,58 +469,70 @@ function collectStatusData(state: WizardState): StatusPageData {
       ? (quickBase || undefined)
       : (!isLocal && domain ? `https://${domain}` : undefined),
     note: 'Welcome page',
+    homepage: webService === 'traefik' ? 'https://traefik.io/traefik/' : webService === 'nginx' ? 'https://nginx.org/' : 'https://caddyserver.com/',
   });
 
-  // Traefik Dashboard — port 8080, /dashboard/ (trailing slash required)
-  // Ref: https://doc.traefik.io/traefik/getting-started/quick-start
+  // Traefik Dashboard — routed via Traefik labels on port 80 with BasicAuth.
+  // Port 8080 (api.insecure=true) is internal only; external access uses port 80 + /dashboard/ path.
+  // Ref: https://doc.traefik.io/traefik/operations/dashboard/
   if (webService === 'traefik') {
-    const httpHost = remap(80);
-    const httpsHost = remap(443);
-    let dashPort = 8080;
-    while (dashPort === httpHost || dashPort === httpsHost) { dashPort++; }
     services.push({
       name: 'Traefik Dashboard',
       status: 'unknown',
-      localUrl: `http://localhost:${dashPort}/dashboard/`,
-      note: 'Routes, services, middleware (no auth)',
+      localUrl: `http://localhost:${remap(80)}/dashboard/`,
+      note: 'Requires BasicAuth login',
+      homepage: 'https://doc.traefik.io/traefik/operations/dashboard/',
     });
   }
 
-  // Gitea — default port 3000
+  // Gitea — Quick Tunnel: port 3000 is not host-exposed; access via Traefik path /git (port 80)
+  //         Named Tunnel / no tunnel: direct host port (default 3000)
+  // Ref: https://docs.gitea.com/installation/install-with-docker
+  const giteaLocalUrl = isQuickTunnel
+    ? `http://localhost:${remap(80)}/git`
+    : `http://localhost:${remap(state.servers.gitServer.port)}`;
   services.push({
     name: 'Gitea',
     status: 'unknown',
-    localUrl: `http://localhost:${remap(state.servers.gitServer.port)}`,
+    localUrl: giteaLocalUrl,
     externalUrl: makeExternalUrl('git', '/git'),
     note: 'First visit: installation wizard',
+    homepage: 'https://about.gitea.com/',
   });
 
   // Database (internal only — no web UI)
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
-    const dbPort = state.servers.dbServer.primary === 'postgresql' ? 5432 : 3306;
+    const isPg = state.servers.dbServer.primary === 'postgresql';
+    const dbPort = isPg ? 5432 : 3306;
     services.push({
-      name: state.servers.dbServer.primary === 'postgresql' ? 'PostgreSQL' : 'MySQL',
+      name: isPg ? 'PostgreSQL' : 'MySQL',
       status: 'unknown',
       localUrl: `localhost:${dbPort} (internal)`,
       note: 'No web UI — use psql / mysql client',
+      homepage: isPg ? 'https://www.postgresql.org/' : 'https://www.mysql.com/',
     });
     if (state.servers.dbServer.cache) {
+      const cacheId = state.servers.dbServer.cache;
+      const cacheName = cacheId === 'redis' ? 'Redis' : cacheId === 'valkey' ? 'Valkey' : 'KeyDB';
+      const cacheHomepage = cacheId === 'redis' ? 'https://redis.io/' : cacheId === 'valkey' ? 'https://valkey.io/' : 'https://docs.keydb.dev/';
       services.push({
-        name: state.servers.dbServer.cache === 'redis' ? 'Redis' : state.servers.dbServer.cache,
+        name: cacheName,
         status: 'unknown',
         localUrl: 'localhost:6379 (internal)',
-        note: 'No web UI — use redis-cli',
+        note: `No web UI — use ${cacheId}-cli`,
+        homepage: cacheHomepage,
       });
     }
-    // pgAdmin — container port 80 → host 5050
+    // pgAdmin — container port 80 → host 5050, SCRIPT_NAME=/pgadmin requires path prefix
     // Ref: https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment
     if (state.servers.dbServer.adminUI && state.servers.dbServer.primary === 'postgresql') {
       services.push({
         name: 'pgAdmin',
         status: 'unknown',
-        localUrl: `http://localhost:${remap(5050)}`,
+        localUrl: `http://localhost:${remap(5050)}/pgadmin`,
         externalUrl: makeExternalUrl('db', '/pgadmin'),
         note: 'Login: email + password',
+        homepage: 'https://www.pgadmin.org/',
       });
     }
   }
@@ -478,6 +550,7 @@ function collectStatusData(state: WizardState): StatusPageData {
           : `http://localhost:${remap(8443)}`,
         externalUrl: makeExternalUrl('cloud', '/cloud'),
         note: 'Login: admin credentials',
+        homepage: 'https://nextcloud.com/',
       });
     } else if (state.servers.fileServer.service === 'minio') {
       // MinIO Console: port 9001, API: port 9000
@@ -488,20 +561,30 @@ function collectStatusData(state: WizardState): StatusPageData {
         localUrl: `http://localhost:${remap(9001)}`,
         externalUrl: makeExternalUrl('minio', '/minio'),
         note: `Login page (API: localhost:${remap(9000)})`,
+        homepage: 'https://min.io/',
       });
     }
   }
 
   // Jellyfin — port 8096
-  // Quick Tunnel: path /jellyfin with Base URL config
+  // Quick Tunnel: BaseUrl=/jellyfin → web UI at /jellyfin/web/#/wizard/start
+  // No tunnel: web UI at /web/#/wizard/start
+  // Use /wizard/start instead of /home to avoid "Server Mismatch" when localStorage differs.
   // Ref: https://jellyfin.org/docs/general/post-install/networking
   if (state.servers.media.enabled && state.servers.media.services.includes('jellyfin')) {
+    // Quick Tunnel: use Traefik (port 80) so the web app detects the correct
+    // server URL (http://localhost/jellyfin matching BaseUrl=/jellyfin).
+    // Direct port 8096 causes server URL mismatch → first-screen fails to load.
+    const jellyfinLocalUrl = isQuickTunnel
+      ? `http://localhost:${remap(80)}/jellyfin/web/#/wizard/start`
+      : `http://localhost:${remap(8096)}/web/#/wizard/start`;
     services.push({
       name: 'Jellyfin',
       status: 'unknown',
-      localUrl: `http://localhost:${remap(8096)}`,
+      localUrl: jellyfinLocalUrl,
       externalUrl: makeExternalUrl('media', '/jellyfin'),
       note: 'First visit: setup wizard',
+      homepage: 'https://jellyfin.org/',
     });
   }
 
@@ -512,6 +595,7 @@ function collectStatusData(state: WizardState): StatusPageData {
       status: 'unknown',
       localUrl: `ssh://localhost:${remap(state.servers.sshServer.port)}`,
       note: 'ssh -p PORT user@localhost',
+      homepage: 'https://www.openssh.com/',
     });
   }
 
@@ -522,11 +606,12 @@ function collectStatusData(state: WizardState): StatusPageData {
       status: 'unknown',
       localUrl: `localhost:${remap(25)} (SMTP), localhost:${remap(993)} (IMAP)`,
       note: 'Use mail client (Thunderbird, etc.)',
+      homepage: 'https://docker-mailserver.github.io/docker-mailserver/',
     });
   }
 
   // FileBrowser — container port 80 → host 8085
-  // Ref: https://github.com/gtsteffaniak/filebrowser
+  // Ref: https://filebrowser.org/
   if (state.servers.fileBrowser.enabled) {
     services.push({
       name: 'FileBrowser',
@@ -534,6 +619,7 @@ function collectStatusData(state: WizardState): StatusPageData {
       localUrl: `http://localhost:${remap(8085)}`,
       externalUrl: makeExternalUrl('fb', '/files'),
       note: 'Login page',
+      homepage: 'https://filebrowser.org/',
     });
   }
 
@@ -544,6 +630,7 @@ function collectStatusData(state: WizardState): StatusPageData {
       status: 'unknown',
       localUrl: 'internal',
       note: isQuickTunnel ? 'Quick Tunnel (*.trycloudflare.com)' : 'Named Tunnel',
+      homepage: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
     });
   }
 
@@ -708,7 +795,7 @@ function generateStatusHtml(data: StatusPageData): string {
         <button onclick="document.getElementById('pwd-note').style.display='inline'" style="background:#334155;color:#94a3b8;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px;">Show hint</button>
       </div>
       <div id="pwd-note" style="display:none;color:#fbbf24;font-size:13px;margin-top:8px;">
-        Full password is in <code>${data.network.domain.replace(/^[^/]+$/, '')}/.env</code>. Run: <code>grep ADMIN_PASSWORD .env</code>
+        Full password is in <code>secrets/admin_password</code>. Run: <code>cat secrets/admin_password</code>
       </div>
     </div>
 

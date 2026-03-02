@@ -141,17 +141,168 @@ describe('getScaffoldTemplate — fallback for unknown language', () => {
   });
 });
 
-describe('getScaffoldTemplate — go / rust', () => {
-  it('returns go template', () => {
-    const tpl = getScaffoldTemplate('go', '');
-    expect(tpl.appDir).toContain('go');
+describe('getScaffoldTemplate — go', () => {
+  it('returns gin template for go/gin', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    expect(tpl.appDir).toBe('gin-app');
     expect(tpl.files.length).toBeGreaterThan(0);
   });
 
-  it('returns rust template', () => {
-    const tpl = getScaffoldTemplate('rust', '');
-    expect(tpl.appDir).toContain('rust');
+  it('returns echo template for go/echo', () => {
+    const tpl = getScaffoldTemplate('go', 'echo');
+    expect(tpl.appDir).toBe('echo-app');
     expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns fiber template for go/fiber', () => {
+    const tpl = getScaffoldTemplate('go', 'fiber');
+    expect(tpl.appDir).toBe('fiber-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns gin template (default) for go/unknown', () => {
+    const tpl = getScaffoldTemplate('go', '');
+    expect(tpl.appDir).toBe('gin-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('gin template includes cmd/server/main.go', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    expect(tpl.files.some((f) => f.path === 'cmd/server/main.go')).toBe(true);
+  });
+
+  it('echo template includes cmd/server/main.go', () => {
+    const tpl = getScaffoldTemplate('go', 'echo');
+    expect(tpl.files.some((f) => f.path === 'cmd/server/main.go')).toBe(true);
+  });
+
+  it('fiber template includes cmd/server/main.go', () => {
+    const tpl = getScaffoldTemplate('go', 'fiber');
+    expect(tpl.files.some((f) => f.path === 'cmd/server/main.go')).toBe(true);
+  });
+
+  it('gin template includes internal/database/database.go', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    expect(tpl.files.some((f) => f.path === 'internal/database/database.go')).toBe(true);
+  });
+
+  it('gin template go.mod references gin', () => {
+    const tpl = getScaffoldTemplate('go', 'gin');
+    const goMod = tpl.files.find((f) => f.path === 'go.mod');
+    expect(goMod?.template).toContain('gin-gonic/gin');
+  });
+
+  it('echo template go.mod references echo', () => {
+    const tpl = getScaffoldTemplate('go', 'echo');
+    const goMod = tpl.files.find((f) => f.path === 'go.mod');
+    expect(goMod?.template).toContain('labstack/echo');
+  });
+
+  it('fiber template go.mod references fiber', () => {
+    const tpl = getScaffoldTemplate('go', 'fiber');
+    const goMod = tpl.files.find((f) => f.path === 'go.mod');
+    expect(goMod?.template).toContain('gofiber/fiber');
+  });
+});
+
+describe('getScaffoldTemplate — rust', () => {
+  it('returns actix-web template for rust/actix-web', () => {
+    const tpl = getScaffoldTemplate('rust', 'actix-web');
+    expect(tpl.appDir).toBe('actix-web-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns axum template for rust/axum', () => {
+    const tpl = getScaffoldTemplate('rust', 'axum');
+    expect(tpl.appDir).toBe('axum-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns actix-web template (default) for rust/unknown', () => {
+    const tpl = getScaffoldTemplate('rust', '');
+    expect(tpl.appDir).toBe('actix-web-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('actix-web template includes src/main.rs', () => {
+    const tpl = getScaffoldTemplate('rust', 'actix-web');
+    expect(tpl.files.some((f) => f.path === 'src/main.rs')).toBe(true);
+  });
+
+  it('axum template includes src/main.rs', () => {
+    const tpl = getScaffoldTemplate('rust', 'axum');
+    expect(tpl.files.some((f) => f.path === 'src/main.rs')).toBe(true);
+  });
+});
+
+describe('getScaffoldTemplate — kotlin', () => {
+  it('returns ktor template for kotlin/ktor', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.appDir).toBe('ktor-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns springboot-kt template for kotlin/springboot-kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.appDir).toBe('springboot-kt-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns ktor template (default) for kotlin/unknown', () => {
+    const tpl = getScaffoldTemplate('kotlin', '');
+    expect(tpl.appDir).toBe('ktor-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('ktor template includes Application.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.files.some((f) => f.path.endsWith('Application.kt'))).toBe(true);
+  });
+
+  it('ktor template includes Routing.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.files.some((f) => f.path.endsWith('Routing.kt'))).toBe(true);
+  });
+
+  it('ktor template includes Database.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.files.some((f) => f.path.endsWith('Database.kt'))).toBe(true);
+  });
+
+  it('ktor template build.gradle.kts references ktor plugin', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    const gradle = tpl.files.find((f) => f.path === 'build.gradle.kts');
+    expect(gradle?.template).toContain('io.ktor.plugin');
+  });
+
+  it('springboot-kt template includes Application.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.files.some((f) => f.path.endsWith('Application.kt'))).toBe(true);
+  });
+
+  it('springboot-kt template includes ApiController.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.files.some((f) => f.path.endsWith('ApiController.kt'))).toBe(true);
+  });
+
+  it('springboot-kt template includes DataSourceConfig.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.files.some((f) => f.path.endsWith('DataSourceConfig.kt'))).toBe(true);
+  });
+
+  it('springboot-kt template build.gradle.kts references spring boot', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    const gradle = tpl.files.find((f) => f.path === 'build.gradle.kts');
+    expect(gradle?.template).toContain('org.springframework.boot');
+  });
+
+  it('kotlin version is 2.1.x in both templates', () => {
+    const ktorTpl = getScaffoldTemplate('kotlin', 'ktor');
+    const sbTpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    const ktorGradle = ktorTpl.files.find((f) => f.path === 'build.gradle.kts');
+    const sbGradle = sbTpl.files.find((f) => f.path === 'build.gradle.kts');
+    expect(ktorGradle?.template).toContain('2.1.10');
+    expect(sbGradle?.template).toContain('2.1.10');
   });
 });
 
@@ -386,6 +537,80 @@ describe('generateBoilerplate', () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
+  it('generates files for go/gin', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['go'], frameworks: { go: 'gin' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((f) => f.path.includes('gin-app'))).toBe(true);
+  });
+
+  it('generates files for go/echo', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['go'], frameworks: { go: 'echo' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('echo-app'))).toBe(true);
+  });
+
+  it('generates files for go/fiber', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['go'], frameworks: { go: 'fiber' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('fiber-app'))).toBe(true);
+  });
+
+  it('generates files for rust/actix-web', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['rust'], frameworks: { rust: 'actix-web' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('actix-web-app'))).toBe(true);
+  });
+
+  it('generates files for rust/axum', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['rust'], frameworks: { rust: 'axum' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('axum-app'))).toBe(true);
+  });
+
+  it('generates files for kotlin/ktor', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'ktor' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((f) => f.path.includes('ktor-app'))).toBe(true);
+  });
+
+  it('generates files for kotlin/springboot-kt', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'springboot-kt' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('springboot-kt-app'))).toBe(true);
+  });
+
+  it('generates sampleData files for kotlin/ktor', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'ktor' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('data.json'))).toBe(true);
+  });
+
   // ---------------------------------------------------------------------------
   // devMode='hot-reload' for additional frameworks (covers getDevConfig branches)
   // ---------------------------------------------------------------------------
@@ -458,6 +683,69 @@ describe('generateBoilerplate', () => {
     const files = await generateBoilerplate(state, '/tmp/output');
     const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
     expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for go/gin hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['go'], frameworks: { go: 'gin' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('go run ./cmd/server');
+  });
+
+  it('generates dev compose for go/echo hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['go'], frameworks: { go: 'echo' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for go/fiber hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['go'], frameworks: { go: 'fiber' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for rust/axum hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['rust'], frameworks: { rust: 'axum' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for kotlin/ktor hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'ktor' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('gradle run');
+  });
+
+  it('generates dev compose for kotlin/springboot-kt hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'springboot-kt' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('gradle bootRun');
   });
 
   // sampleData=true for remaining frameworks (covers getSampleData default branches)

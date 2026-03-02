@@ -214,7 +214,7 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
         retries: 3,
       },
       requiredEnvVars: ['MINIO_ROOT_USER', 'MINIO_ROOT_PASSWORD'],
-      traefikLabels: traefikRouterLabels('minio', 'minio', 9000),
+      traefikLabels: traefikRouterLabels('minio', 'minio', 9001),
     },
   ],
 

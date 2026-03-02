@@ -533,15 +533,14 @@ Multiple selections are supported.
     Blazor             — Full-stack web UI (MIT)
 ```
 
-### 4.2.1 Frontend Tech Stack (Multi-select)
+### 4.2.1 Frontend Tech Stack (Single-select)
 
 ```
-? Select frontend technologies (multi-select):
+? Select frontend (optional):
 
-  [ ] Vue.js           — Progressive framework
-  [ ] React.js         — UI library by Meta
-  [ ] TypeScript       — Typed JavaScript
-  [ ] JavaScript       — Vanilla JS
+  > Skip frontend (API only)
+    React (TypeScript)  — React SPA with Vite + TypeScript
+    Vue.js (Vite)       — Vue 3 SPA with Vite build tool
 ```
 
 ### 4.3 Boilerplate Options

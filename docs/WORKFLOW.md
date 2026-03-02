@@ -467,18 +467,17 @@ Step 3: Dev Stack & Runtime
 | echo | Echo | High performance framework | 8080 |
 | fiber | Fiber | Express-inspired framework | 8080 |
 
-### 3-C. Frontend Tech Stack (다중 선택)
+### 3-C. Frontend Tech Stack (단일 선택)
 
 | 필드 | 타입 | 기본값 | 옵션 |
 |------|------|--------|------|
-| `devStack.frontend` | string[] | `[]` | `'vuejs'` \| `'reactjs'` \| `'typescript'` \| `'javascript'` |
+| `devStack.frontend` | `FrontendTech \| null` | `null` | `'react'` \| `'vue'` \| `'none'` |
 
 | ID | 이름 | 설명 |
 |----|------|------|
-| vuejs | Vue.js | Progressive framework |
-| reactjs | React.js | UI library by Meta |
-| typescript | TypeScript | Typed JavaScript |
-| javascript | JavaScript | Vanilla JS |
+| react | React (TypeScript) | React SPA with Vite + TypeScript |
+| vue | Vue.js (Vite) | Vue 3 SPA with Vite build tool |
+| none | Skip frontend | No frontend framework |
 
 ### 3-D. App Server (자동 활성화)
 

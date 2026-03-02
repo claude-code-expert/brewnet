@@ -8,7 +8,7 @@
 
 export type Language = 'python' | 'nodejs' | 'java' | 'rust' | 'go' | 'kotlin';
 
-export type FrontendTech = 'react' | 'vue' | 'svelte' | 'none';
+export type FrontendTech = 'react' | 'vue' | 'none';
 
 export interface FrameworkOption {
   id: string;
@@ -32,8 +32,8 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
   nodejs: {
     name: 'Node.js',
     frameworks: [
-      { id: 'nextjs', name: 'Next.js', description: 'Full-stack React framework' },
-      { id: 'nextjs-app', name: 'Next.js 15.x (App Router)', description: 'Next.js 15 App Router with Server Components' },
+      { id: 'nextjs', name: 'Next.js (Full-Stack)', description: 'Server Components + Client Components + API Routes — full-stack in one project' },
+      { id: 'nextjs-app', name: 'Next.js (API Routes)', description: 'API Routes as backend — minimal UI, CORS-free, fast MVP' },
       { id: 'express', name: 'Express', description: 'Minimal web framework' },
       { id: 'nestjs', name: 'NestJS', description: 'Progressive Node.js framework' },
     ],
@@ -74,9 +74,8 @@ export const LANGUAGE_REGISTRY: Record<Language, { name: string; frameworks: Fra
 // ---------------------------------------------------------------------------
 
 export const FRONTEND_REGISTRY: Record<FrontendTech, { name: string; description: string }> = {
-  react: { name: 'React (Vite)', description: 'React SPA with Vite build tool' },
+  react: { name: 'React (TypeScript)', description: 'React SPA with Vite + TypeScript' },
   vue: { name: 'Vue.js (Vite)', description: 'Vue 3 SPA with Vite build tool' },
-  svelte: { name: 'SvelteKit', description: 'Full-stack Svelte framework' },
   none: { name: 'Skip frontend', description: 'No frontend framework' },
 };
 

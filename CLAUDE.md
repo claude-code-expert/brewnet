@@ -2,6 +2,11 @@
 
 Auto-generated from all feature plans. Last updated: 2026-02-25
 
+## Language Rules
+
+- All code, comments, and variable names in English.
+- Result summaries and next step explanations in Korean.
+
 ## Active Technologies
 - TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, better-sqlite3, zod, conf, tsup (001-cli-init-wizard)
 - better-sqlite3 (local SQLite at `~/.brewnet/db/`), JSON state files at `~/.brewnet/projects/<name>/selections.json` (001-cli-init-wizard)

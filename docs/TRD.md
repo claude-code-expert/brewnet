@@ -476,7 +476,7 @@ interface WizardState {
   devStack: {
     languages: string[];          // e.g. ['nodejs', 'python'] — multi-select
     frameworks: Record<string, string>;  // e.g. { nodejs: 'nextjs' } — one per language
-    frontend: string[];           // e.g. ['reactjs', 'typescript'] — multi-select
+    frontend: FrontendTech | null; // 'react' | 'vue' | null — single-select
   };
   boilerplate: { generate: boolean; sampleData: boolean; devMode: 'hot-reload' | 'production' };
 

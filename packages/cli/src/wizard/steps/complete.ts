@@ -12,6 +12,7 @@
 
 import chalk from 'chalk';
 import Table from 'cli-table3';
+import { execSync } from 'node:child_process';
 import type { WizardState } from '@brewnet/shared';
 import { buildServiceUrlMap } from '../../utils/service-verifier.js';
 import {
@@ -20,6 +21,23 @@ import {
 } from '../../utils/resources.js';
 import { sortByDependency } from '../../services/health-checker.js';
 import { createAdminServer } from '../../services/admin-server.js';
+
+/**
+ * Kill any process listening on the given port (best-effort).
+ * Prevents EADDRINUSE when restarting the admin server.
+ */
+async function killPortProcess(port: number): Promise<void> {
+  try {
+    const cmd = process.platform === 'darwin'
+      ? `lsof -ti :${port} | xargs kill -9 2>/dev/null || true`
+      : `fuser -k ${port}/tcp 2>/dev/null || true`;
+    execSync(cmd, { stdio: 'ignore', timeout: 3000 });
+    // Brief pause for port release
+    await new Promise((r) => setTimeout(r, 300));
+  } catch {
+    // Non-fatal — port may not be in use
+  }
+}
 
 /**
  * Wrap a URL in OSC 8 terminal hyperlink escape sequences.
@@ -119,7 +137,7 @@ export async function runCompleteStep(
       chalk.dim(`    Admin username: `) + chalk.yellow(state.admin.username),
     );
     console.log(
-      chalk.dim(`    Admin password: `) + chalk.yellow('(see .env file)'),
+      chalk.dim(`    Admin password: `) + chalk.yellow('(see secrets/admin_password)'),
     );
     console.log(
       chalk.dim(`    Propagated to:  `) + credTargets.join(', '),
@@ -214,6 +232,7 @@ export async function runCompleteStep(
   console.log(`    ${chalk.dim('•')} View compose logs:    ${chalk.cyan('docker compose logs -f')}`);
   console.log(`    ${chalk.dim('•')} Project directory:    ${chalk.dim(state.projectPath)}`);
   console.log(`    ${chalk.dim('•')} Configuration:        ${chalk.dim(state.projectPath + '/.env')}`);
+  console.log(`    ${chalk.dim('•')} Secrets:              ${chalk.dim(state.projectPath + '/secrets/')}`);
   console.log();
 
   console.log(chalk.green.bold('  Happy brewing! 🍺'));
@@ -225,6 +244,9 @@ export async function runCompleteStep(
   const adminUrl = `http://localhost:${ADMIN_PORT}`;
 
   try {
+    // Kill any existing admin server on the same port (from a previous session)
+    await killPortProcess(ADMIN_PORT);
+
     const admin = createAdminServer({
       port: ADMIN_PORT,
       projectPath: state.projectPath,

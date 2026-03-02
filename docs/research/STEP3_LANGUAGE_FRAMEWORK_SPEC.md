@@ -25,8 +25,8 @@
 | nodejs | Node.js 22 LTS | 22.x | `node:22-alpine` | 3000 |
 | java | Java 21 LTS (Eclipse Temurin) | 21.x | `eclipse-temurin:21-jre-alpine` | 8080 |
 | kotlin | Kotlin 2.3 (JVM 21) | 2.3.x | `eclipse-temurin:21-jre-alpine` | 8080 |
-| rust | Rust (latest stable) | 1.85.x | `rust:1.85-slim` → multi-stage build | 8080 |
-| go | Go 1.24 | 1.24.x | `golang:1.24-alpine` → multi-stage build | 8080 |
+| rust | Rust 1.88 | 1.88.x | `rust:1.88` → `debian:bookworm-slim` (multi-stage) | 8080 |
+| go | Go 1.22 – 1.25 | 1.22.x (Gin/Echo), 1.25.x (Fiber) | `golang:{ver}-alpine` → `alpine` (multi-stage) | 8080 |
 
 ---
 
@@ -114,7 +114,7 @@ Select Kotlin framework:
 
 ---
 
-### 🦀 Rust (latest stable)
+### 🦀 Rust 1.88
 
 > Sub-Prompt: `Select Rust framework:`
 
@@ -131,7 +131,7 @@ Select Rust framework:
 
 ---
 
-### 🐹 Go 1.24
+### 🐹 Go 1.22 – 1.25
 
 > Sub-Prompt: `Select Go framework:`
 
@@ -160,17 +160,15 @@ Select Go framework:
 
 | Frontend | 표시명 | 버전 | 라이선스 | 기본 포트 | 설명 |
 |----------|--------|------|---------|----------|------|
-| `react` | React (Vite) | 19.x | MIT | 5173 | Vite + React. 빠른 HMR, 모던 빌드 도구 |
+| `react` | React (TypeScript) | 19.x | MIT | 5173 | Vite + React + TypeScript. 빠른 HMR, 모던 빌드 도구 |
 | `vue` | Vue.js (Vite) | 3.5.x | MIT | 5173 | Vite + Vue 3. Composition API, 반응형 시스템 |
-| `svelte` | SvelteKit | 2.x | MIT | 5173 | 컴파일러 기반 프레임워크. 제로 런타임 오버헤드 |
 | `none` | Skip frontend | — | — | — | 프론트엔드 없이 API 서버만 구성 |
 
 ```
 Select frontend (optional):
   > Skip frontend (API only)
-    React (Vite)  — React 19 + Vite, 빠른 HMR
-    Vue.js (Vite) — Vue 3 + Vite, Composition API
-    SvelteKit     — 컴파일러 기반, 제로 런타임
+    React (TypeScript)  — React 19 + Vite + TypeScript
+    Vue.js (Vite)       — Vue 3 + Vite, Composition API
 ```
 
 ---
@@ -212,9 +210,8 @@ Select frontend (optional):
 
 [5] Select frontend (optional):
   > Skip frontend (API only)
-    React (Vite)  — React 19 + Vite
-    Vue.js (Vite) — Vue 3 + Vite
-    SvelteKit     — 컴파일러 기반
+    React (TypeScript)  — React 19 + Vite + TypeScript
+    Vue.js (Vite)       — Vue 3 + Vite
 
 → 모든 선택 완료 후 Step 4로 진행
 ```
