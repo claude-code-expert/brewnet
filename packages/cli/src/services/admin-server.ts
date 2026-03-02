@@ -12,7 +12,8 @@
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
@@ -57,6 +58,37 @@ interface DashboardConfig {
   zoneName: string;
 }
 
+// ---------------------------------------------------------------------------
+// Static icon assets — resolved once at module load from public/images/
+// ---------------------------------------------------------------------------
+
+const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../../..');
+
+/** Brewnet SVG icon (inline string, served at /icon.svg) */
+const ICON_SVG = (() => {
+  const candidates = [
+    join(PKG_ROOT, 'public/images/icon.svg'),
+    join(PKG_ROOT, '../public/images/icon.svg'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return readFileSync(p, 'utf-8');
+  }
+  // Fallback: inline SVG (amber mug-wifi icon)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="4 6 38 38" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.5" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.5" fill="none"/><circle cx="20" cy="30" r="2.2" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3.5" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3.5" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3.5" fill="none"/></svg>`;
+})();
+
+/** Brewnet favicon.ico (binary Buffer, served at /favicon.ico) */
+const FAVICON_ICO = (() => {
+  const candidates = [
+    join(PKG_ROOT, 'public/images/favicon.ico'),
+    join(PKG_ROOT, '../public/images/favicon.ico'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return readFileSync(p);
+  }
+  return null;
+})();
+
 /**
  * Name alias map: SERVICE_REGISTRY display names → SERVICE_DETAIL_MAP keys.
  * Only entries that differ need to be listed here.
@@ -77,6 +109,8 @@ function generateDashboardHtml(config: DashboardConfig): string {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Brewnet Admin</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg"/>
+<link rel="alternate icon" href="/favicon.ico"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
@@ -657,6 +691,25 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Serve Brewnet SVG icon
+    if (req.method === 'GET' && url === '/icon.svg') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+      res.end(ICON_SVG);
+      return;
+    }
+
+    // Serve favicon.ico (binary from disk; fallback: SVG with image/x-icon)
+    if (req.method === 'GET' && url === '/favicon.ico') {
+      if (FAVICON_ICO) {
+        res.writeHead(200, { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' });
+        res.end(FAVICON_ICO);
+      } else {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+        res.end(ICON_SVG);
+      }
       return;
     }
 
