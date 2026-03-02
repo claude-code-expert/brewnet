@@ -235,6 +235,77 @@ describe('getScaffoldTemplate — rust', () => {
   });
 });
 
+describe('getScaffoldTemplate — kotlin', () => {
+  it('returns ktor template for kotlin/ktor', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.appDir).toBe('ktor-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns springboot-kt template for kotlin/springboot-kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.appDir).toBe('springboot-kt-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('returns ktor template (default) for kotlin/unknown', () => {
+    const tpl = getScaffoldTemplate('kotlin', '');
+    expect(tpl.appDir).toBe('ktor-app');
+    expect(tpl.files.length).toBeGreaterThan(0);
+  });
+
+  it('ktor template includes Application.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.files.some((f) => f.path.endsWith('Application.kt'))).toBe(true);
+  });
+
+  it('ktor template includes Routing.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.files.some((f) => f.path.endsWith('Routing.kt'))).toBe(true);
+  });
+
+  it('ktor template includes Database.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    expect(tpl.files.some((f) => f.path.endsWith('Database.kt'))).toBe(true);
+  });
+
+  it('ktor template build.gradle.kts references ktor plugin', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'ktor');
+    const gradle = tpl.files.find((f) => f.path === 'build.gradle.kts');
+    expect(gradle?.template).toContain('io.ktor.plugin');
+  });
+
+  it('springboot-kt template includes Application.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.files.some((f) => f.path.endsWith('Application.kt'))).toBe(true);
+  });
+
+  it('springboot-kt template includes ApiController.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.files.some((f) => f.path.endsWith('ApiController.kt'))).toBe(true);
+  });
+
+  it('springboot-kt template includes DataSourceConfig.kt', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    expect(tpl.files.some((f) => f.path.endsWith('DataSourceConfig.kt'))).toBe(true);
+  });
+
+  it('springboot-kt template build.gradle.kts references spring boot', () => {
+    const tpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    const gradle = tpl.files.find((f) => f.path === 'build.gradle.kts');
+    expect(gradle?.template).toContain('org.springframework.boot');
+  });
+
+  it('kotlin version is 2.1.x in both templates', () => {
+    const ktorTpl = getScaffoldTemplate('kotlin', 'ktor');
+    const sbTpl = getScaffoldTemplate('kotlin', 'springboot-kt');
+    const ktorGradle = ktorTpl.files.find((f) => f.path === 'build.gradle.kts');
+    const sbGradle = sbTpl.files.find((f) => f.path === 'build.gradle.kts');
+    expect(ktorGradle?.template).toContain('2.1.10');
+    expect(sbGradle?.template).toContain('2.1.10');
+  });
+});
+
 describe('getScaffoldTemplate — template content', () => {
   it('each template file has path and template string', () => {
     const tpl = getScaffoldTemplate('nodejs', 'express');
@@ -512,6 +583,34 @@ describe('generateBoilerplate', () => {
     expect(files.some((f) => f.path.includes('axum-app'))).toBe(true);
   });
 
+  it('generates files for kotlin/ktor', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'ktor' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((f) => f.path.includes('ktor-app'))).toBe(true);
+  });
+
+  it('generates files for kotlin/springboot-kt', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: null },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'springboot-kt' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('springboot-kt-app'))).toBe(true);
+  });
+
+  it('generates sampleData files for kotlin/ktor', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: true, devMode: null },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'ktor' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    expect(files.some((f) => f.path.includes('data.json'))).toBe(true);
+  });
+
   // ---------------------------------------------------------------------------
   // devMode='hot-reload' for additional frameworks (covers getDevConfig branches)
   // ---------------------------------------------------------------------------
@@ -625,6 +724,28 @@ describe('generateBoilerplate', () => {
     const files = await generateBoilerplate(state, '/tmp/output');
     const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
     expect(devCompose).toBeDefined();
+  });
+
+  it('generates dev compose for kotlin/ktor hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'ktor' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('gradle run');
+  });
+
+  it('generates dev compose for kotlin/springboot-kt hot-reload', async () => {
+    const state = makeState({
+      boilerplate: { generate: true, sampleData: false, devMode: 'hot-reload' },
+      devStack: { languages: ['kotlin'], frameworks: { kotlin: 'springboot-kt' }, frontend: null },
+    });
+    const files = await generateBoilerplate(state, '/tmp/output');
+    const devCompose = files.find((f) => f.path.includes('docker-compose.dev.yml'));
+    expect(devCompose).toBeDefined();
+    expect(devCompose?.content).toContain('gradle bootRun');
   });
 
   // sampleData=true for remaining frameworks (covers getSampleData default branches)

@@ -226,7 +226,7 @@ export async function runDevStackStep(
       java: 'Java 21 LTS',
       rust: 'Rust 1.88',
       go: 'Go 1.22+',
-      kotlin: 'Kotlin 2.3',
+      kotlin: 'Kotlin 2.1',
     };
     console.log(chalk.bold(`  ${versionInfo[lang] ?? LANGUAGE_REGISTRY[lang].name}`));
 
@@ -330,14 +330,12 @@ export async function runDevStackStep(
       message: 'Development mode',
       choices: [
         {
-          name: 'Hot-reload — auto-restart on file changes',
+          name: 'Hot-reload — auto-restart on file changes  (choose this if you are still developing your app)',
           value: 'hot-reload' as DevMode,
-          description: 'Choose this if you are still developing your app',
         },
         {
-          name: 'Production — optimized build',
+          name: 'Production — optimized build  (choose this if you are deploying a production-ready service)',
           value: 'production' as DevMode,
-          description: 'Choose this if you are deploying a production-ready service',
         },
       ],
       default: next.boilerplate.devMode || 'hot-reload',
