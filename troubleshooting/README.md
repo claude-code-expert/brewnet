@@ -23,6 +23,10 @@
 | [jellyfin-dashboard-url-wrong-hash.md](./jellyfin-dashboard-url-wrong-hash.md) | Configuration | 2026-03-02 | ✅ 해결됨 | 여러 세션 반복 |
 | [wizard-boilerplate-generate-missing-call.md](./wizard-boilerplate-generate-missing-call.md) | Configuration / Runtime | 2026-03-03 | ✅ 해결됨 | 1 |
 | [gitea-db-auth-install-lock-missing.md](./gitea-db-auth-install-lock-missing.md) | Configuration / Docker | 2026-03-03 | ✅ 해결됨 | 1 |
+| [gitea-docker-exec-root-rejection.md](./gitea-docker-exec-root-rejection.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [boilerplate-frontend-port-conflict.md](./boilerplate-frontend-port-conflict.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [uninstall-orphaned-docker-resources.md](./uninstall-orphaned-docker-resources.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [gitea-password-bash-history-expansion.md](./gitea-password-bash-history-expansion.md) | Runtime / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 
 ## 에러 타입별 분류
 
@@ -61,6 +65,14 @@
 ### Configuration / Runtime
 - [Wizard Dev Stack 보일러플레이트 GitHub 클론 미실행 (generate.ts 누락 호출)](./wizard-boilerplate-generate-missing-call.md)
 - [Gitea DB 인증 실패 — INSTALL_LOCK 누락으로 웹 설치 마법사 실행 후 app.ini 덮어쓰기](./gitea-db-auth-install-lock-missing.md)
+
+### Docker / Configuration
+- [Gitea docker exec root 실행 거부 — `-u git` 플래그 누락](./gitea-docker-exec-root-rejection.md)
+- [Boilerplate 프론트엔드 포트 3000 충돌 — Non-unified 스택 FRONTEND_PORT 미자동선택](./boilerplate-frontend-port-conflict.md)
+- [brewnet uninstall 고아 Docker 리소스 미정리 — 조기 반환 + 하드코딩 네트워크 이름](./uninstall-orphaned-docker-resources.md)
+
+### Runtime / Configuration
+- [Bash history expansion으로 Gitea 비밀번호 특수문자 변조](./gitea-password-bash-history-expansion.md)
 
 ## 신규 트러블슈팅 기록 방법
 
