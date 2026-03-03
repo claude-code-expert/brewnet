@@ -39,7 +39,9 @@ export async function findFreePort(start: number): Promise<number> {
       const srv = createServer();
       srv.once('error', () => resolve(false));
       srv.once('listening', () => { srv.close(() => resolve(true)); });
-      srv.listen(port, '127.0.0.1');
+      // Bind to 0.0.0.0 (all interfaces) so we catch IPv6 dual-stack processes
+      // that occupy 0.0.0.0 but leave 127.0.0.1 appearing free on macOS.
+      srv.listen(port, '0.0.0.0');
     });
     if (free) return port;
   }
