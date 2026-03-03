@@ -843,17 +843,18 @@ describe('Service Detail Modal — data completeness', () => {
     }
   });
 
-  it('contains all 16 service entries', () => {
+  it('contains all 18 service entries', () => {
     const expectedKeys = [
       'Traefik', 'Traefik Dashboard', 'Gitea', 'Nextcloud',
       'PostgreSQL', 'MySQL', 'Redis', 'pgAdmin',
       'Jellyfin', 'SSH Server', 'Mail Server', 'FileBrowser',
       'MinIO Console', 'Cloudflared', 'Nginx', 'Caddy',
+      'Valkey', 'KeyDB',
     ];
     for (const key of expectedKeys) {
       expect(SERVICE_DETAIL_MAP).toHaveProperty(key);
     }
-    expect(Object.keys(SERVICE_DETAIL_MAP)).toHaveLength(16);
+    expect(Object.keys(SERVICE_DETAIL_MAP)).toHaveLength(18);
   });
 });
 

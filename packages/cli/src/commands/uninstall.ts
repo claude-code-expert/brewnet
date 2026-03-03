@@ -83,11 +83,42 @@ export function registerUninstallCommand(program: Command): void {
 
         // --- Show what is installed ---
         if (installations.length === 0) {
-          console.log(chalk.yellow('No Brewnet installations found.'));
-          console.log(chalk.dim(
-            '  If Docker containers are still running, stop them manually:\n' +
-            '  docker ps  →  docker compose down (in your project directory)',
-          ));
+          console.log(chalk.yellow('No Brewnet installations found in wizard state.'));
+          console.log(chalk.dim('  Checking for orphaned Docker resources...\n'));
+
+          // Even without project state, try to clean up brewnet-* containers/volumes/networks
+          if (!options.dryRun) {
+            const { execa: execaFn } = await import('execa');
+            const env = { ...process.env, PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env['PATH'] ?? ''}` };
+
+            // Stop & remove brewnet-* containers
+            const psResult = await execaFn('docker', ['ps', '-a', '--filter', 'name=brewnet', '-q'], { env, reject: false });
+            const containerIds = psResult.stdout.trim().split('\n').filter(Boolean);
+            if (containerIds.length > 0) {
+              await execaFn('docker', ['rm', '-f', ...containerIds], { env, reject: false });
+              console.log(chalk.green(`  ✓ Removed ${containerIds.length} orphaned container(s)`));
+            }
+
+            // Remove brewnet-* volumes
+            const volResult = await execaFn('docker', ['volume', 'ls', '--filter', 'name=brewnet', '-q'], { env, reject: false });
+            const volNames = volResult.stdout.trim().split('\n').filter(Boolean);
+            if (volNames.length > 0) {
+              await execaFn('docker', ['volume', 'rm', ...volNames], { env, reject: false });
+              console.log(chalk.green(`  ✓ Removed ${volNames.length} orphaned volume(s)`));
+            }
+
+            // Remove brewnet-* networks
+            const netResult = await execaFn('docker', ['network', 'ls', '--filter', 'name=brewnet', '-q'], { env, reject: false });
+            const netIds = netResult.stdout.trim().split('\n').filter(Boolean);
+            if (netIds.length > 0) {
+              await execaFn('docker', ['network', 'rm', ...netIds], { env, reject: false });
+              console.log(chalk.green(`  ✓ Removed ${netIds.length} orphaned network(s)`));
+            }
+
+            if (containerIds.length === 0 && volNames.length === 0 && netIds.length === 0) {
+              console.log(chalk.dim('  Nothing to remove.'));
+            }
+          }
           return;
         }
 

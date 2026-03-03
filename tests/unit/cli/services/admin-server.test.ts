@@ -546,6 +546,27 @@ describe('GET / — modal and external URL features', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET / — boilerplate stack modal feature
+// ---------------------------------------------------------------------------
+
+describe('GET / — boilerplate stack modal feature', () => {
+  it('HTML contains BOILERPLATE_STACKS JSON variable', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var BOILERPLATE_STACKS =');
+  });
+
+  it('HTML contains showBoilerplateModal function', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('function showBoilerplateModal(');
+  });
+
+  it('BOILERPLATE_STACKS defaults to empty array when no metadata file', async () => {
+    const res = await req('GET', '/');
+    expect(res.body).toContain('var BOILERPLATE_STACKS = []');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 404 fallback
 // ---------------------------------------------------------------------------
 

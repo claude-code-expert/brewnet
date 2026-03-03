@@ -128,12 +128,19 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
   if (servers.fileServer.enabled) {
     if (servers.fileServer.service === 'nextcloud') {
       // Nextcloud: container port 80 → host 8443
-      // Quick Tunnel: path /cloud with OVERWRITEWEBROOT env
+      // Quick Tunnel: OVERWRITEWEBROOT=/cloud is set, so Nextcloud generates all URLs
+      //   with /cloud prefix. Direct port access (localhost:8443/) causes redirect to
+      //   /cloud/... which Apache cannot serve (no cloud/ subdirectory at root).
+      //   Must go through Traefik (port 80) with path /cloud so Traefik strips the
+      //   prefix before forwarding to the container — same pattern as Jellyfin.
+      // Named Tunnel / no tunnel: OVERWRITEWEBROOT not set; direct port access works.
       // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
       entries.push({
         serviceId: 'nextcloud',
         label: 'Nextcloud',
-        localUrl: `http://localhost:${effectivePort(8443)}`,
+        localUrl: isQuickTunnel
+          ? `http://localhost:${httpPort}/cloud`
+          : `http://localhost:${effectivePort(8443)}`,
         externalUrl: extUrl('/cloud', 'cloud'),
         healthEndpoint: '/status.php',
         startupDelay: 30000,
@@ -185,7 +192,7 @@ export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
       localUrl: `http://localhost:${effectivePort(5050)}/pgadmin`,
       externalUrl: extUrl('/pgadmin', 'db'),
       healthEndpoint: '/misc/ping',
-      startupDelay: 15000,
+      startupDelay: 45000, // pgAdmin4 takes 30-60s on first boot (Python/Flask + DB init)
     });
   }
 
@@ -348,7 +355,9 @@ export function buildServiceAccessGuide(state: WizardState): ServiceAccessInfo[]
       entries.push({
         serviceId: 'nextcloud',
         label: 'Nextcloud',
-        url: `http://localhost:${remap(8443)}`,
+        url: isQuickTunnelGuide
+          ? `http://localhost:${httpPort}/cloud`
+          : `http://localhost:${remap(8443)}`,
         loginUser: user,
         loginNote: `Login: ${user} / <your password>`,
         homepage: 'https://nextcloud.com/',

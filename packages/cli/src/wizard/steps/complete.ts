@@ -13,6 +13,9 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import { execSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import type { WizardState } from '@brewnet/shared';
 import { buildServiceUrlMap } from '../../utils/service-verifier.js';
 import {
@@ -209,6 +212,46 @@ export async function runCompleteStep(
       console.log(`    ${chalk.cyan('brewnet domain tunnel status')}`);
       console.log();
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // 4b. Boilerplate project access info (supports both array and legacy object)
+  // -------------------------------------------------------------------------
+  const resolvedProjectPath = state.projectPath.startsWith('~')
+    ? join(homedir(), state.projectPath.slice(1))
+    : state.projectPath;
+  const boilerplateMetaPath = join(resolvedProjectPath, '.brewnet-boilerplate.json');
+  if (existsSync(boilerplateMetaPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(boilerplateMetaPath, 'utf-8')) as
+        | { stackId?: string; appDir?: string; backendUrl?: string; frontendUrl?: string; isUnified?: boolean }
+        | Array<{ stackId?: string; appDir?: string; backendUrl?: string; frontendUrl?: string; isUnified?: boolean; status?: string }>;
+
+      const stacks = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+
+      if (stacks.length > 0) {
+        console.log(chalk.bold('  Dev Stack Apps'));
+        console.log();
+        for (const meta of stacks) {
+          if (!meta.stackId) continue;
+          console.log(`    ${chalk.dim('Stack:')}    ${chalk.yellow(meta.stackId)}`);
+          if (meta.isUnified) {
+            console.log(`    ${chalk.dim('URL:')}      ${chalk.cyan(meta.backendUrl ?? '')}`);
+          } else {
+            console.log(`    ${chalk.dim('Backend:')}  ${chalk.cyan(meta.backendUrl ?? '')}`);
+            console.log(`    ${chalk.dim('Frontend:')} ${chalk.cyan(meta.frontendUrl ?? '')}`);
+          }
+          console.log(`    ${chalk.dim('Source:')}   ${chalk.dim(meta.appDir ?? '')}`);
+          console.log(`    ${chalk.dim('Docs:')}     ${chalk.cyan(`${meta.backendUrl ?? ''}/docs`)}`);
+          console.log();
+          console.log(chalk.dim(`    Commands (run in ${meta.appDir}/):`));
+          console.log(chalk.dim(`      make logs     # view container logs`));
+          console.log(chalk.dim(`      make down     # stop containers`));
+          console.log(chalk.dim(`      make validate # verify API endpoints`));
+          console.log();
+        }
+      }
+    } catch { /* non-fatal */ }
   }
 
   // -------------------------------------------------------------------------

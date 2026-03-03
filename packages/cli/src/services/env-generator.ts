@@ -138,7 +138,7 @@ const ENV_TO_SECRET_FILE: Record<string, string> = {
   PGADMIN_DEFAULT_PASSWORD:       'secrets/admin_password',
   SMTP_RELAY_PASSWORD:            'secrets/smtp_relay_password',
   TRAEFIK_DASHBOARD_AUTH:         'secrets/traefik_dashboard_auth',
-  CLOUDFLARE_TUNNEL_TOKEN:        'secrets/cf_tunnel_token',
+  // CLOUDFLARE_TUNNEL_TOKEN stays in .env — cloudflared image does not support _FILE convention
   // MINIO_ROOT_PASSWORD stays in .env (_FILE not supported)
 };
 

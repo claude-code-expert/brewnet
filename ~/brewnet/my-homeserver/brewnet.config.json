@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 7,
+  "projectName": "my-homeserver",
+  "projectPath": "~/brewnet/my-homeserver",
+  "setupType": "full",
+  "admin": {
+    "username": "admin",
+    "storage": "local"
+  },
+  "servers": {
+    "webServer": {
+      "enabled": true,
+      "service": "traefik"
+    },
+    "fileServer": {
+      "enabled": true,
+      "service": "nextcloud"
+    },
+    "gitServer": {
+      "enabled": true,
+      "service": "gitea",
+      "port": 3000,
+      "sshPort": 3022
+    },
+    "dbServer": {
+      "enabled": true,
+      "primary": "postgresql",
+      "primaryVersion": "16",
+      "dbName": "brewnet_db",
+      "dbUser": "brewnet",
+      "adminUI": true,
+      "cache": "redis"
+    },
+    "media": {
+      "enabled": true,
+      "services": [
+        "jellyfin"
+      ]
+    },
+    "sshServer": {
+      "enabled": true,
+      "port": 2222,
+      "passwordAuth": true,
+      "sftp": true
+    },
+    "mailServer": {
+      "enabled": false,
+      "service": "docker-mailserver",
+      "port25Blocked": false,
+      "relayProvider": "",
+      "relayHost": "",
+      "relayPort": 587,
+      "relayUser": "",
+      "relayPassword": ""
+    },
+    "appServer": {
+      "enabled": true
+    },
+    "fileBrowser": {
+      "enabled": true,
+      "mode": "directory"
+    }
+  },
+  "devStack": {
+    "languages": [
+      "kotlin"
+    ],
+    "frameworks": {
+      "kotlin": "ktor"
+    },
+    "frontend": "react"
+  },
+  "boilerplate": {
+    "generate": true,
+    "sampleData": false,
+    "devMode": "hot-reload"
+  },
+  "domain": {
+    "provider": "quick-tunnel",
+    "name": "brewnet.local",
+    "ssl": "cloudflare",
+    "cloudflare": {
+      "enabled": true,
+      "tunnelName": ""
+    }
+  }
+}

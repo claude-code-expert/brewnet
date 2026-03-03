@@ -637,14 +637,14 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       expect(traefikService.volumes).toContain('brewnet_traefik_certs:/letsencrypt');
     });
 
-    it('Traefik compose service exposes ports 80, 443, 8080', () => {
+    it('Traefik compose service exposes ports 80 and 443', () => {
       const state = createDefaultWizardState();
       const config = generateComposeConfig(state);
       const traefikService = config.services['traefik'];
 
       expect(traefikService.ports).toContain('80:80');
       expect(traefikService.ports).toContain('443:443');
-      expect(traefikService.ports).toContain('8080:8080');
+      // Port 8080 is intentionally excluded — dashboard uses label-based routing (api.insecure=false)
     });
 
     it('Traefik compose service has dashboard routing labels (when web server is traefik)', () => {
@@ -662,12 +662,13 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
 
       expect(traefikService.labels).toBeDefined();
       expect(traefikService.labels!['traefik.enable']).toBe('true');
-      expect(traefikService.labels!['traefik.http.routers.traefik-dashboard.rule']).toContain(
-        'myserver.example.com',
-      );
+      // Dashboard uses PathPrefix routing via brewnet-dashboard router (api.insecure=false)
       expect(
-        traefikService.labels!['traefik.http.routers.traefik-dashboard.tls.certresolver'],
-      ).toBe('letsencrypt');
+        traefikService.labels!['traefik.http.routers.brewnet-dashboard.rule'],
+      ).toBeDefined();
+      expect(
+        traefikService.labels!['traefik.http.routers.brewnet-dashboard.rule'],
+      ).toContain('PathPrefix(');
     });
   });
 

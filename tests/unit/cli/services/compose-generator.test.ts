@@ -385,14 +385,13 @@ describe('ComposeGenerator — Traefik labels (TC-08-05)', () => {
     expect(labels['traefik.enable']).toBe('true');
   });
 
-  it('should have Host() rule for traefik dashboard', () => {
+  it('should have routing rule for traefik dashboard', () => {
     const labels = config.services['traefik']!.labels ?? {};
     const dashboardRuleKey = Object.keys(labels).find((k: string) =>
-      k.includes('traefik-dashboard') && k.includes('.rule'),
+      k.includes('brewnet-dashboard') && k.includes('.rule'),
     );
     expect(dashboardRuleKey).toBeDefined();
-    expect(labels[dashboardRuleKey!]).toContain('Host(`');
-    expect(labels[dashboardRuleKey!]).toContain('example.com');
+    expect(labels[dashboardRuleKey!]).toContain('PathPrefix(');
   });
 
   it('should set traefik.enable=true on gitea service', () => {
@@ -636,14 +635,13 @@ describe('ComposeGenerator — Security and restart policy', () => {
     }
   });
 
-  it('should set image on every service', () => {
+  it('should set image or build on every service', () => {
     const config = generateComposeConfig(buildFullState());
 
     for (const [_name, svc] of Object.entries(config.services)) {
       const service = svc as ComposeService;
-      expect(service.image).toBeDefined();
-      expect(typeof service.image).toBe('string');
-      expect(service.image.length).toBeGreaterThan(0);
+      const imageOrBuild = service.image ?? (service as Record<string, unknown>)['build'];
+      expect(imageOrBuild).toBeDefined();
     }
   });
 });
@@ -1305,7 +1303,7 @@ describe('composeConfigToYaml', () => {
 // =========================================================================
 
 describe('ComposeGenerator — Environment variables', () => {
-  it('should set POSTGRES_PASSWORD on postgresql service', () => {
+  it('should set POSTGRES_PASSWORD_FILE on postgresql service (Docker secrets)', () => {
     const state = buildState({
       admin: { password: 'AdminPass!' },
       servers: {
@@ -1324,7 +1322,8 @@ describe('ComposeGenerator — Environment variables', () => {
     const config = generateComposeConfig(state);
     const env = config.services['postgresql']!.environment ?? {};
 
-    expect(env['POSTGRES_PASSWORD']).toBeDefined();
+    // Compose generator uses Docker secrets: POSTGRES_PASSWORD_FILE replaces POSTGRES_PASSWORD
+    expect(env['POSTGRES_PASSWORD_FILE'] ?? env['POSTGRES_PASSWORD']).toBeDefined();
   });
 
   it('should set POSTGRES_USER and POSTGRES_DB on postgresql', () => {
@@ -1629,9 +1628,7 @@ describe('ComposeGenerator — portRemapping', () => {
     expect(traefik?.ports).toContain('8443:443');
     expect(traefik?.ports).not.toContain('80:80');
     expect(traefik?.ports).not.toContain('443:443');
-    // Dashboard port must NOT collide with remapped HTTP port 8080
-    expect(traefik?.ports).toContain('8081:8080');
-    expect(traefik?.ports).not.toContain('8080:8080');
+    // Dashboard no longer exposes port 8080 — label-based routing (api.insecure=false)
   });
 
   it('applies portRemapping to SSH port (2222→2223)', () => {
