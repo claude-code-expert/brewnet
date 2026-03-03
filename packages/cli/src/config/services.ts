@@ -177,7 +177,7 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
       id: 'nextcloud',
       name: 'Nextcloud',
       image: 'nextcloud:29-apache',
-      ports: [443],
+      ports: [80],
       subdomain: 'cloud',
       ramMB: 256,
       diskGB: 2,
@@ -193,7 +193,7 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
         'NEXTCLOUD_ADMIN_PASSWORD',
         'NEXTCLOUD_TRUSTED_DOMAINS',
       ],
-      traefikLabels: traefikRouterLabels('nextcloud', 'cloud', 443),
+      traefikLabels: traefikRouterLabels('nextcloud', 'cloud', 80),
     },
   ],
   [

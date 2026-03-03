@@ -15,6 +15,7 @@ import {
   getFrameworksForLanguage,
   getAllLanguages,
   getAllFrontendTechs,
+  resolveStackId,
 } from '../../../../packages/cli/src/config/frameworks.js';
 import type { Language, FrontendTech, FrameworkOption } from '../../../../packages/cli/src/config/frameworks.js';
 
@@ -400,5 +401,109 @@ describe('Total framework count', () => {
       total += getFrameworksForLanguage(lang).length;
     }
     expect(total).toBe(16);
+  });
+});
+
+// ===========================================================================
+// resolveStackId() — wizard devStack → CONNECT_BOILERPLATE.md stack IDs
+// ===========================================================================
+
+describe('resolveStackId()', () => {
+  // --- Standard pattern: <language>-<frameworkId> -------------------------
+  it('python + fastapi → python-fastapi', () => {
+    expect(resolveStackId('python', 'fastapi')).toBe('python-fastapi');
+  });
+
+  it('python + django → python-django', () => {
+    expect(resolveStackId('python', 'django')).toBe('python-django');
+  });
+
+  it('python + flask → python-flask', () => {
+    expect(resolveStackId('python', 'flask')).toBe('python-flask');
+  });
+
+  it('go + gin → go-gin', () => {
+    expect(resolveStackId('go', 'gin')).toBe('go-gin');
+  });
+
+  it('go + echo → go-echo', () => {
+    expect(resolveStackId('go', 'echo')).toBe('go-echo');
+  });
+
+  it('go + fiber → go-fiber', () => {
+    expect(resolveStackId('go', 'fiber')).toBe('go-fiber');
+  });
+
+  it('rust + axum → rust-axum', () => {
+    expect(resolveStackId('rust', 'axum')).toBe('rust-axum');
+  });
+
+  it('rust + actix-web → rust-actix-web', () => {
+    expect(resolveStackId('rust', 'actix-web')).toBe('rust-actix-web');
+  });
+
+  it('java + spring → java-spring', () => {
+    expect(resolveStackId('java', 'spring')).toBe('java-spring');
+  });
+
+  it('java + springboot → java-springboot', () => {
+    expect(resolveStackId('java', 'springboot')).toBe('java-springboot');
+  });
+
+  it('kotlin + ktor → kotlin-ktor', () => {
+    expect(resolveStackId('kotlin', 'ktor')).toBe('kotlin-ktor');
+  });
+
+  it('nodejs + express → nodejs-express', () => {
+    expect(resolveStackId('nodejs', 'express')).toBe('nodejs-express');
+  });
+
+  it('nodejs + nestjs → nodejs-nestjs', () => {
+    expect(resolveStackId('nodejs', 'nestjs')).toBe('nodejs-nestjs');
+  });
+
+  // --- Exception cases (wizard ID ≠ CONNECT_BOILERPLATE.md stack ID) -------
+  it('nodejs + nextjs (Full-Stack) → nodejs-nextjs-full', () => {
+    expect(resolveStackId('nodejs', 'nextjs')).toBe('nodejs-nextjs-full');
+  });
+
+  it('nodejs + nextjs-app (API Routes) → nodejs-nextjs', () => {
+    expect(resolveStackId('nodejs', 'nextjs-app')).toBe('nodejs-nextjs');
+  });
+
+  it('kotlin + springboot-kt → kotlin-springboot', () => {
+    expect(resolveStackId('kotlin', 'springboot-kt')).toBe('kotlin-springboot');
+  });
+
+  // --- Unknown / invalid inputs → null --------------------------------------
+  it('returns null for unknown language', () => {
+    expect(resolveStackId('ruby', 'rails')).toBeNull();
+  });
+
+  it('returns null for unknown framework within valid language', () => {
+    expect(resolveStackId('python', 'unknown-framework')).toBeNull();
+  });
+
+  it('returns null for empty strings', () => {
+    expect(resolveStackId('', '')).toBeNull();
+  });
+
+  // --- All 16 CONNECT_BOILERPLATE.md stacks are reachable ------------------
+  it('all 16 stacks from CONNECT_BOILERPLATE.md are resolvable', () => {
+    const expectedStacks = [
+      ['go', 'gin'], ['go', 'echo'], ['go', 'fiber'],
+      ['rust', 'actix-web'], ['rust', 'axum'],
+      ['java', 'springboot'], ['java', 'spring'],
+      ['kotlin', 'ktor'], ['kotlin', 'springboot-kt'],
+      ['nodejs', 'express'], ['nodejs', 'nestjs'],
+      ['nodejs', 'nextjs'], ['nodejs', 'nextjs-app'],
+      ['python', 'fastapi'], ['python', 'django'], ['python', 'flask'],
+    ] as const;
+
+    const resolved = expectedStacks.map(([lang, fw]) => resolveStackId(lang, fw));
+    expect(resolved.every((id) => id !== null)).toBe(true);
+
+    const uniqueIds = new Set(resolved.filter(Boolean));
+    expect(uniqueIds.size).toBe(16);
   });
 });

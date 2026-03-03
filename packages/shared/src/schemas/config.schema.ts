@@ -48,6 +48,7 @@ const configDbServerSchema = z.object({
   dbName: z.string(),
   dbUser: z.string(),
   adminUI: z.boolean(),
+  pgadminEmail: z.string(),
   cache: cacheServiceSchema,
   // dbPassword is intentionally excluded from export
 });

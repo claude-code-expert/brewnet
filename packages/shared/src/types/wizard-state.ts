@@ -254,3 +254,32 @@ export interface WizardState {
    */
   portRemapping: Record<number, number>;
 }
+
+// ─── Install Manifest ─────────────────────────────────────────────────────────
+
+/** One boilerplate stack entry inside the install manifest. */
+export interface InstallManifestStack {
+  /** Stack ID, e.g. 'python-fastapi'. Also used as directory name under projectPath. */
+  stackId: string;
+  /** Directory path relative to projectPath. */
+  directory: string;
+}
+
+/**
+ * Written to `<projectPath>/.brewnet-manifest.json` at the end of `brewnet init`.
+ * Records every file and directory that brewnet generated so that `brewnet uninstall`
+ * can remove only what brewnet created and preserve any files the user added.
+ */
+export interface InstallManifest {
+  schemaVersion: 1;
+  projectName: string;
+  /** Stored with ~/... notation for portability. */
+  projectPath: string;
+  createdAt: string;
+  /** Paths relative to projectPath for files brewnet generated. */
+  generatedFiles: string[];
+  /** Paths relative to projectPath for directories fully owned by brewnet. */
+  generatedDirs: string[];
+  /** Boilerplate stacks that were git-cloned during init. */
+  boilerplateStacks: InstallManifestStack[];
+}

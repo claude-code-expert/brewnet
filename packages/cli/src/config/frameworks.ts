@@ -103,3 +103,55 @@ export function getAllLanguages(): Language[] {
 export function getAllFrontendTechs(): FrontendTech[] {
   return Object.keys(FRONTEND_REGISTRY) as FrontendTech[];
 }
+
+// ---------------------------------------------------------------------------
+// Stack ID resolution (wizard devStack → CONNECT_BOILERPLATE.md stackId)
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps wizard framework IDs to their CONNECT_BOILERPLATE.md stack IDs.
+ * Most follow the pattern `<language>-<frameworkId>`, but these exceptions differ.
+ */
+const STACK_ID_MAP: Partial<Record<string, Partial<Record<string, string>>>> = {
+  nodejs: {
+    nextjs: 'nodejs-nextjs-full',      // Full-Stack Next.js
+    'nextjs-app': 'nodejs-nextjs',     // API-Routes-only Next.js
+    express: 'nodejs-express',
+    nestjs: 'nodejs-nestjs',
+  },
+  kotlin: {
+    ktor: 'kotlin-ktor',
+    'springboot-kt': 'kotlin-springboot',  // wizard id differs from stack id
+  },
+};
+
+/**
+ * Resolve a wizard (language, frameworkId) pair to a CONNECT_BOILERPLATE.md stack ID.
+ * Returns null when the combination has no corresponding stack.
+ *
+ * Examples:
+ *   resolveStackId('python', 'fastapi')       → 'python-fastapi'
+ *   resolveStackId('nodejs', 'nextjs')        → 'nodejs-nextjs-full'
+ *   resolveStackId('nodejs', 'nextjs-app')    → 'nodejs-nextjs'
+ *   resolveStackId('kotlin', 'springboot-kt') → 'kotlin-springboot'
+ *   resolveStackId('go', 'gin')               → 'go-gin'
+ */
+export function resolveStackId(language: string, frameworkId: string): string | null {
+  const override = STACK_ID_MAP[language]?.[frameworkId];
+  if (override !== undefined) return override;
+
+  // Default pattern: <language>-<frameworkId>
+  const candidate = `${language}-${frameworkId}`;
+
+  // Validate against known CONNECT_BOILERPLATE.md stack IDs
+  const VALID_STACK_IDS = new Set([
+    'go-gin', 'go-echo', 'go-fiber',
+    'rust-actix-web', 'rust-axum',
+    'java-springboot', 'java-spring',
+    'kotlin-ktor', 'kotlin-springboot',
+    'nodejs-express', 'nodejs-nestjs', 'nodejs-nextjs', 'nodejs-nextjs-full',
+    'python-fastapi', 'python-django', 'python-flask',
+  ]);
+
+  return VALID_STACK_IDS.has(candidate) ? candidate : null;
+}

@@ -21,6 +21,7 @@ import { registerRestoreCommand } from './commands/restore.js';
 import { registerAdminCommand } from './commands/admin.js';
 import { registerUninstallCommand } from './commands/uninstall.js';
 import { registerDomainCommand } from './commands/domain.js';
+import { registerCreateAppCommand } from './commands/create-app.js';
 
 /**
  * Build and return a fully configured Commander.js program with all
@@ -51,6 +52,7 @@ export function createProgram(): Command {
   registerAdminCommand(program);
   registerUninstallCommand(program);
   registerDomainCommand(program);
+  registerCreateAppCommand(program);
 
   return program;
 }

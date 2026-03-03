@@ -80,7 +80,13 @@ let tempDir: string;
 beforeEach(() => {
   tempDir = createTempDir();
   jest.clearAllMocks();
-  mockExeca.mockResolvedValue(undefined);
+  // Return network IDs for `docker network ls` calls; undefined for everything else
+  mockExeca.mockImplementation((cmd: string, args: string[]) => {
+    if (cmd === 'docker' && Array.isArray(args) && args.includes('network') && args.includes('ls')) {
+      return Promise.resolve({ stdout: 'net-aaa\nnet-bbb' });
+    }
+    return Promise.resolve(undefined);
+  });
 });
 
 afterEach(() => {
@@ -283,12 +289,17 @@ describe('runUninstall — real removal', () => {
     await runUninstall({ projectPath: tempDir });
 
     const dockerCalls = mockExeca.mock.calls as [string, string[], unknown][];
+    // Implementation: first queries network ls, then rm with returned IDs
+    const networkLsCall = dockerCalls.find(
+      ([cmd, args]) => cmd === 'docker' && args.includes('network') && args.includes('ls'),
+    );
+    expect(networkLsCall).toBeDefined();
+    expect(networkLsCall![1]).toContain('--filter');
+
     const networkRmCall = dockerCalls.find(
       ([cmd, args]) => cmd === 'docker' && args.includes('network') && args.includes('rm'),
     );
     expect(networkRmCall).toBeDefined();
-    expect(networkRmCall![1]).toContain('brewnet');
-    expect(networkRmCall![1]).toContain('brewnet-internal');
   });
 
   it('preserves project directory when --keep-config is set', async () => {
@@ -334,6 +345,7 @@ describe('runUninstall — real removal', () => {
   it('records Docker networks in removed when execa succeeds', async () => {
     const result = await runUninstall({ projectPath: tempDir });
 
+    // network ls returns 'net-aaa\nnet-bbb' → network rm is called → '2 removed'
     const hasNetworks = result.removed.some((r) => r.includes('Docker networks'));
     expect(hasNetworks).toBe(true);
   });

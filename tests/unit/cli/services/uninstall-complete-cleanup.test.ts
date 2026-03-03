@@ -120,7 +120,13 @@ beforeEach(() => {
   mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
   mockRmSync.mockReset();
   mockExeca.mockReset();
-  mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+  // Return network IDs for `docker network ls` calls; empty for everything else
+  mockExeca.mockImplementation((cmd: string, args: string[]) => {
+    if (cmd === 'docker' && Array.isArray(args) && args.includes('network') && args.includes('ls')) {
+      return Promise.resolve({ stdout: 'net-aaa\nnet-bbb', stderr: '', exitCode: 0 });
+    }
+    return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+  });
   mockGetLastProject.mockReturnValue('my-homeserver');
   mockLoadState.mockReturnValue({
     projectPath: '~/brewnet/my-homeserver',
@@ -171,6 +177,16 @@ describe('full uninstall cleanup verification', () => {
   it('removes Docker networks (brewnet + brewnet-internal)', async () => {
     await runUninstall({ projectPath: PROJECT_PATH });
 
+    // Implementation: docker network ls --filter name=brewnet -q → then docker network rm [ids]
+    const networkLsCall = mockExeca.mock.calls.find(
+      (c) =>
+        (c[0] as string) === 'docker' &&
+        (c[1] as string[]).includes('network') &&
+        (c[1] as string[]).includes('ls'),
+    );
+    expect(networkLsCall).toBeDefined();
+    expect(networkLsCall![1]).toContain('--filter');
+
     const networkRmCall = mockExeca.mock.calls.find(
       (c) =>
         (c[0] as string) === 'docker' &&
@@ -178,8 +194,6 @@ describe('full uninstall cleanup verification', () => {
         (c[1] as string[]).includes('rm'),
     );
     expect(networkRmCall).toBeDefined();
-    expect(networkRmCall![1]).toContain('brewnet');
-    expect(networkRmCall![1]).toContain('brewnet-internal');
   });
 
   it('removes project directory (~/brewnet/<name>/)', async () => {
@@ -226,8 +240,6 @@ describe('full uninstall cleanup verification', () => {
   });
 
   it('result.removed covers all major cleanup categories', async () => {
-    await runUninstall({ projectPath: PROJECT_PATH });
-
     const removed = (await runUninstall({ projectPath: PROJECT_PATH })).removed;
     const categories = removed.join(' | ').toLowerCase();
 
@@ -358,13 +370,14 @@ describe('--keep-config mode', () => {
   it('still removes Docker networks when keepConfig=true', async () => {
     await runUninstall({ projectPath: PROJECT_PATH, keepConfig: true });
 
-    const networkCall = mockExeca.mock.calls.find(
+    // network ls should be called to discover networks
+    const networkLsCall = mockExeca.mock.calls.find(
       (c) =>
         (c[0] as string) === 'docker' &&
         (c[1] as string[]).includes('network') &&
-        (c[1] as string[]).includes('rm'),
+        (c[1] as string[]).includes('ls'),
     );
-    expect(networkCall).toBeDefined();
+    expect(networkLsCall).toBeDefined();
   });
 
   it('still removes ~/.brewnet/ when keepConfig=true', async () => {

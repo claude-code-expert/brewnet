@@ -110,3 +110,65 @@ await occ(['config:system:set', 'trusted_domains', '4', '--value=/.*\\.trycloudf
 - Named Tunnel: 고정 커스텀 도메인, `TUNNEL_TOKEN` 필요
 
 ---
+
+## 발생 기록 #2 — 2026-03-03 (재발)
+
+### 메타데이터
+
+| 항목 | 내용 |
+|------|------|
+| **날짜** | 2026-03-03 |
+| **상태** | ✅ 해결됨 |
+| **에러 타입** | Configuration / Runtime |
+| **브랜치** | feature/boilerplate |
+| **재발 여부** | 재발 (2번째) |
+| **재발 주기** | 설치 시 occ 실패 시 / cloudflared 재시작 시 |
+
+### 문제 요약
+
+`occ config:system:set trusted_domains` 명령이 설치 직후 실행되지만 Nextcloud 초기화(30-60초)가 완료되기 전에 실행되어 빈 catch로 무시됨. 결과적으로 Quick Tunnel URL이 trusted_domains에 등록되지 않아 외부 접근 불가.
+
+### 에러 상세
+
+```
+# 브라우저에서 Quick Tunnel URL 접근 시
+다시 신뢰하지 않는 도메인으로 접근하였습니다.
+시스템 관리자에게 연락하십시오...
+```
+
+### 근본 원인
+
+`docker compose up -d` 이후 즉시 `occ` 실행 → Nextcloud 미초기화 상태 → `docker exec brewnet-nextcloud php occ` 실패 → 빈 catch로 무시. trusted_domains에 Quick Tunnel URL 미등록.
+
+Nextcloud는 첫 부팅 시 DB 스키마 생성 + 앱 초기화로 **30-60초** 소요됨.
+
+### 해결 방안
+
+Quick Tunnel URL 등록 occ 호출 시 retry 루프 추가 (최대 90초, 5초 간격 18회):
+
+```typescript
+for (let attempt = 0; attempt < 18 && !registered; attempt++) {
+  await new Promise((r) => setTimeout(r, 5000));
+  try {
+    await occQuick(['config:system:set', 'trusted_domains', '5', `--value=${state.domain.name}`]);
+    registered = true;
+  } catch { /* Nextcloud still initializing */ }
+}
+```
+
+post-install occ (trusted_proxies, regex) 섹션: 실패 시 빈 catch → 수동 실행 안내 메시지 출력으로 변경.
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `packages/cli/src/wizard/steps/generate.ts` | Quick Tunnel occ 호출에 90초 retry 루프 추가 |
+| `packages/cli/src/wizard/steps/generate.ts` | post-install occ 실패 시 수동 명령어 안내 메시지 출력 |
+
+### 예방 방법
+
+- `occ` 명령은 Nextcloud 초기화 완료 후 실행해야 함
+- `php occ status` 또는 실제 occ 명령 retry로 준비 상태 확인 필요
+- Quick Tunnel 재시작 후에는 `docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 5 --value=<new-url>` 수동 실행 필요
+
+---

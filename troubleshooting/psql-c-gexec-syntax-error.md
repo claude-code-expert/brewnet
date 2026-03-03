@@ -1,6 +1,6 @@
-# psql -c 플래그와 \gexec 메타커맨드 호환 불가 Troubleshooting
+# gitea_db 생성 실패 Troubleshooting
 
-> psql `-c` 플래그로 전달된 SQL 문자열 안에 `\gexec` 클라이언트 메타커맨드를 포함하면 syntax error 발생.
+> gitea_db 사전 생성 과정에서 발생하는 여러 원인(psql 메타커맨드 오류, PostgreSQL 초기화 타이밍 경쟁)을 기록합니다.
 
 ## 메타데이터
 
@@ -84,5 +84,62 @@ docker exec brewnet-postgresql psql -U brewnet -d postgres -c \
 
 - 관련 파일: `packages/cli/src/wizard/steps/generate.ts`
 - PostgreSQL DO 문서: https://www.postgresql.org/docs/current/sql-do.html
+
+---
+
+---
+
+## 발생 기록 #2 — 2026-03-03 (재발)
+
+### 메타데이터
+
+| 항목 | 내용 |
+|------|------|
+| **날짜** | 2026-03-03 |
+| **상태** | ✅ 해결됨 |
+| **에러 타입** | Runtime / Docker |
+| **브랜치** | feature/boilerplate |
+| **재발 여부** | 재발 (2번째) |
+| **재발 주기** | 새 설치 시 간헐적 발생 |
+
+### 문제 요약
+
+`pq: database "gitea_db" does not exist` 에러가 Gitea 컨테이너에서 발생. gitea_db 사전 생성 코드 자체는 올바른 SQL을 사용하지만, Docker PostgreSQL 컨테이너의 초기화 타이밍 경쟁 조건으로 psql 연결이 실패하고 빈 catch로 무시됨.
+
+### 에러 상세
+
+```
+# Gitea 컨테이너 로그 (docker logs brewnet-gitea)
+pq: database "gitea_db" does not exist
+```
+
+### 근본 원인
+
+Docker PostgreSQL 공식 이미지의 초기화 순서:
+
+1. `initdb` 실행 (클러스터 생성)
+2. PostgreSQL 임시 기동 → TCP 소켓 열림 ← **`pg_isready` 여기서 0 반환**
+3. init 스크립트 실행: POSTGRES_USER 생성, POSTGRES_DB 생성 ← **아직 완료 안 됨**
+4. PostgreSQL 정식 기동
+
+기존 코드는 `pg_isready`가 0을 반환하는 즉시 `psql -U brewnet`을 실행하지만, step 3 (유저 생성)이 아직 진행 중이면 `FATAL: role "brewnet" does not exist` 에러가 발생하고 catch에서 무시됨. 결과적으로 gitea_db가 생성되지 않음.
+
+### 해결 방안
+
+`pg_isready` 성공 후 2단계 폴링:
+1. `pg_isready` → TCP 리스너 확인
+2. `psql SELECT 1` 루프 → 실제 유저 접속 확인 (최대 30초)
+→ 유저 준비 후 gitea_db 체크/생성
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `packages/cli/src/wizard/steps/generate.ts` | `pg_isready` 이후 `psql -c 'SELECT 1'` 확인 루프 추가 (최대 30초) |
+
+### 예방 방법
+
+- `pg_isready`는 TCP 소켓 확인만 하므로 init 스크립트 완료 보장 안 됨
+- 유저 생성 완료 확인은 반드시 `psql SELECT 1` 또는 실제 쿼리로 검증 필요
 
 ---

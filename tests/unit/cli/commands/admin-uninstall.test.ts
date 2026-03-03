@@ -410,6 +410,15 @@ describe('uninstall command action', () => {
       errors: [],
       success: true,
     });
+    mockLoadState.mockReturnValueOnce({
+      domain: {
+        cloudflare: {
+          tunnelMode: 'named',
+          tunnelName: 'brewnet-tunnel',
+          zoneName: 'example.com',
+        },
+      },
+    });
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
     const p = makeProgram();

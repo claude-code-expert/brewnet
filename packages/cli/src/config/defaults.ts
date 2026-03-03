@@ -74,7 +74,7 @@ export function createDefaultWizardState(): WizardState {
 
     boilerplate: {
       generate: true,
-      sampleData: false,
+      sampleData: true,
       devMode: 'hot-reload',
     },
 
