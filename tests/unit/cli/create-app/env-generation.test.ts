@@ -369,7 +369,9 @@ describe('findFreePort', () => {
     const { createServer } = await import('node:net');
     // Occupy port 19100
     const blocker = createServer();
-    await new Promise<void>((resolve) => blocker.listen(19100, '127.0.0.1', resolve));
+    // Bind to 0.0.0.0 to simulate the real Docker conflict scenario:
+    // Docker proxy binds 0.0.0.0:PORT, so findFreePort must also check 0.0.0.0.
+    await new Promise<void>((resolve) => blocker.listen(19100, '0.0.0.0', resolve));
     try {
       const port = await findFreePort(19100);
       expect(port).toBe(19101);

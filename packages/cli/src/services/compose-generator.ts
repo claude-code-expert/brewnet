@@ -510,12 +510,16 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
   switch (serviceId) {
     case 'traefik': {
       const httpHost = remap(80);
-      const httpsHost = remap(443);
+      const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
       // No port 8080 — Dashboard uses label-based routing (api.insecure=false)
-      return [
-        `${httpHost}:80`,
-        `${httpsHost}:443`,
-      ];
+      // Quick Tunnel: Cloudflare handles HTTPS externally; exposing 443 locally
+      // causes browsers to auto-upgrade HTTP→HTTPS, hit Traefik's default
+      // self-signed cert, and get 404 (no websecure routers defined).
+      if (isQuickTunnel) {
+        return [`${httpHost}:80`];
+      }
+      const httpsHost = remap(443);
+      return [`${httpHost}:80`, `${httpsHost}:443`];
     }
     case 'nginx':
       return [`${remap(80)}:80`, `${remap(443)}:443`];
@@ -715,9 +719,14 @@ function buildComposeService(
       '--providers.docker.exposedbydefault=false',
       '--providers.docker.network=brewnet',
       '--entrypoints.web.address=:80',
-      '--entrypoints.websecure.address=:443',
       '--api.insecure=true',
     ];
+    // Websecure entrypoint (HTTPS) is only needed when a real SSL cert is in use.
+    // Quick Tunnel: Cloudflare terminates HTTPS; exposing port 443 locally causes
+    // browsers to auto-upgrade HTTP→HTTPS and hit a 404 (no websecure routers).
+    if (!isQuickTunnel) {
+      cmds.push('--entrypoints.websecure.address=:443');
+    }
     if (isQuickTunnel) {
       // Preserve X-Forwarded-Proto from cloudflared so services behind Traefik
       // (e.g. Nextcloud) can detect the original protocol without hardcoding

@@ -27,6 +27,7 @@
 | [boilerplate-frontend-port-conflict.md](./boilerplate-frontend-port-conflict.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [uninstall-orphaned-docker-resources.md](./uninstall-orphaned-docker-resources.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [gitea-password-bash-history-expansion.md](./gitea-password-bash-history-expansion.md) | Runtime / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [traefik-port-443-browser-https-upgrade.md](./traefik-port-443-browser-https-upgrade.md) | Configuration / Docker / Network | 2026-03-04 | ✅ 해결됨 | 1 |
 
 ## 에러 타입별 분류
 
@@ -73,6 +74,9 @@
 
 ### Runtime / Configuration
 - [Bash history expansion으로 Gitea 비밀번호 특수문자 변조](./gitea-password-bash-history-expansion.md)
+
+### Configuration / Docker / Network
+- [Traefik 포트 443 불필요하게 오픈 — 브라우저 HTTP→HTTPS 자동 업그레이드로 서비스 접근 불가](./traefik-port-443-browser-https-upgrade.md)
 
 ## 신규 트러블슈팅 기록 방법
 
