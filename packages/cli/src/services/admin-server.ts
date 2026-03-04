@@ -399,6 +399,7 @@ const WEB_UI_SERVICES = new Set([
 // Services that must be accessed through Traefik path-prefix routing.
 // Their OVERWRITEWEBROOT / SCRIPT_NAME settings make direct-port access broken.
 const TRAEFIK_PATH_SERVICES: Record<string, string> = {
+  traefik: 'http://localhost/dashboard/',
   gitea: 'http://localhost/git',
   nextcloud: 'http://localhost/cloud',
   pgadmin: 'http://localhost:5050/pgadmin',
