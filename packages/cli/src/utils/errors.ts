@@ -97,6 +97,24 @@ export class BrewnetError extends Error {
   }
 
   /**
+   * BN002 — Project directory already exists (409 Conflict).
+   */
+  static directoryConflict(name: string): BrewnetError {
+    return new BrewnetError(
+      'BN002',
+      `Directory "${name}" already exists`,
+      409,
+      [
+        'The project directory already exists. Choose a different project name or remove it first.',
+        '',
+        '  Fix:',
+        `    rm -rf ${name}          # remove existing directory`,
+        `    brewnet create-app ${name}-v2   # use a different name`,
+      ].join('\n'),
+    );
+  }
+
+  /**
    * BN002 — Port already in use (409 Conflict).
    */
   static portConflict(port: number, processInfo?: string): BrewnetError {
@@ -174,6 +192,52 @@ export class BrewnetError extends Error {
         '  Fix:',
         '    Wait a few minutes before retrying.',
         '    If using CI, consider adding a delay between requests.',
+      ].join('\n'),
+    );
+  }
+
+  /**
+   * BN006 — Boilerplate clone failed (500 Internal Server Error).
+   */
+  static cloneFailed(stackId: string): BrewnetError {
+    return new BrewnetError(
+      'BN006',
+      `Failed to clone boilerplate stack "${stackId}"`,
+      500,
+      [
+        'Could not download the boilerplate from GitHub. Common causes:',
+        '',
+        '  - No internet connection',
+        '  - GitHub is temporarily unavailable',
+        '  - The stack branch does not exist on the remote',
+        '',
+        '  Fix:',
+        '    1. Check your internet connection',
+        '    2. Verify connectivity:  curl -I https://github.com',
+        '    3. Retry:  brewnet create-app <name> --stack ' + stackId,
+      ].join('\n'),
+    );
+  }
+
+  /**
+   * BN006 — Health check timed out after scaffolding (500 Internal Server Error).
+   */
+  static healthCheckTimeout(timeoutSec: number): BrewnetError {
+    return new BrewnetError(
+      'BN006',
+      `Application health check timed out after ${timeoutSec}s`,
+      500,
+      [
+        'The application container started but did not respond to health checks in time.',
+        '',
+        '  Containers are still running. To diagnose:',
+        '    docker compose logs backend   # check for startup errors',
+        '    docker compose logs           # check all services',
+        '',
+        '  Fix:',
+        '    1. Check logs for errors (missing env vars, port conflicts, build errors)',
+        '    2. Run "make down" to stop containers',
+        '    3. Retry:  brewnet create-app <name> --stack <STACK_ID>',
       ].join('\n'),
     );
   }

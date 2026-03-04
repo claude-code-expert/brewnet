@@ -12,7 +12,8 @@
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
@@ -49,12 +50,68 @@ export interface AdminServerOptions {
 // HTML Dashboard (inline, dynamically generated with embedded config)
 // ---------------------------------------------------------------------------
 
+/** Shape of a single stack entry in .brewnet-boilerplate.json */
+interface BoilerplateMeta {
+  stackId: string;
+  appDir?: string;
+  backendUrl?: string;
+  frontendUrl?: string;
+  isUnified?: boolean;
+  lang?: string;
+  frameworkId?: string;
+  dbDriver?: string;
+  dbUser?: string;
+  dbName?: string;
+  gitBranch?: string;
+  status?: string;
+}
+
 interface DashboardConfig {
   adminUsername: string;
   passwordHint: string;
   domainProvider: string;
   quickTunnelUrl: string;
   zoneName: string;
+  /** Pre-rendered HTML for the boilerplate Dev Stack App section (empty string when no app) */
+  boilerplateHtml: string;
+  /** JSON-serialised array of BoilerplateMeta for JS embedding */
+  boilerplateStacksJson: string;
+}
+
+// ---------------------------------------------------------------------------
+// Static icon assets — resolved once at module load from public/images/
+// ---------------------------------------------------------------------------
+
+const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../../..');
+
+/** Brewnet SVG icon (inline string, served at /icon.svg) */
+const ICON_SVG = (() => {
+  const candidates = [
+    join(PKG_ROOT, 'public/images/icon.svg'),
+    join(PKG_ROOT, '../public/images/icon.svg'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return readFileSync(p, 'utf-8');
+  }
+  // Fallback: inline SVG (amber mug-wifi icon)
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="4 6 38 38" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.5" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.5" fill="none"/><circle cx="20" cy="30" r="2.2" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3.5" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3.5" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3.5" fill="none"/></svg>`;
+})();
+
+/** Brewnet favicon.ico (binary Buffer, served at /favicon.ico) */
+const FAVICON_ICO = (() => {
+  const candidates = [
+    join(PKG_ROOT, 'public/images/favicon.ico'),
+    join(PKG_ROOT, '../public/images/favicon.ico'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return readFileSync(p);
+  }
+  return null;
+})();
+
+/** Minimal HTML entity escaping for server-side string injection. */
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**
@@ -77,6 +134,8 @@ function generateDashboardHtml(config: DashboardConfig): string {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Brewnet Admin</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg"/>
+<link rel="alternate icon" href="/favicon.ico"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
@@ -98,7 +157,7 @@ tr:hover td{background:#161b22}
 .btn-remove{border-color:#8b949e;color:#8b949e;margin-left:4px}
 .btn-remove:hover{background:#21262d}
 .actions{display:flex;gap:4px;align-items:center}
-#log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:12px;height:120px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
+#log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;height:200px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
 .section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
 .refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
@@ -137,20 +196,22 @@ tr:hover td{background:#161b22}
     <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
-  <span class="refresh" onclick="loadServices()">&#8635; Refresh</span>
+  <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
 </div>
 <div class="section-title">Services</div>
 <table id="svc-table">
   <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
   <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
-<div class="section-title">Log</div>
+${config.boilerplateHtml}
+<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Log<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
 <div id="log"></div>
 <script>
 var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
 var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
 var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName })};
 var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
+var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
 function getExternalUrl(id){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
@@ -162,6 +223,7 @@ function getExternalUrl(id){
 function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function resolveDetailName(n){return NAME_ALIASES[n]||n;}
 function showServiceModal(name,localUrl,externalUrl){
+  log('['+name+'] info'+(localUrl?' — local: '+localUrl:'')+(externalUrl?' | ext: '+externalUrl:''),'info');
   var detailName=resolveDetailName(name);
   var info=SERVICE_DETAILS[detailName];
   if(!info)return;
@@ -204,11 +266,56 @@ function showServiceModal(name,localUrl,externalUrl){
 }
 function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o)o.remove();document.removeEventListener('keydown',handleModalEsc);}
 function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
-const log=(msg)=>{const d=document.getElementById('log');d.textContent=new Date().toLocaleTimeString()+' '+msg+'\\n'+d.textContent.slice(0,2000);}
+function showBoilerplateModal(idx){
+  var s=BOILERPLATE_STACKS[idx];if(!s)return;
+  log('['+s.stackId+'] stack info — '+(s.lang||'')+(s.frameworkId?'/'+s.frameworkId:'')+(s.backendUrl?' | '+s.backendUrl:'')+' | status: '+(s.status||'?'),'info');
+  var repoBase='https://github.com/claude-code-expert/brewnet-boilerplate';
+  var readmeUrl=repoBase+'/tree/'+escapeHtml(s.gitBranch||('stack/'+s.stackId));
+  var ov=document.createElement('div');ov.className='modal-overlay';
+  ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
+  var accessHtml='';
+  var bu=s.backendUrl||'';
+  var fu=s.frontendUrl||'';
+  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Backend:</span> <a href="'+escapeHtml(bu)+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'</a></div>';}
+  if(!s.isUnified&&fu&&fu!==bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Frontend:</span> <a href="'+escapeHtml(fu)+'" target="_blank" class="modal-url-a">'+escapeHtml(fu)+'</a></div>';}
+  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
+  var stackLabel=(s.lang||'')+(s.frameworkId?' / '+s.frameworkId:'');
+  var dbLabel=(s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:'');
+  var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
+  var credHtml='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(s.dbUser||'brewnet')+'</span></div>';
+  credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(s.dbName||'brewnet_db')+'</span></div>';
+  credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+' (admin password)</span></div>';
+  var gitHtml='<div class="modal-url"><span class="modal-url-label">Branch:</span> <code style="color:#58a6ff">'+escapeHtml(s.gitBranch||'stack/'+s.stackId)+'</code></div>';
+  gitHtml+='<div class="modal-url"><a href="'+readmeUrl+'" target="_blank" class="modal-url-a">'+readmeUrl+'</a></div>';
+  var cmdBase=s.appDir||'.';
+  var cmdHtml='<div class="modal-cmd">cd '+escapeHtml(cmdBase)+'</div>';
+  cmdHtml+='<div style="margin-top:6px;color:#8b949e;font-size:12px">make logs &nbsp;&nbsp; # 컨테이너 로그 확인</div>';
+  cmdHtml+='<div style="color:#8b949e;font-size:12px">make down &nbsp;&nbsp; # 서비스 중지</div>';
+  cmdHtml+='<div style="color:#8b949e;font-size:12px">make validate # API 엔드포인트 검증</div>';
+  ov.innerHTML='<div class="modal-box">'+
+    '<div class="modal-titlebar">'+
+      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
+      '<span class="modal-title">'+escapeHtml(s.stackId)+' \\u2014 dev stack info</span>'+
+      '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
+    '</div>'+
+    '<div class="modal-body">'+
+      '<div class="modal-desc">'+escapeHtml(stackLabel)+' boilerplate stack</div>'+
+      '<div class="modal-license">DB: '+escapeHtml(dbLabel)+' &nbsp;|&nbsp; Status: <span class="badge '+statusCls+'">'+escapeHtml(s.status||'unknown')+'</span></div>'+
+      '<div class="modal-sh">$ access</div>'+accessHtml+
+      '<div class="modal-sh">$ credentials</div>'+credHtml+
+      '<div class="modal-sh">$ git</div>'+gitHtml+
+      '<div class="modal-sh">$ commands</div>'+cmdHtml+
+    '</div></div>';
+  document.body.appendChild(ov);
+  document.addEventListener('keydown',handleModalEsc);
+}
+const LOG_COL={info:'#58a6ff',ok:'#3fb950',warn:'#e3b341',error:'#f85149',dim:'#484f58'};
+const log=(msg,lv)=>{lv=lv||'info';const d=document.getElementById('log');const row=document.createElement('div');row.style.cssText='padding:1px 0;line-height:1.6';row.innerHTML='<span style="color:#30363d;user-select:none">'+new Date().toLocaleTimeString()+'</span> <span style="color:'+(LOG_COL[lv]||LOG_COL.info)+'">'+escapeHtml(String(msg))+'</span>';d.insertBefore(row,d.firstChild);while(d.children.length>80)d.removeChild(d.lastChild);};
 const badge=(s)=>{const c=s==='running'?'running':s==='stopped'?'stopped':'error';return \`<span class="badge \${c}">\${s}</span>\`;}
 const fmt=(s,r)=>\`<button class="btn btn-\${s==='running'?'stop':'start'}" onclick="toggle('\${r.id}','\${s}')">\${s==='running'?'Stop':'Start'}</button><button class="btn btn-remove" onclick="removeSvc('\${r.id}')">Remove</button>\`
-async function loadServices(){
-  const r=await fetch('/api/services').then(r=>r.json()).catch(()=>({services:[]}));
+async function loadServices(manual){
+  if(manual)log('Refreshing service list...','dim');
+  const r=await fetch('/api/services').then(r=>r.json()).catch(()=>{log('API error: failed to reach admin server','error');return{services:[]};});
   const tbody=document.getElementById('svc-body');
   if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
   tbody.innerHTML=r.services.map(s=>{
@@ -229,22 +336,45 @@ async function loadServices(){
   </tr>\`;}).join('');
   const sum=r.summary;
   document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
+  if(manual&&r.services){
+    r.services.forEach(function(s){
+      var ext=getExternalUrl(s.id);
+      var lv=s.status==='running'?'ok':s.status==='error'?'error':'dim';
+      var detail='['+s.id+'] '+s.status+(s.port?' port='+s.port:'')+(s.url?' — '+s.url:'')+(ext?' | ext: '+ext:'');
+      log(detail,lv);
+    });
+    if(sum)log(sum.running+'/'+sum.total+' services running · cpu: '+(sum.cpu||'—')+' · mem: '+(sum.memory||'—'),'info');
+  }
 }
 async function toggle(id,cur){
   const action=cur==='running'?'stop':'start';
-  log(\`\${action} \${id}...\`);
+  log(\`[\${id}] \${action} requested...\`,'dim');
+  const t0=Date.now();
   const r=await fetch(\`/api/services/containers/\${id}/\${action}\`,{method:'POST'}).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  log(r.success?\`\${id} \${r.status||action+'ed'}\`:\`Error: \${r.error}\`);
+  const ms=Date.now()-t0;
+  if(r.success){
+    log(\`[\${id}] \${action==='start'?'started ✓':'stopped ✓'} (\${ms}ms)\`+(r.status?' — status: '+r.status:''),'ok');
+  }else{
+    log(\`[\${id}] \${action} failed (\${ms}ms) — \${r.error||'unknown error'}\`,'error');
+  }
   setTimeout(loadServices,800);
 }
 async function removeSvc(id){
-  if(!confirm(\`Remove \${id}? Data will be preserved (use ?purge=true to delete).\`))return;
-  log(\`Removing \${id}...\`);
+  if(!confirm(\`Remove \${id}? Data will be preserved (use purge=true to delete).\`))return;
+  log(\`[\${id}] remove requested — stopping container...\`,'warn');
+  const t0=Date.now();
   const r=await fetch(\`/api/services/containers/\${id}\`,{method:'DELETE'}).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  log(r.success?\`\${id} removed\`:\`Error: \${r.error}\`);
+  const ms=Date.now()-t0;
+  if(r.success){
+    log(\`[\${id}] removed ✓ (\${ms}ms)\`,'ok');
+  }else{
+    log(\`[\${id}] remove failed (\${ms}ms) — \${r.error||'unknown error'}\`,'error');
+  }
   setTimeout(loadServices,800);
 }
-loadServices();
+log('Brewnet admin panel connected — localhost:8088','ok');
+log('Click a service name for details · Refresh to reload status','dim');
+loadServices(true);
 setInterval(loadServices,15000);
 </script>
 </body>
@@ -269,6 +399,7 @@ const WEB_UI_SERVICES = new Set([
 // Services that must be accessed through Traefik path-prefix routing.
 // Their OVERWRITEWEBROOT / SCRIPT_NAME settings make direct-port access broken.
 const TRAEFIK_PATH_SERVICES: Record<string, string> = {
+  traefik: 'http://localhost/dashboard/',
   gitea: 'http://localhost/git',
   nextcloud: 'http://localhost/cloud',
   pgadmin: 'http://localhost:5050/pgadmin',
@@ -558,12 +689,64 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
+  // Read boilerplate metadata if available (supports both array and legacy single object)
+  let boilerplateHtml = '';
+  let boilerplateStacksJson = '[]';
+  try {
+    const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
+    if (existsSync(bpMetaPath)) {
+      const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+      // Normalize: legacy single-object → array
+      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+
+      if (stacks.length > 0) {
+        boilerplateStacksJson = JSON.stringify(stacks);
+
+        // Build HTML table rows — each stack name is clickable (triggers modal)
+        const rows = stacks.map((s, idx) => {
+          const statusCls = s.status === 'running' ? 'running'
+            : s.status === 'timeout' ? 'error' : 'stopped';
+          const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
+          const backendLink = s.backendUrl
+            ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
+            : '—';
+          const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
+            ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
+            : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
+          const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
+          const docsCell = docsUrl
+            ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
+            : '—';
+          return `<tr>
+    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
+    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
+    <td>${backendLink}</td>
+    <td>${frontendCell}</td>
+    <td>${docsCell}</td>
+    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
+  </tr>`;
+        }).join('\n');
+
+        boilerplateHtml = `
+<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
+<table>
+  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
+  <tbody>
+${rows}
+  </tbody>
+</table>`;
+      }
+    }
+  } catch { /* non-fatal */ }
+
   const dashConfig: DashboardConfig = {
     adminUsername: username ? maskUser(username) : '**',
     passwordHint: password ? maskPass(password) : '********',
     domainProvider: wizardState?.domain?.provider ?? 'local',
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
+    boilerplateHtml,
+    boilerplateStacksJson,
   };
 
   // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
@@ -657,6 +840,25 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Serve Brewnet SVG icon
+    if (req.method === 'GET' && url === '/icon.svg') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+      res.end(ICON_SVG);
+      return;
+    }
+
+    // Serve favicon.ico (binary from disk; fallback: SVG with image/x-icon)
+    if (req.method === 'GET' && url === '/favicon.ico') {
+      if (FAVICON_ICO) {
+        res.writeHead(200, { 'Content-Type': 'image/x-icon', 'Cache-Control': 'public, max-age=86400' });
+        res.end(FAVICON_ICO);
+      } else {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=86400' });
+        res.end(ICON_SVG);
+      }
       return;
     }
 

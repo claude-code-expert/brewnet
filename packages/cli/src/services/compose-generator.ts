@@ -202,14 +202,34 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
   const env: Record<string, string> = {
     USER_UID: '1000',
     USER_GID: '1000',
+    // Lock the web installer — prevents the setup wizard from running on first access.
+    // Without this, visiting the Gitea URL triggers the installer which writes app.ini
+    // with whatever credentials the user enters (often wrong defaults).
+    // Once app.ini exists, Gitea ignores ALL env vars → DB password mismatch on restart.
+    // With INSTALL_LOCK=true, Gitea reads DB credentials exclusively from GITEA__database__* env vars.
+    'GITEA__security__INSTALL_LOCK': 'true',
   };
 
-  // Quick Tunnel: ROOT_URL must include /git/ sub-path so Gitea generates /git/assets/... links.
-  // Use Traefik's port (80) not Gitea's port (3000) — Gitea generates root-relative links (/git/...)
-  // that browsers resolve against the current origin (localhost:80 or tunnel domain).
-  // Traefik then routes /git/assets/... → strips /git → /assets/... to Gitea ✓
-  if (state.domain.cloudflare.tunnelMode === 'quick') {
+  // ROOT_URL and server domain depend on routing mode:
+  //
+  // Quick Tunnel: ONE random URL → no subdomain → path-prefix routing required.
+  //   ROOT_URL = http://localhost/git/ (sub-path so Gitea generates /git/assets/... links)
+  //   Traefik strips /git → Gitea receives clean /assets/... paths ✓
+  //   Direct port access broken (CSS 404) — intentional; use localhost/git/ via Traefik.
+  //
+  // Named Tunnel / No Tunnel: own domain → subdomain routing available.
+  //   ROOT_URL = https://git.${domain}/ (no sub-path → direct port access works like FileBrowser)
+  //   DOMAIN / SSH_DOMAIN = git.${domain} so SSH clone URLs and notification emails are correct.
+  //   Traefik routes Host(`git.${domain}`) → gitea:3000 (no strip-prefix, no sub-path).
+  const giteaTunnelMode = state.domain.cloudflare.tunnelMode;
+  const giteaDomain = state.domain.name;
+  if (giteaTunnelMode === 'quick') {
     env['GITEA__server__ROOT_URL'] = 'http://localhost/git/';
+  } else if (giteaDomain) {
+    // Named Tunnel or local — subdomain routing, direct port access enabled (like FileBrowser/Jellyfin).
+    env['GITEA__server__ROOT_URL'] = `https://git.${giteaDomain}/`;
+    env['GITEA__server__DOMAIN'] = `git.${giteaDomain}`;
+    env['GITEA__server__SSH_DOMAIN'] = `git.${giteaDomain}`;
   }
 
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
@@ -252,21 +272,33 @@ function getNextcloudEnv(state: WizardState): Record<string, string> {
     NEXTCLOUD_TRUSTED_DOMAINS: state.domain.name,
   };
 
-  // Quick Tunnel: Nextcloud behind Traefik at /cloud path prefix.
-  // OVERWRITEWEBROOT makes NC generate URLs with /cloud prefix.
-  // Traefik strips /cloud before forwarding, so NC receives clean paths.
-  // Protocol detection: TRUSTED_PROXIES + Traefik forwardedHeaders.insecure
-  // lets Nextcloud read X-Forwarded-Proto from cloudflared (https for tunnel,
-  // http for local), so we do NOT hardcode OVERWRITEPROTOCOL.
+  // Nextcloud reverse-proxy overwrite settings depend on routing mode:
+  //
+  // Quick Tunnel: path-prefix routing required (single random URL, no subdomain).
+  //   OVERWRITEWEBROOT=/cloud → NC generates /cloud/... links; Traefik strips /cloud ✓
+  //   Direct port access broken — intentional; use localhost/cloud/ via Traefik.
+  //
+  // Named Tunnel / No Tunnel: subdomain routing available (cloud.${domain}).
+  //   No OVERWRITEWEBROOT needed — NC serves from root / → direct port access works.
+  //   OVERWRITEHOST + OVERWRITEPROTOCOL tell NC what the external URL looks like so
+  //   share links, CalDAV/CardDAV, and email notifications use the correct domain.
   // Ref: https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html
-  if (state.domain.cloudflare.tunnelMode === 'quick') {
+  const ncTunnelMode = state.domain.cloudflare.tunnelMode;
+  const ncDomain = state.domain.name;
+  if (ncTunnelMode === 'quick') {
     env['OVERWRITEWEBROOT'] = '/cloud';
     env['NEXTCLOUD_TRUSTED_PROXIES'] = 'traefik';
     // Include localhost variants for direct-port access; tunnel domain is
     // added post-install via `occ` once the Quick Tunnel URL is known.
     const portMap = state.portRemapping ?? {};
     const ncPort = portMap[8443] ?? 8443;
-    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${state.domain.name} localhost localhost:${ncPort}`;
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${ncDomain} localhost localhost:${ncPort}`;
+  } else if (ncDomain) {
+    // Named Tunnel or local — subdomain routing, direct port access enabled.
+    env['OVERWRITEHOST'] = `cloud.${ncDomain}`;
+    env['OVERWRITEPROTOCOL'] = 'https';
+    env['NEXTCLOUD_TRUSTED_PROXIES'] = 'traefik';
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `cloud.${ncDomain} localhost`;
   }
 
   if (state.servers.dbServer.enabled && state.servers.dbServer.primary) {
@@ -478,12 +510,16 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
   switch (serviceId) {
     case 'traefik': {
       const httpHost = remap(80);
-      const httpsHost = remap(443);
+      const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
       // No port 8080 — Dashboard uses label-based routing (api.insecure=false)
-      return [
-        `${httpHost}:80`,
-        `${httpsHost}:443`,
-      ];
+      // Quick Tunnel: Cloudflare handles HTTPS externally; exposing 443 locally
+      // causes browsers to auto-upgrade HTTP→HTTPS, hit Traefik's default
+      // self-signed cert, and get 404 (no websecure routers defined).
+      if (isQuickTunnel) {
+        return [`${httpHost}:80`];
+      }
+      const httpsHost = remap(443);
+      return [`${httpHost}:80`, `${httpsHost}:443`];
     }
     case 'nginx':
       return [`${remap(80)}:80`, `${remap(443)}:443`];
@@ -509,8 +545,17 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
       return [`${remap(25)}:25`, `${remap(587)}:587`, `${remap(993)}:993`];
     case 'jellyfin':
       return [`${remap(8096)}:8096`];
-    case 'nextcloud':
+    case 'nextcloud': {
+      // Quick Tunnel: OVERWRITEWEBROOT=/cloud makes direct-port access broken
+      //   (NC generates /cloud/... links but Apache root has no /cloud/ subdir).
+      //   Do NOT expose host port — all access must go through Traefik at localhost/cloud.
+      //   Same pattern as Gitea (L501-504): hide HTTP port when using path-prefix routing.
+      // Named Tunnel / no tunnel: OVERWRITEWEBROOT not set → direct port access works.
+      if (state.domain.cloudflare.tunnelMode === 'quick') {
+        return [];
+      }
       return [`${remap(8443)}:80`];
+    }
     case 'minio':
       return [`${remap(9000)}:9000`, `${remap(9001)}:9001`];
     case 'filebrowser':
@@ -674,9 +719,14 @@ function buildComposeService(
       '--providers.docker.exposedbydefault=false',
       '--providers.docker.network=brewnet',
       '--entrypoints.web.address=:80',
-      '--entrypoints.websecure.address=:443',
       '--api.insecure=true',
     ];
+    // Websecure entrypoint (HTTPS) is only needed when a real SSL cert is in use.
+    // Quick Tunnel: Cloudflare terminates HTTPS; exposing port 443 locally causes
+    // browsers to auto-upgrade HTTP→HTTPS and hit a 404 (no websecure routers).
+    if (!isQuickTunnel) {
+      cmds.push('--entrypoints.websecure.address=:443');
+    }
     if (isQuickTunnel) {
       // Preserve X-Forwarded-Proto from cloudflared so services behind Traefik
       // (e.g. Nextcloud) can detect the original protocol without hardcoding

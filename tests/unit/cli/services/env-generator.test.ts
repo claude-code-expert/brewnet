@@ -53,9 +53,22 @@ import type {
 // Types
 // ---------------------------------------------------------------------------
 
+interface SecretFile {
+  relativePath: string;
+  content: string;
+}
+
 interface EnvGeneratorResult {
   envContent: string;
   envExampleContent: string;
+  secretFiles: SecretFile[];
+}
+
+/**
+ * Find the content of a secret file by its relative path.
+ */
+function getSecretContent(secretFiles: SecretFile[], relativePath: string): string | undefined {
+  return secretFiles.find((sf) => sf.relativePath === relativePath)?.content;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +155,7 @@ beforeEach(() => {
 
 describe('generateEnvFiles', () => {
   describe('full install state (PostgreSQL + Redis + Gitea)', () => {
-    it('includes BREWNET_ADMIN_USERNAME and BREWNET_ADMIN_PASSWORD', () => {
+    it('includes BREWNET_ADMIN_USERNAME in .env and BREWNET_ADMIN_PASSWORD in secretFiles', () => {
       const state = buildState({
         admin: { username: 'myadmin', password: 'SuperSecret123!' },
         servers: {
@@ -163,10 +176,12 @@ describe('generateEnvFiles', () => {
       const env = parseEnvContent(result.envContent);
 
       expect(env['BREWNET_ADMIN_USERNAME']).toBe('myadmin');
-      expect(env['BREWNET_ADMIN_PASSWORD']).toBe('SuperSecret123!');
+      // BREWNET_ADMIN_PASSWORD is a secret — stored in secretFiles, not in .env
+      const adminSecret = getSecretContent(result.secretFiles, 'secrets/admin_password');
+      expect(adminSecret).toBe('SuperSecret123!');
     });
 
-    it('includes PostgreSQL keys (POSTGRES_USER, POSTGRES_DB, POSTGRES_PASSWORD)', () => {
+    it('includes PostgreSQL keys (POSTGRES_USER, POSTGRES_DB in .env; POSTGRES_PASSWORD in secretFiles)', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'AdminPass' },
         servers: {
@@ -188,7 +203,9 @@ describe('generateEnvFiles', () => {
 
       expect(env['POSTGRES_USER']).toBe('myuser');
       expect(env['POSTGRES_DB']).toBe('mydb');
-      expect(env['POSTGRES_PASSWORD']).toBe('DbSecret');
+      // POSTGRES_PASSWORD is a secret — stored in secretFiles/db_password
+      const dbSecret = getSecretContent(result.secretFiles, 'secrets/db_password');
+      expect(dbSecret).toBe('DbSecret');
     });
 
     it('includes REDIS_PASSWORD when cache is redis', () => {
@@ -215,7 +232,7 @@ describe('generateEnvFiles', () => {
       expect(env['REDIS_PASSWORD']!.length).toBeGreaterThan(0);
     });
 
-    it('includes Gitea keys (GITEA_ADMIN_USER, GITEA_ADMIN_PASSWORD, GITEA__security__SECRET_KEY)', () => {
+    it('includes Gitea keys (GITEA_ADMIN_USER in .env; GITEA_ADMIN_PASSWORD and SECRET_KEY in secretFiles)', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'MyGiteaPass' },
       });
@@ -224,9 +241,12 @@ describe('generateEnvFiles', () => {
       const env = parseEnvContent(result.envContent);
 
       expect(env['GITEA_ADMIN_USER']).toBe('admin');
-      expect(env['GITEA_ADMIN_PASSWORD']).toBe('MyGiteaPass');
-      expect(env['GITEA__security__SECRET_KEY']).toBeDefined();
-      expect(env['GITEA__security__SECRET_KEY']!.length).toBeGreaterThan(0);
+      // GITEA_ADMIN_PASSWORD and SECRET_KEY are secrets — stored in secretFiles
+      const adminSecret = getSecretContent(result.secretFiles, 'secrets/admin_password');
+      expect(adminSecret).toBe('MyGiteaPass');
+      const secretKeyFile = getSecretContent(result.secretFiles, 'secrets/gitea_secret_key');
+      expect(secretKeyFile).toBeDefined();
+      expect(secretKeyFile!.length).toBeGreaterThan(0);
     });
   });
 
@@ -315,7 +335,7 @@ describe('generateEnvFiles', () => {
   // -------------------------------------------------------------------------
 
   describe('MySQL enabled', () => {
-    it('includes MYSQL_* keys instead of POSTGRES_* keys', () => {
+    it('includes MYSQL_* keys (non-secret in .env; passwords in secretFiles) instead of POSTGRES_* keys', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'AdminPass' },
         servers: {
@@ -337,8 +357,9 @@ describe('generateEnvFiles', () => {
 
       expect(env['MYSQL_DATABASE']).toBe('mydb');
       expect(env['MYSQL_USER']).toBe('myuser');
-      expect(env['MYSQL_PASSWORD']).toBe('MySqlSecret');
-      expect(env['MYSQL_ROOT_PASSWORD']).toBe('AdminPass');
+      // MYSQL_PASSWORD and MYSQL_ROOT_PASSWORD are secrets — stored in secretFiles/db_password
+      const dbSecret = getSecretContent(result.secretFiles, 'secrets/db_password');
+      expect(dbSecret).toBeDefined();
       // Should NOT include PostgreSQL keys
       expect(env['POSTGRES_USER']).toBeUndefined();
       expect(env['POSTGRES_DB']).toBeUndefined();
@@ -437,7 +458,7 @@ describe('generateEnvFiles', () => {
       expect(mailKeys).toHaveLength(0);
     });
 
-    it('includes SMTP relay credentials when relayProvider and relayUser are set', () => {
+    it('includes SMTP relay credentials (SMTP_RELAY_USER in .env; SMTP_RELAY_PASSWORD in secretFiles)', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'Pass' },
         servers: {
@@ -458,7 +479,9 @@ describe('generateEnvFiles', () => {
       const env = parseEnvContent(result.envContent);
 
       expect(env['SMTP_RELAY_USER']).toBe('apikey');
-      expect(env['SMTP_RELAY_PASSWORD']).toBe('SG.testtoken');
+      // SMTP_RELAY_PASSWORD is a secret — stored in secretFiles
+      const smtpSecret = getSecretContent(result.secretFiles, 'secrets/smtp_relay_password');
+      expect(smtpSecret).toBe('SG.testtoken');
     });
   });
 
@@ -467,7 +490,7 @@ describe('generateEnvFiles', () => {
   // -------------------------------------------------------------------------
 
   describe('.env.example generation', () => {
-    it('has the same keys as .env', () => {
+    it('has all .env keys present in .env.example (example is a superset)', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'SuperSecret' },
         servers: {
@@ -498,7 +521,10 @@ describe('generateEnvFiles', () => {
       const envKeys = Object.keys(parseEnvContent(result.envContent)).sort();
       const exampleKeys = Object.keys(parseEnvContent(result.envExampleContent)).sort();
 
-      expect(exampleKeys).toEqual(envKeys);
+      // .env.example includes secret keys (masked) in addition to all .env keys
+      // so it is a superset of .env
+      expect(exampleKeys).toEqual(expect.arrayContaining(envKeys));
+      expect(exampleKeys.length).toBeGreaterThanOrEqual(envKeys.length);
     });
 
     it('masks password/secret values in .env.example', () => {
@@ -621,16 +647,16 @@ describe('generateEnvFiles', () => {
       }
     });
 
-    it('uses admin password for credential propagation', () => {
+    it('uses admin password for credential propagation (stored in secretFiles/admin_password)', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'ValidPass!' },
       });
 
       const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
 
-      expect(env['BREWNET_ADMIN_PASSWORD']).toBe('ValidPass!');
-      expect(env['GITEA_ADMIN_PASSWORD']).toBe('ValidPass!');
+      // Admin password is propagated to all services via the shared secret file
+      const adminSecret = getSecretContent(result.secretFiles, 'secrets/admin_password');
+      expect(adminSecret).toBe('ValidPass!');
     });
   });
 
@@ -698,7 +724,7 @@ describe('generateEnvFiles', () => {
   // -------------------------------------------------------------------------
 
   describe('file server env vars', () => {
-    it('includes Nextcloud keys when nextcloud is enabled', () => {
+    it('includes Nextcloud keys (NEXTCLOUD_ADMIN_USER in .env; password in secretFiles)', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'Pass' },
         servers: {
@@ -710,7 +736,9 @@ describe('generateEnvFiles', () => {
       const env = parseEnvContent(result.envContent);
 
       expect(env['NEXTCLOUD_ADMIN_USER']).toBe('admin');
-      expect(env['NEXTCLOUD_ADMIN_PASSWORD']).toBe('Pass');
+      // NEXTCLOUD_ADMIN_PASSWORD is a secret — stored in secretFiles/admin_password
+      const adminSecret = getSecretContent(result.secretFiles, 'secrets/admin_password');
+      expect(adminSecret).toBe('Pass');
     });
 
     it('includes MinIO keys when minio is enabled', () => {

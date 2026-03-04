@@ -3,6 +3,56 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [001-create-app → develop] - 2026-03-04 17:00
+
+### 🎯 Prompts
+1. "근데 난 이해가 안되는 부분이 file browser나 jellyfin의 경우 별도의 도메인으로 클라우드플레어 터널링이 되는거잖아 왜 gitea만 안된다는거지? nodejs nextjs 서버도 안떠 ports are not available: 0.0.0.0:3000"
+2. "node 나 다른 기술 스택 실행시 이미 포트 점유중이면 다른 포트 써도 되는거 아냐?"
+3. "gitea 여전히 사용자 이름 또는 암호가 올바르지 않습니다. 내가 뭘 해줘야 하지?"
+4. "시크릿창에서도 안돼"
+5. "그럼 초기화 하고 다시 빌드 한 뒤에 설치 테스트 해볼수있도록 해"
+6. "근데 brewnet uninstall에 컨테이너 관련 설정들은 안 없어지는거야?"
+7. "여기까지 일단 커밋하고 푸시한 뒤 develop에 머지해"
+
+### ✅ Changes
+- **Fixed**: Gitea admin user creation — `docker exec brewnet-gitea` → `docker exec -u git brewnet-gitea` (root 실행 거부 해결) (`packages/cli/src/wizard/steps/generate.ts`)
+- **Fixed**: Non-unified 스택 프론트엔드 포트 충돌 — `FRONTEND_PORT`도 `findFreePort`로 자동 선택 (`packages/cli/src/wizard/steps/generate.ts`, `packages/cli/src/services/boilerplate-manager.ts`)
+- **Fixed**: `brewnet uninstall` — 프로젝트 state 없어도 고아 컨테이너/볼륨/네트워크 전부 정리 (`packages/cli/src/commands/uninstall.ts`)
+- **Fixed**: `brewnet uninstall` 네트워크 제거 — 하드코딩 `brewnet, brewnet-internal` → `docker network ls --filter name=brewnet` 동적 조회 (`packages/cli/src/services/uninstall-manager.ts`)
+- **Fixed**: Named Tunnel 모드 Gitea/Nextcloud `ROOT_URL` 미설정 — 서브도메인 방식으로 수정 (`packages/cli/src/services/compose-generator.ts`)
+- **Added**: `brewnet create-app` 명령 — 16개 스택 카탈로그, 클론→환경설정→실행 전체 플로우 (`packages/cli/src/commands/create-app.ts`, `packages/cli/src/config/stacks.ts`, `packages/cli/src/services/boilerplate-manager.ts`)
+- **Added**: Admin panel 상세 로그 패널 — 색상 레벨별 로그(info/ok/warn/error/dim) (`packages/cli/src/services/admin-server.ts`)
+- **Added**: Gitea `INSTALL_LOCK=true` — 웹 설치 마법사 비활성화, env-var 기반 설정 강제
+
+### 🔍 Root Causes
+- **Gitea 로그인 실패**: `docker exec` 가 root로 실행 → Gitea "not supposed to be run as root" 에러 → admin 계정 생성 자체가 안 됨 → catch가 조용히 무시
+- **FRONTEND_PORT 충돌**: `nodejs-express` 등 non-unified 스택은 frontend 컨테이너(port 3000)가 별도 존재. `findFreePort`가 `BACKEND_PORT`만 처리하고 `FRONTEND_PORT`는 방치
+- **uninstall 미완**: `listInstallations()` 결과 없으면 early return (Docker 정리 없음); 네트워크명 하드코딩으로 `my-homeserver_brewnet-internal` 형식 미처리
+- **비밀번호 특수문자**: bash 쌍따옴표 안 `!@` → 히스토리 확장 → 엉뚱한 문자열 저장. execa (셸 없음)에선 무관
+
+### 📊 Test Results
+- Test Suites: 1 skipped (boilerplate-generation TDD stub), 63 passed
+- Tests: 2618 passed, 38 skipped
+
+### 📁 Files Modified
+- `packages/cli/src/wizard/steps/generate.ts` (+170, -30 lines)
+- `packages/cli/src/services/boilerplate-manager.ts` (+352 lines, new)
+- `packages/cli/src/commands/create-app.ts` (+435 lines, new)
+- `packages/cli/src/commands/uninstall.ts` (+38, -3 lines)
+- `packages/cli/src/services/uninstall-manager.ts` (+12, -6 lines)
+- `packages/cli/src/services/compose-generator.ts` (+69, -0 lines)
+- `packages/cli/src/services/admin-server.ts` (+172, -0 lines)
+- `packages/cli/src/config/stacks.ts` (+217 lines, new)
+- `tests/unit/cli/services/uninstall-manager.test.ts` (+35, -15 lines)
+- `tests/unit/cli/services/uninstall-complete-cleanup.test.ts` (+25, -10 lines)
+- `tests/integration/uninstall.test.ts` (+18, -10 lines)
+
+### 🌿 Branches
+- `001-create-app` (commit: 8686e95)
+- `develop` (merge commit: c09ed9f)
+
+---
+
 ## [feature/traefik] - 2026-03-02 21:30
 
 ### 🎯 Prompts

@@ -18,9 +18,16 @@
 | [gitea-subpath-direct-port-css-broken.md](./gitea-subpath-direct-port-css-broken.md) | Configuration / Docker | 2026-03-02 | ✅ 해결됨 | 1 |
 | [jellyfin-baseurl-healthcheck-mismatch.md](./jellyfin-baseurl-healthcheck-mismatch.md) | Configuration / Network | 2026-03-02 | ✅ 해결됨 | 1 |
 | [filebrowser-login-redirect-404-settings-json.md](./filebrowser-login-redirect-404-settings-json.md) | Configuration / Runtime | 2026-03-02 | ✅ 해결됨 | 1 |
-| [nextcloud-trusted-domains-quicktunnel-expiry.md](./nextcloud-trusted-domains-quicktunnel-expiry.md) | Configuration / Network | 2026-03-02 | ⚠️ 우회 적용 | 1 |
-| [psql-c-gexec-syntax-error.md](./psql-c-gexec-syntax-error.md) | Runtime / Configuration | 2026-03-02 | ✅ 해결됨 | 1 |
+| [nextcloud-trusted-domains-quicktunnel-expiry.md](./nextcloud-trusted-domains-quicktunnel-expiry.md) | Configuration / Network | 2026-03-03 | ✅ 해결됨 | 2 |
+| [psql-c-gexec-syntax-error.md](./psql-c-gexec-syntax-error.md) | Runtime / Docker | 2026-03-03 | ✅ 해결됨 | 2 |
 | [jellyfin-dashboard-url-wrong-hash.md](./jellyfin-dashboard-url-wrong-hash.md) | Configuration | 2026-03-02 | ✅ 해결됨 | 여러 세션 반복 |
+| [wizard-boilerplate-generate-missing-call.md](./wizard-boilerplate-generate-missing-call.md) | Configuration / Runtime | 2026-03-03 | ✅ 해결됨 | 1 |
+| [gitea-db-auth-install-lock-missing.md](./gitea-db-auth-install-lock-missing.md) | Configuration / Docker | 2026-03-03 | ✅ 해결됨 | 1 |
+| [gitea-docker-exec-root-rejection.md](./gitea-docker-exec-root-rejection.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [boilerplate-frontend-port-conflict.md](./boilerplate-frontend-port-conflict.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [uninstall-orphaned-docker-resources.md](./uninstall-orphaned-docker-resources.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [gitea-password-bash-history-expansion.md](./gitea-password-bash-history-expansion.md) | Runtime / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [traefik-port-443-browser-https-upgrade.md](./traefik-port-443-browser-https-upgrade.md) | Configuration / Docker / Network | 2026-03-04 | ✅ 해결됨 | 1 |
 
 ## 에러 타입별 분류
 
@@ -55,6 +62,21 @@
 
 ### Configuration
 - [Jellyfin 대시보드 URL이 #/home으로 잘못 표시](./jellyfin-dashboard-url-wrong-hash.md)
+
+### Configuration / Runtime
+- [Wizard Dev Stack 보일러플레이트 GitHub 클론 미실행 (generate.ts 누락 호출)](./wizard-boilerplate-generate-missing-call.md)
+- [Gitea DB 인증 실패 — INSTALL_LOCK 누락으로 웹 설치 마법사 실행 후 app.ini 덮어쓰기](./gitea-db-auth-install-lock-missing.md)
+
+### Docker / Configuration
+- [Gitea docker exec root 실행 거부 — `-u git` 플래그 누락](./gitea-docker-exec-root-rejection.md)
+- [Boilerplate 프론트엔드 포트 3000 충돌 — Non-unified 스택 FRONTEND_PORT 미자동선택](./boilerplate-frontend-port-conflict.md)
+- [brewnet uninstall 고아 Docker 리소스 미정리 — 조기 반환 + 하드코딩 네트워크 이름](./uninstall-orphaned-docker-resources.md)
+
+### Runtime / Configuration
+- [Bash history expansion으로 Gitea 비밀번호 특수문자 변조](./gitea-password-bash-history-expansion.md)
+
+### Configuration / Docker / Network
+- [Traefik 포트 443 불필요하게 오픈 — 브라우저 HTTP→HTTPS 자동 업그레이드로 서비스 접근 불가](./traefik-port-443-browser-https-upgrade.md)
 
 ## 신규 트러블슈팅 기록 방법
 

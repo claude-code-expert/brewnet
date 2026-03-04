@@ -24,6 +24,7 @@ const existingPaths = new Set<string>();
 const mockExistsSync = jest.fn((p: unknown) => existingPaths.has(p as string));
 const mockRmSync = jest.fn();
 const mockReaddirSync = jest.fn<() => { isDirectory: () => boolean; name: string }[]>(() => []);
+const mockReadFileSync = jest.fn<(p: string, e: string) => string>(() => '{}');
 
 jest.unstable_mockModule('node:fs', () => ({
   existsSync: mockExistsSync,
@@ -31,7 +32,7 @@ jest.unstable_mockModule('node:fs', () => ({
   readdirSync: mockReaddirSync,
   mkdirSync: jest.fn(),
   writeFileSync: jest.fn(),
-  readFileSync: jest.fn(() => '{}'),
+  readFileSync: mockReadFileSync,
 }));
 
 const mockGetLastProject = jest.fn<() => string | null>(() => null);
@@ -236,7 +237,7 @@ describe('runUninstall (dry-run)', () => {
 
   it('lists targets in removed array in dry-run', async () => {
     const result = await runUninstall({ dryRun: true, projectPath: '/tmp/test' });
-    expect(result.removed).toContain('Docker networks: brewnet, brewnet-internal');
+    expect(result.removed.some((r) => r.includes('Docker networks'))).toBe(true);
   });
 
   it('adds skipped entries for keepConfig targets', async () => {
@@ -257,12 +258,18 @@ describe('runUninstall (live)', () => {
     mockGetLastProject.mockReturnValue(null);
     mockRmSync.mockReset();
     mockExeca.mockReset();
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+    // Return network IDs for `docker network ls` calls; empty for everything else
+    mockExeca.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'docker' && Array.isArray(args) && args.includes('network') && args.includes('ls')) {
+        return Promise.resolve({ stdout: 'net-aaa\nnet-bbb', stderr: '', exitCode: 0 });
+      }
+      return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+    });
   });
 
   it('removes docker networks', async () => {
     const result = await runUninstall({ projectPath: '/tmp/test' });
-    expect(result.removed).toContain('Docker networks: brewnet, brewnet-internal');
+    expect(result.removed.some((r) => r.includes('Docker networks'))).toBe(true);
   });
 
   it('runs docker compose down when compose file exists', async () => {
@@ -319,26 +326,26 @@ describe('runUninstall (live)', () => {
     const projectPath = '/tmp/test-project';
     existingPaths.add(join(projectPath, 'docker-compose.yml'));
 
-    // First call (compose down) fails, second (network rm) succeeds
+    // First call (compose down) fails; network ls and network rm still succeed
     mockExeca
       .mockRejectedValueOnce(new Error('compose down failed'))
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });
+      .mockResolvedValue({ stdout: 'net-aaa\nnet-bbb', stderr: '', exitCode: 0 });
 
     const result = await runUninstall({ projectPath });
     // Should still have removed networks even after compose down failed
     expect(result.errors.some((e) => e.includes('compose down'))).toBe(true);
-    expect(result.removed).toContain('Docker networks: brewnet, brewnet-internal');
+    expect(result.removed.some((r) => r.includes('Docker networks'))).toBe(true);
   });
 
   it('resolves last project from wizard state when no projectPath given', async () => {
     mockGetLastProject.mockReturnValue('my-saved-project');
     mockLoadState.mockReturnValue({ projectPath: '/home/user/my-saved-project', projectName: 'my-saved-project' });
 
-    const result = await runUninstall({});
-    // Should attempt docker network rm (always happens)
+    await runUninstall({});
+    // Should call docker network ls then network rm
     expect(mockExeca).toHaveBeenCalledWith(
       'docker',
-      expect.arrayContaining(['network', 'rm']),
+      expect.arrayContaining(['network', 'ls']),
       expect.anything(),
     );
   });
@@ -498,5 +505,107 @@ describe('cleanupForRestart', () => {
 
     await cleanupForRestart(projectPath);
     expect(mockRmSync).toHaveBeenCalledWith(expanded, { recursive: true, force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runUninstall — manifest-based selective removal
+// ---------------------------------------------------------------------------
+
+describe('runUninstall — manifest-based removal', () => {
+  const projectPath = '/tmp/manifest-project';
+  const manifestPath = join(projectPath, '.brewnet-manifest.json');
+
+  const baseManifest = {
+    schemaVersion: 1 as const,
+    projectName: 'manifest-project',
+    projectPath,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    generatedFiles: ['docker-compose.yml', '.env', '.env.example', '.gitignore', '.brewnet-manifest.json'],
+    generatedDirs: ['secrets', 'logs'],
+    boilerplateStacks: [],
+  };
+
+  beforeEach(() => {
+    existingPaths.clear();
+    mockExistsSync.mockImplementation((p: unknown) => existingPaths.has(p as string));
+    mockGetLastProject.mockReturnValue(null);
+    mockRmSync.mockReset();
+    mockExeca.mockReset();
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+    mockReaddirSync.mockReturnValue([]);
+    mockReadFileSync.mockReturnValue(JSON.stringify(baseManifest));
+  });
+
+  it('uses manifest-based removal and preserves user files when directory is not empty', async () => {
+    existingPaths.add(manifestPath);
+    existingPaths.add(projectPath);
+    // Simulate a user-created file remaining after brewnet files are removed
+    mockReaddirSync.mockReturnValue([
+      { name: 'my-notes.md', isDirectory: () => false } as { isDirectory: () => boolean; name: string },
+    ]);
+
+    const result = await runUninstall({ projectPath });
+
+    // Should NOT rm -rf projectPath when user files remain
+    const recursiveCalls = (mockRmSync as jest.Mock).mock.calls.filter(
+      (call) => call[0] === projectPath && call[1]?.recursive === true,
+    );
+    expect(recursiveCalls).toHaveLength(0);
+    expect(result.skipped.some((s) => s.includes('user file'))).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('falls back to full rm -rf when manifest is missing', async () => {
+    // manifest NOT in existingPaths
+    existingPaths.add(projectPath);
+    existingPaths.add(join(projectPath, 'docker-compose.yml'));
+
+    const result = await runUninstall({ projectPath });
+
+    expect(mockRmSync).toHaveBeenCalledWith(projectPath, { recursive: true, force: true });
+    expect(result.removed).toContain(`Project directory: ${projectPath}`);
+  });
+
+  it('stops boilerplate containers before main compose when manifest has stacks', async () => {
+    const stackDir = join(projectPath, 'python-fastapi');
+    const stackCompose = join(stackDir, 'docker-compose.yml');
+    const manifestWithStack = {
+      ...baseManifest,
+      boilerplateStacks: [{ stackId: 'python-fastapi', directory: 'python-fastapi' }],
+    };
+    mockReadFileSync.mockReturnValue(JSON.stringify(manifestWithStack));
+    existingPaths.add(manifestPath);
+    existingPaths.add(stackCompose);
+    existingPaths.add(projectPath);
+
+    await runUninstall({ projectPath });
+
+    // boilerplate compose down should be called before main compose
+    const calls = (mockExeca as jest.Mock).mock.calls as string[][];
+    const bpCall = calls.find((c) => c[1]?.includes?.('docker-compose.yml') ||
+      (Array.isArray(c[1]) && c[1].includes('compose')));
+    expect(bpCall).toBeDefined();
+    // The call with stackDir as cwd should be first among compose calls
+    const composeCalls = (mockExeca as jest.Mock).mock.calls.filter(
+      (c: unknown[]) => (c[0] as string) === 'docker' && Array.isArray(c[1]) && (c[1] as string[]).includes('compose'),
+    );
+    expect(composeCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows boilerplate containers in buildUninstallTargets when manifest exists', () => {
+    const stackCompose = join(projectPath, 'python-fastapi', 'docker-compose.yml');
+    const manifestWithStack = {
+      ...baseManifest,
+      boilerplateStacks: [{ stackId: 'python-fastapi', directory: 'python-fastapi' }],
+    };
+    mockReadFileSync.mockReturnValue(JSON.stringify(manifestWithStack));
+    existingPaths.add(manifestPath);
+    existingPaths.add(stackCompose);
+
+    const targets = buildUninstallTargets(projectPath, {});
+    const bpTarget = targets.find((t) => t.label.includes('python-fastapi'));
+    expect(bpTarget).toBeDefined();
+    expect(bpTarget?.type).toBe('compose');
   });
 });

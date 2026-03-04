@@ -24,17 +24,20 @@ jest.unstable_mockModule(
   }),
 );
 
-const mockGenerateEnvFiles = jest.fn<() => { envContent: string; envExampleContent: string }>(() => ({
+const mockGenerateEnvFiles = jest.fn<() => { envContent: string; envExampleContent: string; secretFiles: { relativePath: string; content: string }[] }>(() => ({
   envContent: 'ADMIN_USER=admin',
   envExampleContent: 'ADMIN_USER=<your_value>',
+  secretFiles: [],
 }));
 const mockWriteEnvFile = jest.fn();
+const mockWriteSecretFiles = jest.fn();
 
 jest.unstable_mockModule(
   '../../../../../packages/cli/src/services/env-generator.js',
   () => ({
     generateEnvFiles: mockGenerateEnvFiles,
     writeEnvFile: mockWriteEnvFile,
+    writeSecretFiles: mockWriteSecretFiles,
   }),
 );
 
@@ -180,6 +183,7 @@ beforeEach(() => {
   mockGenerateEnvFiles.mockReturnValue({
     envContent: 'ADMIN_USER=admin',
     envExampleContent: 'ADMIN_USER=<your_value>',
+    secretFiles: [],
   });
   mockGenerateInfraConfigs.mockReturnValue([
     { path: 'traefik/traefik.yml', content: '# traefik' },
@@ -355,6 +359,11 @@ describe('runGenerateStep', () => {
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // network create brewnet
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // pre-cleanup: docker compose down
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // gitea_db: compose up postgresql
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // gitea_db: pg_isready (1 poll)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // gitea_db: psql SELECT 1 (user check)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // gitea_db: psql SELECT gitea_db (no db yet)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })           // gitea_db: psql CREATE DATABASE
         .mockResolvedValueOnce({ stdout: '', stderr: 'up failed', exitCode: 1 }); // up fails
     });
 
@@ -384,6 +393,11 @@ describe('runGenerateStep', () => {
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // network create brewnet
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pre-cleanup: docker compose down
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // gitea_db: compose up postgresql
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // gitea_db: pg_isready (1 poll)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // gitea_db: psql SELECT 1 (user check)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // gitea_db: psql SELECT gitea_db (no db yet)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })   // gitea_db: psql CREATE DATABASE
         .mockRejectedValueOnce(new Error('docker daemon not running'));    // up throws
       mockSelect.mockResolvedValue('restart');
 
@@ -464,6 +478,11 @@ describe('runGenerateStep', () => {
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // network create brewnet
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: down
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: compose up postgresql
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: pg_isready (1 poll)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql SELECT 1 (user check)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql SELECT gitea_db (no db yet)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql CREATE DATABASE
         .mockResolvedValueOnce({ stdout: '', stderr: conflictStderr, exitCode: 1 })    // up fails (conflict)
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f brewnet-traefik
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 });               // up retry succeeds
@@ -488,6 +507,11 @@ describe('runGenerateStep', () => {
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // network create brewnet
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: down
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: compose up postgresql
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: pg_isready (1 poll)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql SELECT 1 (user check)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql SELECT gitea_db (no db yet)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql CREATE DATABASE
         .mockResolvedValueOnce({ stdout: '', stderr: conflictStderr, exitCode: 1 })    // up fails (conflict)
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f brewnet-traefik
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f brewnet-gitea
@@ -509,6 +533,11 @@ describe('runGenerateStep', () => {
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // network create brewnet
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: down
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // pre-cleanup: docker ps -a (no stale)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: compose up postgresql
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: pg_isready (1 poll)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql SELECT 1 (user check)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql SELECT gitea_db (no db yet)
+        .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // gitea_db: psql CREATE DATABASE
         .mockResolvedValueOnce({ stdout: '', stderr: conflictStderr, exitCode: 1 })    // up fails (conflict)
         .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })                // docker rm -f
         .mockResolvedValueOnce({ stdout: '', stderr: 'still failing', exitCode: 1 });  // up retry also fails

@@ -36,6 +36,9 @@ export type {
   SetupType,
   FileBrowserMode,
   DevMode,
+  // Install manifest types
+  InstallManifest,
+  InstallManifestStack,
 } from './types/wizard-state.js';
 
 export type {
@@ -102,6 +105,15 @@ export {
 } from './schemas/wizard-state.schema.js';
 
 export type { ValidatedWizardState } from './schemas/wizard-state.schema.js';
+
+// ─── Create-App Types ─────────────────────────────────────────────────────────
+
+export type {
+  StackEntry,
+  DbDriver,
+  CreateAppOptions,
+  StackHealthResult,
+} from './types/create-app.js';
 
 export {
   // Config schema and validators

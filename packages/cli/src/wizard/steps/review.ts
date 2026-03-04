@@ -248,6 +248,7 @@ export function exportConfig(state: WizardState, projectPath: string): string {
         dbName: state.servers.dbServer.dbName,
         dbUser: state.servers.dbServer.dbUser,
         adminUI: state.servers.dbServer.adminUI,
+        pgadminEmail: state.servers.dbServer.pgadminEmail,
         cache: state.servers.dbServer.cache,
         // dbPassword excluded
       },

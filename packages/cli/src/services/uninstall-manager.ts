@@ -13,11 +13,12 @@
  * @module services/uninstall-manager
  */
 
-import { existsSync, rmSync, readdirSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execa } from 'execa';
 import { DOCKER_COMPOSE_FILENAME } from '@brewnet/shared';
+import type { InstallManifest, InstallManifestStack } from '@brewnet/shared';
 
 /**
  * Augment PATH with common Docker / Homebrew install locations.
@@ -88,6 +89,131 @@ export interface UninstallResult {
 
 const BREWNET_DIR = join(homedir(), '.brewnet');
 
+// ---------------------------------------------------------------------------
+// Manifest helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Read .brewnet-manifest.json from projectPath.
+ * Returns null if the file is missing or unparseable (legacy install).
+ */
+function readManifest(projectPath: string): InstallManifest | null {
+  const manifestPath = join(projectPath, '.brewnet-manifest.json');
+  if (!existsSync(manifestPath)) return null;
+  try {
+    const raw = readFileSync(manifestPath, 'utf-8');
+    const parsed = JSON.parse(raw) as Partial<InstallManifest>;
+    // Validate minimal required fields
+    if (!parsed.generatedFiles || !parsed.generatedDirs || !parsed.boilerplateStacks) {
+      return null;
+    }
+    return parsed as InstallManifest;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Stop Docker Compose services for each boilerplate stack listed in the manifest.
+ * Non-fatal — stacks may already be stopped or their compose file may be missing.
+ */
+async function stopBoilerplateContainers(
+  projectPath: string,
+  stacks: InstallManifestStack[],
+  keepData: boolean,
+  result: UninstallResult,
+): Promise<void> {
+  for (const stack of stacks) {
+    const stackDir = join(projectPath, stack.directory);
+    const stackCompose = join(stackDir, DOCKER_COMPOSE_FILENAME);
+    if (!existsSync(stackCompose)) {
+      result.skipped.push(`Boilerplate containers [${stack.stackId}]: compose not found`);
+      continue;
+    }
+    try {
+      const downArgs = ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'down'];
+      if (!keepData) downArgs.push('--volumes', '--rmi', 'all');
+      await execa('docker', downArgs, { cwd: stackDir, env: augmentedEnv(), reject: false });
+      result.removed.push(
+        `Boilerplate containers [${stack.stackId}]${keepData ? '' : ' + volumes + images'}`,
+      );
+      logger.info('uninstall', `Boilerplate containers stopped: ${stack.stackId}`, { stackDir });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      result.errors.push(`docker compose down [${stack.stackId}]: ${msg}`);
+      logger.warn('uninstall', `Boilerplate compose down failed (continuing)`, { stackId: stack.stackId, error: msg });
+    }
+  }
+}
+
+/**
+ * Remove only the files and directories listed in the install manifest.
+ * Preserves any files the user added to projectPath that are not in the manifest.
+ * If the project directory becomes empty after cleanup, removes it too.
+ */
+function removeByManifest(
+  projectPath: string,
+  manifest: InstallManifest,
+  result: UninstallResult,
+): void {
+  // 1. Remove boilerplate stack directories (each is fully brewnet-owned)
+  for (const stack of manifest.boilerplateStacks) {
+    const stackDir = join(projectPath, stack.directory);
+    if (existsSync(stackDir)) {
+      try {
+        rmSync(stackDir, { recursive: true, force: true });
+        result.removed.push(`Boilerplate source [${stack.stackId}]: ${stackDir}`);
+        logger.info('uninstall', `Boilerplate directory removed: ${stack.stackId}`, { stackDir });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        result.errors.push(`rm ${stackDir}: ${msg}`);
+      }
+    }
+  }
+
+  // 2. Remove generated directories (secrets/, logs/, configs/, etc.)
+  for (const dir of manifest.generatedDirs) {
+    const dirPath = join(projectPath, dir);
+    if (existsSync(dirPath)) {
+      try {
+        rmSync(dirPath, { recursive: true, force: true });
+        result.removed.push(`Generated dir: ${dir}/`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        result.errors.push(`rm ${dirPath}: ${msg}`);
+      }
+    }
+  }
+
+  // 3. Remove individual generated files (docker-compose.yml, .env, .gitignore, etc.)
+  let removedFileCount = 0;
+  for (const file of manifest.generatedFiles) {
+    const filePath = join(projectPath, file);
+    if (existsSync(filePath)) {
+      try {
+        rmSync(filePath, { force: true });
+        removedFileCount++;
+      } catch { /* best-effort */ }
+    }
+  }
+  if (removedFileCount > 0) {
+    result.removed.push(`Generated config files: ${removedFileCount} file(s)`);
+  }
+
+  // 4. If projectPath is now empty, remove the directory itself
+  try {
+    const remaining = readdirSync(projectPath);
+    if (remaining.length === 0) {
+      rmSync(projectPath, { recursive: true, force: true });
+      result.removed.push(`Project directory (empty after cleanup): ${projectPath}`);
+    } else {
+      result.skipped.push(
+        `Project directory preserved — ${remaining.length} user file(s) remain: ${projectPath}`,
+      );
+    }
+  } catch { /* non-critical */ }
+}
+
 /**
  * Resolve project path + name from options or the last saved wizard state.
  * Always expands `~` so downstream fs / execa calls get an absolute path.
@@ -126,13 +252,32 @@ export function buildUninstallTargets(
   // Expand tilde so existsSync works on the real path
   if (projectPath) projectPath = expandPath(projectPath);
 
-  // 1. Docker containers + optionally volumes
+  // 1. Docker containers + optionally volumes (main Brewnet services)
   if (projectPath && existsSync(join(projectPath, DOCKER_COMPOSE_FILENAME))) {
     targets.push({
       label: `Docker containers${options.keepData ? '' : ' + volumes + images'}`,
       path: join(projectPath, DOCKER_COMPOSE_FILENAME),
       type: 'compose',
     });
+  }
+
+  // 1b. Boilerplate stack containers (from install manifest)
+  if (projectPath) {
+    const manifest = readManifest(projectPath);
+    if (manifest) {
+      for (const stack of manifest.boilerplateStacks) {
+        const stackCompose = join(projectPath, stack.directory, DOCKER_COMPOSE_FILENAME);
+        if (existsSync(stackCompose)) {
+          targets.push({
+            label: `Boilerplate containers [${stack.stackId}]${options.keepData ? '' : ' + volumes + images'}`,
+            path: stackCompose,
+            type: 'compose',
+            skipped: options.keepConfig,
+            skipReason: options.keepConfig ? '--keep-config' : undefined,
+          });
+        }
+      }
+    }
   }
 
   // 2. Docker networks
@@ -205,6 +350,14 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
     return result;
   }
 
+  // --- 0. Stop boilerplate stack containers (before main compose down) ---
+  if (projectPath && !options.keepConfig) {
+    const manifest = readManifest(projectPath);
+    if (manifest && manifest.boilerplateStacks.length > 0) {
+      await stopBoilerplateContainers(projectPath, manifest.boilerplateStacks, options.keepData ?? false, result);
+    }
+  }
+
   // --- 1. docker compose down ---
   if (projectPath && existsSync(join(projectPath, DOCKER_COMPOSE_FILENAME))) {
     try {
@@ -224,13 +377,19 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
     }
   }
 
-  // --- 2. docker network rm ---
+  // --- 2. docker network rm (all brewnet-* networks, including project-prefixed ones) ---
   try {
-    await execa('docker', ['network', 'rm', 'brewnet', 'brewnet-internal'], {
+    const netList = await execa('docker', ['network', 'ls', '--filter', 'name=brewnet', '-q'], {
       reject: false,
       env: augmentedEnv(),
     });
-    result.removed.push('Docker networks: brewnet, brewnet-internal');
+    const netIds = netList.stdout.trim().split('\n').filter(Boolean);
+    if (netIds.length > 0) {
+      await execa('docker', ['network', 'rm', ...netIds], { reject: false, env: augmentedEnv() });
+      result.removed.push(`Docker networks: ${netIds.length} removed`);
+    } else {
+      result.skipped.push('Docker networks (not found or already removed)');
+    }
   } catch {
     result.skipped.push('Docker networks (not found or already removed)');
   }
@@ -238,14 +397,24 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
   // --- 3. project directory ---
   if (projectPath && !options.keepConfig) {
     if (existsSync(projectPath)) {
-      try {
-        rmSync(projectPath, { recursive: true, force: true });
-        result.removed.push(`Project directory: ${projectPath}`);
-        logger.info('uninstall', 'Project directory removed', { projectPath });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        result.errors.push(`rm ${projectPath}: ${msg}`);
-        result.success = false;
+      const manifest = readManifest(projectPath);
+      if (manifest) {
+        // Manifest exists: selective removal — only remove brewnet-generated files.
+        // Files added by the user are preserved. Empty directory is cleaned up.
+        removeByManifest(projectPath, manifest, result);
+        logger.info('uninstall', 'Manifest-based removal complete', { projectPath });
+      } else {
+        // No manifest (legacy install): fall back to full directory removal.
+        logger.warn('uninstall', 'No .brewnet-manifest.json — falling back to full rm -rf', { projectPath });
+        try {
+          rmSync(projectPath, { recursive: true, force: true });
+          result.removed.push(`Project directory: ${projectPath}`);
+          logger.info('uninstall', 'Project directory removed (legacy)', { projectPath });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          result.errors.push(`rm ${projectPath}: ${msg}`);
+          result.success = false;
+        }
       }
     } else {
       result.skipped.push(`Project directory not found: ${projectPath}`);
