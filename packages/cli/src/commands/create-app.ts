@@ -22,7 +22,8 @@
  * @module commands/create-app
  */
 
-import { existsSync, rmSync, mkdirSync, appendFileSync } from 'node:fs';
+import { existsSync, rmSync, mkdirSync, appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { getLastProject, loadState } from '../wizard/state.js';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { Command } from 'commander';
@@ -114,6 +115,66 @@ function writeAuditLog(entry: AuditEntry): void {
   } catch {
     // Audit logging failure must not affect command execution
   }
+}
+
+// ---------------------------------------------------------------------------
+// Boilerplate Metadata — written to cwd/.brewnet-boilerplate.json for admin panel
+// ---------------------------------------------------------------------------
+
+interface BoilerplateMeta {
+  stackId: string;
+  appDir: string;
+  backendUrl: string;
+  frontendUrl?: string;
+  isUnified: boolean;
+  lang: string;
+  frameworkId: string;
+  dbDriver: string;
+  dbUser: string;
+  dbName: string;
+  gitBranch: string;
+  status: string;
+}
+
+/**
+ * Write or update a stack entry in .brewnet-boilerplate.json in process.cwd().
+ * Admin panel reads this file to populate the Dev Stack Apps table.
+ * Errors are silently suppressed — must not break the command.
+ */
+function writeBoilerplateMeta(entry: BoilerplateMeta): void {
+  const upsert = (dir: string): void => {
+    try {
+      const metaPath = join(dir, '.brewnet-boilerplate.json');
+      let stacks: BoilerplateMeta[] = [];
+      if (existsSync(metaPath)) {
+        try {
+          const raw = JSON.parse(readFileSync(metaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+          stacks = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+        } catch { stacks = []; }
+      }
+      const idx = stacks.findIndex((s) => s.stackId === entry.stackId);
+      if (idx >= 0) {
+        stacks[idx] = entry;
+      } else {
+        stacks.push(entry);
+      }
+      writeFileSync(metaPath, JSON.stringify(stacks, null, 2), 'utf-8');
+    } catch { /* non-critical */ }
+  };
+
+  // Always write to cwd (where admin-server falls back to when no wizard state)
+  upsert(process.cwd());
+
+  // Also write to wizard projectPath if it differs (admin-server uses this path when wizard state exists)
+  try {
+    const last = getLastProject();
+    if (last) {
+      const state = loadState(last);
+      if (state?.projectPath && state.projectPath !== process.cwd()) {
+        upsert(state.projectPath);
+      }
+    }
+  } catch { /* non-critical */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -342,6 +403,22 @@ async function runCreateApp(
       dbDriver,
       status: 'success',
       elapsedMs: Date.now() - startTime,
+    });
+
+    // ── Write boilerplate metadata for admin panel Dev Stack Apps display ──
+    writeBoilerplateMeta({
+      stackId: stack.id,
+      appDir: projectDir,
+      backendUrl: baseUrl,
+      frontendUrl: stack.isUnified ? undefined : 'http://127.0.0.1:3000',
+      isUnified: stack.isUnified,
+      lang: stack.language,
+      frameworkId: stack.framework,
+      dbDriver,
+      dbUser: 'brewnet',
+      dbName: 'brewnet_db',
+      gitBranch: `stack/${stack.id}`,
+      status: 'running',
     });
 
     // ── T013: Success box ─────────────────────────────────────────────────

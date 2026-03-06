@@ -22,6 +22,7 @@ import { getServiceDefinition, SERVICE_REGISTRY } from '../config/services.js';
 import { SERVICE_DETAIL_MAP } from './status-page.js';
 import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
+import { STACK_CATALOG } from '../config/stacks.js';
 import type { WizardState } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
@@ -72,10 +73,7 @@ interface DashboardConfig {
   domainProvider: string;
   quickTunnelUrl: string;
   zoneName: string;
-  /** Pre-rendered HTML for the boilerplate Dev Stack App section (empty string when no app) */
-  boilerplateHtml: string;
-  /** JSON-serialised array of BoilerplateMeta for JS embedding */
-  boilerplateStacksJson: string;
+  tunnelMode: 'quick' | 'named' | 'none';
 }
 
 // ---------------------------------------------------------------------------
@@ -108,11 +106,6 @@ const FAVICON_ICO = (() => {
   }
   return null;
 })();
-
-/** Minimal HTML entity escaping for server-side string injection. */
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 /**
  * Name alias map: SERVICE_REGISTRY display names → SERVICE_DETAIL_MAP keys.
@@ -203,16 +196,17 @@ tr:hover td{background:#161b22}
   <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
   <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
-${config.boilerplateHtml}
+<div id="bp-section"></div>
 <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Log<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
 <div id="log"></div>
 <script>
 var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
 var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
-var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName })};
+var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName, tunnelMode: config.tunnelMode })};
 var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
-var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
-var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
+var BOILERPLATE_STACKS = [];
+var STACK_INFO = ${JSON.stringify(Object.fromEntries(STACK_CATALOG.map(s => [s.id, { lang: s.language, framework: s.framework, version: s.version, orm: s.orm, isUnified: s.isUnified }])))};
+var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'pgadmin',path:'/pgadmin'},jellyfin:{sub:'jellyfin',path:'/jellyfin'},filebrowser:{sub:'files',path:'/files'},minio:{sub:'minio',path:'/minio'}};
 function getExternalUrl(id){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
   var e=EXT_PATHS[id];if(!e)return null;
@@ -268,30 +262,41 @@ function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o
 function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
 function showBoilerplateModal(idx){
   var s=BOILERPLATE_STACKS[idx];if(!s)return;
-  log('['+s.stackId+'] stack info — '+(s.lang||'')+(s.frameworkId?'/'+s.frameworkId:'')+(s.backendUrl?' | '+s.backendUrl:'')+' | status: '+(s.status||'?'),'info');
+  var info=STACK_INFO[s.stackId]||{};
   var repoBase='https://github.com/claude-code-expert/brewnet-boilerplate';
-  var readmeUrl=repoBase+'/tree/'+escapeHtml(s.gitBranch||('stack/'+s.stackId));
+  var branch=s.gitBranch||'stack/'+s.stackId;
+  var readmeUrl=repoBase+'/tree/'+escapeHtml(branch);
+  log('['+s.stackId+'] stack info — '+(info.lang||s.lang||'')+(info.framework?' / '+info.framework:'')+(s.backendUrl?' | '+s.backendUrl:'')+' | status: '+(s.status||'?'),'info');
   var ov=document.createElement('div');ov.className='modal-overlay';
   ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
+  // $ access
+  var bu=s.backendUrl||'';var fu=s.frontendUrl||'';
+  var extUrl=getBoilerplateExternalUrl(s.stackId);
   var accessHtml='';
-  var bu=s.backendUrl||'';
-  var fu=s.frontendUrl||'';
-  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Backend:</span> <a href="'+escapeHtml(bu)+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'</a></div>';}
-  if(!s.isUnified&&fu&&fu!==bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Frontend:</span> <a href="'+escapeHtml(fu)+'" target="_blank" class="modal-url-a">'+escapeHtml(fu)+'</a></div>';}
-  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
-  var stackLabel=(s.lang||'')+(s.frameworkId?' / '+s.frameworkId:'');
-  var dbLabel=(s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:'');
-  var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
+  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Local (BE):</span> <a href="'+escapeHtml(bu)+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'</a></div>';}
+  if(!s.isUnified&&fu&&fu!==bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Local (FE):</span> <a href="'+escapeHtml(fu)+'" target="_blank" class="modal-url-a">'+escapeHtml(fu)+'</a></div>';}
+  if(extUrl){accessHtml+='<div class="modal-url"><span class="modal-url-label">External:</span> <a href="'+escapeHtml(extUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(extUrl)+'</a></div>';}
+  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu+'/docs')+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
+  // $ tech stack
+  var lang=info.lang||s.lang||'';var fw=info.framework||s.frameworkId||'';var ver=info.version||'';var orm=info.orm||'';
+  var techHtml='<div class="modal-bullet">Language: '+escapeHtml(lang+(ver?' '+ver:''))+'</div>';
+  if(fw){techHtml+='<div class="modal-bullet">Framework: '+escapeHtml(fw)+'</div>';}
+  if(orm){techHtml+='<div class="modal-bullet">ORM: '+escapeHtml(orm)+'</div>';}
+  techHtml+='<div class="modal-bullet">DB: '+escapeHtml((s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:''))+'</div>';
+  // $ credentials
   var credHtml='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(s.dbUser||'brewnet')+'</span></div>';
   credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(s.dbName||'brewnet_db')+'</span></div>';
   credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+' (admin password)</span></div>';
-  var gitHtml='<div class="modal-url"><span class="modal-url-label">Branch:</span> <code style="color:#58a6ff">'+escapeHtml(s.gitBranch||'stack/'+s.stackId)+'</code></div>';
+  // $ git
+  var gitHtml='<div class="modal-url"><span class="modal-url-label">Branch:</span> <code style="color:#58a6ff">'+escapeHtml(branch)+'</code></div>';
   gitHtml+='<div class="modal-url"><a href="'+readmeUrl+'" target="_blank" class="modal-url-a">'+readmeUrl+'</a></div>';
-  var cmdBase=s.appDir||'.';
-  var cmdHtml='<div class="modal-cmd">cd '+escapeHtml(cmdBase)+'</div>';
+  // $ commands
+  var cmdHtml='<div class="modal-cmd">cd '+escapeHtml(s.appDir||'.')+'</div>';
   cmdHtml+='<div style="margin-top:6px;color:#8b949e;font-size:12px">make logs &nbsp;&nbsp; # 컨테이너 로그 확인</div>';
   cmdHtml+='<div style="color:#8b949e;font-size:12px">make down &nbsp;&nbsp; # 서비스 중지</div>';
   cmdHtml+='<div style="color:#8b949e;font-size:12px">make validate # API 엔드포인트 검증</div>';
+  var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
+  var descLine=escapeHtml(lang+(fw?' / '+fw:''))+' boilerplate stack';
   ov.innerHTML='<div class="modal-box">'+
     '<div class="modal-titlebar">'+
       '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
@@ -299,9 +304,10 @@ function showBoilerplateModal(idx){
       '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
     '</div>'+
     '<div class="modal-body">'+
-      '<div class="modal-desc">'+escapeHtml(stackLabel)+' boilerplate stack</div>'+
-      '<div class="modal-license">DB: '+escapeHtml(dbLabel)+' &nbsp;|&nbsp; Status: <span class="badge '+statusCls+'">'+escapeHtml(s.status||'unknown')+'</span></div>'+
-      '<div class="modal-sh">$ access</div>'+accessHtml+
+      '<div class="modal-desc">'+descLine+'</div>'+
+      '<div class="modal-license">Status: <span class="badge '+statusCls+'">'+escapeHtml(s.status||'unknown')+'</span></div>'+
+      (accessHtml?'<div class="modal-sh">$ access</div>'+accessHtml:'')+
+      '<div class="modal-sh">$ tech stack</div>'+techHtml+
       '<div class="modal-sh">$ credentials</div>'+credHtml+
       '<div class="modal-sh">$ git</div>'+gitHtml+
       '<div class="modal-sh">$ commands</div>'+cmdHtml+
@@ -323,9 +329,20 @@ async function loadServices(manual){
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
-    var nameHtml=hasDetail
-      ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
-      :\`<b>\${s.name}</b>\`;
+    // For boilerplate containers (backend/frontend), look up URL and modal from BOILERPLATE_STACKS
+    var bpIdx=-1;
+    if(!localUrl&&(s.id==='backend'||s.id==='frontend')){
+      bpIdx=findBoilerplateIdxByPort(s.port);
+      if(bpIdx>=0){
+        var bpStack=BOILERPLATE_STACKS[bpIdx];
+        localUrl=s.id==='backend'?bpStack.backendUrl:(bpStack.frontendUrl||bpStack.backendUrl);
+      }
+    }
+    var nameHtml=bpIdx>=0
+      ?\`<b class="svc-link" onclick="showBoilerplateByPort(\${s.port})">\${s.name}</b>\`
+      :hasDetail
+        ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
+        :\`<b>\${s.name}</b>\`;
     return \`<tr>
     <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
     <td>\${badge(s.status)}</td>
@@ -372,8 +389,65 @@ async function removeSvc(id){
   }
   setTimeout(loadServices,800);
 }
+function getBoilerplateExternalUrl(stackId){
+  var c=DOMAIN_CONFIG;
+  if(c.provider==='local')return null;
+  if(c.quickTunnelUrl)return null;
+  if(c.zoneName)return'https://'+stackId+'.'+c.zoneName;
+  return null;
+}
+function findBoilerplateIdxByPort(port){
+  if(!port||!BOILERPLATE_STACKS)return -1;
+  var portStr=':'+port;
+  for(var i=0;i<BOILERPLATE_STACKS.length;i++){
+    var s=BOILERPLATE_STACKS[i];
+    if((s.backendUrl&&s.backendUrl.indexOf(portStr)>=0)||(s.frontendUrl&&s.frontendUrl.indexOf(portStr)>=0))return i;
+  }
+  return -1;
+}
+function showBoilerplateByPort(port){
+  var idx=findBoilerplateIdxByPort(port);
+  if(idx>=0)showBoilerplateModal(idx);
+}
+function renderBoilerplateSection(){
+  var bp=document.getElementById('bp-section');
+  if(!bp)return;
+  if(!BOILERPLATE_STACKS||BOILERPLATE_STACKS.length===0){bp.innerHTML='';return;}
+  var rows=BOILERPLATE_STACKS.map(function(s,idx){
+    var info=STACK_INFO[s.stackId]||{};
+    var stackLabel=(info.lang||s.lang||'')+(info.framework?' / '+info.framework:s.frameworkId?' / '+s.frameworkId:'');
+    var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
+    var nameHtml='<b class="svc-link" onclick="showBoilerplateModal('+idx+')">'+escapeHtml(s.stackId||'\\u2014')+'</b>';
+    var localHtml='';
+    if(s.backendUrl){localHtml+='<div><span style="color:#8b949e;font-size:11px">BE</span> <a href="'+escapeHtml(s.backendUrl)+'" target="_blank" style="color:#58a6ff">'+escapeHtml(s.backendUrl)+'</a></div>';}
+    if(!s.isUnified&&s.frontendUrl&&s.frontendUrl!==s.backendUrl){localHtml+='<div><span style="color:#8b949e;font-size:11px">FE</span> <a href="'+escapeHtml(s.frontendUrl)+'" target="_blank" style="color:#58a6ff">'+escapeHtml(s.frontendUrl)+'</a></div>';}
+    else if(s.isUnified&&s.backendUrl){localHtml+='<div style="color:#8b949e;font-size:11px">unified</div>';}
+    if(!localHtml)localHtml='<span style="color:#8b949e">\\u2014</span>';
+    var ext=getBoilerplateExternalUrl(s.stackId);
+    var extHtml=ext?'<a href="'+escapeHtml(ext)+'" target="_blank" style="color:#58a6ff">'+escapeHtml(ext)+'</a>':'<span style="color:#8b949e">\\u2014</span>';
+    var docsHtml=s.backendUrl?'<a href="'+escapeHtml(s.backendUrl+'/docs')+'" target="_blank" style="color:#58a6ff">'+escapeHtml(s.backendUrl)+'/docs</a>':'\\u2014';
+    return'<tr>'+
+      '<td>'+nameHtml+'<br><span style="color:#8b949e;font-size:11px">'+escapeHtml(stackLabel)+'</span></td>'+
+      '<td><span class="badge '+statusCls+'">'+escapeHtml(s.status||'unknown')+'</span></td>'+
+      '<td>'+localHtml+'</td>'+
+      '<td>'+extHtml+'</td>'+
+      '<td>'+docsHtml+'</td>'+
+      '</tr>';
+  }).join('');
+  bp.innerHTML='<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>'+
+    '<table><thead><tr><th>Stack</th><th>Status</th><th>Local</th><th>External</th><th>API Docs</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table>';
+}
+async function loadBoilerplateStacks(){
+  try{
+    var r=await fetch('/api/boilerplate').then(function(r){return r.json();});
+    BOILERPLATE_STACKS=r.stacks||[];
+  }catch(e){BOILERPLATE_STACKS=[];}
+  renderBoilerplateSection();
+}
 log('Brewnet admin panel connected — localhost:8088','ok');
 log('Click a service name for details · Refresh to reload status','dim');
+loadBoilerplateStacks();
 loadServices(true);
 setInterval(loadServices,15000);
 </script>
@@ -395,15 +469,6 @@ const WEB_UI_SERVICES = new Set([
   'traefik', 'nginx', 'caddy', 'gitea', 'nextcloud', 'minio',
   'jellyfin', 'pgadmin', 'filebrowser',
 ]);
-
-// Services that must be accessed through Traefik path-prefix routing.
-// Their OVERWRITEWEBROOT / SCRIPT_NAME settings make direct-port access broken.
-const TRAEFIK_PATH_SERVICES: Record<string, string> = {
-  traefik: 'http://localhost/dashboard/',
-  gitea: 'http://localhost/git',
-  nextcloud: 'http://localhost/cloud',
-  pgadmin: 'http://localhost:5050/pgadmin',
-};
 
 // Known SSH ports that should never be used as the primary HTTP port.
 const KNOWN_SSH_PORTS = new Set([22, 2222, 3022]);
@@ -439,7 +504,7 @@ async function handleGetServices(
   _parts: string[],
   _body: string,
   _projectPath: string,
-  urlMap: Record<string, string> = TRAEFIK_PATH_SERVICES,
+  urlMap: Record<string, string>,
 ): Promise<void> {
   try {
     const allContainers = await docker.listContainers({ all: true });
@@ -594,6 +659,28 @@ async function handleRemoveService(
   }
 }
 
+function handleGetBoilerplate(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  projectPath: string,
+): void {
+  const readMeta = (dir: string): BoilerplateMeta[] => {
+    try {
+      const p = join(dir, '.brewnet-boilerplate.json');
+      if (!existsSync(p)) return [];
+      const raw = JSON.parse(readFileSync(p, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+      return Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+    } catch { return []; }
+  };
+  const fromProjectPath = readMeta(projectPath);
+  const cwd = process.cwd();
+  const fromCwd = cwd !== projectPath ? readMeta(cwd) : [];
+  // Merge: fromProjectPath takes precedence; fromCwd adds stacks not already present
+  const seen = new Set(fromProjectPath.map((s) => s.stackId));
+  const stacks = [...fromProjectPath, ...fromCwd.filter((s) => !seen.has(s.stackId))];
+  json(res, 200, { stacks });
+}
+
 async function handleGetCatalog(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -676,8 +763,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     const state = loadState(last);
     if (state) {
       wizardState = state;
-      // Only fall back to state.projectPath when caller didn't supply one
-      if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
+      // Only fall back to state.projectPath when caller didn't supply one.
+      // Expand leading ~ since Node.js fs does not expand tilde automatically.
+      if (!options.projectPath && state.projectPath) {
+        projectPath = state.projectPath.startsWith('~/')
+          ? join(homedir(), state.projectPath.slice(2))
+          : state.projectPath;
+      }
     }
   }
 
@@ -689,80 +781,64 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
-  // Read boilerplate metadata if available (supports both array and legacy single object)
-  let boilerplateHtml = '';
-  let boilerplateStacksJson = '[]';
-  try {
-    const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
-    if (existsSync(bpMetaPath)) {
-      const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
-      // Normalize: legacy single-object → array
-      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
-
-      if (stacks.length > 0) {
-        boilerplateStacksJson = JSON.stringify(stacks);
-
-        // Build HTML table rows — each stack name is clickable (triggers modal)
-        const rows = stacks.map((s, idx) => {
-          const statusCls = s.status === 'running' ? 'running'
-            : s.status === 'timeout' ? 'error' : 'stopped';
-          const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
-          const backendLink = s.backendUrl
-            ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
-            : '—';
-          const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
-            ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
-            : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
-          const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
-          const docsCell = docsUrl
-            ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
-            : '—';
-          return `<tr>
-    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
-    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
-    <td>${backendLink}</td>
-    <td>${frontendCell}</td>
-    <td>${docsCell}</td>
-    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
-  </tr>`;
-        }).join('\n');
-
-        boilerplateHtml = `
-<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
-<table>
-  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
-  <tbody>
-${rows}
-  </tbody>
-</table>`;
-      }
-    }
-  } catch { /* non-fatal */ }
-
+  // Read boilerplate metadata if available (supports both array and legacy single object).
+  // Table is rendered client-side via renderBoilerplateSection() using BOILERPLATE_STACKS.
   const dashConfig: DashboardConfig = {
     adminUsername: username ? maskUser(username) : '**',
     passwordHint: password ? maskPass(password) : '********',
     domainProvider: wizardState?.domain?.provider ?? 'local',
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
-    boilerplateHtml,
-    boilerplateStacksJson,
+    tunnelMode: wizardState?.domain?.cloudflare?.tunnelMode ?? 'none',
   };
 
-  // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
-  // Jellyfin local URL always uses direct port 8096 (bypasses Traefik).
-  // Reason: Traefik's catch-all landing page router returns HTTP 200 for any
-  // unmapped path (including /System/Info/Public), which confuses Jellyfin SPA's
-  // server auto-detection. Direct port access lets Jellyfin redirect unmapped
-  // paths to ../../jellyfin/web/, giving the SPA a correct base URL hint.
-  const runtimeUrlMap: Record<string, string> = {
-    ...TRAEFIK_PATH_SERVICES,
-    jellyfin: 'http://localhost:8096/jellyfin/web/',
-  };
+  // Build runtime URL map from current tunnel mode.
+  // traefik: always /dashboard/ path (label-based routing, api.insecure=false).
+  // jellyfin: always direct port 8096. Reason: Traefik's catch-all landing page
+  // router returns HTTP 200 for /System/Info/Public, confusing Jellyfin SPA
+  // auto-detection. Direct port lets Jellyfin redirect to /jellyfin/web/ correctly.
+  // Quick Tunnel: gitea/nextcloud/filebrowser must use Traefik paths (direct port
+  // access breaks CSS/login redirects due to OVERWRITEWEBROOT/SCRIPT_NAME settings).
+  // Named/Local: getPrimaryPort fallback returns the correct Docker port — no map
+  // entries needed; the port-based fallback (http://localhost:${port}) is correct.
+  function buildRuntimeUrlMap(isQt: boolean): Record<string, string> {
+    return {
+      traefik: 'http://localhost/dashboard/',
+      jellyfin: 'http://localhost:8096/jellyfin/web/',
+      ...(isQt ? {
+        gitea: 'http://localhost/git',
+        nextcloud: 'http://localhost/cloud',
+        filebrowser: 'http://localhost/files',
+        pgadmin: 'http://localhost:5050/pgadmin',
+      } : {}),
+    };
+  }
+  let runtimeUrlMap = buildRuntimeUrlMap(dashConfig.tunnelMode === 'quick');
 
   // Cache for dashboard HTML (regenerated when Quick Tunnel URL is detected)
   let dashboardHtml = generateDashboardHtml(dashConfig);
   let quickTunnelDetected = !!dashConfig.quickTunnelUrl;
+
+  /**
+   * Ensure Nextcloud trusts the current Quick Tunnel hostname.
+   * Sets a permanent *.trycloudflare.com regex (index 4) + the exact current
+   * hostname (index 5) so tunnel URL changes don't require a wizard re-run.
+   * Fire-and-forget — failures are non-critical (NC may not be installed/ready).
+   */
+  async function ensureNextcloudTrustedDomains(hostname: string): Promise<void> {
+    try {
+      const { execa } = await import('execa');
+      const occ = (args: string[]) =>
+        execa('docker', ['exec', '-u', 'www-data', 'brewnet-nextcloud', 'php', 'occ', ...args]);
+      // Regex trusts ALL *.trycloudflare.com — survives future tunnel URL changes.
+      await occ(['config:system:set', 'trusted_domains', '4', '--value=/.*\\.trycloudflare\\.com/']);
+      await occ(['config:system:set', 'trusted_domains', '5', `--value=${hostname}`]);
+      await occ(['config:system:set', 'trusted_proxies', '0', '--value=172.16.0.0/12']);
+      logger.info('admin-server', `Nextcloud trusted_domains updated for ${hostname}`);
+    } catch {
+      // NC not installed, not running, or occ failed — non-critical
+    }
+  }
 
   /**
    * Detect Quick Tunnel URL from running cloudflared container logs.
@@ -782,13 +858,25 @@ ${rows}
       const logStr = logBuf.toString('utf-8');
       const match = logStr.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
       if (match) {
+        const hostname = match[0].replace(/^https?:\/\//, '');
         dashConfig.quickTunnelUrl = match[0];
+        dashConfig.tunnelMode = 'quick';
         dashConfig.domainProvider = 'quick-tunnel';
+        runtimeUrlMap = buildRuntimeUrlMap(true);
         dashboardHtml = generateDashboardHtml(dashConfig);
+        void ensureNextcloudTrustedDomains(hostname);
       }
     } catch {
       // Non-critical — just serve without external URLs
     }
+  }
+
+  // If the tunnel URL is already known from wizard state, ensure NC trusts it.
+  // This covers the case where the wizard's occ step failed or the NC container
+  // was recreated after initial setup.
+  if (dashConfig.quickTunnelUrl) {
+    const hn = dashConfig.quickTunnelUrl.replace(/^https?:\/\//, '');
+    void ensureNextcloudTrustedDomains(hn);
   }
 
   /**
@@ -898,6 +986,11 @@ ${rows}
             await handleRemoveService(req, res, parts, body, projectPath);
             return;
           }
+        }
+
+        if (parts[1] === 'boilerplate' && req.method === 'GET') {
+          handleGetBoilerplate(req, res, projectPath);
+          return;
         }
 
         if (parts[1] === 'catalog' && req.method === 'GET') {
