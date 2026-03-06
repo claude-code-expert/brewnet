@@ -1,5 +1,6 @@
 # CLAUDE.md - Brewnet Project Context
 
+
 ## Project Overview
 
 **Brewnet** — "Your Home Server, Brewed Fresh"
@@ -10,13 +11,16 @@ A self-hosted home server management platform that provides an interactive CLI t
 - **Licensor**: Brewnet (codevillain)
 - **Target Platforms**: macOS (darwin), Linux (Ubuntu/Debian, CentOS/RHEL)
 
-## Business Model (Freemium)
 
-| Tier | Price | Features |
-|------|-------|----------|
-| Free | $0 | CLI tool, Docker management, basic services |
-| Pro | $9/mo | Web Dashboard, monitoring, domain/SSL management |
-| Team | $29/mo/server | Multi-user, ACL, team collaboration |
+## Investigation Rules
+
+- When the same problem recurs and resolution is requested again, always perform a thorough source-level deep dive before responding.
+- Never claim to have confirmed a fix without actually reading the relevant source code.
+
+## Session Continuity
+
+- After /compact completes and a new session context begins, always re-read CLAUDE.md to re-establish project context before proceeding.
+
 
 ## Tech Stack
 
