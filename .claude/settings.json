@@ -9,7 +9,8 @@
       "Bash(npm run test:watch)",
       "Bash(npm run test:coverage)",
       "Bash(npm run db:generate)",
-      "Bash(npm run db:studio)"
+      "Bash(npm run db:studio)",
+      "Bash(npx --yes typescript-language-server --version)"
     ],
     "deny": [
       "Bash(git push --force*)",

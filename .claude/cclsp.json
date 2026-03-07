@@ -2,10 +2,16 @@
   "servers": [
     {
       "extensions": [
-        "js", "ts","jsx","tsx"
+        "js",
+        "ts",
+        "jsx",
+        "tsx"
       ],
       "command": [
-        "npx", "--", "typescript-language-server", "--stdio"
+        "npx",
+        "--",
+        "typescript-language-server",
+        "--stdio"
       ],
       "rootDir": "."
     }
