@@ -1,6 +1,6 @@
 #!/bin/sh
 # Auto-unstage specified directories before every commit
-git diff --cached --name-only | grep -E '^(docs/phase|public/demo)/' | while read file; do
+git diff --cached --name-only | grep -E '^(docs/phase|docs/spec|docs/license|public/demo)/' | while read file; do
   git restore --staged "$file"
 done
 exit 0
