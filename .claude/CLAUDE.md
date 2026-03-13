@@ -7,7 +7,7 @@
 
 A self-hosted home server management platform that provides an interactive CLI tool and Web Dashboard (Pro) for setting up and managing personal servers with Docker-based services.
 
-- **License**: MIT
+- **License**: Apache 2.0
 - **Licensor**: Brewnet (codevillain)
 - **Target Platforms**: macOS (darwin), Linux (Ubuntu/Debian, CentOS/RHEL)
 
@@ -62,7 +62,7 @@ A self-hosted home server management platform that provides an interactive CLI t
 brewnet/
 ├── CLAUDE.md
 ├── README.md
-├── LICENSE                    # MIT
+├── LICENSE                    # Apache 2.0
 ├── package.json               # Root workspace config
 ├── pnpm-workspace.yaml
 ├── tsconfig.json              # Root TypeScript config
