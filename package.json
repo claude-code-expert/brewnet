@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Your Home Server, Brewed Fresh",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20.0.0"
   },

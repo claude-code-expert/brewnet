@@ -4,7 +4,7 @@ Self-hosted stack bootstrapper · Docker Compose · Git server · File manager �
 
 [English](#english) | [한국어](#한국어)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-codevillain%2Fbrewnet-black?logo=github)](https://github.com/claude-code-expert/brewnet)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-3178c6?logo=typescript)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js)](https://nodejs.org/)
@@ -353,6 +353,6 @@ A: `brewnet up`으로 서비스가 실행 중인지 확인하세요. 관리 패�
 
 ## License
 
-MIT License — Copyright (c) 2025 Brewnet (codevillain)
+Apache License 2.0 — Copyright 2025 Brewnet (codevillain)
 
 See [LICENSE](LICENSE) for the full text.
