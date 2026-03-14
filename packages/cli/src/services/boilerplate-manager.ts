@@ -464,6 +464,55 @@ export function writeTraefikOverride(
 }
 
 // ---------------------------------------------------------------------------
+// T010a — patchViteConfig
+// ---------------------------------------------------------------------------
+
+/**
+ * Patch frontend/vite.config.ts to set `base: '/apps/<stackId>-ui/'`.
+ *
+ * Without this, Vite builds asset URLs as root-relative (`/assets/...`).
+ * When Traefik routes `/apps/<stackId>-ui/` to the nginx container via
+ * stripprefix, the browser tries to load assets from the domain root
+ * (e.g. `https://tunnel.com/assets/...`) which has no Traefik route →
+ * the catch-all landing page is returned instead of the JS/CSS → blank screen.
+ *
+ * Only applies to non-unified, non-nextjs stacks that have a `frontend/`
+ * directory with a `vite.config.ts`. No-ops silently for unified or Next.js stacks.
+ *
+ * @param projectDir - Absolute path to the boilerplate project directory
+ * @param stackId    - Stack identifier (e.g. "nodejs-nestjs")
+ */
+export function patchViteConfig(projectDir: string, stackId: string): void {
+  // Unified stacks have no separate frontend container; Next.js is handled by patchNextjsConfig.
+  if (stackId.startsWith('nodejs-nextjs')) return;
+
+  const base = `/apps/${stackId}-ui/`;
+  const candidates = [
+    join(projectDir, 'frontend', 'vite.config.ts'),
+    join(projectDir, 'frontend', 'vite.config.js'),
+    join(projectDir, 'frontend', 'vite.config.mjs'),
+  ];
+
+  for (const p of candidates) {
+    try {
+      let content = readFileSync(p, 'utf-8');
+      if (/\bbase\s*:/.test(content)) {
+        // Already has base — update it
+        content = content.replace(/\bbase\s*:\s*['"`][^'"`]*['"`]/, `base: '${base}'`);
+      } else {
+        // Inject base before the first top-level key inside defineConfig({...})
+        content = content.replace(
+          /(defineConfig\s*\(\s*\{)/,
+          `$1\n  base: '${base}',`,
+        );
+      }
+      writeFileSync(p, content, 'utf-8');
+      return; // only patch the first file found
+    } catch { /* not found — try next candidate */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // T010b — patchDockerfileHealthcheck
 // ---------------------------------------------------------------------------
 

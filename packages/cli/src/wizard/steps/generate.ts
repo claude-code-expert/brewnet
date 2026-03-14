@@ -778,6 +778,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       verifyEndpoints: boilerplateVerifyEndpoints,
       findFreePort,
       writeTraefikOverride,
+      patchViteConfig,
       patchDockerfileHealthcheck,
       patchNextjsConfig,
     } = await import('../../services/boilerplate-manager.js');
@@ -880,7 +881,11 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         // Must run before startContainers so the fixed Dockerfile is baked into the image.
         patchDockerfileHealthcheck(appDir, stackId);
 
-        // Step 2d: patch next.config.ts basePath for Next.js stacks so asset URLs
+        // Step 2d: patch frontend/vite.config.ts `base` so Vite asset URLs include the
+        // /apps/<stackId>-ui/ sub-path prefix (prevents blank screen via Traefik tunnel).
+        patchViteConfig(appDir, stackId);
+
+        // Step 2e: patch next.config.ts basePath for Next.js stacks so asset URLs
         // include the /apps/<stackId> prefix (required when served under Traefik sub-path).
         patchNextjsConfig(appDir, stackId);
 
