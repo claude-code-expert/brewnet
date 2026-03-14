@@ -40,8 +40,6 @@
 - `packages/cli/src/wizard/steps/review.ts`
 - `packages/cli/src/commands/domain.ts`
 - `packages/cli/src/services/quick-tunnel.ts`
-- `troubleshooting/traefik-skips-unhealthy-containers.md` (신규)
-- `troubleshooting/vite-blank-screen-traefik-subpath.md` (신규)
 
 ---
 
