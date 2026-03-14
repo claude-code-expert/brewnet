@@ -261,6 +261,11 @@ async function loadServices(manual){
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
+    var isUnifiedNext=(s.project||'').startsWith('nodejs-nextjs');
+    var localCellHtml;
+    if(!localUrl){localCellHtml='<span style="color:#8b949e">—</span>';}
+    else if(isUnifiedNext){var apiUrl=localUrl+'/api/hello';var frontLabel=s.project==='nodejs-nextjs-full'?'Frontend':'App';localCellHtml='<a href="'+localUrl+'" target="_blank" style="color:#58a6ff">'+localUrl+'</a> <span style="color:#8b949e;font-size:11px">'+frontLabel+'</span><br><a href="'+apiUrl+'" target="_blank" style="color:#58a6ff">'+apiUrl+'</a> <span style="color:#8b949e;font-size:11px">API</span>';}
+    else{localCellHtml='<a href="'+localUrl+'" target="_blank" style="color:#58a6ff">'+localUrl+'</a>';}
     var nameHtml=hasDetail
       ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
       :\`<b>\${s.name}</b>\`;
@@ -268,7 +273,7 @@ async function loadServices(manual){
     <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
     <td>\${badge(s.status)}</td>
     <td>\${s.port??'—'}</td>
-    <td>\${localUrl?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
+    <td>\${localCellHtml}</td>
     <td>\${ext?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
     <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
   </tr>\`;}).join('');

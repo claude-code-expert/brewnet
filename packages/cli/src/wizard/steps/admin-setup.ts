@@ -121,7 +121,6 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
     const namePadded = app.name.padEnd(maxNameLen);
     console.log(`  ${chalk.cyan(namePadded)}  ${chalk.dim(app.access)}`);
     console.log(`  ${chalk.dim('ℹ')}  ${chalk.dim(app.info)}`);
-    console.log();
   }
 
   console.log(

@@ -810,7 +810,7 @@ function generateStatusHtml(data: StatusPageData): string {
     <div class="cmd-card">brewnet backup</div>
     <div class="cmd-card">docker compose logs -f</div>
 
-    <footer>Brewnet &copy; ${new Date().getFullYear()} — MIT License</footer>
+    <footer>Brewnet &copy; ${new Date().getFullYear()} — Apache 2.0 License</footer>
   </div>
   <script>
     var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
