@@ -15,22 +15,6 @@ import type { WizardState } from '@brewnet/shared';
 // Credential propagation targets (informational display)
 // ---------------------------------------------------------------------------
 
-// Services that receive admin credentials via docker-compose environment variables.
-const AUTO_PROPAGATED_SERVICES = [
-  'Nextcloud (File Server)',
-  'MinIO (Object Storage)',
-  'pgAdmin (DB Admin UI)',
-  'SSH Server (OpenSSH)',
-];
-
-// Services that require separate account setup through their own UI/CLI.
-const MANUAL_SETUP_SERVICES = [
-  'Gitea (Git server)',
-  'Jellyfin (Media server)',
-  'Mail Server (docker-mailserver)',
-  'FileBrowser',
-];
-
 // ---------------------------------------------------------------------------
 // Step runner
 // ---------------------------------------------------------------------------
@@ -58,20 +42,92 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
   console.log();
 
   // -------------------------------------------------------------------------
-  // 2. Show credential propagation info
+  // 2. App overview
   // -------------------------------------------------------------------------
-  console.log(chalk.yellow('  ⚠ Nextcloud, MinIO, pgAdmin, SSH Server를 사용할 경우'));
-  console.log(chalk.yellow('    적용되는 로그인 계정이므로 신중하게 입력하세요.'));
+  console.log(chalk.bold('  사용자 선택에 따라 다음의 앱이 자동으로 세팅됩니다'));
+  console.log(chalk.dim('  모든 서비스는 Docker 컨테이너로 실행되며, 선택한 항목만 설치됩니다.'));
   console.log();
-  console.log(chalk.dim('  자동 적용 서비스:'));
-  for (const svc of AUTO_PROPAGATED_SERVICES) {
-    console.log(chalk.dim(`    • ${svc}`));
+
+  const APP_LIST = [
+    {
+      name: 'Web Server',
+      access: 'http://localhost/',
+      info: 'Traefik (기본) · Nginx · Caddy 중 선택 — 리버스 프록시 및 서비스 라우팅',
+    },
+    {
+      name: 'Traefik Dashboard',
+      access: 'http://localhost/dashboard/',
+      info: '로그인: <아이디> / <비밀번호> (BasicAuth)',
+    },
+    {
+      name: 'Gitea (Git)',
+      access: 'http://localhost/git/',
+      info: '셀프 호스팅 Git 서버 — 초기 접속 시 관리자 계정 직접 생성',
+    },
+    {
+      name: 'Nextcloud (File Server)',
+      access: 'http://localhost/cloud',
+      info: '로그인: <아이디> / <비밀번호>',
+    },
+    {
+      name: 'MinIO Console (Object Storage)',
+      access: 'http://localhost/minio',
+      info: 'S3 호환 오브젝트 스토리지 — 로그인: <아이디> / <비밀번호>',
+    },
+    {
+      name: 'FileBrowser',
+      access: 'http://localhost/files',
+      info: '웹 기반 파일 관리자 — 로그인: admin / <비밀번호>',
+    },
+    {
+      name: 'PostgreSQL / MySQL',
+      access: 'port 5432 / 3306 (내부 전용)',
+      info: '관계형 DB — Docker 내부 네트워크 전용, 외부 포트 미노출',
+    },
+    {
+      name: 'Redis · Valkey · KeyDB',
+      access: 'port 6379 (내부 전용)',
+      info: '캐시 서버 — Docker 내부 네트워크 전용',
+    },
+    {
+      name: 'pgAdmin (DB Admin UI)',
+      access: 'http://localhost/pgadmin',
+      info: 'PostgreSQL 웹 관리 도구 — 로그인: <아이디>@brewnet.dev / <비밀번호>',
+    },
+    {
+      name: 'Jellyfin (Media Server)',
+      access: 'http://localhost:8096/jellyfin/',
+      info: '미디어 스트리밍 서버 — 초기 접속 시 언어 및 관리자 계정 설정',
+    },
+    {
+      name: 'SSH Server (OpenSSH)',
+      access: 'ssh -p 2222 <아이디>@host',
+      info: 'SSH 원격 접속 및 SFTP — 로그인: <아이디> / <비밀번호>',
+    },
+    {
+      name: 'Mail Server',
+      access: 'SMTP 25/587 · IMAP 143/993',
+      info: '도메인 필요 — docker exec setup email add user@domain 으로 계정 생성',
+    },
+    {
+      name: 'Cloudflare Tunnel',
+      access: '자동 외부 URL 발급',
+      info: '무료 공개 URL 터널링 — 포트 포워딩·공인 IP 없이 외부 접속 가능',
+    },
+  ] as const;
+
+  const maxNameLen = Math.max(...APP_LIST.map((a) => a.name.length));
+  for (const app of APP_LIST) {
+    const namePadded = app.name.padEnd(maxNameLen);
+    console.log(`  ${chalk.cyan(namePadded)}  ${chalk.dim(app.access)}`);
+    console.log(`  ${chalk.dim('ℹ')}  ${chalk.dim(app.info)}`);
+    console.log();
   }
-  console.log();
-  console.log(chalk.dim('  별도 설정 필요 서비스:'));
-  for (const svc of MANUAL_SETUP_SERVICES) {
-    console.log(chalk.dim(`    • ${svc}`) + chalk.dim.italic(' — 자체 초기 설정에서 계정 생성'));
-  }
+
+  console.log(
+    chalk.dim('  Java, Python, Go, Rust, Kotlin, Node.js 및 관련 프레임워크') +
+    chalk.dim(' 보일러플레이트 세팅과 빌드 & 배포 제공'),
+  );
   console.log();
 
   // -------------------------------------------------------------------------
