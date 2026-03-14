@@ -310,7 +310,7 @@ function showBoilerplateModal(idx){
   var bpExtUi=(!s.isUnified&&s.stackId)?getExternalUrl('frontend',null,s.stackId):null;
   if(bpExtApi){accessHtml+='<div class="modal-url"><span class="modal-url-label">External (API):</span> <a href="'+escapeHtml(bpExtApi)+'" target="_blank" class="modal-url-a">'+escapeHtml(bpExtApi)+'</a></div>';}
   if(bpExtUi){accessHtml+='<div class="modal-url"><span class="modal-url-label">External (UI):</span> <a href="'+escapeHtml(bpExtUi)+'" target="_blank" class="modal-url-a">'+escapeHtml(bpExtUi)+'</a></div>';}
-  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
+  if(bu&&!s.isUnified){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
   var stackLabel=(s.lang||'')+(s.frameworkId?' / '+s.frameworkId:'');
   var dbLabel=(s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:'');
   var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
@@ -773,7 +773,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
         ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
         : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
-      const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
+      // Docs (Swagger/OpenAPI) only exist on separate backend stacks (Express, FastAPI, Go, etc.)
+      // Unified Next.js stacks serve a web UI, not a Swagger endpoint.
+      const docsUrl = (!s.isUnified && s.backendUrl) ? `${s.backendUrl}/docs` : '';
       const docsCell = docsUrl
         ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
         : '—';
@@ -925,6 +927,22 @@ ${rows}
       const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
       logger.info('admin-server', `[boilerplate] parsed ${stacks.length} stack(s): ${stacks.map((s) => s.stackId).join(', ')}`);
       if (stacks.length === 0) return;
+
+      // Override status with live Docker container health so stale 'failed' entries
+      // (written during setup when the container wasn't ready) reflect current reality.
+      try {
+        const containers = await docker.listContainers({ all: true });
+        for (const stack of stacks) {
+          const c = containers.find(
+            (ct) => ct.Labels?.['com.brewnet.stack'] === stack.stackId &&
+                    ct.Labels?.['com.brewnet.role'] === 'backend',
+          );
+          if (c) {
+            stack.status = c.State === 'running' ? 'running' : 'stopped';
+          }
+        }
+      } catch { /* Docker unavailable — keep JSON status */ }
+
       const built = buildBoilerplateDashData(stacks);
       dashConfig.boilerplateHtml = built.html;
       dashConfig.boilerplateStacksJson = built.json;

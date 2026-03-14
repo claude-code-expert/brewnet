@@ -147,13 +147,14 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
   // -----------------------------------------------------------------------
   console.log();
   console.log(chalk.cyan([
-    '   ____                                _   ',
-    '  | __ ) _ __ _____      ___ __   ___| |_ ',
-    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|',
-    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_ ',
-    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|',
+    '   ____                                _        ) ) )    ',
+    '  | __ ) _ __ _____      ___ __   ___| |_     ( ( (     ',
+    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|  __________',
+    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_  |          |]',
+    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|  \\________/ ',
   ].join('\n')));
   console.log();
+  console.log(chalk.hex('#c8a96e').bold('  ☕ Set up your entire home server in the time it takes to brew a coffee.'));
   console.log(chalk.bold('  Brewnet') + chalk.dim(' — One command. Your entire server stack, on tap. Just brew it!'));
   console.log(chalk.dim('  v1.0.1  •  MIT License'));
   console.log(chalk.dim('  https://brewnet.dev  •  https://github.com/claude-code-expert/brewnet'));

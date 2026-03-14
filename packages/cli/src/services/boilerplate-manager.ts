@@ -384,40 +384,31 @@ export function writeTraefikOverride(
   const rn = `bp-${stackId}`;
   const pp = `/apps/${stackId}`;
 
-  // Next.js stacks use `basePath` in next.config so they handle the sub-path internally.
-  // Traefik must NOT strip the prefix for these stacks — the full path must reach Next.js.
-  // Other stacks (go, rust, python, …) do not know about the prefix, so stripprefix is needed.
-  const isNextjs = stackId.startsWith('nodejs-nextjs');
-  const healthUrl = isNextjs
-    ? `http://127.0.0.1:${containerPort}${pp}/health`
-    : `http://127.0.0.1:${containerPort}/health`;
+  // All stacks use Traefik stripPrefix. The container always receives the request
+  // at its own root path (e.g. /api/hello, not /apps/go-gin/api/hello).
+  // For Next.js stacks we set assetPrefix (not basePath) so static assets load
+  // correctly when served via the tunnel sub-path, while API routes stay at /*.
+  const backendLabels = [
+    '      - "traefik.enable=true"',
+    `      - "traefik.docker.network=brewnet"`,
+    `      - "traefik.http.routers.${rn}.rule=PathPrefix(\`${pp}\`)"`,
+    `      - "traefik.http.routers.${rn}.entrypoints=web"`,
+    `      - "traefik.http.middlewares.${rn}-strip.stripprefix.prefixes=${pp}"`,
+    `      - "traefik.http.routers.${rn}.middlewares=${rn}-strip"`,
+    `      - "traefik.http.services.${rn}.loadbalancer.server.port=${containerPort}"`,
+  ];
 
-  const backendLabels = isNextjs
-    ? [
-        '      - "traefik.enable=true"',
-        `      - "traefik.docker.network=brewnet"`,
-        `      - "traefik.http.routers.${rn}.rule=PathPrefix(\`${pp}\`)"`,
-        `      - "traefik.http.routers.${rn}.entrypoints=web"`,
-        `      - "traefik.http.services.${rn}.loadbalancer.server.port=${containerPort}"`,
-      ]
-    : [
-        '      - "traefik.enable=true"',
-        `      - "traefik.docker.network=brewnet"`,
-        `      - "traefik.http.routers.${rn}.rule=PathPrefix(\`${pp}\`)"`,
-        `      - "traefik.http.routers.${rn}.entrypoints=web"`,
-        `      - "traefik.http.middlewares.${rn}-strip.stripprefix.prefixes=${pp}"`,
-        `      - "traefik.http.routers.${rn}.middlewares=${rn}-strip"`,
-        `      - "traefik.http.services.${rn}.loadbalancer.server.port=${containerPort}"`,
-      ];
-
-  // Next.js stacks need a healthcheck override because basePath changes the URL.
+  // Next.js stacks need a healthcheck override in the compose override so that
+  // docker-compose.override.yml's healthcheck takes precedence over the one in
+  // the cloned docker-compose.yml (which may have a stale URL).
   // Other stacks (Go, Rust, Python, Java, …) already have a correct healthcheck
-  // in their docker-compose.yml; overriding it with wget would break Python/Java
-  // containers that don't have wget, making them unhealthy and invisible to Traefik.
+  // in their docker-compose.yml; overriding it with wget would break containers
+  // that don't have wget, making them appear unhealthy to Traefik.
+  const isNextjs = stackId.startsWith('nodejs-nextjs');
   const healthcheckLines = isNextjs
     ? [
         '    healthcheck:',
-        `      test: ["CMD", "wget", "-q", "-O", "/dev/null", "${healthUrl}"]`,
+        `      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${containerPort}/health"]`,
         '      interval: 10s',
         '      timeout: 5s',
         '      retries: 5',
@@ -560,11 +551,16 @@ export function patchDockerfileHealthcheck(projectDir: string, stackId: string):
 
 /**
  * Patch next.config.ts (or next.config.js) in the boilerplate directory to set
- * `basePath` so that Next.js generates asset URLs (/_next/...) prefixed with
- * the Traefik path, preventing broken images/CSS when served under a sub-path.
+ * `assetPrefix` so that Next.js generates static asset URLs (/_next/...) prefixed
+ * with the Traefik path, preventing broken CSS/JS when served under a sub-path.
+ *
+ * We use `assetPrefix` (NOT `basePath`) so that:
+ * - API routes remain at /api/... → Traefik stripPrefix makes them work locally too
+ * - Static assets load correctly via the tunnel sub-path
+ * - Docker build cache issues with basePath are avoided
  *
  * Must be called BEFORE startContainers so that `next build` (inside Docker)
- * bakes the correct basePath into the build output.
+ * bakes the correct assetPrefix into the build output.
  *
  * Only applies to nodejs-nextjs* stacks. No-ops silently for other stacks.
  *
@@ -574,9 +570,8 @@ export function patchDockerfileHealthcheck(projectDir: string, stackId: string):
 export function patchNextjsConfig(projectDir: string, stackId: string): void {
   if (!stackId.startsWith('nodejs-nextjs')) return;
 
-  const basePath = `/apps/${stackId}`;
+  const assetPrefix = `/apps/${stackId}`;
 
-  // --- 1. Patch next.config.ts / .js / .mjs ---
   const candidates = ['next.config.ts', 'next.config.js', 'next.config.mjs'];
   let configPath = '';
   for (const name of candidates) {
@@ -587,36 +582,21 @@ export function patchNextjsConfig(projectDir: string, stackId: string): void {
       break;
     } catch { /* not found */ }
   }
-  if (configPath) {
-    let content = readFileSync(configPath, 'utf-8');
-    if (/basePath\s*:/.test(content)) {
-      content = content.replace(/basePath\s*:\s*['"`][^'"`]*['"`]/, `basePath: '${basePath}'`);
-    } else if (/output\s*:\s*['"`]standalone['"`]/.test(content)) {
-      content = content.replace(
-        /(output\s*:\s*['"`]standalone['"`])/,
-        `$1,\n    basePath: '${basePath}'`,
-      );
-    } else {
-      content = content.replace(/(\};\s*$)/, `  basePath: '${basePath}',\n$1`);
-    }
-    writeFileSync(configPath, content, 'utf-8');
-  }
+  if (!configPath) return;
 
-  // --- 2. Patch Dockerfile HEALTHCHECK to include basePath ---
-  // Without this, `docker ps` would show the container as unhealthy because
-  // Next.js routes all paths under basePath (e.g. /apps/stackId/health).
-  const dockerfilePath = join(projectDir, 'Dockerfile');
-  try {
-    let dockerfile = readFileSync(dockerfilePath, 'utf-8');
-    // Match wget/curl health check lines and append basePath before /health
-    dockerfile = dockerfile.replace(
-      /(wget\s+-q\s+-O\s+\/dev\/null\s+http:\/\/127\.0\.0\.1:\d+)(\/health)/g,
-      `$1${basePath}$2`,
+  let content = readFileSync(configPath, 'utf-8');
+  // Replace existing assetPrefix if present, otherwise inject after output: 'standalone'
+  if (/assetPrefix\s*:/.test(content)) {
+    content = content.replace(/assetPrefix\s*:\s*['"`][^'"`]*['"`]/, `assetPrefix: '${assetPrefix}'`);
+  } else if (/output\s*:\s*['"`]standalone['"`]/.test(content)) {
+    content = content.replace(
+      /(output\s*:\s*['"`]standalone['"`])/,
+      `$1,\n    assetPrefix: '${assetPrefix}'`,
     );
-    dockerfile = dockerfile.replace(
-      /(curl\s+[^"]*http:\/\/127\.0\.0\.1:\d+)(\/health)/g,
-      `$1${basePath}$2`,
-    );
-    writeFileSync(dockerfilePath, dockerfile, 'utf-8');
-  } catch { /* Dockerfile not present or no healthcheck line — skip */ }
+  } else {
+    content = content.replace(/(\};\s*$)/, `  assetPrefix: '${assetPrefix}',\n$1`);
+  }
+  // Remove any stale basePath that might have been set by a previous install
+  content = content.replace(/,?\s*\n?\s*basePath\s*:\s*['"`][^'"`]*['"`],?/g, '');
+  writeFileSync(configPath, content, 'utf-8');
 }

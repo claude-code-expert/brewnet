@@ -278,7 +278,7 @@ export async function runCompleteStep(
   console.log(`    ${chalk.dim('•')} Secrets:              ${chalk.dim(state.projectPath + '/secrets/')}`);
   console.log();
 
-  console.log(chalk.green.bold('  Happy brewing! 🍺'));
+  console.log(chalk.green.bold('  Happy brewing! ☕'));
   console.log();
 
   // -------------------------------------------------------------------------

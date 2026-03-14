@@ -914,12 +914,10 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         await boilerplateStartContainers(appDir);
 
         // Step 4: poll health endpoint until ready.
-        // Next.js stacks with basePath require /apps/<stackId>/health (not /health).
-        const healthPath = stackId.startsWith('nodejs-nextjs')
-          ? `/apps/${stackId}/health`
-          : '/health';
+        // All stacks (including Next.js) use /health because Traefik stripPrefix
+        // ensures the container always receives the request at its own root path.
         bpSpinner.text = `  [${stackId}] 헬스체크 대기 중... (timeout: ${Math.round(healthTimeoutMs / 1000)}s)`;
-        const health = await boilerplatePollHealth(baseUrl, healthTimeoutMs, healthPath);
+        const health = await boilerplatePollHealth(baseUrl, healthTimeoutMs, '/health');
 
         if (!health.healthy) {
           bpSpinner.warn(`  [${stackId}] 헬스체크 타임아웃 (${Math.round(healthTimeoutMs / 1000)}s 초과)`);
