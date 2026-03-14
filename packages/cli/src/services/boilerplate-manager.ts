@@ -265,22 +265,28 @@ export async function startContainers(projectDir: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Poll GET <baseUrl>/health until HTTP 200 with body.status === "ok".
+ * Poll GET <baseUrl><healthPath> until HTTP 200 with body.status === "ok".
  *
  * Uses `127.0.0.1` in baseUrl (not `localhost`) to avoid Alpine Linux
  * IPv6 resolution failures where localhost resolves to ::1.
  *
- * @param baseUrl   - e.g. "http://127.0.0.1:8080" (no trailing slash)
- * @param timeoutMs - Maximum wait time in milliseconds (120_000 or 600_000 for Rust)
+ * @param baseUrl    - e.g. "http://127.0.0.1:8080" (no trailing slash)
+ * @param timeoutMs  - Maximum wait time in milliseconds (120_000 or 600_000 for Rust)
+ * @param healthPath - Health endpoint path (default: "/health"). Use "/apps/<stackId>/health"
+ *                     for Next.js stacks with basePath set.
  * @returns StackHealthResult with healthy, elapsedMs, and dbConnected
  */
-export async function pollHealth(baseUrl: string, timeoutMs: number): Promise<StackHealthResult> {
+export async function pollHealth(
+  baseUrl: string,
+  timeoutMs: number,
+  healthPath = '/health',
+): Promise<StackHealthResult> {
   const start = Date.now();
   const deadline = start + timeoutMs;
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${baseUrl}/health`, {
+      const res = await fetch(`${baseUrl}${healthPath}`, {
         signal: AbortSignal.timeout(3000),
       });
       if (res.ok) {
@@ -351,4 +357,217 @@ export async function verifyEndpoints(baseUrl: string): Promise<void> {
       `POST /api/echo response mismatch: expected test="brewnet", got "${String(echoBody.test)}"`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// T010 — writeTraefikOverride
+// ---------------------------------------------------------------------------
+
+/**
+ * Write docker-compose.override.yml to connect boilerplate containers to the
+ * main brewnet Traefik network and register PathPrefix routing labels.
+ *
+ * - backend  → /apps/<stackId>        (StripPrefix → container port)
+ * - frontend → /apps/<stackId>-ui     (non-unified only, StripPrefix → port 3000)
+ *
+ * @param projectDir              - Absolute path to the boilerplate project directory
+ * @param stackId                 - Stack identifier (e.g. "go-gin")
+ * @param containerPort           - Backend container-internal port (3000 unified, 8080 others)
+ * @param frontendContainerPort   - Frontend container-internal port (3000); omit for unified stacks
+ */
+export function writeTraefikOverride(
+  projectDir: string,
+  stackId: string,
+  containerPort: number,
+  frontendContainerPort?: number,
+): void {
+  const rn = `bp-${stackId}`;
+  const pp = `/apps/${stackId}`;
+
+  // Next.js stacks use `basePath` in next.config so they handle the sub-path internally.
+  // Traefik must NOT strip the prefix for these stacks — the full path must reach Next.js.
+  // Other stacks (go, rust, python, …) do not know about the prefix, so stripprefix is needed.
+  const isNextjs = stackId.startsWith('nodejs-nextjs');
+  const healthUrl = isNextjs
+    ? `http://127.0.0.1:${containerPort}${pp}/health`
+    : `http://127.0.0.1:${containerPort}/health`;
+
+  const backendLabels = isNextjs
+    ? [
+        '      - "traefik.enable=true"',
+        `      - "traefik.docker.network=brewnet"`,
+        `      - "traefik.http.routers.${rn}.rule=PathPrefix(\`${pp}\`)"`,
+        `      - "traefik.http.routers.${rn}.entrypoints=web"`,
+        `      - "traefik.http.services.${rn}.loadbalancer.server.port=${containerPort}"`,
+      ]
+    : [
+        '      - "traefik.enable=true"',
+        `      - "traefik.docker.network=brewnet"`,
+        `      - "traefik.http.routers.${rn}.rule=PathPrefix(\`${pp}\`)"`,
+        `      - "traefik.http.routers.${rn}.entrypoints=web"`,
+        `      - "traefik.http.middlewares.${rn}-strip.stripprefix.prefixes=${pp}"`,
+        `      - "traefik.http.routers.${rn}.middlewares=${rn}-strip"`,
+        `      - "traefik.http.services.${rn}.loadbalancer.server.port=${containerPort}"`,
+      ];
+
+  // Next.js stacks need a healthcheck override because basePath changes the URL.
+  // Other stacks (Go, Rust, Python, Java, …) already have a correct healthcheck
+  // in their docker-compose.yml; overriding it with wget would break Python/Java
+  // containers that don't have wget, making them unhealthy and invisible to Traefik.
+  const healthcheckLines = isNextjs
+    ? [
+        '    healthcheck:',
+        `      test: ["CMD", "wget", "-q", "-O", "/dev/null", "${healthUrl}"]`,
+        '      interval: 10s',
+        '      timeout: 5s',
+        '      retries: 5',
+        '      start_period: 30s',
+      ]
+    : [];
+
+  const lines = [
+    'networks:',
+    '  brewnet:',
+    '    external: true',
+    '',
+    'services:',
+    '  backend:',
+    '    networks:',
+    '      - default',
+    '      - brewnet',
+    ...healthcheckLines,
+    '    labels:',
+    ...backendLabels,
+  ];
+
+  if (frontendContainerPort !== undefined) {
+    const frn = `bp-${stackId}-ui`;
+    const fpp = `/apps/${stackId}-ui`;
+    lines.push(
+      '',
+      '  frontend:',
+      '    networks:',
+      '      - default',
+      '      - brewnet',
+      '    labels:',
+      '      - "traefik.enable=true"',
+      `      - "traefik.docker.network=brewnet"`,
+      `      - "traefik.http.routers.${frn}.rule=PathPrefix(\`${fpp}\`)"`,
+      `      - "traefik.http.routers.${frn}.entrypoints=web"`,
+      `      - "traefik.http.middlewares.${frn}-strip.stripprefix.prefixes=${fpp}"`,
+      `      - "traefik.http.routers.${frn}.middlewares=${frn}-strip"`,
+      `      - "traefik.http.services.${frn}.loadbalancer.server.port=${frontendContainerPort}"`,
+    );
+  }
+
+  writeFileSync(join(projectDir, 'docker-compose.override.yml'), lines.join('\n') + '\n', 'utf-8');
+}
+
+// ---------------------------------------------------------------------------
+// T010b — patchDockerfileHealthcheck
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace `localhost` with `127.0.0.1` in all Dockerfile HEALTHCHECK lines.
+ *
+ * On Alpine Linux, `localhost` resolves to `::1` (IPv6) but many service
+ * containers only listen on IPv4. This makes `wget http://localhost:<port>`
+ * fail with "Connection refused", leaving containers permanently unhealthy
+ * and invisible to Traefik's Docker provider.
+ *
+ * Patches both `backend/Dockerfile` and `frontend/Dockerfile` if present.
+ * Only applies to non-Next.js stacks — Next.js healthchecks are handled by
+ * writeTraefikOverride which generates a fresh CMD with the correct basePath URL.
+ *
+ * @param projectDir - Absolute path to the boilerplate project directory
+ * @param stackId    - Stack identifier (e.g. "python-django")
+ */
+export function patchDockerfileHealthcheck(projectDir: string, stackId: string): void {
+  if (stackId.startsWith('nodejs-nextjs')) return;
+
+  const dockerfiles = [
+    join(projectDir, 'Dockerfile'),
+    join(projectDir, 'backend', 'Dockerfile'),
+    join(projectDir, 'frontend', 'Dockerfile'),
+  ];
+
+  for (const p of dockerfiles) {
+    try {
+      const original = readFileSync(p, 'utf-8');
+      const patched = original.replace(
+        /HEALTHCHECK(.*\\\n.*|\s.*)\bhttp:\/\/localhost:/g,
+        (m) => m.replace(/http:\/\/localhost:/g, 'http://127.0.0.1:'),
+      );
+      if (patched !== original) {
+        writeFileSync(p, patched, 'utf-8');
+      }
+    } catch { /* file not present — skip */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// T011 — patchNextjsConfig
+// ---------------------------------------------------------------------------
+
+/**
+ * Patch next.config.ts (or next.config.js) in the boilerplate directory to set
+ * `basePath` so that Next.js generates asset URLs (/_next/...) prefixed with
+ * the Traefik path, preventing broken images/CSS when served under a sub-path.
+ *
+ * Must be called BEFORE startContainers so that `next build` (inside Docker)
+ * bakes the correct basePath into the build output.
+ *
+ * Only applies to nodejs-nextjs* stacks. No-ops silently for other stacks.
+ *
+ * @param projectDir - Absolute path to the boilerplate project directory
+ * @param stackId    - Stack identifier (e.g. "nodejs-nextjs-full")
+ */
+export function patchNextjsConfig(projectDir: string, stackId: string): void {
+  if (!stackId.startsWith('nodejs-nextjs')) return;
+
+  const basePath = `/apps/${stackId}`;
+
+  // --- 1. Patch next.config.ts / .js / .mjs ---
+  const candidates = ['next.config.ts', 'next.config.js', 'next.config.mjs'];
+  let configPath = '';
+  for (const name of candidates) {
+    const p = join(projectDir, name);
+    try {
+      readFileSync(p);
+      configPath = p;
+      break;
+    } catch { /* not found */ }
+  }
+  if (configPath) {
+    let content = readFileSync(configPath, 'utf-8');
+    if (/basePath\s*:/.test(content)) {
+      content = content.replace(/basePath\s*:\s*['"`][^'"`]*['"`]/, `basePath: '${basePath}'`);
+    } else if (/output\s*:\s*['"`]standalone['"`]/.test(content)) {
+      content = content.replace(
+        /(output\s*:\s*['"`]standalone['"`])/,
+        `$1,\n    basePath: '${basePath}'`,
+      );
+    } else {
+      content = content.replace(/(\};\s*$)/, `  basePath: '${basePath}',\n$1`);
+    }
+    writeFileSync(configPath, content, 'utf-8');
+  }
+
+  // --- 2. Patch Dockerfile HEALTHCHECK to include basePath ---
+  // Without this, `docker ps` would show the container as unhealthy because
+  // Next.js routes all paths under basePath (e.g. /apps/stackId/health).
+  const dockerfilePath = join(projectDir, 'Dockerfile');
+  try {
+    let dockerfile = readFileSync(dockerfilePath, 'utf-8');
+    // Match wget/curl health check lines and append basePath before /health
+    dockerfile = dockerfile.replace(
+      /(wget\s+-q\s+-O\s+\/dev\/null\s+http:\/\/127\.0\.0\.1:\d+)(\/health)/g,
+      `$1${basePath}$2`,
+    );
+    dockerfile = dockerfile.replace(
+      /(curl\s+[^"]*http:\/\/127\.0\.0\.1:\d+)(\/health)/g,
+      `$1${basePath}$2`,
+    );
+    writeFileSync(dockerfilePath, dockerfile, 'utf-8');
+  } catch { /* Dockerfile not present or no healthcheck line — skip */ }
 }

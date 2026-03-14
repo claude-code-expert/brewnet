@@ -39,6 +39,8 @@ export interface ServiceStatus {
   port: number | null;
   url: string | null;
   removable: boolean;
+  /** docker compose project name — used to identify which boilerplate stack this container belongs to */
+  project?: string;
 }
 
 export interface AdminServerOptions {
@@ -56,6 +58,8 @@ interface BoilerplateMeta {
   appDir?: string;
   backendUrl?: string;
   frontendUrl?: string;
+  externalUrl?: string;
+  frontendExternalUrl?: string;
   isUnified?: boolean;
   lang?: string;
   frameworkId?: string;
@@ -213,11 +217,35 @@ var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTun
 var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
 var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
-function getExternalUrl(id){
+function getExternalUrl(id,port,project){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
-  var e=EXT_PATHS[id];if(!e)return null;
-  if(c.quickTunnelUrl){var base=c.quickTunnelUrl.replace(/\\/$/,'');return base+e.path;}
-  if(c.zoneName){return e.sub?'https://'+e.sub+'.'+c.zoneName:'https://'+c.zoneName;}
+  var base=c.quickTunnelUrl?c.quickTunnelUrl.replace(/\\/$/,''):(c.zoneName?'https://'+c.zoneName:'');
+  if(!base)return null;
+  // 1. Static known services (EXT_PATHS lookup by service ID)
+  var e=EXT_PATHS[id];
+  if(e){return base+e.path;}
+  // 2. Boilerplate services — identified by docker compose project name (= stackId)
+  if(BOILERPLATE_STACKS&&BOILERPLATE_STACKS.length){
+    for(var i=0;i<BOILERPLATE_STACKS.length;i++){
+      var bs=BOILERPLATE_STACKS[i];
+      // Primary: exact project match (com.docker.compose.project = stackId)
+      if(project&&project===bs.stackId){
+        if(id==='backend')return base+'/apps/'+bs.stackId;
+        if(id==='frontend'&&!bs.isUnified)return base+'/apps/'+bs.stackId+'-ui';
+      }
+    }
+    // Fallback: port-based matching (for installs without project label in older versions)
+    for(var j=0;j<BOILERPLATE_STACKS.length;j++){
+      var bs2=BOILERPLATE_STACKS[j];
+      if(port&&bs2.backendUrl){var m=bs2.backendUrl.match(/:(\\d+)$/);if(m&&parseInt(m[1])===port)return base+'/apps/'+bs2.stackId;}
+      if(port&&!bs2.isUnified&&bs2.frontendUrl){var m2=bs2.frontendUrl.match(/:(\\d+)$/);if(m2&&parseInt(m2[1])===port)return base+'/apps/'+bs2.stackId+'-ui';}
+    }
+  }
+  // 3. Direct fallback: project label = stackId = compose project dir name
+  //    Works even when .brewnet-boilerplate.json is missing or not yet loaded.
+  //    frontend service only exists in non-unified stacks, so showing -ui is always safe.
+  if(project&&id==='backend')return base+'/apps/'+project;
+  if(project&&id==='frontend')return base+'/apps/'+project+'-ui';
   return null;
 }
 function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -278,6 +306,10 @@ function showBoilerplateModal(idx){
   var fu=s.frontendUrl||'';
   if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Backend:</span> <a href="'+escapeHtml(bu)+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'</a></div>';}
   if(!s.isUnified&&fu&&fu!==bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Frontend:</span> <a href="'+escapeHtml(fu)+'" target="_blank" class="modal-url-a">'+escapeHtml(fu)+'</a></div>';}
+  var bpExtApi=s.stackId?getExternalUrl('backend',null,s.stackId):null;
+  var bpExtUi=(!s.isUnified&&s.stackId)?getExternalUrl('frontend',null,s.stackId):null;
+  if(bpExtApi){accessHtml+='<div class="modal-url"><span class="modal-url-label">External (API):</span> <a href="'+escapeHtml(bpExtApi)+'" target="_blank" class="modal-url-a">'+escapeHtml(bpExtApi)+'</a></div>';}
+  if(bpExtUi){accessHtml+='<div class="modal-url"><span class="modal-url-label">External (UI):</span> <a href="'+escapeHtml(bpExtUi)+'" target="_blank" class="modal-url-a">'+escapeHtml(bpExtUi)+'</a></div>';}
   if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
   var stackLabel=(s.lang||'')+(s.frameworkId?' / '+s.frameworkId:'');
   var dbLabel=(s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:'');
@@ -319,7 +351,7 @@ async function loadServices(manual){
   const tbody=document.getElementById('svc-body');
   if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
   tbody.innerHTML=r.services.map(s=>{
-    var ext=getExternalUrl(s.id);
+    var ext=getExternalUrl(s.id,s.port,s.project);
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
@@ -338,10 +370,18 @@ async function loadServices(manual){
   document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
   if(manual&&r.services){
     r.services.forEach(function(s){
-      var ext=getExternalUrl(s.id);
+      var ext=getExternalUrl(s.id,s.port,s.project);
       var lv=s.status==='running'?'ok':s.status==='error'?'error':'dim';
       var detail='['+s.id+'] '+s.status+(s.port?' port='+s.port:'')+(s.url?' — '+s.url:'')+(ext?' | ext: '+ext:'');
       log(detail,lv);
+      // Per-service diag for boilerplate containers
+      if(s.id==='backend'||s.id==='frontend'){
+        var diagBase=DOMAIN_CONFIG.quickTunnelUrl?DOMAIN_CONFIG.quickTunnelUrl.replace(/\\/$/, ''):(DOMAIN_CONFIG.zoneName?'https://'+DOMAIN_CONFIG.zoneName:'');
+        log('[diag] '+s.id+': project='+(s.project||'MISSING')+' port='+(s.port||'—')+' base='+(diagBase||'NONE')+' ext='+(ext||'NULL'),'warn');
+        if(BOILERPLATE_STACKS&&BOILERPLATE_STACKS.length){
+          BOILERPLATE_STACKS.forEach(function(bs,i){log('[diag]   stack['+i+'] stackId='+bs.stackId+' match='+(s.project===bs.stackId),'dim');});
+        }
+      }
     });
     if(sum)log(sum.running+'/'+sum.total+' services running · cpu: '+(sum.cpu||'—')+' · mem: '+(sum.memory||'—'),'info');
   }
@@ -374,6 +414,23 @@ async function removeSvc(id){
 }
 log('Brewnet admin panel connected — localhost:8088','ok');
 log('Click a service name for details · Refresh to reload status','dim');
+// --- DIAG: tunnel / boilerplate connection diagnostics ---
+log('[diag] DOMAIN_CONFIG: provider='+DOMAIN_CONFIG.provider+' quickTunnelUrl='+(DOMAIN_CONFIG.quickTunnelUrl||'NONE')+' zoneName='+(DOMAIN_CONFIG.zoneName||'NONE'),'dim');
+if(BOILERPLATE_STACKS&&BOILERPLATE_STACKS.length){
+  log('[diag] BOILERPLATE_STACKS count='+BOILERPLATE_STACKS.length,'dim');
+  BOILERPLATE_STACKS.forEach(function(bs,i){log('[diag] stack['+i+']: stackId='+bs.stackId+' isUnified='+bs.isUnified+' backendUrl='+(bs.backendUrl||'NONE')+' frontendUrl='+(bs.frontendUrl||'NONE'),'dim');});
+}else{
+  log('[diag] BOILERPLATE_STACKS: empty or null','warn');
+}
+// Populate boilerplate External URL cells dynamically (project-based lookup — no port matching needed)
+if(BOILERPLATE_STACKS&&BOILERPLATE_STACKS.length){
+  BOILERPLATE_STACKS.forEach(function(bs,i){
+    var el=document.getElementById('bpext-'+i);if(!el)return;
+    var url=getExternalUrl('backend',null,bs.stackId);
+    log('[diag] bpext['+i+'] stackId='+bs.stackId+' -> url='+(url||'NULL'),'dim');
+    if(url)el.outerHTML='<a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a>';
+  });
+}
 loadServices(true);
 setInterval(loadServices,15000);
 </script>
@@ -455,6 +512,7 @@ async function handleGetServices(
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
       const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
 
+      const projectLabel = c.Labels?.['com.docker.compose.project'] ?? undefined;
       services.push({
         id: composeService,
         name: def?.name ?? composeService,
@@ -466,9 +524,15 @@ async function handleGetServices(
         port: port ?? null,
         url: WEB_UI_SERVICES.has(composeService) && port
           ? urlMap[composeService] ?? `http://localhost:${port}`
-          : null,
+          : (!def && port ? `http://localhost:${port}` : null),
         removable: !REQUIRED_SERVICES.has(composeService),
+        project: projectLabel,
       });
+
+      // Debug: log boilerplate container identifiers for external URL diagnosis
+      if (composeService === 'backend' || composeService === 'frontend') {
+        logger.info('admin-server', `[diag:docker] ${composeService}: project=${projectLabel ?? 'MISSING'} port=${port ?? '—'} name=${c.Names?.[0] ?? '?'} state=${s}`);
+      }
     }
 
     const running = services.filter((s) => s.status === 'running').length;
@@ -669,7 +733,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   // Resolve project path and wizard state.
   // Always load wizard state from the last project — options.projectPath only
   // overrides the filesystem path, not whether state is loaded.
-  let projectPath = options.projectPath ?? process.cwd();
+  // Expand leading ~ — Node.js fs functions don't resolve shell tilde notation.
+  // Apply unconditionally so callers passing state.projectPath directly are also covered.
+  const rawPath = options.projectPath ?? process.cwd();
+  let projectPath = rawPath.startsWith('~') ? join(homedir(), rawPath.slice(1)) : rawPath;
   let wizardState: WizardState | null = null;
   const last = getLastProject();
   if (last) {
@@ -677,7 +744,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (state) {
       wizardState = state;
       // Only fall back to state.projectPath when caller didn't supply one
-      if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
+      if (!options.projectPath && state.projectPath) {
+        const raw = state.projectPath;
+        projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
+      }
     }
   }
 
@@ -689,6 +759,48 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
+  // Helper: build boilerplate HTML + JSON from a stacks array
+  function buildBoilerplateDashData(stacks: BoilerplateMeta[]): { html: string; json: string } {
+    const rows = stacks.map((s, idx) => {
+      const statusCls = s.status === 'running' ? 'running'
+        : s.status === 'timeout' ? 'error' : 'stopped';
+      const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
+      const backendLink = s.backendUrl
+        ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
+        : '—';
+      const bpBackPort = s.backendUrl ? (s.backendUrl.match(/:(\d+)$/) ?? [])[1] ?? '' : '';
+      const externalCell = `<span id="bpext-${idx}" data-port="${bpBackPort}">—</span>`;
+      const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
+        ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
+        : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
+      const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
+      const docsCell = docsUrl
+        ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
+        : '—';
+      return `<tr>
+    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
+    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
+    <td>${backendLink}</td>
+    <td>${externalCell}</td>
+    <td>${frontendCell}</td>
+    <td>${docsCell}</td>
+    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
+  </tr>`;
+    }).join('\n');
+
+    return {
+      html: `
+<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
+<table>
+  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>External</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
+  <tbody>
+${rows}
+  </tbody>
+</table>`,
+      json: JSON.stringify(stacks),
+    };
+  }
+
   // Read boilerplate metadata if available (supports both array and legacy single object)
   let boilerplateHtml = '';
   let boilerplateStacksJson = '[]';
@@ -696,45 +808,11 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
     if (existsSync(bpMetaPath)) {
       const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
-      // Normalize: legacy single-object → array
       const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
-
       if (stacks.length > 0) {
-        boilerplateStacksJson = JSON.stringify(stacks);
-
-        // Build HTML table rows — each stack name is clickable (triggers modal)
-        const rows = stacks.map((s, idx) => {
-          const statusCls = s.status === 'running' ? 'running'
-            : s.status === 'timeout' ? 'error' : 'stopped';
-          const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
-          const backendLink = s.backendUrl
-            ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
-            : '—';
-          const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
-            ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
-            : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
-          const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
-          const docsCell = docsUrl
-            ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
-            : '—';
-          return `<tr>
-    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
-    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
-    <td>${backendLink}</td>
-    <td>${frontendCell}</td>
-    <td>${docsCell}</td>
-    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
-  </tr>`;
-        }).join('\n');
-
-        boilerplateHtml = `
-<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
-<table>
-  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
-  <tbody>
-${rows}
-  </tbody>
-</table>`;
+        const built = buildBoilerplateDashData(stacks);
+        boilerplateHtml = built.html;
+        boilerplateStacksJson = built.json;
       }
     }
   } catch { /* non-fatal */ }
@@ -763,6 +841,8 @@ ${rows}
   // Cache for dashboard HTML (regenerated when Quick Tunnel URL is detected)
   let dashboardHtml = generateDashboardHtml(dashConfig);
   let quickTunnelDetected = !!dashConfig.quickTunnelUrl;
+  // Track whether boilerplate was already loaded — re-check until file appears
+  let boilerplateMetaLoaded = boilerplateStacksJson !== '[]';
 
   /**
    * Detect Quick Tunnel URL from running cloudflared container logs.
@@ -827,6 +907,35 @@ ${rows}
     }
   }
 
+  /**
+   * Lazy boilerplate metadata refresh.
+   * Runs on every dashboard request until .brewnet-boilerplate.json appears on disk.
+   * Once loaded, stops checking (boilerplateMetaLoaded = true).
+   */
+  async function refreshBoilerplateMeta(): Promise<void> {
+    if (boilerplateMetaLoaded) return;
+    try {
+      const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
+      const fileExists = existsSync(bpMetaPath);
+      logger.info('admin-server', `[boilerplate] checking ${bpMetaPath} — ${fileExists ? 'found' : 'NOT FOUND'}`);
+      if (!fileExists) return;
+      const rawStr = readFileSync(bpMetaPath, 'utf-8');
+      logger.info('admin-server', `[boilerplate] file content: ${rawStr.slice(0, 200)}`);
+      const raw = JSON.parse(rawStr) as BoilerplateMeta | BoilerplateMeta[];
+      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+      logger.info('admin-server', `[boilerplate] parsed ${stacks.length} stack(s): ${stacks.map((s) => s.stackId).join(', ')}`);
+      if (stacks.length === 0) return;
+      const built = buildBoilerplateDashData(stacks);
+      dashConfig.boilerplateHtml = built.html;
+      dashConfig.boilerplateStacksJson = built.json;
+      dashboardHtml = generateDashboardHtml(dashConfig);
+      boilerplateMetaLoaded = true;
+      logger.info('admin-server', `[boilerplate] dashboard updated with ${stacks.length} stack(s)`);
+    } catch (err) {
+      logger.info('admin-server', `[boilerplate] error: ${String(err)}`);
+    }
+  }
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const parts = url.split('?')[0].split('/').filter(Boolean);
@@ -862,10 +971,11 @@ ${rows}
       return;
     }
 
-    // Serve dashboard HTML (with lazy Quick Tunnel + credential detection)
+    // Serve dashboard HTML (with lazy Quick Tunnel + credential + boilerplate detection)
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
       await detectQuickTunnelUrl();
       await detectCredentials();
+      await refreshBoilerplateMeta();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(dashboardHtml);
       return;

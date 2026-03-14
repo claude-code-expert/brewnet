@@ -232,14 +232,20 @@ export async function runDevStackStep(
 
     const frameworkChoice = await select<string>({
       message: `${LANGUAGE_REGISTRY[lang].name} framework`,
-      choices: frameworks.map((fw) => ({
-        name: `${fw.name} — ${fw.description}`,
-        value: fw.id,
-      })),
+      choices: [
+        ...frameworks.map((fw) => ({
+          name: `${fw.name} — ${fw.description}`,
+          value: fw.id,
+        })),
+        { name: 'Skip — 기본값 사용 (첫 번째 프레임워크)', value: '__skip__' },
+      ],
       // T020 fix: defensive access to frameworks[0]?.id
       default: next.devStack.frameworks[lang] ?? frameworks[0]?.id ?? '',
     });
-    frameworkSelections[lang] = frameworkChoice;
+    // Skip = use first framework as default
+    frameworkSelections[lang] = frameworkChoice === '__skip__'
+      ? (frameworks[0]?.id ?? '')
+      : frameworkChoice;
     console.log();
   }
 
@@ -291,7 +297,7 @@ export async function runDevStackStep(
     console.log(chalk.dim('  App Server detected — configure file browser mode'));
     console.log();
 
-    const fileBrowserMode = await select<FileBrowserMode>({
+    const fileBrowserMode = await select<FileBrowserMode | '__skip__'>({
       message: 'FileBrowser mode',
       choices: [
         {
@@ -302,10 +308,13 @@ export async function runDevStackStep(
           name: 'Standalone — dedicated FileBrowser container',
           value: 'standalone' as FileBrowserMode,
         },
+        { name: 'Skip — 기본값 사용 (directory)', value: '__skip__' as const },
       ],
       default: next.servers.fileBrowser.mode || 'directory',
     });
-    next.servers.fileBrowser.mode = fileBrowserMode;
+    if (fileBrowserMode !== '__skip__') {
+      next.servers.fileBrowser.mode = fileBrowserMode;
+    }
     console.log();
   }
 
@@ -326,7 +335,7 @@ export async function runDevStackStep(
   if (generateBoilerplate) {
     next.boilerplate.sampleData = false;
 
-    const devMode = await select<DevMode>({
+    const devMode = await select<DevMode | '__skip__'>({
       message: 'Development mode',
       choices: [
         {
@@ -337,10 +346,13 @@ export async function runDevStackStep(
           name: 'Production — optimized build  (choose this if you are deploying a production-ready service)',
           value: 'production' as DevMode,
         },
+        { name: 'Skip — 기본값 사용 (hot-reload)', value: '__skip__' as const },
       ],
       default: next.boilerplate.devMode || 'hot-reload',
     });
-    next.boilerplate.devMode = devMode;
+    if (devMode !== '__skip__') {
+      next.boilerplate.devMode = devMode;
+    }
   } else {
     next.boilerplate.sampleData = false;
     next.boilerplate.devMode = 'hot-reload';

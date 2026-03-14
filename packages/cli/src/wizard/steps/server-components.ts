@@ -183,6 +183,26 @@ export async function runServerComponentsStep(
   console.log();
 
   // -------------------------------------------------------------------------
+  // Skip option (entire step)
+  // -------------------------------------------------------------------------
+  const stepAction = await select<'configure' | 'skip'>({
+    message: 'Server Components 설정',
+    choices: [
+      { name: 'Configure — 서버 컴포넌트 직접 설정하기', value: 'configure' },
+      { name: 'Skip — 기본 설정으로 건너뛰기 (Traefik + Git Server만 활성화)', value: 'skip' },
+    ],
+    default: 'configure',
+  });
+  console.log();
+
+  if (stepAction === 'skip') {
+    const defaultState = applyComponentRules(next);
+    console.log(chalk.yellow('  Server Components 건너뜀 — 기본값 적용됨'));
+    console.log();
+    return defaultState;
+  }
+
+  // -------------------------------------------------------------------------
   // 2. Admin Account summary (read-only — configured in Pre-Step)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Admin Account') + chalk.dim(' (configured in Pre-Step)'));
@@ -197,16 +217,17 @@ export async function runServerComponentsStep(
   console.log(chalk.dim('  모든 서비스 앞단에서 HTTPS 처리 및 도메인 라우팅을 담당하는 리버스 프록시'));
   console.log();
 
-  const webService = await select<WebServerService>({
+  const webService = await select<WebServerService | '__skip__'>({
     message: 'Reverse proxy',
     choices: [
       { name: 'Traefik (recommended)', value: 'traefik', description: '자동 SSL 갱신 + Docker 레이블 기반 라우팅. 서비스 추가 시 설정 불필요' },
       { name: 'Nginx', value: 'nginx', description: '업계 표준 웹서버 겸 프록시. 안정적이며 범용 설정 지원' },
       { name: 'Caddy', value: 'caddy', description: '간결한 설정 파일, Let\'s Encrypt 자동화 내장' },
+      { name: 'Skip — 기본값 사용 (Traefik)', value: '__skip__' as const },
     ],
     default: next.servers.webServer.service || 'traefik',
   });
-  next.servers.webServer.service = webService;
+  next.servers.webServer.service = webService === '__skip__' ? 'traefik' : webService;
   console.log();
 
   // -------------------------------------------------------------------------
@@ -223,15 +244,16 @@ export async function runServerComponentsStep(
   next.servers.fileServer.enabled = fileServerEnabled;
 
   if (fileServerEnabled) {
-    const fileService = await select<FileServerService>({
+    const fileService = await select<FileServerService | '__skip__'>({
       message: 'File server service',
       choices: [
         { name: 'Nextcloud', value: 'nextcloud', description: '파일 동기화 + 캘린더·연락처·사진 앱 포함 올인원 협업 Suite' },
         { name: 'MinIO (S3-compatible)', value: 'minio', description: 'AWS S3 호환 오브젝트 스토리지. 대용량 파일·백업·미디어 저장에 최적' },
+        { name: 'Skip — 기본값 사용 (Nextcloud)', value: '__skip__' as const },
       ],
       default: next.servers.fileServer.service || 'nextcloud',
     });
-    next.servers.fileServer.service = fileService;
+    next.servers.fileServer.service = fileService === '__skip__' ? 'nextcloud' : fileService;
   } else {
     next.servers.fileServer.service = '';
   }
@@ -261,27 +283,31 @@ export async function runServerComponentsStep(
 
   if (dbEnabled) {
     // Primary database
-    const dbPrimary = await select<DbPrimary>({
+    const dbPrimary = await select<DbPrimary | '__skip__'>({
       message: 'Primary database',
       choices: [
         { name: 'PostgreSQL (recommended)', value: 'postgresql', description: '기능이 풍부한 오픈소스 RDBMS. JSON·전문검색 지원, 대규모 서비스에 적합' },
         { name: 'MySQL', value: 'mysql', description: '세계 최다 사용 DB. WordPress·Drupal 등 PHP 생태계와 높은 호환성' },
         { name: 'SQLite (embedded)', value: 'sqlite', description: '파일 기반 경량 DB. 외부 서버 불필요, 소규모·단일 서비스용' },
+        { name: 'Skip — 기본값 사용 (PostgreSQL)', value: '__skip__' as const },
       ],
       default: next.servers.dbServer.primary || 'postgresql',
     });
-    next.servers.dbServer.primary = dbPrimary;
+    next.servers.dbServer.primary = (dbPrimary === '__skip__' ? 'postgresql' : dbPrimary) as DbPrimary;
 
     // Version selection (skip for SQLite — it only has version "3")
     if (dbPrimary !== 'sqlite') {
       const versions = DB_VERSIONS[dbPrimary] ?? [];
       if (versions.length > 0) {
         const dbVersion = await select<string>({
-          message: `${dbPrimary === 'postgresql' ? 'PostgreSQL' : 'MySQL'} version`,
-          choices: versions.map((v) => ({ name: v, value: v })),
+          message: `${next.servers.dbServer.primary === 'postgresql' ? 'PostgreSQL' : 'MySQL'} version`,
+          choices: [
+            ...versions.map((v) => ({ name: v, value: v })),
+            { name: 'Skip — 기본값 사용 (최신 버전)', value: '__skip__' },
+          ],
           default: next.servers.dbServer.primaryVersion || versions[0],
         });
-        next.servers.dbServer.primaryVersion = dbVersion;
+        next.servers.dbServer.primaryVersion = dbVersion === '__skip__' ? (versions[0] ?? '') : dbVersion;
       }
 
       // Admin UI (pgAdmin / phpMyAdmin)

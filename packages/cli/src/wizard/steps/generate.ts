@@ -13,7 +13,7 @@
  * @module wizard/steps/generate
  */
 
-import { writeFileSync, mkdirSync, appendFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
@@ -777,6 +777,9 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       pollHealth: boilerplatePollHealth,
       verifyEndpoints: boilerplateVerifyEndpoints,
       findFreePort,
+      writeTraefikOverride,
+      patchDockerfileHealthcheck,
+      patchNextjsConfig,
     } = await import('../../services/boilerplate-manager.js');
 
     // Map wizard DB selection to boilerplate DB_DRIVER value
@@ -798,6 +801,8 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       appDir: string;
       backendUrl: string;
       frontendUrl: string;
+      externalUrl: string;
+      frontendExternalUrl: string;
       isUnified: boolean;
       lang: string;
       frameworkId: string;
@@ -846,6 +851,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       const isJavaOrKotlin = stackId.startsWith('java-') || stackId.startsWith('kotlin-');
       const healthTimeoutMs = isRust ? 600_000 : (isJavaOrKotlin ? 300_000 : 120_000);
 
+      const bpTunnelMode = state.domain.cloudflare?.tunnelMode;
       console.log();
       const bpSpinner = ora(`  [${stackId}] 클론 중...`).start();
       let stackStatus: StackStatus = 'failed';
@@ -858,6 +864,25 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         // Step 2: generate .env with wizard DB settings (hostPort/frontendPort ensure correct port bindings)
         bpSpinner.text = `  [${stackId}] 런타임 환경 구성 중... (DB: ${dbDriver}, user: ${dbOpts.dbUser})`;
         boilerplateGenerateEnv(appDir, stackId, dbDriver, { ...dbOpts, hostPort: backendPort, frontendPort });
+
+        // Step 2b: write docker-compose.override.yml to join brewnet network + Traefik labels
+        // Frontend containers in boilerplate stacks are nginx-served builds: internal port 80.
+        // (Host-side FRONTEND_PORT maps to 80 inside the container, e.g. "3001:80".)
+        if (bpTunnelMode === 'quick' || bpTunnelMode === 'named') {
+          try {
+            const { execa: execaNet } = await import('execa');
+            await execaNet('docker', ['network', 'inspect', 'brewnet']);
+            writeTraefikOverride(appDir, stackId, defaultPort, isUnified ? undefined : 80);
+          } catch { /* brewnet network not available — skip Traefik override */ }
+        }
+
+        // Step 2c: fix Dockerfile HEALTHCHECK localhost → 127.0.0.1 (Alpine IPv6 issue).
+        // Must run before startContainers so the fixed Dockerfile is baked into the image.
+        patchDockerfileHealthcheck(appDir, stackId);
+
+        // Step 2d: patch next.config.ts basePath for Next.js stacks so asset URLs
+        // include the /apps/<stackId> prefix (required when served under Traefik sub-path).
+        patchNextjsConfig(appDir, stackId);
 
         // Step 3: start containers (with build)
         if (isRust) {
@@ -883,9 +908,13 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         }
         await boilerplateStartContainers(appDir);
 
-        // Step 4: poll health endpoint until ready
+        // Step 4: poll health endpoint until ready.
+        // Next.js stacks with basePath require /apps/<stackId>/health (not /health).
+        const healthPath = stackId.startsWith('nodejs-nextjs')
+          ? `/apps/${stackId}/health`
+          : '/health';
         bpSpinner.text = `  [${stackId}] 헬스체크 대기 중... (timeout: ${Math.round(healthTimeoutMs / 1000)}s)`;
-        const health = await boilerplatePollHealth(baseUrl, healthTimeoutMs);
+        const health = await boilerplatePollHealth(baseUrl, healthTimeoutMs, healthPath);
 
         if (!health.healthy) {
           bpSpinner.warn(`  [${stackId}] 헬스체크 타임아웃 (${Math.round(healthTimeoutMs / 1000)}s 초과)`);
@@ -915,11 +944,24 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         stackStatus = 'failed';
       }
 
+      const bpBaseExternal =
+        bpTunnelMode === 'quick' && state.domain.cloudflare?.quickTunnelUrl
+          ? state.domain.cloudflare.quickTunnelUrl
+          : bpTunnelMode === 'named' && state.domain.cloudflare?.zoneName
+            ? `https://${state.domain.cloudflare.zoneName}`
+            : '';
+      const bpExternalUrl = bpBaseExternal ? `${bpBaseExternal}/apps/${stackId}` : '';
+      const bpFrontendExternalUrl = (!isUnified && bpBaseExternal)
+        ? `${bpBaseExternal}/apps/${stackId}-ui`
+        : '';
+
       stackMetas.push({
         stackId,
         appDir,
         backendUrl: baseUrl,
-        frontendUrl: isUnified ? baseUrl : 'http://127.0.0.1:3000',
+        frontendUrl: isUnified ? baseUrl : `http://127.0.0.1:${frontendPort ?? 3000}`,
+        externalUrl: bpExternalUrl,
+        frontendExternalUrl: bpFrontendExternalUrl,
         isUnified,
         lang,
         frameworkId,
