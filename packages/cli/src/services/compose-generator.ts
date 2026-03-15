@@ -10,6 +10,7 @@
 
 import yaml from 'js-yaml';
 import type { WizardState } from '@brewnet/shared';
+import { DOCKER_LOG_MAX_SIZE, DOCKER_LOG_MAX_FILES } from '@brewnet/shared';
 import { SERVICE_REGISTRY } from '../config/services.js';
 import type { ServiceDefinition } from '../config/services.js';
 
@@ -22,6 +23,11 @@ export interface ComposeHealthcheck {
   interval: string;
   timeout: string;
   retries: number;
+}
+
+export interface ComposeLogging {
+  driver: string;
+  options: Record<string, string>;
 }
 
 export interface ComposeService {
@@ -40,6 +46,7 @@ export interface ComposeService {
   command?: string | string[];
   entrypoint?: string[];
   secrets?: string[];
+  logging?: ComposeLogging;
 }
 
 export interface ComposeConfig {
@@ -57,6 +64,21 @@ export interface ComposeConfig {
 const BREWNET_PREFIX = 'brewnet';
 
 // ---------------------------------------------------------------------------
+// Logging configuration
+// ---------------------------------------------------------------------------
+
+function getLoggingConfig(): ComposeLogging {
+  return {
+    driver: 'json-file',
+    options: {
+      'max-size': DOCKER_LOG_MAX_SIZE,
+      'max-file': DOCKER_LOG_MAX_FILES,
+      tag: '{{.Name}}',
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Volume definitions per service
 // ---------------------------------------------------------------------------
 
@@ -66,6 +88,7 @@ function getServiceVolumes(serviceId: string): string[] {
       return [
         '/var/run/docker.sock:/var/run/docker.sock',
         `${BREWNET_PREFIX}_traefik_certs:/letsencrypt`,
+        './logs:/logs',
       ];
     case 'gitea':
       return [`${BREWNET_PREFIX}_gitea_data:/data`];
@@ -673,6 +696,9 @@ function buildComposeService(
     svc.volumes = volumes;
   }
 
+  // Logging — json-file driver with rotation for all services
+  svc.logging = getLoggingConfig();
+
   // Environment
   const environment = getServiceEnvironment(def.id, state);
   if (environment) {
@@ -741,6 +767,16 @@ function buildComposeService(
         '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json',
       );
     }
+    // Access log — JSON format, buffered writes, minimal header retention
+    cmds.push(
+      '--accesslog=true',
+      '--accesslog.filepath=/logs/access.log',
+      '--accesslog.format=json',
+      '--accesslog.bufferingsize=100',
+      '--accesslog.fields.headers.defaultmode=drop',
+      '--accesslog.fields.headers.names.User-Agent=keep',
+      '--accesslog.fields.headers.names.X-Forwarded-For=keep',
+    );
     svc.command = cmds;
 
     // Dashboard labels — BasicAuth-protected access to Traefik Dashboard/API
@@ -1041,6 +1077,7 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
       security_opt: ['no-new-privileges:true'],
       networks: ['brewnet'],
       labels: landingLabels,
+      logging: getLoggingConfig(),
     };
   }
 

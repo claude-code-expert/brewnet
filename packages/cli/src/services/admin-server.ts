@@ -24,7 +24,8 @@ import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
-import type { WizardState } from '@brewnet/shared';
+import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
+import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 
 // ---------------------------------------------------------------------------
 // Types (per admin-api.md)
@@ -163,6 +164,21 @@ tr:hover td{background:#161b22}
 .btn-remove:hover{background:#21262d}
 .actions{display:flex;gap:4px;align-items:center}
 #log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;height:200px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
+.tab-bar{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #30363d}
+.tab-btn{padding:8px 16px;cursor:pointer;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;font-family:inherit;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+.tab-btn.active{color:#f5a623;border-bottom-color:#f5a623}
+.tab-btn:hover{color:#c9d1d9}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.log-filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.log-filters select,.log-filters input{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 8px;border-radius:4px;font-family:inherit;font-size:12px}
+.log-level-btn{padding:3px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-family:inherit;font-size:11px}
+.log-level-btn.active{border-color:#f5a623;color:#f5a623}
+#logs-table{width:100%;border-collapse:collapse;font-size:12px}
+#logs-table td{padding:4px 8px;border-bottom:1px solid #21262d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#logs-table td:last-child{white-space:normal}
+.log-src-cli{color:#58d1ff}.log-src-tunnel{color:#d2a8ff}.log-src-access{color:#79c0ff}.log-src-service{color:#c9d1d9}
+.log-lvl-info{color:#3fb950}.log-lvl-warn{color:#e3b341}.log-lvl-error{color:#f85149}.log-lvl-debug{color:#8b949e}
 .section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
 .refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
@@ -203,6 +219,11 @@ tr:hover td{background:#161b22}
   </div>
   <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
 </div>
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('services')">Services</button>
+  <button class="tab-btn" onclick="switchTab('logs')">Logs</button>
+</div>
+<div id="tab-services" class="tab-content active">
 <div class="section-title">Services</div>
 <table id="svc-table">
   <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
@@ -298,8 +319,46 @@ ${config.boilerplateHtml}
   </div>
 </div>
 
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Log<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
+<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Activity<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
 <div id="log"></div>
+</div><!-- /tab-services -->
+
+<div id="tab-logs" class="tab-content">
+<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+  System Logs
+  <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e;text-transform:none;letter-spacing:0;cursor:pointer">
+    <input type="checkbox" id="logs-auto-refresh" checked style="accent-color:#f5a623"/> Auto-refresh (5s)
+  </label>
+</div>
+<div class="log-filters">
+  <select id="log-source" onchange="fetchLogs()">
+    <option value="">All Sources</option>
+    <option value="cli">CLI</option>
+    <option value="tunnel">Tunnel</option>
+    <option value="access">Access</option>
+    <option value="service">Service</option>
+  </select>
+  <select id="log-level" onchange="fetchLogs()">
+    <option value="">All Levels</option>
+    <option value="error">Error</option>
+    <option value="warn">Warn</option>
+    <option value="info">Info</option>
+    <option value="debug">Debug</option>
+  </select>
+  <select id="log-service-filter" onchange="fetchLogs()">
+    <option value="">All Services</option>
+  </select>
+  <input type="text" id="log-search" placeholder="Search..." onkeyup="if(event.key==='Enter')fetchLogs()" style="width:140px"/>
+  <span class="btn btn-start" style="font-size:11px" onclick="fetchLogs()">Search</span>
+</div>
+<div style="overflow-x:auto;max-height:500px;overflow-y:auto;border:1px solid #30363d;border-radius:4px">
+  <table id="logs-table">
+    <tbody id="logs-body"><tr><td colspan="5" style="color:#8b949e;padding:12px">Select the Logs tab to view system logs.</td></tr></tbody>
+  </table>
+</div>
+<div id="logs-stats" style="margin-top:8px;font-size:11px;color:#8b949e"></div>
+</div><!-- /tab-logs -->
+
 <script>
 var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
 var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
@@ -569,6 +628,73 @@ async function loadCloudflareStatus(){
     else{el.innerHTML='<span style="color:#e3b341">⚠️ Not configured</span>';}
   }catch(e){}
 }
+// ── Tab switching ──
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.tab-content').forEach(function(c){c.classList.remove('active');});
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelector('.tab-btn[onclick*="'+tab+'"]').classList.add('active');
+  if(tab==='logs'&&!window._logsLoaded){window._logsLoaded=true;fetchLogs();fetchLogStats();}
+}
+// ── Logs tab ──
+var _logsTimer=null;
+function fetchLogs(){
+  var src=document.getElementById('log-source').value;
+  var lvl=document.getElementById('log-level').value;
+  var svc=document.getElementById('log-service-filter').value;
+  var search=document.getElementById('log-search').value.trim();
+  var params=new URLSearchParams();
+  if(src)params.set('source',src);
+  if(lvl)params.set('level',lvl);
+  if(svc)params.set('service',svc);
+  if(search)params.set('search',search);
+  params.set('limit','200');
+  fetch('/api/logs?'+params.toString()).then(function(r){return r.json();}).then(function(d){
+    var body=document.getElementById('logs-body');
+    if(!d.entries||d.entries.length===0){body.innerHTML='<tr><td colspan="5" style="color:#8b949e;padding:12px">No log entries found.</td></tr>';return;}
+    var html='';
+    d.entries.forEach(function(e){
+      var ts=e.timestamp.replace('T',' ').replace(/\\.\\d+Z$/,'').replace('Z','');
+      var srcCls='log-src-'+(e.source||'service');
+      var lvlCls='log-lvl-'+(e.level||'info');
+      html+='<tr><td style="width:155px">'+ts+'</td><td class="'+srcCls+'" style="width:65px">'+(e.source||'').toUpperCase()+'</td><td class="'+lvlCls+'" style="width:50px">'+(e.level||'').toUpperCase()+'</td><td style="width:90px">'+(e.service||'')+'</td><td>'+escapeHtml(e.message)+'</td></tr>';
+    });
+    if(d.hasMore)html+='<tr><td colspan="5" style="color:#8b949e;font-style:italic">… '+(d.total-d.entries.length)+' more entries</td></tr>';
+    body.innerHTML=html;
+    // Populate service filter
+    var svcFilter=document.getElementById('log-service-filter');
+    var currentVal=svcFilter.value;
+    var services=new Set();d.entries.forEach(function(e){if(e.service)services.add(e.service);});
+    var opts='<option value="">All Services</option>';
+    Array.from(services).sort().forEach(function(s){opts+='<option value="'+s+'"'+(s===currentVal?' selected':'')+'>'+s+'</option>';});
+    svcFilter.innerHTML=opts;
+  }).catch(function(){
+    document.getElementById('logs-body').innerHTML='<tr><td colspan="5" style="color:#f85149;padding:12px">Failed to fetch logs.</td></tr>';
+  });
+}
+function fetchLogStats(){
+  fetch('/api/logs/stats').then(function(r){return r.json();}).then(function(d){
+    var el=document.getElementById('logs-stats');
+    var parts=['Total: '+d.total];
+    if(d.bySource){Object.keys(d.bySource).forEach(function(k){if(d.bySource[k]>0)parts.push(k+': '+d.bySource[k]);});}
+    if(d.byLevel&&d.byLevel.error>0)parts.push('<span style="color:#f85149">errors: '+d.byLevel.error+'</span>');
+    el.innerHTML=parts.join(' &middot; ');
+  }).catch(function(){});
+}
+// Auto-refresh logs every 5 seconds
+function startLogsAutoRefresh(){
+  if(_logsTimer)clearInterval(_logsTimer);
+  _logsTimer=setInterval(function(){
+    if(document.getElementById('logs-auto-refresh').checked&&document.getElementById('tab-logs').classList.contains('active')){
+      fetchLogs();fetchLogStats();
+    }
+  },5000);
+}
+document.getElementById('logs-auto-refresh').addEventListener('change',function(){
+  if(this.checked)startLogsAutoRefresh();else if(_logsTimer){clearInterval(_logsTimer);_logsTimer=null;}
+});
+startLogsAutoRefresh();
+
 // Auto-load domains and settings status
 setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
 </script>
@@ -1105,6 +1231,42 @@ ${rows}
         if (parts[1] === 'backup') {
           await handleBackup(req, res, parts, body, projectPath);
           return;
+        }
+
+        // ── Logs API (T021-T022) ────────────────────────────────────
+        if (parts[1] === 'logs') {
+          if (req.method === 'GET' && parts[2] === 'stats') {
+            const stats = await getLogStats(projectPath);
+            json(res, 200, stats);
+            return;
+          }
+          if (req.method === 'GET') {
+            const qUrl = new URL(url, 'http://localhost');
+            const sources = qUrl.searchParams.get('source');
+            const levels = qUrl.searchParams.get('level');
+            const services = qUrl.searchParams.get('service');
+            const since = qUrl.searchParams.get('since') ?? undefined;
+            const until = qUrl.searchParams.get('until') ?? undefined;
+            const search = qUrl.searchParams.get('search') ?? undefined;
+            const limit = parseInt(qUrl.searchParams.get('limit') ?? '100', 10);
+            const offset = parseInt(qUrl.searchParams.get('offset') ?? '0', 10);
+
+            const result = await queryLogs(
+              {
+                sources: sources ? [sources as LogSource] : undefined,
+                levels: levels ? [levels as UnifiedLogLevel] : undefined,
+                services: services ? [services] : undefined,
+                since,
+                until,
+                search,
+                limit: isNaN(limit) ? 100 : limit,
+                offset: isNaN(offset) ? 0 : offset,
+              },
+              projectPath,
+            );
+            json(res, 200, result);
+            return;
+          }
         }
 
         // ── Domain API (T031-T036) ──────────────────────────────────
