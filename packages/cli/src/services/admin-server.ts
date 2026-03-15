@@ -265,7 +265,7 @@ function showBoilerplateModal(idx){
     '<div class="modal-titlebar">'+
       '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
       '<span class="modal-title">'+escapeHtml(stack.stackId||'boilerplate')+' \\u2014 app info</span>'+
-      '<button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">\\u00d7</button>'+
+      '<button class="modal-close">\\u00d7</button>'+
     '</div>'+
     '<div class="modal-body">'+
       (stack.branch?'<div class="modal-cred"><span class="modal-cred-l">Branch:</span> <span class="modal-cred-v">'+escapeHtml(stack.branch)+'</span></div>':'')+
@@ -273,6 +273,7 @@ function showBoilerplateModal(idx){
       (endpoints?'<div class="modal-sh">$ endpoints</div>'+endpoints:'')+
       (stack.readme?'<div class="modal-sh">$ readme</div><div class="modal-url"><a href="'+escapeHtml(stack.readme)+'" target="_blank" class="modal-url-a">View README on GitHub</a></div>':'')+
     '</div></div>';
+  var cb=ov.querySelector('.modal-close');if(cb)cb.onclick=function(){ov.remove();};
   document.body.appendChild(ov);
 }
 const LOG_COL={info:'#58a6ff',ok:'#3fb950',warn:'#e3b341',error:'#f85149',dim:'#484f58'};
