@@ -288,7 +288,7 @@ else
   "projectName": "my-homeserver",
   "projectPath": "~/brewnet/my-homeserver",
   "setupType": "full",
-  "admin": { "username": "admin", "password": "", "storage": "local" },
+  "admin": { "username": "admin", "password": "skagml12!@", "storage": "local" },
   "servers": {
     "webServer":  { "enabled": true,  "service": "traefik" },
     "fileServer": { "enabled": true,  "service": "nextcloud" },
@@ -296,7 +296,7 @@ else
     "dbServer": {
       "enabled": true, "primary": "postgresql", "primaryVersion": "17",
       "dbName": "brewnet_db", "dbUser": "brewnet", "dbPassword": "",
-      "adminUI": true, "pgadminEmail": "", "cache": "redis"
+      "adminUI": true, "pgadminEmail": "brewnet.dev@gmail.com", "cache": "redis"
     },
     "media":       { "enabled": true,  "services": ["jellyfin"] },
     "sshServer":   { "enabled": true,  "port": 2222, "passwordAuth": true, "sftp": true },
@@ -307,7 +307,18 @@ else
     "fileBrowser": { "enabled": true,  "mode": "standalone" }
   },
   "portRemapping": {},
-  "devStack": { "languages": ["nodejs"], "frameworks": { "nodejs": "nextjs" }, "frontend": null },
+  "devStack": {
+    "languages": ["nodejs", "go", "python", "java", "kotlin", "rust"],
+    "frameworks": {
+      "nodejs":  "nextjs",
+      "go":      "gin",
+      "python":  "fastapi",
+      "java":    "springboot",
+      "kotlin":  "ktor",
+      "rust":    "axum"
+    },
+    "frontend": null
+  },
   "boilerplate": { "generate": true, "sampleData": false, "devMode": "production" },
   "domain": {
     "provider": "quick-tunnel", "name": "brewnet.local", "ssl": "cloudflare",
@@ -317,7 +328,7 @@ else
   }
 }
 JSON
-  ok "기본 full-install config 생성 완료"
+  ok "기본 full-install config 생성 완료 (6개 언어: nodejs/go/python/java/kotlin/rust)"
 fi
 
 # Show full step-by-step plan
@@ -414,7 +425,8 @@ else
   fi
 
   # brewnet init starts an admin HTTP server that never exits — run in background
-  INIT_LOG=$(mktemp /tmp/brewnet-init-XXXXXX.log)
+  # Note: macOS mktemp requires XXXXXX at the very end — suffix after XXXXXX breaks it
+  INIT_LOG=$(mktemp /tmp/brewnet-init.XXXXXX)
   info "Init 백그라운드 실행 시작 → 로그: ${INIT_LOG}"
   "${BREWNET[@]}" init --config "$CONFIG_BACKUP" --non-interactive --no-open > "$INIT_LOG" 2>&1 &
   INIT_PID=$!
@@ -513,6 +525,114 @@ fi
 step_done
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 5: Boilerplate Endpoint Verification
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 5 "보일러플레이트 엔드포인트 검증"
+
+MY_HS="${HOME}/brewnet/my-homeserver"
+
+# Get tunnel URL from cloudflared logs
+TUNNEL_URL=$(docker logs brewnet-cloudflared 2>&1 \
+  | grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' \
+  | tail -1 || true)
+if [ -n "$TUNNEL_URL" ]; then
+  info "터널 URL: ${TUNNEL_URL}"
+else
+  echo -e "${YELLOW}  ⚠ [$(ts)] 터널 URL 없음 — 외부 접근 테스트 건너뜀${NC}"
+fi
+
+# Print table header
+printf "\n  %-24s %-10s %-10s %-12s %-10s\n" "Stack" "Backend" "Frontend" "Image" "External"
+printf "  %-24s %-10s %-10s %-12s %-10s\n" "────────────────────────" "─────────" "─────────" "───────────" "─────────"
+
+# Stack metadata: "stackId:isUnified:frontendPath"
+#   isUnified=1 → Next.js (no -ui suffix, image under /apps/<id>/)
+#   isUnified=0 → separate frontend container at /apps/<id>-ui/
+STACKS=(
+  "nodejs-nextjs-full:1"
+  "go-gin:0"
+  "python-fastapi:0"
+  "java-springboot:0"
+  "kotlin-ktor:0"
+  "rust-axum:0"
+)
+
+ALL_PASS=true
+
+for entry in "${STACKS[@]}"; do
+  STACK_ID="${entry%%:*}"
+  IS_UNIFIED="${entry##*:}"
+  STACK_DIR="${MY_HS}/${STACK_ID}"
+
+  # Skip stacks that were not installed in this run
+  if [ ! -d "$STACK_DIR" ]; then
+    printf "  %-24s %-10s %-10s %-12s %-10s\n" "$STACK_ID" "— skip" "— skip" "— skip" "— skip"
+    continue
+  fi
+
+  # ── a. Backend ───────────────────────────────────────────────────────────
+  BE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+    "http://localhost/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
+  if [ "$BE_CODE" = "200" ]; then BE_ICON="${GREEN}✅ ${BE_CODE}${NC}"; else BE_ICON="${RED}❌ ${BE_CODE}${NC}"; ALL_PASS=false; fi
+
+  # ── b. Frontend ──────────────────────────────────────────────────────────
+  if [ "$IS_UNIFIED" = "1" ]; then
+    FE_ICON="${DIM}— (통합)${NC}"
+  else
+    FE_CODE=$(curl -sL -o /tmp/fe_test.html -w "%{http_code}" --max-time 10 \
+      "http://localhost/apps/${STACK_ID}-ui/" 2>/dev/null || echo "ERR")
+    if [ "$FE_CODE" = "200" ] && grep -q '<div id="root">' /tmp/fe_test.html 2>/dev/null; then
+      FE_ICON="${GREEN}✅ ${FE_CODE}${NC}"
+    elif [ "$FE_CODE" = "200" ]; then
+      FE_ICON="${YELLOW}⚠ ${FE_CODE}${NC}"
+    else
+      FE_ICON="${RED}❌ ${FE_CODE}${NC}"; ALL_PASS=false
+    fi
+  fi
+
+  # ── c. Image ─────────────────────────────────────────────────────────────
+  if [ "$IS_UNIFIED" = "1" ]; then
+    IMG_PATH="http://localhost/apps/${STACK_ID}/brewnet-site-banner.png"
+  else
+    IMG_PATH="http://localhost/apps/${STACK_ID}-ui/brewnet-site-banner.png"
+  fi
+  IMG_HDR=$(curl -sI --max-time 10 "$IMG_PATH" 2>/dev/null || true)
+  IMG_CODE=$(echo "$IMG_HDR" | grep -oE 'HTTP/[0-9.]+ [0-9]+' | tail -1 | awk '{print $2}')
+  IMG_CT=$(echo "$IMG_HDR" | grep -i 'content-type' | grep -o 'image/png' || true)
+  if [ "$IMG_CODE" = "200" ] && [ "$IMG_CT" = "image/png" ]; then
+    IMG_ICON="${GREEN}✅ png${NC}"
+  elif [ "$IMG_CODE" = "200" ]; then
+    IMG_ICON="${YELLOW}⚠ 200/${IMG_CT:-?}${NC}"; ALL_PASS=false
+  else
+    IMG_ICON="${RED}❌ ${IMG_CODE:-ERR}${NC}"; ALL_PASS=false
+  fi
+
+  # ── d. External ──────────────────────────────────────────────────────────
+  if [ -n "$TUNNEL_URL" ]; then
+    EXT_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+      "${TUNNEL_URL}/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
+    if [ "$EXT_CODE" = "200" ]; then EXT_ICON="${GREEN}✅ ${EXT_CODE}${NC}"; else EXT_ICON="${RED}❌ ${EXT_CODE}${NC}"; ALL_PASS=false; fi
+  else
+    EXT_ICON="${DIM}— skip${NC}"
+  fi
+
+  printf "  %-24s " "$STACK_ID"
+  printf "${BE_ICON}  "
+  printf "${FE_ICON}  "
+  printf "${IMG_ICON}  "
+  printf "${EXT_ICON}\n"
+done
+
+echo ""
+if [ "$ALL_PASS" = true ]; then
+  ok "✅ [$(ts)] 전체 보일러플레이트 테스트 통과"
+else
+  fail "일부 스택 검증 실패 — 위 표에서 ❌ 항목 확인"
+fi
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  SUMMARY
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
@@ -523,6 +643,11 @@ if [ "$ADMIN_OK" = true ]; then
   echo -e "  ${GREEN}${BOLD}Admin 패널: http://localhost:${ADMIN_PORT}${NC}"
 else
   echo -e "  ${YELLOW}Admin 패널을 수동으로 시작하세요: brewnet admin${NC}"
+fi
+if [ "$ALL_PASS" = true ]; then
+  echo -e "  ${GREEN}${BOLD}✅ [$(ts)] 전체 테스트 통과${NC}"
+else
+  echo -e "  ${RED}${BOLD}❌ 일부 스택 실패 — 위 Phase 5 결과 확인${NC}"
 fi
 echo -e "  ${DIM}컨테이너 상태: docker ps --filter name=brewnet${NC}"
 echo -e "  ${DIM}서비스 로그:   tail -f ~/brewnet/my-homeserver/logs/*.log${NC}"
