@@ -23,7 +23,7 @@ jest.unstable_mockModule('node:fs', () => ({
 }));
 
 // Mock global fetch (Node.js 20+ has fetch as a global built-in — not via node:fetch)
-const mockFetch = jest.fn();
+const mockFetch = jest.fn<() => Promise<Response>>();
 global.fetch = mockFetch as unknown as typeof fetch;
 
 // --------------------------------------------------------------------------
@@ -53,7 +53,7 @@ function jsonResponse(data: unknown, status = 200) {
     status,
     json: async () => data,
     text: async () => JSON.stringify(data),
-  };
+  } as unknown as Response;
 }
 
 // --------------------------------------------------------------------------
@@ -74,8 +74,8 @@ describe('GiteaClient', () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({ id: 1, clone_url: 'http://localhost:3000/admin/my-app.git' }));
       await client.createRepo('my-app');
       // fetch should use token auth, not basic auth
-      const [, opts] = mockFetch.mock.calls[0]!;
-      expect((opts as RequestInit).headers).toMatchObject({ Authorization: 'token existing-token' });
+      const [, opts] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(opts.headers).toMatchObject({ Authorization: 'token existing-token' });
     });
 
     it('creates token via Basic Auth and saves to file when token file missing', async () => {
