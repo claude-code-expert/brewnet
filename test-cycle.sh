@@ -538,8 +538,10 @@ step_start 5 "Apps 페이지 & Gitea 연결 검증"
 GITEA_BASE="http://localhost/git"
 TEST_APP_NAME="brewnet-gitea-test"
 TEST_APP_PORT=19988
+TEST_APP_DIR="$HOME/brewnet/my-homeserver/apps/${TEST_APP_NAME}"
 GITEA_TOKEN_PATH="$HOME/.brewnet/gitea-token"
 SECRETS_FILE="$HOME/brewnet/my-homeserver/secrets/admin_password"
+PHASE5_OK=true
 
 # ── 5.1 /apps 페이지 로드 ──────────────────────────────────────────────────
 label "5.1 /apps 페이지 로드"
@@ -660,17 +662,25 @@ fi
 # ── 5.5 create-app End-to-End (Gitea 스텝 검증) ───────────────────────────
 label "5.5 create-app E2E (Gitea 스텝 검증)"
 
-# 사전 정리: 이전 테스트 앱 삭제
+# 사전 정리: 이전 테스트 앱 삭제 (API + 파일시스템)
 sub "사전 정리: 기존 '${TEST_APP_NAME}' 앱 삭제..."
 PRE_CLEANUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
   "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME}" 2>/dev/null || echo "000")
 if [ "$PRE_CLEANUP_CODE" = "200" ]; then
-  sub "기존 테스트 앱 삭제 완료 (HTTP 200)"
+  sub "기존 테스트 앱 API 삭제 완료 (HTTP 200)"
 elif [ "$PRE_CLEANUP_CODE" = "404" ]; then
   sub "기존 테스트 앱 없음 (HTTP 404) — 정상"
 else
-  sub "사전 정리 응답: HTTP ${PRE_CLEANUP_CODE}"
+  sub "API 삭제 응답: HTTP ${PRE_CLEANUP_CODE}"
 fi
+# 파일시스템 디렉토리 강제 정리 (API 실패 여부 무관)
+if [ -d "$TEST_APP_DIR" ]; then
+  rm -rf "$TEST_APP_DIR"
+  sub "앱 디렉토리 삭제 완료: ${TEST_APP_DIR}"
+fi
+# Docker 컨테이너/네트워크 잔재 정리 (이전 실패 런 대비)
+docker rm -f "${TEST_APP_NAME}-backend-1" "${TEST_APP_NAME}-frontend-1" "${TEST_APP_NAME}-db-1" 2>/dev/null || true
+docker network rm "${TEST_APP_NAME}_default" "${TEST_APP_NAME}_brewnet-internal" 2>/dev/null || true
 
 # POST /api/apps/create
 info "create-app 시작: ${TEST_APP_NAME} (nodejs/express, port ${TEST_APP_PORT})"
@@ -689,6 +699,7 @@ JOB_ID=$(echo "$CREATE_BODY" | node -e "
 
 if [ -z "$JOB_ID" ]; then
   fail "create-app → jobId 없음 (HTTP ${CREATE_CODE}, 응답: $(echo "$CREATE_BODY" | head -c 200))"
+  PHASE5_OK=false
 else
   ok "create-app → jobId: ${JOB_ID}"
 
@@ -717,12 +728,31 @@ else
     sub "[${poll}/60] ${STEP_LINE}"
 
     if [ "$JOB_STATUS" = "failed" ]; then
+      # Job 실패여도 Gitea 스텝 완료 여부를 먼저 확인 (Docker up 실패는 Gitea와 무관)
+      GITEA_CHECK_FAIL=$(node -e "
+        const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
+        const steps = d.steps || [];
+        const setup = steps.find(s => s.label === 'Gitea setup');
+        const repo  = steps.find(s => s.label === 'Gitea repo');
+        process.stdout.write(
+          setup?.status === 'done' && repo?.status === 'done'
+            ? 'ok'
+            : 'fail:' + (setup?.status||'?') + '/' + (repo?.status||'?')
+        );
+      " 2>/dev/null || echo "fail:parse")
       JOB_ERR=$(node -e "
         const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
         process.stdout.write(d.error || d.message || '(no error message)');
       " 2>/dev/null || echo "parse error")
       rm -f "$_JOB_TMP"
-      fail "create-app 실패: ${JOB_ERR}"
+      if [ "$GITEA_CHECK_FAIL" = "ok" ]; then
+        ok "Gitea setup + Gitea repo 스텝 완료 → Gitea 연결 성공"
+        GITEA_STEPS_OK=true
+        fail "create-app Docker/Health 실패 (Gitea 검증과 무관): $(echo "$JOB_ERR" | head -c 120)"
+      else
+        fail "create-app 실패 + Gitea 스텝도 실패: $(echo "$JOB_ERR" | head -c 80) (${GITEA_CHECK_FAIL})"
+        PHASE5_OK=false
+      fi
       JOB_FAILED=true
       JOB_DONE=true
       break
@@ -747,6 +777,7 @@ else
         GITEA_STEPS_OK=true
       else
         fail "Gitea 스텝 실패 — ${GITEA_CHECK}"
+        PHASE5_OK=false
       fi
 
       # Docker up / Health check 결과 별도 경고 출력 (Gitea 검증과 무관)
@@ -768,17 +799,26 @@ else
 
   if [ "$JOB_DONE" = false ]; then
     fail "create-app 타임아웃 (3분) — 마지막 상태: ${JOB_STATUS:-unknown}"
+    PHASE5_OK=false
   fi
 
-  # 사후 정리: 테스트 앱 삭제
+  # 사후 정리: 테스트 앱 삭제 (API + 파일시스템)
   sub "사후 정리: '${TEST_APP_NAME}' 삭제..."
   POST_CLEANUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
     "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME}" 2>/dev/null || echo "000")
   if [ "$POST_CLEANUP_CODE" = "200" ]; then
-    sub "테스트 앱 삭제 완료"
+    sub "테스트 앱 API 삭제 완료"
   else
-    sub "테스트 앱 삭제 응답: HTTP ${POST_CLEANUP_CODE}"
+    sub "테스트 앱 API 삭제 응답: HTTP ${POST_CLEANUP_CODE}"
   fi
+  # 파일시스템 디렉토리도 정리
+  if [ -d "$TEST_APP_DIR" ]; then
+    rm -rf "$TEST_APP_DIR"
+    sub "앱 디렉토리 삭제 완료: ${TEST_APP_DIR}"
+  fi
+  # Docker 컨테이너/네트워크 잔재 정리
+  docker rm -f "${TEST_APP_NAME}-backend-1" "${TEST_APP_NAME}-frontend-1" "${TEST_APP_NAME}-db-1" 2>/dev/null || true
+  docker network rm "${TEST_APP_NAME}_default" "${TEST_APP_NAME}_brewnet-internal" 2>/dev/null || true
 fi
 
 step_done
@@ -816,7 +856,8 @@ STACKS=(
   "rust-axum:0"
 )
 
-ALL_PASS=true
+# Phase 5 Gitea 검증 실패 시 false로 시작
+ALL_PASS="$PHASE5_OK"
 
 for entry in "${STACKS[@]}"; do
   STACK_ID="${entry%%:*}"
