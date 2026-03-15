@@ -238,8 +238,58 @@ async function _createModeA(
   });
 }
 
-// Stub implementations for Mode B and C — completed in Tasks 6 and 7
-async function _createModeB(..._: unknown[]): Promise<void> { throw new Error('Mode B: not yet implemented'); }
+async function _createModeB(
+  job: AppJob,
+  opts: CreateAppOptions,
+  ctx: AppContext,
+  gitea: GiteaClient,
+  appsJson: string,
+): Promise<void> {
+  if (!opts.gitUrl) throw new Error('gitUrl is required for mode B');
+  const port = opts.port ?? 8080;
+  const appDir = join(ctx.projectPath, 'apps', opts.appName);
+
+  // Step 0: Clone + reinit (reinitGit from boilerplate-manager uses rmSync, not shell rm -rf)
+  setStep(job, 0, 'running');
+  const { reinitGit: reinitGitB } = await import('./boilerplate-manager.js');
+  await execa('git', ['clone', '--depth', '1', opts.gitUrl, appDir]);
+  await reinitGitB(appDir);
+  setStep(job, 0, 'done');
+
+  setStep(job, 1, 'running');
+  const alreadyExists = await gitea.repoExists(opts.appName);
+  const cloneUrl = alreadyExists
+    ? `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}.git`
+    : await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
+  setStep(job, 1, 'done');
+
+  setStep(job, 2, 'running');
+  const authedUrl = gitea.authedCloneUrl(cloneUrl);
+  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
+  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
+  setStep(job, 2, 'done');
+
+  setStep(job, 3, 'running');
+  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  setStep(job, 3, 'done');
+
+  setStep(job, 4, 'running');
+  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  setStep(job, 4, 'done');
+
+  addApp(appsJson, {
+    name: opts.appName,
+    mode: 'git-url',
+    sourceUrl: opts.gitUrl,
+    appDir,
+    port,
+    giteaRepoUrl: `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}`,
+    status: 'running',
+    createdAt: new Date().toISOString(),
+  });
+}
+
+// Stub implementation for Mode C — completed in Task 7
 async function _createModeC(..._: unknown[]): Promise<void> { throw new Error('Mode C: not yet implemented'); }
 
 export async function startApp(appName: string): Promise<void> {

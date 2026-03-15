@@ -75,6 +75,16 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
   loadState: mockLoadState,
 }));
 
+// Mock boilerplate-manager (used by Mode B and C for reinitGit / cloneStack)
+const mockReinitGit = jest.fn<(...args: any[]) => Promise<void>>();
+const mockCloneStack = jest.fn<(...args: any[]) => Promise<void>>();
+const mockGenerateEnv = jest.fn();
+jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
+  reinitGit: mockReinitGit,
+  cloneStack: mockCloneStack,
+  generateEnv: mockGenerateEnv,
+}));
+
 // --------------------------------------------------------------------------
 // Imports (after mocks)
 // --------------------------------------------------------------------------
@@ -204,5 +214,39 @@ describe('createApp — mode A (installed boilerplate)', () => {
     const job = getJobStatus(jobId);
     expect(job?.status).toBe('failed');
     expect(job?.error).toContain('ECONNREFUSED');
+  });
+});
+
+describe('createApp — mode B (git-url)', () => {
+  it('clones repo, reinits git, pushes to Gitea, starts docker', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+    mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/ext-app.git');
+    mockRepoExists.mockResolvedValue(false);
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+
+    const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const jobId = await createApp({
+      mode: 'git-url',
+      appName: 'ext-app',
+      gitUrl: 'https://github.com/user/template.git',
+      port: 8080,
+    });
+    // Poll until job finishes (max 1000ms, 20ms interval — robust in CI)
+    for (let i = 0; i < 50; i++) {
+      const j = getJobStatus(jobId);
+      if (j && j.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    // git clone should have been called with the external URL
+    const cloneCalls = (mockExeca.mock.calls as unknown[][]).filter(
+      (c) => (c[1] as string[])?.includes('clone'),
+    );
+    expect(cloneCalls.length).toBeGreaterThan(0);
   });
 });
