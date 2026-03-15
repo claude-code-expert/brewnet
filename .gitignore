@@ -13,7 +13,7 @@ DEV.md
 .mcp.json 
 # docs 
 /docs/license
-# /docs/spec
+/docs/spec
 /docs/phase
 public/demo
 
