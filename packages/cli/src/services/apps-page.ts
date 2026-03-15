@@ -34,8 +34,8 @@ body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-s
 h1{color:#f5a623;font-size:20px;display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .sub{color:#8b949e;font-size:12px;margin-bottom:24px}
 .header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
-.back{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px}
-.back:hover{background:#21262d}
+.nav-link{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px;font-family:inherit}
+.nav-link:hover{background:#21262d}
 .btn-primary{padding:5px 14px;background:#f5a623;color:#0d1117;border:none;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700}
 .btn-primary:hover{background:#e09420}
 table{width:100%;border-collapse:collapse;margin-bottom:24px}
@@ -110,7 +110,7 @@ a.app-link:hover{text-decoration:underline}
     App Deploy
   </h1>
   <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
-    <a href="/" class="back">\u2190 Admin</a>
+    <a href="/" class="nav-link">\u2190 Admin</a>
     <button class="btn-primary" onclick="openNewAppModal()">+ New App</button>
   </div>
 </div>
@@ -373,6 +373,7 @@ function openProgressModal(appName,jobId){
     '<div class="modal-titlebar">'+
       '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
       '<span class="modal-title">Creating '+escHtml(appName)+'...</span>'+
+      '<button class="modal-close" onclick="closeProgressModal()">\u00d7</button>'+
     '</div>'+
     '<div class="modal-body" id="progress-body"><p style="color:#8b949e">Starting...</p></div>'+
   '</div>';

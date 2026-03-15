@@ -101,7 +101,7 @@ function readBoilerplateMeta(projectPath: string): BoilerplateMeta[] {
 
 interface AppContext {
   projectPath: string;
-  giteaPort: number;
+  giteaBaseUrl: string;
   giteaUser: string;
   giteaPassword: string;
 }
@@ -111,11 +111,12 @@ function resolveContext(): AppContext {
   const state = loadState(last ?? '');
   const raw = (state as { projectPath?: string } | null)?.projectPath ?? process.cwd();
   const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-  const giteaPort = (state?.servers as { gitServer?: { port?: number } } | undefined)?.gitServer?.port ?? 3000;
   const envPath = join(projectPath, '.env');
   const giteaUser = readDotEnvValue(envPath, 'GITEA_ADMIN_USER') || (state?.admin as { username?: string } | undefined)?.username || 'admin';
   const giteaPassword = readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') || (state?.admin as { password?: string } | undefined)?.password || '';
-  return { projectPath, giteaPort, giteaUser, giteaPassword };
+  // Gitea is behind Traefik on port 80 at /git — port 3000 is internal only
+  const giteaBaseUrl = 'http://localhost/git';
+  return { projectPath, giteaBaseUrl, giteaUser, giteaPassword };
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +155,7 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
     const appsJson = resolveAppsJsonPath();
     const GITEA_TOKEN_PATH = join(BREWNET_DIR, 'gitea-token');
     const gitea = new GiteaClient({
-      host: `localhost:${ctx.giteaPort}`,
+      baseUrl: ctx.giteaBaseUrl,
       username: ctx.giteaUser,
       password: ctx.giteaPassword,
       tokenPath: GITEA_TOKEN_PATH,
@@ -200,7 +201,7 @@ async function _createModeA(
   if (!alreadyExists) {
     cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
   } else {
-    cloneUrl = `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}.git`;
+    cloneUrl = `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`;
   }
   setStep(job, 1, 'done');
 
@@ -232,7 +233,7 @@ async function _createModeA(
     lang: meta.lang,
     framework: meta.frameworkId,
     port,
-    giteaRepoUrl: `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}`,
+    giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: 'running',
     createdAt: new Date().toISOString(),
   });
@@ -259,7 +260,7 @@ async function _createModeB(
   setStep(job, 1, 'running');
   const alreadyExists = await gitea.repoExists(opts.appName);
   const cloneUrl = alreadyExists
-    ? `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}.git`
+    ? `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`
     : await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
   setStep(job, 1, 'done');
 
@@ -283,7 +284,7 @@ async function _createModeB(
     sourceUrl: opts.gitUrl,
     appDir,
     port,
-    giteaRepoUrl: `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}`,
+    giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: 'running',
     createdAt: new Date().toISOString(),
   });
@@ -337,7 +338,7 @@ async function _createModeC(
     lang: opts.language,
     framework: opts.frameworkId,
     port,
-    giteaRepoUrl: `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}`,
+    giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: 'running',
     createdAt: new Date().toISOString(),
   });

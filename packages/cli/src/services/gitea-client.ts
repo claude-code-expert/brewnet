@@ -3,8 +3,8 @@ import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'n
 import { dirname } from 'node:path';
 
 export interface GiteaClientConfig {
-  /** e.g. "localhost:3000" */
-  host: string;
+  /** Full base URL without trailing slash, e.g. "http://localhost/git" (via Traefik) */
+  baseUrl: string;
   username: string;
   password: string;
   /** Path to persist the API token, e.g. ~/.brewnet/gitea-token */
@@ -23,7 +23,7 @@ export class GiteaClient {
   // ---------------------------------------------------------------------------
 
   private async ensureToken(): Promise<string> {
-    const { tokenPath, host, username, password } = this.config;
+    const { tokenPath, baseUrl, username, password } = this.config;
 
     if (existsSync(tokenPath)) {
       return readFileSync(tokenPath, 'utf-8').trim();
@@ -31,7 +31,7 @@ export class GiteaClient {
 
     // Create token via Basic Auth
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
-    const res = await fetch(`http://${host}/api/v1/users/${username}/tokens`, {
+    const res = await fetch(`${baseUrl}/api/v1/users/${username}/tokens`, {
       method: 'POST',
       headers: {
         Authorization: `Basic ${basic}`,
@@ -66,9 +66,9 @@ export class GiteaClient {
   // ---------------------------------------------------------------------------
 
   async repoExists(name: string): Promise<boolean> {
-    const { host, username } = this.config;
+    const { baseUrl, username } = this.config;
     const res = await fetch(
-      `http://${host}/api/v1/repos/${username}/${name}`,
+      `${baseUrl}/api/v1/repos/${username}/${name}`,
       { headers: await this.authHeaders() },
     );
     return res.status === 200;
@@ -76,8 +76,8 @@ export class GiteaClient {
 
   /** Creates a private repo and returns the clone URL. */
   async createRepo(name: string, description = ''): Promise<string> {
-    const { host } = this.config;
-    const res = await fetch(`http://${host}/api/v1/user/repos`, {
+    const { baseUrl } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/user/repos`, {
       method: 'POST',
       headers: await this.authHeaders(),
       body: JSON.stringify({ name, description, private: true, auto_init: false }),
@@ -92,8 +92,8 @@ export class GiteaClient {
   }
 
   async deleteRepo(name: string): Promise<void> {
-    const { host, username } = this.config;
-    await fetch(`http://${host}/api/v1/repos/${username}/${name}`, {
+    const { baseUrl, username } = this.config;
+    await fetch(`${baseUrl}/api/v1/repos/${username}/${name}`, {
       method: 'DELETE',
       headers: await this.authHeaders(),
     });

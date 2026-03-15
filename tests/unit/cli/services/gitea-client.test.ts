@@ -40,7 +40,7 @@ const { GiteaClient } = await import(
 
 function makeClient() {
   return new GiteaClient({
-    host: 'localhost:3000',
+    baseUrl: 'http://localhost:3000',
     username: 'admin',
     password: 'secret',
     tokenPath: '/home/user/.brewnet/gitea-token',
