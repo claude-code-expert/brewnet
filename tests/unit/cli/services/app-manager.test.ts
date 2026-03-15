@@ -63,6 +63,15 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js'
 const mockFetch = jest.fn<() => Promise<Response>>().mockResolvedValue({ ok: true, status: 200 } as unknown as Response);
 global.fetch = mockFetch as unknown as typeof fetch;
 
+// Mock wizard state — must be declared BEFORE await import(app-manager.js)
+// so the mock is registered before app-manager.ts loads state.js
+const mockLoadState = jest.fn();
+const mockGetLastProject = jest.fn(() => 'my-project');
+jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
+  getLastProject: mockGetLastProject,
+  loadState: mockLoadState,
+}));
+
 // --------------------------------------------------------------------------
 // Imports (after mocks)
 // --------------------------------------------------------------------------
@@ -111,5 +120,86 @@ describe('app-manager helpers', () => {
       expect(apps).toHaveLength(1);
       expect(apps[0]!.name).toBe('my-app');
     });
+  });
+});
+
+describe('createApp — mode A (installed boilerplate)', () => {
+  it('creates Gitea repo, sets git remote, pushes, starts docker, registers app', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    fsContent['/home/user/.brewnet/gitea-token'] = 'mytoken';
+    // boilerplate meta
+    fsContent['/proj/.brewnet-boilerplate.json'] = JSON.stringify([{
+      stackId: 'nodejs-nextjs-full',
+      appDir: '/proj/nodejs-nextjs-full',
+      backendUrl: 'http://127.0.0.1:3000',
+      port: 3000,
+      lang: 'nodejs',
+      frameworkId: 'nextjs-full',
+      status: 'running',
+    }]);
+
+    mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/my-app.git');
+    mockRepoExists.mockResolvedValue(false);
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+
+    const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+
+    const jobId = await createApp({
+      mode: 'boilerplate',
+      appName: 'my-app',
+      stackId: 'nodejs-nextjs-full',
+      port: 3000,
+    });
+
+    expect(typeof jobId).toBe('string');
+    // Poll until job finishes (max 1000ms, 20ms interval — robust in CI)
+    for (let i = 0; i < 50; i++) {
+      const j = getJobStatus(jobId);
+      if (j && j.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(mockCreateRepo).toHaveBeenCalledWith('my-app', expect.any(String));
+    expect(mockExeca).toHaveBeenCalledWith(
+      'git',
+      expect.arrayContaining(['remote', 'add', 'brewnet']),
+      expect.objectContaining({ cwd: '/proj/nodejs-nextjs-full' }),
+    );
+    expect(mockAddApp).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ name: 'my-app', mode: 'boilerplate', stackId: 'nodejs-nextjs-full' }),
+    );
+  });
+
+  it('returns a job with failed status when Gitea is unreachable', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    fsContent['/proj/.brewnet-boilerplate.json'] = JSON.stringify([{
+      stackId: 'go-gin', appDir: '/proj/go-gin', backendUrl: 'http://127.0.0.1:8080', port: 8080,
+      lang: 'go', frameworkId: 'gin', status: 'running',
+    }]);
+
+    mockCreateRepo.mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+    const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const jobId = await createApp({ mode: 'boilerplate', appName: 'go-app', stackId: 'go-gin' });
+    // Poll until job finishes (max 1000ms, 20ms interval — robust in CI)
+    for (let i = 0; i < 50; i++) {
+      const j = getJobStatus(jobId);
+      if (j && j.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    const job = getJobStatus(jobId);
+    expect(job?.status).toBe('failed');
+    expect(job?.error).toContain('ECONNREFUSED');
   });
 });
