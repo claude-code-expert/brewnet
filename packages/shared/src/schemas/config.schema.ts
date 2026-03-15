@@ -15,6 +15,7 @@ import {
   devModeSchema,
   languageSchema,
   frontendTechSchema,
+  tunnelModeSchema,
 } from './wizard-state.schema.js';
 
 // ─── Config Sub-Schemas (export-safe, no secrets) ────────────────────────────
@@ -106,6 +107,7 @@ const configBoilerplateSchema = z.object({
 const configCloudflareSchema = z.object({
   enabled: z.boolean(),
   tunnelName: z.string(),
+  tunnelMode: tunnelModeSchema.optional().default('none'),
   // tunnelToken is intentionally excluded from export
 });
 
