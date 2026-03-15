@@ -120,10 +120,12 @@ function buildPrismaDatabaseUrl(
   dbUser: string,
   dbPassword: string,
   dbName: string,
+  integrated = false,
 ): string {
+  const pgHost = integrated ? 'postgresql' : 'postgres';
   switch (dbDriver) {
     case 'postgres':
-      return `postgresql://${dbUser}:${dbPassword}@postgres:5432/${dbName}`;
+      return `postgresql://${dbUser}:${dbPassword}@${pgHost}:5432/${dbName}`;
     case 'mysql':
       return `mysql://${dbUser}:${dbPassword}@mysql:3306/${dbName}`;
     default:
@@ -158,6 +160,12 @@ export interface GenerateEnvOpts {
    * container on port 3000. Set this to avoid "port already in use" errors.
    */
   frontendPort?: number;
+  /**
+   * When true, override DB_HOST / DATABASE_URL hostname to 'postgresql'
+   * to match the main brewnet compose service name. Used by the wizard
+   * (integrated mode) so boilerplate apps connect to the shared DB.
+   */
+  integrated?: boolean;
 }
 
 /**
@@ -211,6 +219,11 @@ export function generateEnv(
     .replace(/^MYSQL_PASSWORD=.*/m, `MYSQL_PASSWORD=${mysqlPassword}`)
     .replace(/^MYSQL_ROOT_PASSWORD=.*/m, `MYSQL_ROOT_PASSWORD=${mysqlRoot}`);
 
+  // Override DB_HOST to match the main brewnet compose service name in integrated mode.
+  if (dbDriver === 'postgres' && opts?.integrated) {
+    content = content.replace(/^DB_HOST=.*/m, 'DB_HOST=postgresql');
+  }
+
   // 4. Override host ports if free ports were selected (avoids "port already in use").
   //    Stacks use `${BACKEND_PORT:-default}:containerPort` so only the host side changes.
   if (opts?.hostPort !== undefined) {
@@ -231,7 +244,7 @@ export function generateEnv(
   // 5. Node.js stacks (Prisma): set PRISMA_DB_PROVIDER + DATABASE_URL
   if (stackId.startsWith('nodejs-')) {
     const provider = PRISMA_PROVIDER[dbDriver] ?? 'sqlite';
-    const databaseUrl = buildPrismaDatabaseUrl(dbDriver, dbUser, dbPassword, dbName);
+    const databaseUrl = buildPrismaDatabaseUrl(dbDriver, dbUser, dbPassword, dbName, opts?.integrated);
     content = content
       .replace(/^PRISMA_DB_PROVIDER=.*/m, `PRISMA_DB_PROVIDER=${provider}`)
       .replace(/^DATABASE_URL=.*/m, `DATABASE_URL=${databaseUrl}`);
@@ -431,6 +444,19 @@ export function writeTraefikOverride(
     ...backendLabels,
   ];
 
+  // Disable the boilerplate's own DB services so they don't clash with
+  // the main brewnet postgresql/mysql containers on the shared network.
+  lines.push(
+    '',
+    '  postgres:',
+    '    profiles:',
+    '      - disabled',
+    '',
+    '  mysql:',
+    '    profiles:',
+    '      - disabled',
+  );
+
   if (frontendContainerPort !== undefined) {
     const frn = `bp-${stackId}-ui`;
     const fpp = `/apps/${stackId}-ui`;
@@ -477,7 +503,13 @@ export function patchViteConfig(projectDir: string, stackId: string): void {
   // Unified stacks have no separate frontend container; Next.js is handled by patchNextjsConfig.
   if (stackId.startsWith('nodejs-nextjs')) return;
 
-  const base = `/apps/${stackId}-ui/`;
+  // Use relative base ('./') so that asset URLs resolve correctly in BOTH scenarios:
+  //   - Direct port access (localhost:{port}): './assets/...' → same origin ✓
+  //   - Traefik stripprefix (external tunnel): './assets/...' resolves relative to the
+  //     sub-path URL, then Traefik strips the prefix before forwarding to Nginx ✓
+  // An absolute subpath (e.g. '/apps/{stackId}-ui/') only works via Traefik and
+  // breaks direct port access because Nginx never sees those prefixed paths.
+  const base = './';
   const candidates = [
     join(projectDir, 'frontend', 'vite.config.ts'),
     join(projectDir, 'frontend', 'vite.config.js'),
