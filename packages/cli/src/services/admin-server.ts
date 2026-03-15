@@ -199,36 +199,19 @@ tr:hover td{background:#161b22}
 </table>
 ${config.boilerplateHtml}
 
+${config.domainProvider === 'tunnel' ? `
 <!-- ── Domains Section (T039) ── -->
 <div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
   External Domains
   <span style="display:flex;gap:8px;align-items:center">
     <input id="admin-pw" type="password" placeholder="Admin password" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;color:#c9d1d9;font-family:inherit;font-size:11px;width:140px"/>
-    <span class="btn btn-start" style="font-size:11px" onclick="showConnectModal()">+ Connect Domain</span>
     <span class="btn" style="font-size:11px;border-color:#58a6ff;color:#58a6ff" onclick="showCnameGuide()">CNAME Guide</span>
   </span>
 </div>
 <table id="domain-table">
   <thead><tr><th>App</th><th>External URL</th><th>Status</th><th>Connected</th><th>Actions</th></tr></thead>
   <tbody id="domain-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>
-
-<!-- ── Connect Domain Modal (T040) ── -->
-<div id="connect-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal-box" style="max-width:500px">
-    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">Connect Domain</span></div>
-    <div style="padding:16px">
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">App</label>
-        <select id="conn-app" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"><option>Loading...</option></select></div>
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Subdomain</label>
-        <input id="conn-sub" type="text" placeholder="my-api" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Domain</label>
-        <input id="conn-domain" type="text" placeholder="yourdomain.com" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-      <div id="conn-steps" style="margin-bottom:12px;font-size:12px;color:#8b949e"></div>
-      <div style="display:flex;gap:8px"><span class="btn btn-start" onclick="connectDomain()">Connect</span><span class="btn btn-stop" onclick="document.getElementById('connect-modal').style.display='none'">Cancel</span></div>
-    </div>
-  </div>
-</div>
+</table>` : ''}
 
 <!-- ── CNAME Guide Modal (T041) ── -->
 <div id="cname-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
@@ -442,54 +425,10 @@ async function loadDomains(){
     if(conns.length===0){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">No external domain connections</td></tr>';return;}
     var rows=conns.map(function(c){
       var url='https://'+c.hostname;
-      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><span class="btn btn-stop" style="font-size:11px" onclick="disconnectDomain(\''+c.appName+'\')">Disconnect</span></td></tr>';
+      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><a href="/apps/'+encodeURIComponent(c.appName)+'?tab=domain" style="color:#58a6ff;font-size:11px">Manage \u2192</a></td></tr>';
     }).join('');
     document.getElementById('domain-body').innerHTML=rows;
   }catch(e){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">Enter admin password to view domains</td></tr>';}
-}
-async function disconnectDomain(app){
-  if(!confirm('Disconnect '+app+' from external domain?'))return;
-  log('Disconnecting '+app+'...','dim');
-  var r=await domainFetch('/api/domain/disconnect/'+app,{method:'DELETE'});
-  var d=await r.json();
-  if(d.success){log(app+' disconnected ✓','ok');}else{log('Disconnect failed: '+(d.message||d.error),'error');}
-  loadDomains();
-}
-function showConnectModal(){
-  document.getElementById('connect-modal').style.display='flex';
-  document.getElementById('conn-steps').innerHTML='';
-  // Load apps
-  domainFetch('/api/domain/apps').then(function(r){return r.json();}).then(function(d){
-    var sel=document.getElementById('conn-app');
-    sel.innerHTML=(d.apps||[]).map(function(a){
-      var lbl=a.name+(a.alreadyConnected?' (connected: '+a.hostname+')':'');
-      return '<option value="'+a.name+'" '+(a.alreadyConnected?'disabled':'')+'>'+lbl+'</option>';
-    }).join('')||'<option>No apps available</option>';
-    // Pre-fill domain from settings
-    var dc=DOMAIN_CONFIG;
-    if(dc.zoneName)document.getElementById('conn-domain').value=dc.zoneName;
-  });
-}
-async function connectDomain(){
-  var app=document.getElementById('conn-app').value;
-  var sub=document.getElementById('conn-sub').value.trim();
-  var dom=document.getElementById('conn-domain').value.trim();
-  if(!app||!sub||!dom){log('All fields required','error');return;}
-  var stepsDiv=document.getElementById('conn-steps');
-  stepsDiv.innerHTML='<span style="color:#e3b341">⏳ Connecting...</span>';
-  try{
-    var r=await domainFetch('/api/domain/connect',{method:'POST',body:JSON.stringify({appName:app,subdomain:sub,domain:dom})});
-    var d=await r.json();
-    if(d.success){
-      var html=(d.steps||[]).map(function(s){return '<div>'+(s.status==='completed'?'✅':'❌')+' '+s.step+(s.durationMs?' <span style="color:#8b949e">('+Math.round(s.durationMs/1000*10)/10+'s)</span>':'')+'</div>';}).join('');
-      stepsDiv.innerHTML=html+'<div style="color:#3fb950;margin-top:8px">✅ '+d.externalUrl+' is live!</div>';
-      log(app+' connected → '+d.externalUrl,'ok');
-      loadDomains();
-    }else{
-      stepsDiv.innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
-      log('Connect failed: '+(d.message||d.error),'error');
-    }
-  }catch(e){stepsDiv.innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
 }
 function showCnameGuide(){
   document.getElementById('cname-modal').style.display='flex';
@@ -999,7 +938,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     // Serve App Detail page at /apps/:name
     if (req.method === 'GET' && parts.length === 2 && parts[0] === 'apps') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(generateAppDetailHtml(decodeURIComponent(parts[1]!)));
+      res.end(generateAppDetailHtml(decodeURIComponent(parts[1]!), {
+        zoneName: dashConfig.zoneName ?? undefined,
+        tunnelId: dashConfig.tunnelId ?? undefined,
+      }));
       return;
     }
 

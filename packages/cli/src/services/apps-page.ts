@@ -428,7 +428,7 @@ setInterval(loadApps,15000);
 // App Detail page (/apps/:name) — 4 tabs: Overview | Git | Deploy | Logs
 // ---------------------------------------------------------------------------
 
-export function generateAppDetailHtml(appName: string): string {
+export function generateAppDetailHtml(appName: string, opts?: { zoneName?: string; tunnelId?: string }): string {
   const esc = (s: string) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   return `<!DOCTYPE html>
@@ -498,6 +498,7 @@ a.ext{color:#58a6ff;text-decoration:none}a.ext:hover{text-decoration:underline}
   <button class="tab" onclick="switchTab('git')" id="tabn-git">Git</button>
   <button class="tab" onclick="switchTab('deploy')" id="tabn-deploy">Deploy</button>
   <button class="tab" onclick="switchTab('logs')" id="tabn-logs">Logs</button>
+  <button class="tab" onclick="switchTab('domain')" id="tabn-domain">Domain</button>
 </div>
 
 <!-- OVERVIEW -->
@@ -571,23 +572,99 @@ a.ext{color:#58a6ff;text-decoration:none}a.ext:hover{text-decoration:underline}
   <div id="log-output"></div>
 </div>
 
+<!-- DOMAIN -->
+<div id="tab-domain" class="tab-panel">
+  <div class="section">
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+      External Domain
+      <span style="display:flex;gap:6px;align-items:center">
+        <input id="dom-pw" type="password" placeholder="Admin password"
+          style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;
+                 color:#c9d1d9;font-family:inherit;font-size:11px;width:140px"/>
+        <button class="btn btn-default" onclick="loadDomain()" style="font-size:11px">Refresh</button>
+      </span>
+    </div>
+    <div id="dom-status" style="padding:8px 0;font-size:13px;color:#8b949e">
+      Enter admin password and click Refresh to check domain status.
+    </div>
+  </div>
+
+  <!-- Connected state (shown when domain is connected) -->
+  <div id="dom-connected-section" style="display:none">
+    <div class="section">
+      <div class="section-title">Connection</div>
+      <div class="info-row">
+        <span class="info-key">External URL</span>
+        <span class="info-val" id="dom-ext-url">\u2014</span>
+      </div>
+      <div class="info-row">
+        <span class="info-key">Connected</span>
+        <span class="info-val" id="dom-connected-at">\u2014</span>
+      </div>
+      <button class="btn btn-stop" style="margin-top:12px" onclick="disconnectAppDomain()">Disconnect</button>
+    </div>
+  </div>
+
+  <!-- Connect form (shown when no domain connected) -->
+  <div id="dom-form-section" style="display:none">
+    <div class="section">
+      <div class="section-title">Connect Domain</div>
+      <div class="info-row" style="margin-bottom:8px">
+        <span class="info-key">Subdomain</span>
+        <input id="dom-sub" type="text" placeholder="${esc(appName)}"
+          style="background:#0d1117;border:1px solid #30363d;border-radius:4px;
+                 color:#c9d1d9;padding:4px 8px;font-family:monospace;font-size:12px;width:200px"/>
+      </div>
+      <div class="info-row" style="margin-bottom:12px">
+        <span class="info-key">Domain</span>
+        <input id="dom-domain" type="text" placeholder="yourdomain.com"
+          style="background:#0d1117;border:1px solid #30363d;border-radius:4px;
+                 color:#c9d1d9;padding:4px 8px;font-family:monospace;font-size:12px;width:200px"/>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="connectAppDomain()">Connect</button>
+        <button class="btn btn-default" style="font-size:11px" onclick="toggleCnameGuide()">CNAME Guide</button>
+      </div>
+      <div id="dom-steps" style="margin-top:12px;font-size:12px;color:#8b949e"></div>
+    </div>
+
+    <!-- CNAME Guide (collapsible) -->
+    <div id="dom-cname-guide" style="display:none">
+      <div class="section">
+        <div class="section-title">CNAME Setup (Scenario C \u2014 NS \uc774\uc804 \ubd88\uac00)</div>
+        <div class="code-block" id="dom-cname-val">
+          \u2014 (tunnelId \ud544\uc694, admin CNAME Guide \ucc38\uc870)
+        </div>
+        <div style="font-size:12px;color:#8b949e;margin-top:8px">
+          \uc704 CNAME \uac12\uc744 DNS \uc81c\uacf5\uc790(GoDaddy, Namecheap, \uac00\ube44\uc544 \ub4f1)\uc5d0\uc11c
+          <code style="color:#f5a623">{subdomain}</code> \u2192 CNAME \u2192 <code style="color:#f5a623">{tunnelId}.cfargotunnel.com</code> \uc73c\ub85c \ub4f1\ub85d\ud558\uc138\uc694.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 var APP=${JSON.stringify(appName)};
+var DOMAIN_HINT=${JSON.stringify({ zoneName: opts?.zoneName ?? '', tunnelId: opts?.tunnelId ?? '' })};
 var appData=null;
 var gitData=null;
 var logSrc=null;
 var activeTab='overview';
 var gitLoaded=false;
+var domainLoaded=false;
+var domainData=null;
 
 function switchTab(tab){
   activeTab=tab;
-  ['overview','git','deploy','logs'].forEach(function(t){
+  ['overview','git','deploy','logs','domain'].forEach(function(t){
     document.getElementById('tabn-'+t).className='tab'+(t===tab?' active':'');
     document.getElementById('tab-'+t).className='tab-panel'+(t===tab?' active':'');
   });
   if(tab==='git'&&!gitLoaded)loadGit();
   if(tab==='deploy'){loadSettings();loadHistory();}
   if(tab==='logs'&&!logSrc)startLogs();
+  if(tab==='domain'&&!domainLoaded)loadDomain();
 }
 
 function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
@@ -691,6 +768,70 @@ function startLogs(){
     var div=document.createElement('div');div.textContent='[stream ended]';div.style.color='#8b949e';out.appendChild(div);
     logSrc=null;
   };
+}
+
+// ── Domain tab functions ──
+function domainFetch(url,opts){
+  var pw=document.getElementById('dom-pw').value||'';
+  var h=Object.assign({'Content-Type':'application/json','X-Admin-Password':pw},(opts&&opts.headers)||{});
+  return fetch(url,Object.assign({},opts,{headers:h}));
+}
+async function loadDomain(){
+  domainLoaded=true;
+  var statusEl=document.getElementById('dom-status');
+  var connectedSec=document.getElementById('dom-connected-section');
+  var formSec=document.getElementById('dom-form-section');
+  statusEl.textContent='Loading...';
+  var r=await domainFetch('/api/domain/status/'+encodeURIComponent(APP)).then(function(r){return r.json();}).catch(function(){return null;});
+  if(!r){statusEl.textContent='Failed to load \u2014 check admin password.';return;}
+  if(r.message&&(r.message.includes('Unauthorized')||r.message.includes('nauthorized'))){
+    statusEl.textContent='Unauthorized \u2014 check admin password.';return;
+  }
+  var ext=r.external||{};
+  if(ext.connected){
+    statusEl.textContent='';
+    connectedSec.style.display='';formSec.style.display='none';
+    var url='https://'+(ext.hostname||'');
+    document.getElementById('dom-ext-url').innerHTML='<a class="ext" href="'+url+'" target="_blank">'+url+'</a>';
+    document.getElementById('dom-connected-at').textContent=(ext.connectedAt||'\u2014').replace('T',' ').slice(0,16);
+  }else{
+    statusEl.textContent='No external domain connected.';
+    connectedSec.style.display='none';formSec.style.display='';
+    document.getElementById('dom-sub').value=APP;
+    if(DOMAIN_HINT.zoneName)document.getElementById('dom-domain').value=DOMAIN_HINT.zoneName;
+    if(DOMAIN_HINT.tunnelId){
+      document.getElementById('dom-cname-val').textContent=DOMAIN_HINT.tunnelId+'.cfargotunnel.com';
+    }
+  }
+}
+async function connectAppDomain(){
+  var sub=document.getElementById('dom-sub').value.trim();
+  var dom=document.getElementById('dom-domain').value.trim();
+  var stepsDiv=document.getElementById('dom-steps');
+  if(!sub||!dom){stepsDiv.textContent='Subdomain and domain are required.';return;}
+  stepsDiv.innerHTML='<span style="color:#e3b341">\u23f3 Connecting...</span>';
+  try{
+    var r=await domainFetch('/api/domain/connect',{method:'POST',body:JSON.stringify({appName:APP,subdomain:sub,domain:dom})});
+    var d=await r.json();
+    if(d.success){
+      var html=(d.steps||[]).map(function(s){return '<div>'+(s.status==='completed'?'\u2705':'\u274c')+' '+escH(s.step)+'</div>';}).join('');
+      stepsDiv.innerHTML=html+'<div style="color:#3fb950;margin-top:8px">\u2705 '+escH(d.externalUrl)+' is live!</div>';
+      setTimeout(function(){domainLoaded=false;loadDomain();},1500);
+    }else{
+      stepsDiv.innerHTML='<span style="color:#f85149">\u274c '+escH(d.message||d.error||'Unknown error')+'</span>';
+    }
+  }catch(e){stepsDiv.innerHTML='<span style="color:#f85149">Error: '+escH(e.message)+'</span>';}
+}
+async function disconnectAppDomain(){
+  if(!confirm('Disconnect '+APP+' from external domain?'))return;
+  var r=await domainFetch('/api/domain/disconnect/'+encodeURIComponent(APP),{method:'DELETE'});
+  var d=await r.json();
+  if(d.success){domainLoaded=false;loadDomain();}
+  else{alert('Disconnect failed: '+(d.message||d.error||'Unknown error'));}
+}
+function toggleCnameGuide(){
+  var g=document.getElementById('dom-cname-guide');
+  g.style.display=g.style.display==='none'?'':'none';
 }
 
 loadApp();setInterval(loadApp,15000);

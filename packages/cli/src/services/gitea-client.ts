@@ -1,6 +1,7 @@
 // packages/cli/src/services/gitea-client.ts
-import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { execSync } from 'node:child_process';
 import type { GitRepoEntry } from '../types/app-entry.js';
 
 export interface GiteaClientConfig {
@@ -23,39 +24,105 @@ export class GiteaClient {
   // Token management
   // ---------------------------------------------------------------------------
 
-  private async ensureToken(): Promise<string> {
+  /**
+   * Create a Gitea API token via Basic Auth.
+   * If the admin account has mustChangePassword=true (403), auto-fixes via docker exec and retries.
+   * Saves the token to tokenPath on success.
+   */
+  private async _createToken(): Promise<{ wasFixed: boolean }> {
     const { tokenPath, baseUrl, username, password } = this.config;
-
-    if (existsSync(tokenPath)) {
-      return readFileSync(tokenPath, 'utf-8').trim();
-    }
-
-    // Create token via Basic Auth
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
-    const res = await fetch(`${baseUrl}/api/v1/users/${username}/tokens`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${basic}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: `brewnet-${Date.now()}`,
-        scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
-      }),
-    });
+
+    const makeRequest = () =>
+      fetch(`${baseUrl}/api/v1/users/${username}/tokens`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `brewnet-${Date.now()}`,
+          scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
+        }),
+      });
+
+    let res = await makeRequest();
+    let wasFixed = false;
 
     if (!res.ok) {
-      throw new Error(`Gitea token creation failed: ${res.status} ${await res.text()}`);
+      const body = await res.text();
+      if (res.status === 403 && body.includes('must change')) {
+        // Auto-fix: reset mustChangePassword via docker exec, then retry
+        try {
+          execSync(
+            `docker exec -u git brewnet-gitea gitea admin user edit` +
+            ` --username ${username} --must-change-password false`,
+            { stdio: 'pipe' },
+          );
+        } catch (e) {
+          const stderr = (e as { stderr?: Buffer }).stderr?.toString().trim() ?? String(e);
+          throw new Error(
+            `Gitea admin requires password change — auto-fix failed:\n  ${stderr}\n` +
+            `  Manual fix: docker exec -u git brewnet-gitea gitea admin user edit` +
+            ` --username ${username} --must-change-password false`,
+          );
+        }
+        wasFixed = true;
+        res = await makeRequest();
+        if (!res.ok) {
+          throw new Error(
+            `Gitea token creation failed after auto-fix: ${res.status} ${await res.text()}`,
+          );
+        }
+      } else {
+        throw new Error(`Gitea token creation failed: ${res.status} ${body}`);
+      }
     }
 
     const data = (await res.json()) as { sha1: string };
-    const token = data.sha1;
-
     mkdirSync(dirname(tokenPath), { recursive: true });
-    writeFileSync(tokenPath, token, 'utf-8');
+    writeFileSync(tokenPath, data.sha1, 'utf-8');
     chmodSync(tokenPath, 0o600);
+    return { wasFixed };
+  }
 
-    return token;
+  /**
+   * Explicit setup step — call once before any API operations.
+   * Validates any cached token; deletes and re-creates if stale (401).
+   * Returns what happened so the caller can surface it in job step logs.
+   */
+  async prepare(): Promise<{ autoFixed: boolean; message: string }> {
+    const { tokenPath, baseUrl } = this.config;
+    if (existsSync(tokenPath)) {
+      // Validate cached token — it may be stale if Gitea was reset or re-installed
+      const token = readFileSync(tokenPath, 'utf-8').trim();
+      try {
+        const check = await fetch(`${baseUrl}/api/v1/user`, {
+          headers: { Authorization: `token ${token}` },
+        });
+        if (check.status !== 401) {
+          return { autoFixed: false, message: 'token cached' };
+        }
+        // Token is stale — delete and fall through to re-create
+        unlinkSync(tokenPath);
+      } catch {
+        // Network error — assume token is still valid, let API calls fail naturally
+        return { autoFixed: false, message: 'token cached (network check skipped)' };
+      }
+    }
+    const { wasFixed } = await this._createToken();
+    return {
+      autoFixed: wasFixed,
+      message: wasFixed
+        ? 'mustChangePassword was set — auto-fixed via docker exec; token created'
+        : 'token created',
+    };
+  }
+
+  private async ensureToken(): Promise<string> {
+    const { tokenPath } = this.config;
+    if (existsSync(tokenPath)) {
+      return readFileSync(tokenPath, 'utf-8').trim();
+    }
+    await this._createToken();
+    return readFileSync(tokenPath, 'utf-8').trim();
   }
 
   private async authHeaders(): Promise<Record<string, string>> {
