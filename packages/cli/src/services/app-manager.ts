@@ -5,15 +5,17 @@ import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { execa } from 'execa';
 import { GiteaClient } from './gitea-client.js';
-import { readApps, addApp, updateApp, removeApp as registryRemoveApp } from './app-registry.js';
+import { readApps, addApp, updateApp, removeApp as registryRemoveApp, readDeployHistory } from './app-registry.js';
 import { getLastProject, loadState } from '../wizard/state.js';
-import type { AppEntry, AppJob, AppJobStep, CreateAppOptions } from '../types/app-entry.js';
+import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const BREWNET_DIR = join(homedir(), '.brewnet');
+const GITEA_TOKEN_PATH = join(BREWNET_DIR, 'gitea-token');
+const DEPLOY_HISTORY_PATH = join(BREWNET_DIR, 'deploy-history.json');
 
 // ---------------------------------------------------------------------------
 // In-memory job store (ephemeral — cleared on server restart)
@@ -48,6 +50,23 @@ export function readDotEnvValue(envPath: string, key: string): string {
 
 export async function listApps(): Promise<AppEntry[]> {
   return readApps(resolveAppsJsonPath());
+}
+
+export function getDeployHistory(appName?: string): DeployHistoryEntry[] {
+  const entries = readDeployHistory(DEPLOY_HISTORY_PATH);
+  if (!appName) return entries;
+  return entries.filter((e) => e.appName === appName);
+}
+
+export async function listGiteaRepos(): Promise<GitRepoEntry[]> {
+  const ctx = resolveContext();
+  const gitea = new GiteaClient({
+    baseUrl: ctx.giteaBaseUrl,
+    username: ctx.giteaUser,
+    password: ctx.giteaPassword,
+    tokenPath: GITEA_TOKEN_PATH,
+  });
+  return gitea.listRepos();
 }
 
 export function getJobStatus(jobId: string): AppJob | undefined {
@@ -153,7 +172,6 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
   try {
     const ctx = resolveContext();
     const appsJson = resolveAppsJsonPath();
-    const GITEA_TOKEN_PATH = join(BREWNET_DIR, 'gitea-token');
     const gitea = new GiteaClient({
       baseUrl: ctx.giteaBaseUrl,
       username: ctx.giteaUser,
@@ -207,6 +225,15 @@ async function _createModeA(
 
   // Step 2: Git remote + push
   setStep(job, 2, 'running');
+  // Boilerplates are cloned --depth 1; Gitea rejects shallow pushes to empty repos.
+  // Unshallow first (try origin), fall back to a fresh git init if origin is unreachable.
+  const shallowCheck = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: meta.appDir }).catch(() => ({ stdout: 'false' }));
+  if (shallowCheck.stdout.trim() === 'true') {
+    await execa('git', ['fetch', '--unshallow', 'origin'], { cwd: meta.appDir }).catch(async () => {
+      const { reinitGit } = await import('./boilerplate-manager.js');
+      await reinitGit(meta.appDir);
+    });
+  }
   const authedUrl = gitea.authedCloneUrl(cloneUrl);
   await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: meta.appDir }).catch(() => {
     return execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: meta.appDir });

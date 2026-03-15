@@ -123,4 +123,43 @@ describe('GiteaClient', () => {
       await expect(client.createRepo('my-app')).rejects.toThrow();
     });
   });
+
+  describe('listRepos', () => {
+    it('returns array of repo entries on success', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+      const fakeRepos = [
+        {
+          id: 1,
+          name: 'my-app',
+          clone_url: 'http://localhost:3000/admin/my-app.git',
+          html_url: 'http://localhost:3000/admin/my-app',
+          description: '',
+          private: true,
+        },
+      ];
+      mockFetch.mockResolvedValueOnce(jsonResponse(fakeRepos));
+      const client = makeClient();
+      const repos = await client.listRepos();
+      expect(repos).toHaveLength(1);
+      expect(repos[0]!.name).toBe('my-app');
+      const [url] = mockFetch.mock.calls[0] as unknown as [string, ...unknown[]];
+      expect(url).toBe('http://localhost:3000/api/v1/user/repos');
+    });
+
+    it('uses token auth header', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'mytoken';
+      mockFetch.mockResolvedValueOnce(jsonResponse([]));
+      const client = makeClient();
+      await client.listRepos();
+      const [, opts] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(opts.headers).toMatchObject({ Authorization: 'token mytoken' });
+    });
+
+    it('throws on non-2xx response', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+      mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401));
+      const client = makeClient();
+      await expect(client.listRepos()).rejects.toThrow('listRepos failed');
+    });
+  });
 });

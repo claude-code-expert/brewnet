@@ -24,7 +24,7 @@ import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import type { WizardState } from '@brewnet/shared';
 import { generateAppsPageHtml } from './apps-page.js';
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove } from './app-manager.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos } from './app-manager.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
@@ -142,6 +142,8 @@ tr:hover td{background:#161b22}
 #log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;height:200px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
 .section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
+.nav-link{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px;font-family:inherit}
+.nav-link:hover{background:#21262d}
 .refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
 .svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
 .svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
@@ -178,10 +180,8 @@ tr:hover td{background:#161b22}
     <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
-    <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
-    <a href="/apps" style="color:#3fb950;font-size:12px;text-decoration:none;border:1px solid #3fb950;padding:2px 8px;border-radius:4px">🚀 App Deploy</a>
-  </div>
+  <span class="refresh" onclick="loadServices(true)" style="margin-left:12px">&#8635; Refresh</span>
+  <a href="/apps" class="nav-link" style="margin-left:auto">🚀 App Deploy</a>
 </div>
 <div class="section-title">Services</div>
 <table id="svc-table">
@@ -933,6 +933,24 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             json(res, 200, { success: true });
             return;
           }
+        }
+
+        if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
+          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
+          const appFilter = reqUrl.searchParams.get('app') ?? undefined;
+          const entries = getDeployHistory(appFilter);
+          json(res, 200, { history: entries });
+          return;
+        }
+
+        if (parts[1] === 'git' && parts[2] === 'repos' && req.method === 'GET') {
+          try {
+            const repos = await listGiteaRepos();
+            json(res, 200, { repos });
+          } catch (err) {
+            json(res, 502, { success: false, error: String(err) });
+          }
+          return;
         }
 
         json(res, 404, { success: false, error: 'Not found' });

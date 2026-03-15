@@ -60,3 +60,22 @@ export interface CreateAppOptions {
   includePostgres?: boolean;
   includeRedis?: boolean;
 }
+
+/** One entry in the deploy history (stored in ~/.brewnet/deploy-history.json). */
+export interface DeployHistoryEntry {
+  appName: string;
+  commitHash: string;
+  commitMessage: string;
+  status: 'success' | 'failed';
+  deployedAt: string; // ISO 8601
+}
+
+/** One repository entry from Gitea GET /api/v1/user/repos. */
+export interface GitRepoEntry {
+  id: number;
+  name: string;
+  clone_url: string;
+  html_url: string;
+  description: string;
+  private: boolean;
+}

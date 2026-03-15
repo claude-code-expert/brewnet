@@ -1,7 +1,7 @@
 // packages/cli/src/services/app-registry.ts
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { AppEntry } from '../types/app-entry.js';
+import type { AppEntry, DeployHistoryEntry } from '../types/app-entry.js';
 
 export function readApps(appsJsonPath: string): AppEntry[] {
   if (!existsSync(appsJsonPath)) return [];
@@ -36,4 +36,19 @@ export function updateApp(appsJsonPath: string, name: string, patch: Partial<App
 export function removeApp(appsJsonPath: string, name: string): void {
   const apps = readApps(appsJsonPath).filter((a) => a.name !== name);
   writeApps(appsJsonPath, apps);
+}
+
+export function readDeployHistory(historyJsonPath: string): DeployHistoryEntry[] {
+  if (!existsSync(historyJsonPath)) return [];
+  try {
+    return JSON.parse(readFileSync(historyJsonPath, 'utf-8')) as DeployHistoryEntry[];
+  } catch {
+    return [];
+  }
+}
+
+export function appendDeployHistory(historyJsonPath: string, entry: DeployHistoryEntry): void {
+  const entries = readDeployHistory(historyJsonPath);
+  mkdirSync(dirname(historyJsonPath), { recursive: true });
+  writeFileSync(historyJsonPath, JSON.stringify([...entries, entry], null, 2), 'utf-8');
 }

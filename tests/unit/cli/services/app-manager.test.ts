@@ -38,10 +38,13 @@ const mockCreateRepo = jest.fn<(...args: any[]) => Promise<string>>();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockRepoExists = jest.fn<(...args: any[]) => Promise<boolean>>();
 const mockAuthedCloneUrl = jest.fn((url: string) => url.replace('http://', 'http://admin:pw@'));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockListRepos = jest.fn<(...args: any[]) => Promise<unknown[]>>();
 const MockGiteaClient = jest.fn().mockImplementation(() => ({
   createRepo: mockCreateRepo,
   repoExists: mockRepoExists,
   authedCloneUrl: mockAuthedCloneUrl,
+  listRepos: mockListRepos,
 }));
 jest.unstable_mockModule('../../../../packages/cli/src/services/gitea-client.js', () => ({
   GiteaClient: MockGiteaClient,
@@ -52,12 +55,15 @@ const mockAddApp = jest.fn();
 const mockUpdateApp = jest.fn();
 const mockReadApps = jest.fn<() => unknown[]>(() => []);
 const mockRemoveApp = jest.fn();
+const mockReadDeployHistory = jest.fn<() => unknown[]>(() => []);
 jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js', () => ({
   addApp: mockAddApp,
   updateApp: mockUpdateApp,
   readApps: mockReadApps,
   removeApp: mockRemoveApp,
   writeApps: jest.fn(),
+  readDeployHistory: mockReadDeployHistory,
+  appendDeployHistory: jest.fn(),
 }));
 
 // Mock global.fetch (used by _pollHealth inside app-manager.ts)
@@ -96,7 +102,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/config/frameworks.js', ()
 // Imports (after mocks)
 // --------------------------------------------------------------------------
 
-const { readDotEnvValue, resolveAppsJsonPath, listApps } = await import(
+const { readDotEnvValue, resolveAppsJsonPath, listApps, getDeployHistory, listGiteaRepos } = await import(
   '../../../../packages/cli/src/services/app-manager.js'
 );
 
@@ -289,6 +295,72 @@ describe('createApp — mode C (new project)', () => {
       await new Promise((r) => setTimeout(r, 20));
     }
     expect(mockCloneStack).toHaveBeenCalledWith('go-gin', expect.stringContaining('new-app'));
+  });
+});
+
+describe('getDeployHistory', () => {
+  beforeEach(() => {
+    fsContent = {};
+    jest.clearAllMocks();
+  });
+
+  it('returns empty array when no history exists', () => {
+    mockReadDeployHistory.mockReturnValue([]);
+    expect(getDeployHistory()).toEqual([]);
+  });
+
+  it('returns all entries when no appName filter given', () => {
+    const entries = [
+      { appName: 'app-a', commitHash: 'abc', commitMessage: 'fix', status: 'success', deployedAt: '2026-01-01T00:00:00Z' },
+      { appName: 'app-b', commitHash: 'def', commitMessage: 'feat', status: 'failed', deployedAt: '2026-01-02T00:00:00Z' },
+    ];
+    mockReadDeployHistory.mockReturnValue(entries);
+    expect(getDeployHistory()).toHaveLength(2);
+  });
+
+  it('filters entries by appName when provided', () => {
+    const entries = [
+      { appName: 'app-a', commitHash: 'abc', commitMessage: 'fix', status: 'success', deployedAt: '2026-01-01T00:00:00Z' },
+      { appName: 'app-b', commitHash: 'def', commitMessage: 'feat', status: 'failed', deployedAt: '2026-01-02T00:00:00Z' },
+    ];
+    mockReadDeployHistory.mockReturnValue(entries);
+    const result = getDeployHistory('app-a');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.appName).toBe('app-a');
+  });
+});
+
+describe('listGiteaRepos', () => {
+  beforeEach(() => {
+    fsContent = {};
+    jest.clearAllMocks();
+  });
+
+  it('calls GiteaClient.listRepos and returns results', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      admin: { username: 'admin', password: 'pw' },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    const fakeRepos = [
+      { id: 1, name: 'test-repo', clone_url: 'http://localhost/git/admin/test-repo.git',
+        html_url: 'http://localhost/git/admin/test-repo', description: '', private: true },
+    ];
+    mockListRepos.mockResolvedValue(fakeRepos);
+    const repos = await listGiteaRepos();
+    expect(repos).toHaveLength(1);
+    expect(repos[0].name).toBe('test-repo');
+    expect(mockListRepos).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates errors from GiteaClient.listRepos', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      admin: { username: 'admin', password: 'pw' },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    mockListRepos.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    await expect(listGiteaRepos()).rejects.toThrow('ECONNREFUSED');
   });
 });
 

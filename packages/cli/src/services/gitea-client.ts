@@ -1,6 +1,7 @@
 // packages/cli/src/services/gitea-client.ts
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { GitRepoEntry } from '../types/app-entry.js';
 
 export interface GiteaClientConfig {
   /** Full base URL without trailing slash, e.g. "http://localhost/git" (via Traefik) */
@@ -37,7 +38,10 @@ export class GiteaClient {
         Authorization: `Basic ${basic}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name: `brewnet-${Date.now()}` }),
+      body: JSON.stringify({
+        name: `brewnet-${Date.now()}`,
+        scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
+      }),
     });
 
     if (!res.ok) {
@@ -99,9 +103,24 @@ export class GiteaClient {
     });
   }
 
+  /** Returns all repos accessible to the authenticated user. */
+  async listRepos(): Promise<GitRepoEntry[]> {
+    const { baseUrl } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/user/repos`, {
+      headers: await this.authHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`Gitea listRepos failed: ${res.status} ${await res.text()}`);
+    }
+    return (await res.json()) as GitRepoEntry[];
+  }
+
   /** URL suitable for git remote add — includes credentials in URL (stored in .git/config which is chmod 600). */
   authedCloneUrl(cloneUrl: string): string {
     const { username, password } = this.config;
-    return cloneUrl.replace('http://', `http://${username}:${password}@`);
+    // Percent-encode special chars so git URL parser handles them correctly
+    const encUser = encodeURIComponent(username);
+    const encPass = encodeURIComponent(password);
+    return cloneUrl.replace('http://', `http://${encUser}:${encPass}@`);
   }
 }
