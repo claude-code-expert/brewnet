@@ -531,9 +531,262 @@ fi
 step_done
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  PHASE 5: Boilerplate Endpoint Verification
+#  PHASE 5: Apps 페이지 & Gitea 연결 검증
 # ─────────────────────────────────────────────────────────────────────────────
-step_start 5 "보일러플레이트 엔드포인트 검증"
+step_start 5 "Apps 페이지 & Gitea 연결 검증"
+
+GITEA_BASE="http://localhost/git"
+TEST_APP_NAME="brewnet-gitea-test"
+TEST_APP_PORT=19988
+GITEA_TOKEN_PATH="$HOME/.brewnet/gitea-token"
+SECRETS_FILE="$HOME/brewnet/my-homeserver/secrets/admin_password"
+
+# ── 5.1 /apps 페이지 로드 ──────────────────────────────────────────────────
+label "5.1 /apps 페이지 로드"
+APPS_PAGE_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null || echo "000")
+if [ "$APPS_PAGE_CODE" = "200" ]; then
+  ok "/apps → HTTP 200"
+else
+  fail "/apps → HTTP ${APPS_PAGE_CODE} (예상: 200)"
+fi
+
+# ── 5.2 /api/apps JSON 구조 ────────────────────────────────────────────────
+label "5.2 /api/apps JSON 구조 확인"
+_APPS_TMP=$(mktemp)
+API_APPS_CODE=$(curl -s -o "$_APPS_TMP" -w "%{http_code}" \
+  "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null || echo "000")
+if [ "$API_APPS_CODE" = "200" ]; then
+  APP_COUNT=$(node -e "
+    const d = JSON.parse(require('fs').readFileSync('${_APPS_TMP}','utf8'));
+    process.stdout.write(Array.isArray(d.apps) ? String(d.apps.length) : 'ERR');
+  " 2>/dev/null || echo "ERR")
+  if [ "$APP_COUNT" != "ERR" ]; then
+    ok "/api/apps → HTTP 200 | apps 배열 확인 (${APP_COUNT}개)"
+  else
+    fail "/api/apps → HTTP 200이지만 apps 배열 없음"
+    sub "응답: $(cat "$_APPS_TMP" | head -c 200)"
+  fi
+else
+  fail "/api/apps → HTTP ${API_APPS_CODE}"
+fi
+rm -f "$_APPS_TMP"
+
+# ── 5.3 /api/git/repos 심화 검증 ──────────────────────────────────────────
+label "5.3 /api/git/repos 검증"
+_REPOS_TMP=$(mktemp)
+GIT_REPOS_CODE=$(curl -s -o "$_REPOS_TMP" -w "%{http_code}" \
+  "http://localhost:${ADMIN_PORT}/api/git/repos" 2>/dev/null || echo "000")
+if [ "$GIT_REPOS_CODE" = "200" ]; then
+  REPO_COUNT=$(node -e "
+    const d = JSON.parse(require('fs').readFileSync('${_REPOS_TMP}','utf8'));
+    process.stdout.write(Array.isArray(d.repos) ? String(d.repos.length) : 'ERR');
+  " 2>/dev/null || echo "ERR")
+  if [ "$REPO_COUNT" != "ERR" ]; then
+    ok "/api/git/repos → HTTP 200 | repos 배열 확인 (${REPO_COUNT}개)"
+  else
+    GIT_ERR=$(node -e "
+      const d = JSON.parse(require('fs').readFileSync('${_REPOS_TMP}','utf8'));
+      process.stdout.write(d.error || '(no error field)');
+    " 2>/dev/null || echo "parse error")
+    fail "/api/git/repos → repos 배열 없음 — error: ${GIT_ERR}"
+  fi
+else
+  GIT_ERR=$(node -e "
+    const d = JSON.parse(require('fs').readFileSync('${_REPOS_TMP}','utf8'));
+    process.stdout.write(d.error || '(no error field)');
+  " 2>/dev/null || echo "parse error")
+  fail "/api/git/repos → HTTP ${GIT_REPOS_CODE} — error: ${GIT_ERR}"
+fi
+rm -f "$_REPOS_TMP"
+
+# ── 5.4 Gitea 직접 연결 ───────────────────────────────────────────────────
+label "5.4 Gitea 직접 연결 검증"
+
+# 패스워드 우선순위: secrets/admin_password > selections.json (backup)
+GITEA_PASS=""
+if [ -f "$SECRETS_FILE" ]; then
+  GITEA_PASS=$(cat "$SECRETS_FILE" 2>/dev/null | tr -d '[:space:]' || true)
+  [ -n "$GITEA_PASS" ] && sub "패스워드 소스: ${SECRETS_FILE}"
+fi
+if [ -z "$GITEA_PASS" ] && [ -f "$CONFIG_BACKUP" ]; then
+  GITEA_PASS=$(node -e "
+    const d = JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
+    process.stdout.write(d.admin?.password || '');
+  " "$CONFIG_BACKUP" 2>/dev/null || true)
+  [ -n "$GITEA_PASS" ] && sub "패스워드 소스: selections.json (backup)"
+fi
+
+if [ -z "$GITEA_PASS" ]; then
+  echo -e "${YELLOW}  ⚠ [$(ts)] Gitea 패스워드를 찾을 수 없음 — 5.4 건너뜀${NC}"
+else
+  _GITEA_USER_TMP=$(mktemp)
+  GITEA_USER_CODE=$(curl -s -o "$_GITEA_USER_TMP" -w "%{http_code}" \
+    -u "admin:${GITEA_PASS}" \
+    "${GITEA_BASE}/api/v1/user" 2>/dev/null || echo "000")
+  if [ "$GITEA_USER_CODE" = "200" ]; then
+    GITEA_LOGIN=$(node -e "
+      const d = JSON.parse(require('fs').readFileSync('${_GITEA_USER_TMP}','utf8'));
+      process.stdout.write(d.login || '?');
+    " 2>/dev/null || echo "?")
+    ok "Gitea Basic Auth → HTTP 200 (login: ${GITEA_LOGIN})"
+  elif [ "$GITEA_USER_CODE" = "403" ]; then
+    echo -e "${YELLOW}  ⚠ [$(ts)] Gitea → HTTP 403 — mustChangePassword=true 가능성${NC}"
+    sub "수동 확인: curl -u admin:<pass> ${GITEA_BASE}/api/v1/user"
+  else
+    fail "Gitea Basic Auth → HTTP ${GITEA_USER_CODE} (예상: 200)"
+    sub "엔드포인트: ${GITEA_BASE}/api/v1/user"
+  fi
+  rm -f "$_GITEA_USER_TMP"
+
+  # Token 재검증 (파일 존재 시)
+  if [ -f "$GITEA_TOKEN_PATH" ]; then
+    GITEA_TOKEN=$(cat "$GITEA_TOKEN_PATH" 2>/dev/null | tr -d '[:space:]' || true)
+    if [ -n "$GITEA_TOKEN" ]; then
+      TOKEN_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "Authorization: token ${GITEA_TOKEN}" \
+        "${GITEA_BASE}/api/v1/user" 2>/dev/null || echo "000")
+      if [ "$TOKEN_CODE" = "200" ]; then
+        ok "Gitea Token Auth → HTTP 200 (token 파일: ${GITEA_TOKEN_PATH})"
+      else
+        fail "Gitea Token Auth → HTTP ${TOKEN_CODE} (토큰 파일: ${GITEA_TOKEN_PATH})"
+      fi
+    fi
+  else
+    sub "Gitea 토큰 파일 없음 (${GITEA_TOKEN_PATH}) — token 재검증 건너뜀"
+  fi
+fi
+
+# ── 5.5 create-app End-to-End (Gitea 스텝 검증) ───────────────────────────
+label "5.5 create-app E2E (Gitea 스텝 검증)"
+
+# 사전 정리: 이전 테스트 앱 삭제
+sub "사전 정리: 기존 '${TEST_APP_NAME}' 앱 삭제..."
+PRE_CLEANUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+  "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME}" 2>/dev/null || echo "000")
+if [ "$PRE_CLEANUP_CODE" = "200" ]; then
+  sub "기존 테스트 앱 삭제 완료 (HTTP 200)"
+elif [ "$PRE_CLEANUP_CODE" = "404" ]; then
+  sub "기존 테스트 앱 없음 (HTTP 404) — 정상"
+else
+  sub "사전 정리 응답: HTTP ${PRE_CLEANUP_CODE}"
+fi
+
+# POST /api/apps/create
+info "create-app 시작: ${TEST_APP_NAME} (nodejs/express, port ${TEST_APP_PORT})"
+_CREATE_TMP=$(mktemp)
+CREATE_CODE=$(curl -s -o "$_CREATE_TMP" -w "%{http_code}" \
+  -X POST -H "Content-Type: application/json" \
+  -d "{\"appName\":\"${TEST_APP_NAME}\",\"mode\":\"new-project\",\"language\":\"nodejs\",\"frameworkId\":\"express\",\"port\":${TEST_APP_PORT}}" \
+  "http://localhost:${ADMIN_PORT}/api/apps/create" 2>/dev/null || echo "000")
+CREATE_BODY=$(cat "$_CREATE_TMP")
+rm -f "$_CREATE_TMP"
+
+JOB_ID=$(echo "$CREATE_BODY" | node -e "
+  const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+  process.stdout.write(d.jobId || '');
+" 2>/dev/null || true)
+
+if [ -z "$JOB_ID" ]; then
+  fail "create-app → jobId 없음 (HTTP ${CREATE_CODE}, 응답: $(echo "$CREATE_BODY" | head -c 200))"
+else
+  ok "create-app → jobId: ${JOB_ID}"
+
+  # 폴링: 3초 간격, 최대 60회 (3분)
+  GITEA_STEPS_OK=false
+  JOB_DONE=false
+  JOB_FAILED=false
+
+  for poll in $(seq 1 60); do
+    sleep 3
+    _JOB_TMP=$(mktemp)
+    curl -s -o "$_JOB_TMP" \
+      "http://localhost:${ADMIN_PORT}/api/apps/jobs/${JOB_ID}" 2>/dev/null || true
+    JOB_STATUS=$(node -e "
+      const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
+      process.stdout.write(d.status || 'unknown');
+    " 2>/dev/null || echo "unknown")
+
+    # 스텝 상태 1줄 출력
+    STEP_LINE=$(node -e "
+      const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
+      const icons = { done: '✔', 'in-progress': '⏳', failed: '✗', pending: '·' };
+      const steps = d.steps || [];
+      process.stdout.write(steps.map(s => (icons[s.status]||'?') + ' ' + s.label).join(' | '));
+    " 2>/dev/null || echo "steps parse error")
+    sub "[${poll}/60] ${STEP_LINE}"
+
+    if [ "$JOB_STATUS" = "failed" ]; then
+      JOB_ERR=$(node -e "
+        const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
+        process.stdout.write(d.error || d.message || '(no error message)');
+      " 2>/dev/null || echo "parse error")
+      rm -f "$_JOB_TMP"
+      fail "create-app 실패: ${JOB_ERR}"
+      JOB_FAILED=true
+      JOB_DONE=true
+      break
+    fi
+
+    if [ "$JOB_STATUS" = "done" ]; then
+      # Gitea setup + Gitea repo 스텝 done 확인
+      GITEA_CHECK=$(node -e "
+        const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
+        const steps = d.steps || [];
+        const setup = steps.find(s => s.label === 'Gitea setup');
+        const repo  = steps.find(s => s.label === 'Gitea repo');
+        process.stdout.write(
+          setup?.status === 'done' && repo?.status === 'done'
+            ? 'ok'
+            : 'fail:' + (setup?.status||'?') + '/' + (repo?.status||'?')
+        );
+      " 2>/dev/null || echo "fail:parse")
+
+      if [ "$GITEA_CHECK" = "ok" ]; then
+        ok "Gitea setup + Gitea repo 스텝 완료 → Gitea 연결 성공"
+        GITEA_STEPS_OK=true
+      else
+        fail "Gitea 스텝 실패 — ${GITEA_CHECK}"
+      fi
+
+      # Docker up / Health check 결과 별도 경고 출력 (Gitea 검증과 무관)
+      DOCKER_CHECK=$(node -e "
+        const d = JSON.parse(require('fs').readFileSync('${_JOB_TMP}','utf8'));
+        const steps = d.steps || [];
+        const docker = steps.find(s => s.label === 'Docker up');
+        const health = steps.find(s => s.label === 'Health check');
+        process.stdout.write((docker?.status||'?') + '/' + (health?.status||'?'));
+      " 2>/dev/null || echo "?/?")
+      sub "Docker up / Health check: ${DOCKER_CHECK} (Gitea 검증과 무관)"
+      rm -f "$_JOB_TMP"
+      JOB_DONE=true
+      break
+    fi
+
+    rm -f "$_JOB_TMP"
+  done
+
+  if [ "$JOB_DONE" = false ]; then
+    fail "create-app 타임아웃 (3분) — 마지막 상태: ${JOB_STATUS:-unknown}"
+  fi
+
+  # 사후 정리: 테스트 앱 삭제
+  sub "사후 정리: '${TEST_APP_NAME}' 삭제..."
+  POST_CLEANUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+    "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME}" 2>/dev/null || echo "000")
+  if [ "$POST_CLEANUP_CODE" = "200" ]; then
+    sub "테스트 앱 삭제 완료"
+  else
+    sub "테스트 앱 삭제 응답: HTTP ${POST_CLEANUP_CODE}"
+  fi
+fi
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 6: Boilerplate Endpoint Verification
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 6 "보일러플레이트 엔드포인트 검증"
 
 MY_HS="${HOME}/brewnet/my-homeserver"
 
@@ -576,17 +829,33 @@ for entry in "${STACKS[@]}"; do
     continue
   fi
 
+  # Resolve actual host ports from docker port (boilerplate stacks use direct ports, not Traefik)
+  # Backend container: <stack>-backend-1, Frontend container: <stack>-frontend-1
+  BE_CONTAINER="${STACK_ID}-backend-1"
+  FE_CONTAINER="${STACK_ID}-frontend-1"
+  # Backend internal port: 8080 for most stacks, 3000 for unified (nextjs)
+  if [ "$IS_UNIFIED" = "1" ]; then
+    BE_HOST_PORT=$(docker port "${BE_CONTAINER}" 3000 2>/dev/null | head -1 | cut -d: -f2 || true)
+  else
+    BE_HOST_PORT=$(docker port "${BE_CONTAINER}" 8080 2>/dev/null | head -1 | cut -d: -f2 || true)
+  fi
+  FE_HOST_PORT=$(docker port "${FE_CONTAINER}" 80 2>/dev/null | head -1 | cut -d: -f2 || true)
+
   # ── a. Backend ───────────────────────────────────────────────────────────
-  BE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-    "http://localhost/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
-  if [ "$BE_CODE" = "200" ]; then BE_ICON="${GREEN}✅ ${BE_CODE}${NC}"; else BE_ICON="${RED}❌ ${BE_CODE}${NC}"; ALL_PASS=false; fi
+  if [ -n "$BE_HOST_PORT" ]; then
+    BE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+      "http://127.0.0.1:${BE_HOST_PORT}/health" 2>/dev/null || echo "ERR")
+    if [ "$BE_CODE" = "200" ]; then BE_ICON="${GREEN}✅ ${BE_CODE}${NC}"; else BE_ICON="${RED}❌ ${BE_CODE}${NC}"; ALL_PASS=false; fi
+  else
+    BE_ICON="${RED}❌ no-port${NC}"; ALL_PASS=false
+  fi
 
   # ── b. Frontend ──────────────────────────────────────────────────────────
   if [ "$IS_UNIFIED" = "1" ]; then
     FE_ICON="${DIM}— (통합)${NC}"
-  else
+  elif [ -n "$FE_HOST_PORT" ]; then
     FE_CODE=$(curl -sL -o /tmp/fe_test.html -w "%{http_code}" --max-time 10 \
-      "http://localhost/apps/${STACK_ID}-ui/" 2>/dev/null || echo "ERR")
+      "http://127.0.0.1:${FE_HOST_PORT}/" 2>/dev/null || echo "ERR")
     if [ "$FE_CODE" = "200" ] && grep -q '<div id="root">' /tmp/fe_test.html 2>/dev/null; then
       FE_ICON="${GREEN}✅ ${FE_CODE}${NC}"
     elif [ "$FE_CODE" = "200" ]; then
@@ -594,33 +863,38 @@ for entry in "${STACKS[@]}"; do
     else
       FE_ICON="${RED}❌ ${FE_CODE}${NC}"; ALL_PASS=false
     fi
+  else
+    FE_ICON="${RED}❌ no-port${NC}"; ALL_PASS=false
   fi
 
   # ── c. Image ─────────────────────────────────────────────────────────────
-  if [ "$IS_UNIFIED" = "1" ]; then
-    IMG_PATH="http://localhost/apps/${STACK_ID}/brewnet-site-banner.png"
+  if [ "$IS_UNIFIED" = "1" ] && [ -n "$BE_HOST_PORT" ]; then
+    IMG_PATH="http://127.0.0.1:${BE_HOST_PORT}/brewnet-site-banner.png"
+  elif [ -n "$FE_HOST_PORT" ]; then
+    IMG_PATH="http://127.0.0.1:${FE_HOST_PORT}/brewnet-site-banner.png"
   else
-    IMG_PATH="http://localhost/apps/${STACK_ID}-ui/brewnet-site-banner.png"
+    IMG_PATH=""
   fi
-  IMG_HDR=$(curl -sI --max-time 10 "$IMG_PATH" 2>/dev/null || true)
-  IMG_CODE=$(echo "$IMG_HDR" | grep -oE 'HTTP/[0-9.]+ [0-9]+' | tail -1 | awk '{print $2}')
-  IMG_CT=$(echo "$IMG_HDR" | grep -i 'content-type' | grep -o 'image/png' || true)
-  if [ "$IMG_CODE" = "200" ] && [ "$IMG_CT" = "image/png" ]; then
-    IMG_ICON="${GREEN}✅ png${NC}"
-  elif [ "$IMG_CODE" = "200" ]; then
-    IMG_ICON="${YELLOW}⚠ 200/${IMG_CT:-?}${NC}"; ALL_PASS=false
+  if [ -n "$IMG_PATH" ]; then
+    IMG_HDR=$(curl -sI --max-time 10 "$IMG_PATH" 2>/dev/null || true)
+    IMG_CODE=$(echo "$IMG_HDR" | grep -oE 'HTTP/[0-9.]+ [0-9]+' | tail -1 | awk '{print $2}')
+    IMG_CT=$(echo "$IMG_HDR" | grep -i 'content-type' | grep -o 'image/png' || true)
+    if [ "$IMG_CODE" = "200" ] && [ "$IMG_CT" = "image/png" ]; then
+      IMG_ICON="${GREEN}✅ png${NC}"
+    elif [ "$IMG_CODE" = "200" ]; then
+      IMG_ICON="${YELLOW}⚠ 200/${IMG_CT:-?}${NC}"; ALL_PASS=false
+    else
+      IMG_ICON="${RED}❌ ${IMG_CODE:-ERR}${NC}"; ALL_PASS=false
+    fi
   else
-    IMG_ICON="${RED}❌ ${IMG_CODE:-ERR}${NC}"; ALL_PASS=false
+    IMG_ICON="${RED}❌ no-port${NC}"; ALL_PASS=false
   fi
 
   # ── d. External ──────────────────────────────────────────────────────────
-  if [ -n "$TUNNEL_URL" ]; then
-    EXT_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
-      "${TUNNEL_URL}/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
-    if [ "$EXT_CODE" = "200" ]; then EXT_ICON="${GREEN}✅ ${EXT_CODE}${NC}"; else EXT_ICON="${RED}❌ ${EXT_CODE}${NC}"; ALL_PASS=false; fi
-  else
-    EXT_ICON="${DIM}— skip${NC}"
-  fi
+  # External check uses /api/hello (public API endpoint through Cloudflare tunnel)
+  # Boilerplate stacks are only accessible externally if Traefik routes them.
+  # Since they run on direct ports without Traefik routing, external check is N/A.
+  EXT_ICON="${DIM}— N/A${NC}"
 
   printf "  %-24s " "$STACK_ID"
   printf "${BE_ICON}  "
@@ -653,7 +927,7 @@ fi
 if [ "$ALL_PASS" = true ]; then
   echo -e "  ${GREEN}${BOLD}✅ [$(ts)] 전체 테스트 통과${NC}"
 else
-  echo -e "  ${RED}${BOLD}❌ 일부 스택 실패 — 위 Phase 5 결과 확인${NC}"
+  echo -e "  ${RED}${BOLD}❌ 일부 스택 실패 — 위 Phase 6 결과 확인${NC}"
 fi
 echo -e "  ${DIM}컨테이너 상태: docker ps --filter name=brewnet${NC}"
 echo -e "  ${DIM}서비스 로그:   tail -f ~/brewnet/my-homeserver/logs/*.log${NC}"

@@ -152,6 +152,9 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
     console.log(chalk.dim('  Running in non-interactive mode...'));
     console.log();
 
+    // Save state so admin-server can load credentials
+    try { saveState(state); } catch { /* non-critical */ }
+
     // Skip directly to generate step
     const result = await runGenerateStep(state);
     if (result === 'success') {

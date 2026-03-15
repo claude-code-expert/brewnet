@@ -52,16 +52,16 @@ export class GiteaClient {
         // Auto-fix: reset mustChangePassword via docker exec, then retry
         try {
           execSync(
-            `docker exec -u git brewnet-gitea gitea admin user edit` +
-            ` --username ${username} --must-change-password false`,
+            `docker exec -u git brewnet-gitea gitea admin user change-password` +
+            ` --username ${username} --password ${password} --must-change-password=false`,
             { stdio: 'pipe' },
           );
         } catch (e) {
           const stderr = (e as { stderr?: Buffer }).stderr?.toString().trim() ?? String(e);
           throw new Error(
             `Gitea admin requires password change — auto-fix failed:\n  ${stderr}\n` +
-            `  Manual fix: docker exec -u git brewnet-gitea gitea admin user edit` +
-            ` --username ${username} --must-change-password false`,
+            `  Manual fix: docker exec -u git brewnet-gitea gitea admin user change-password` +
+            ` --username ${username} --password <password> --must-change-password=false`,
           );
         }
         wasFixed = true;

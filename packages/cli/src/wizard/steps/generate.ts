@@ -535,6 +535,24 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
               '-c', `CREATE DATABASE gitea_db OWNER ${dbUser}`,
             ]);
           }
+
+          // 5. Sync db user password to match current secret file (handles re-run
+          //    scenarios where the volume has an old password but secrets changed).
+          try {
+            const dbPassPath = join(projectPath, 'secrets', 'db_password');
+            const { readFileSync } = await import('node:fs');
+            const dbPass = readFileSync(dbPassPath, 'utf-8').trim();
+            if (dbPass) {
+              await execaFn('docker', [
+                'exec', 'brewnet-postgresql',
+                'psql', '-U', dbUser, '-d', 'postgres',
+                '-c', `ALTER USER ${dbUser} WITH PASSWORD '${dbPass}'`,
+              ]);
+            }
+          } catch {
+            // best-effort — if it fails, Gitea will crash-loop and surface the error
+          }
+
           pgPreSpinner.succeed('  gitea_db ready');
         }
       }
@@ -1137,12 +1155,14 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
           // Always sync password + reset must_change_password.
           // --password syncs Gitea's stored password to match the current state on re-runs
           // (first-run: no-op since user was just created with the same password).
+          // 'user edit' was removed in Gitea 1.22+; use 'change-password' to sync
+          // credentials and clear mustChangePassword in one command.
           await execaFn('docker', [
             'exec', '-u', 'git', 'brewnet-gitea',
-            'gitea', 'admin', 'user', 'edit',
+            'gitea', 'admin', 'user', 'change-password',
             '--username', adminUser,
             '--password', adminPass,
-            '--must-change-password', 'false',
+            '--must-change-password=false',
           ]).catch((e: unknown) => {
             const msg = (e as { stderr?: string }).stderr ?? String(e);
             gitea.warn(`  Gitea: 계정 동기화 실패 — ${msg.slice(0, 120)}`);
@@ -1175,7 +1195,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
                 gitea.warn(`  Gitea: API 토큰 생성 실패 (${tr.status}) — create-app 시 자동 재시도됩니다`);
                 if (errBody.includes('must change')) {
                   gitea.warn('  Gitea: must-change-password 플래그가 여전히 설정되어 있습니다');
-                  gitea.warn(`  Fix: docker exec -u git brewnet-gitea gitea admin user edit --username ${adminUser} --must-change-password false`);
+                  gitea.warn(`  Fix: docker exec -u git brewnet-gitea gitea admin user change-password --username ${adminUser} --password <password> --must-change-password=false`);
                 }
               }
             } catch {

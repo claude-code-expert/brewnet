@@ -334,17 +334,20 @@ export function importConfig(configPath: string): WizardState {
       cloudflare: {
         enabled: config.domain.cloudflare.enabled,
         tunnelName: config.domain.cloudflare.tunnelName,
-        tunnelMode: 'none' as const, // reset after import — re-run domain setup to activate
+        // Derive tunnelMode from domain.provider: quick-tunnel → 'quick', else 'none'.
+        // BrewnetConfig omits tunnelMode (export-safe subset), so infer from provider.
+        tunnelMode: config.domain.provider === 'quick-tunnel' ? 'quick' : 'none',
         quickTunnelUrl: '',           // ephemeral, not preserved across sessions
         accountId: '',
         apiToken: '',
         tunnelId: '',
-        tunnelToken: '', // must be re-supplied
+        tunnelToken: '', // must be re-supplied for named tunnels
         zoneId: '',
         zoneName: '',
       },
     },
     domainConnections: [],
+    portRemapping: {},  // not persisted in config; reset fresh on each import
   };
 
   return state;

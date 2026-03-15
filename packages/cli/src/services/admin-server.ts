@@ -184,7 +184,7 @@ tr:hover td{background:#161b22}
 .log-src-cli{color:#58d1ff}.log-src-tunnel{color:#d2a8ff}.log-src-access{color:#79c0ff}.log-src-service{color:#c9d1d9}
 .log-lvl-info{color:#3fb950}.log-lvl-warn{color:#e3b341}.log-lvl-error{color:#f85149}.log-lvl-debug{color:#8b949e}
 .section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-.header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
 .refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
 .svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
 .svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
@@ -221,7 +221,10 @@ tr:hover td{background:#161b22}
     <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
-  <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/apps" style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:5px 14px;color:#58a6ff;text-decoration:none;font-size:12px;font-weight:500">&#128640; App Deploy</a>
+    <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
+  </div>
 </div>
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('services')">Services</button>
@@ -929,6 +932,43 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
+  // Helper: build the "Dev Stack Apps" HTML section from boilerplate metadata.
+  // Extracted so both the initial load and refreshBoilerplateMeta() can use it.
+  function buildBoilerplateSectionHtml(stacks: BoilerplateMeta[]): string {
+    if (stacks.length === 0) return '';
+    const rows = stacks.map((s, idx) => {
+      const statusCls = s.status === 'running' ? 'running'
+        : s.status === 'timeout' ? 'error' : 'stopped';
+      const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
+      const backendLink = s.backendUrl
+        ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
+        : '—';
+      const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
+        ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
+        : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
+      const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
+      const docsCell = docsUrl
+        ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
+        : '—';
+      return `<tr>
+    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
+    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
+    <td>${backendLink}</td>
+    <td>${frontendCell}</td>
+    <td>${docsCell}</td>
+    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
+  </tr>`;
+    }).join('\n');
+    return `
+<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
+<table>
+  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
+  <tbody>
+${rows}
+  </tbody>
+</table>`;
+  }
+
   // Read boilerplate metadata if available (supports both array and legacy single object)
   let boilerplateHtml = '';
   let boilerplateStacksJson = '[]';
@@ -938,43 +978,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
       // Normalize: legacy single-object → array
       const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
-
       if (stacks.length > 0) {
         boilerplateStacksJson = JSON.stringify(stacks);
-
-        // Build HTML table rows — each stack name is clickable (triggers modal)
-        const rows = stacks.map((s, idx) => {
-          const statusCls = s.status === 'running' ? 'running'
-            : s.status === 'timeout' ? 'error' : 'stopped';
-          const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
-          const backendLink = s.backendUrl
-            ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
-            : '—';
-          const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
-            ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
-            : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
-          const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
-          const docsCell = docsUrl
-            ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
-            : '—';
-          return `<tr>
-    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
-    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
-    <td>${backendLink}</td>
-    <td>${frontendCell}</td>
-    <td>${docsCell}</td>
-    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
-  </tr>`;
-        }).join('\n');
-
-        boilerplateHtml = `
-<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
-<table>
-  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
-  <tbody>
-${rows}
-  </tbody>
-</table>`;
+        boilerplateHtml = buildBoilerplateSectionHtml(stacks);
       }
     }
   } catch { /* non-fatal */ }
@@ -1080,7 +1086,9 @@ ${rows}
     if (!existsSync(bpPath)) return;
     try {
       const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-      dashConfig.boilerplateStacksJson = JSON.stringify(Array.isArray(raw) ? raw : [raw]);
+      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+      dashConfig.boilerplateStacksJson = JSON.stringify(stacks);
+      dashConfig.boilerplateHtml = buildBoilerplateSectionHtml(stacks);
       boilerplateLoaded = true;
       dashboardHtml = generateDashboardHtml(dashConfig);
     } catch {
