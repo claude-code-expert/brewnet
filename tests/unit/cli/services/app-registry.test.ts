@@ -26,7 +26,7 @@ jest.unstable_mockModule('node:fs', () => ({
 // Imports (after mocks)
 // --------------------------------------------------------------------------
 
-const { readApps, writeApps, addApp, updateApp, removeApp } =
+const { readApps, addApp, updateApp, removeApp } =
   await import('../../../../packages/cli/src/services/app-registry.js');
 
 // --------------------------------------------------------------------------
