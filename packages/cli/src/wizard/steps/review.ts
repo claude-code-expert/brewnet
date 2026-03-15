@@ -10,7 +10,7 @@
  * @module wizard/steps/review
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
@@ -267,7 +267,6 @@ export function exportConfig(state: WizardState, projectPath: string): string {
       cloudflare: {
         enabled: state.domain.cloudflare.enabled,
         tunnelName: state.domain.cloudflare.tunnelName,
-        tunnelMode: state.domain.cloudflare.tunnelMode,
         // tunnelToken excluded
       },
     },
@@ -335,7 +334,7 @@ export function importConfig(configPath: string): WizardState {
       cloudflare: {
         enabled: config.domain.cloudflare.enabled,
         tunnelName: config.domain.cloudflare.tunnelName,
-        tunnelMode: (config.domain.cloudflare.tunnelMode ?? 'none') as 'none' | 'quick' | 'named',
+        tunnelMode: 'none' as const, // reset after import — re-run domain setup to activate
         quickTunnelUrl: '',           // ephemeral, not preserved across sessions
         accountId: '',
         apiToken: '',
@@ -346,7 +345,6 @@ export function importConfig(configPath: string): WizardState {
       },
     },
     domainConnections: [],
-    portRemapping: {},
   };
 
   return state;

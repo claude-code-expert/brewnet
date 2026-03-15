@@ -2,7 +2,6 @@
 name: changelog
 description: Record current session changes to CHANGELOG.md
 user-invocable: true
-disable-model-invocation: true
 handoffs:
   - When finished logging changes, suggest running tests or committing
 ---
@@ -104,9 +103,9 @@ CHANGELOG.md 파일 처리:
 
 **파일이 없으면:**
 ```markdown
-# Development Changelog
+# Tika Development Changelog
 
-> 이 문서는 프로젝트의 개발 히스토리를 기록합니다.
+> 이 문서는 Tika 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
 [새 엔트리 추가]
@@ -142,10 +141,18 @@ git add CHANGELOG.md
 # 커밋 (선택사항)
 git commit -m "docs: Update changelog - [요약]
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 ```
 
 ## Implementation Notes
+
+### Helper Script
+
+`.specify/scripts/bash/generate-changelog.sh` 스크립트 사용:
+- git diff 파싱
+- 변경 파일 목록 추출
+- 라인 수 계산
+- 날짜/시간 포맷팅
 
 ### Error Handling
 
@@ -264,10 +271,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
    git add .
    git commit -m "feat: [기능 요약]
 
-   Co-Authored-By: Claude <noreply@anthropic.com>"
+   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
    ```
 
 ## Related Skills
 
 - `/commit`: Git 커밋 생성 (changelog 자동 호출 가능)
-- `/troubleshooting`: 에러 해결 기록
+- `/review-pr`: PR 리뷰 (changelog 참조)
+- `/speckit.implement`: 구현 완료 후 changelog 기록

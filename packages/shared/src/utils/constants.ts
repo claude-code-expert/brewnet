@@ -157,3 +157,26 @@ export const SSL_ISSUANCE_TIMEOUT_MS = 120_000;
 
 /** Timeout for DNS propagation check (ms) */
 export const DNS_PROPAGATION_TIMEOUT_MS = 300_000;
+
+// ─── Logging ────────────────────────────────────────────────────────────────
+
+/** Maximum log file size per container (Docker json-file driver) */
+export const DOCKER_LOG_MAX_SIZE = '10m';
+
+/** Maximum number of rotated log files per container */
+export const DOCKER_LOG_MAX_FILES = '3';
+
+/** Days before CLI log files are deleted */
+export const CLI_LOG_RETENTION_DAYS = 30;
+
+/** Maximum access/tunnel log file size before copytruncate rotation (bytes) */
+export const ACCESS_LOG_MAX_BYTES = 50 * 1024 * 1024;
+
+/** Default page size for log queries */
+export const LOG_QUERY_DEFAULT_LIMIT = 100;
+
+/** Maximum page size for log queries */
+export const LOG_QUERY_MAX_LIMIT = 1000;
+
+/** Admin Panel log auto-refresh interval (ms) */
+export const LOG_POLL_INTERVAL_MS = 5000;

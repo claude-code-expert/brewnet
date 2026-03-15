@@ -1701,3 +1701,47 @@ describe('ComposeGenerator — portRemapping', () => {
     expect(ssh?.ports).toContain('2223:2222');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Docker Logging Configuration (T009 — Centralized Logging)
+// ---------------------------------------------------------------------------
+
+describe('ComposeGenerator — Docker logging configuration', () => {
+  let config: ComposeConfig;
+
+  beforeEach(() => {
+    const state = buildFullState();
+    config = generateComposeConfig(state);
+  });
+
+  it('should add logging config with json-file driver to every service', () => {
+    for (const [id, svc] of Object.entries(config.services)) {
+      expect(svc.logging).toBeDefined();
+      expect(svc.logging!.driver).toBe('json-file');
+      expect(svc.logging!.options['max-size']).toBe('10m');
+      expect(svc.logging!.options['max-file']).toBe('3');
+    }
+  });
+
+  it('should include tag option in logging config', () => {
+    const traefik = config.services['traefik']!;
+    expect(traefik.logging!.options['tag']).toBe('{{.Name}}');
+  });
+
+  it('should add accesslog flags to Traefik command', () => {
+    const traefik = config.services['traefik']!;
+    const cmd = traefik.command as string[];
+    expect(cmd).toContain('--accesslog=true');
+    expect(cmd).toContain('--accesslog.filepath=/logs/access.log');
+    expect(cmd).toContain('--accesslog.format=json');
+    expect(cmd).toContain('--accesslog.bufferingsize=100');
+    expect(cmd).toContain('--accesslog.fields.headers.defaultmode=drop');
+    expect(cmd).toContain('--accesslog.fields.headers.names.User-Agent=keep');
+    expect(cmd).toContain('--accesslog.fields.headers.names.X-Forwarded-For=keep');
+  });
+
+  it('should add ./logs:/logs volume mount to Traefik', () => {
+    const traefik = config.services['traefik']!;
+    expect(traefik.volumes).toContain('./logs:/logs');
+  });
+});
