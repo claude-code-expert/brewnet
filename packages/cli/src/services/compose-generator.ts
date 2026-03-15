@@ -1147,6 +1147,111 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
   };
 }
 
+// ---------------------------------------------------------------------------
+// External domain label helpers (Traefik Host-based routing for Cloudflare Tunnel)
+// ---------------------------------------------------------------------------
+
+/**
+ * Add Traefik external Host-based routing labels for a service in docker-compose.yml.
+ *
+ * Reads the existing compose file, adds `-external` router labels to the target service,
+ * and writes back. These labels enable Traefik to route incoming requests
+ * for `hostname` to the correct container.
+ */
+export function addExternalLabels(
+  composePath: string,
+  appName: string,
+  hostname: string,
+  port: number,
+): void {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const raw = fs.readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return;
+
+  // Find the service — try exact name, then brewnet-prefixed
+  const serviceKey = services[appName] ? appName
+    : services[`brewnet-${appName}`] ? `brewnet-${appName}`
+    : Object.keys(services).find((k) => {
+        const cn = (services[k] as Record<string, unknown>)?.['container_name'];
+        return cn === appName || cn === `brewnet-${appName}`;
+      });
+
+  if (!serviceKey) {
+    throw new Error(`Service "${appName}" not found in docker-compose.yml`);
+  }
+
+  const svc = services[serviceKey] as Record<string, unknown>;
+  const labels = (svc['labels'] ?? {}) as Record<string, string>;
+
+  const routerName = `${appName}-external`;
+  labels['traefik.enable'] = 'true';
+  labels[`traefik.http.routers.${routerName}.rule`] = `Host(\`${hostname}\`)`;
+  labels[`traefik.http.routers.${routerName}.entrypoints`] = 'web';
+  labels[`traefik.http.routers.${routerName}.service`] = routerName;
+  labels[`traefik.http.services.${routerName}.loadbalancer.server.port`] = String(port);
+
+  svc['labels'] = labels;
+
+  const output = yaml.dump(doc, {
+    indent: 2,
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+    quotingType: '"',
+    forceQuotes: false,
+  });
+  fs.writeFileSync(composePath, output, 'utf-8');
+}
+
+/**
+ * Remove Traefik external routing labels for a service from docker-compose.yml.
+ */
+export function removeExternalLabels(
+  composePath: string,
+  appName: string,
+): void {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const raw = fs.readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return;
+
+  const serviceKey = services[appName] ? appName
+    : services[`brewnet-${appName}`] ? `brewnet-${appName}`
+    : Object.keys(services).find((k) => {
+        const cn = (services[k] as Record<string, unknown>)?.['container_name'];
+        return cn === appName || cn === `brewnet-${appName}`;
+      });
+
+  if (!serviceKey) return; // Nothing to remove
+
+  const svc = services[serviceKey] as Record<string, unknown>;
+  const labels = svc['labels'] as Record<string, string> | undefined;
+  if (!labels) return;
+
+  const routerName = `${appName}-external`;
+  const prefix = `traefik.http.routers.${routerName}`;
+  const svcPrefix = `traefik.http.services.${routerName}`;
+
+  for (const key of Object.keys(labels)) {
+    if (key.startsWith(prefix) || key.startsWith(svcPrefix)) {
+      delete labels[key];
+    }
+  }
+
+  const output = yaml.dump(doc, {
+    indent: 2,
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+    quotingType: '"',
+    forceQuotes: false,
+  });
+  fs.writeFileSync(composePath, output, 'utf-8');
+}
+
 /**
  * Serialize a ComposeConfig to a YAML string suitable for writing to
  * docker-compose.yml.

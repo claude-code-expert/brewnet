@@ -26,6 +26,8 @@ export interface ServiceRoute {
   subdomain: string;
   containerName: string;
   port: number;
+  /** Per-route domain override. When set, takes precedence over the shared `domain` param in configureTunnelIngress. */
+  domain?: string;
 }
 
 export interface RetryConfig {
@@ -318,7 +320,7 @@ export async function configureTunnelIngress(
 
   const ingress = [
     ...routes.map((r) => ({
-      hostname: `${r.subdomain}.${domain}`,
+      hostname: `${r.subdomain}.${r.domain ?? domain}`,
       service: `http://${r.containerName}:${r.port}`,
     })),
     { service: 'http_status:404' },
@@ -382,6 +384,77 @@ export async function createDnsRecord(
     if (!msg.toLowerCase().includes('already exists')) {
       throw new Error(`DNS record creation failed: ${msg}`);
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getDnsRecords
+// ---------------------------------------------------------------------------
+
+/**
+ * Query CNAME DNS records for a specific hostname in a zone.
+ *
+ * GET /client/v4/zones/{zoneId}/dns_records?type=CNAME&name={hostname}
+ */
+export async function getDnsRecords(
+  apiToken: string,
+  zoneId: string,
+  hostname: string,
+): Promise<Array<{ id: string; name: string; content: string; proxied: boolean }>> {
+  const url = `${CF_BASE}/zones/${zoneId}/dns_records?type=CNAME&name=${encodeURIComponent(hostname)}`;
+
+  const response = await fetchWithRetry(url, {
+    headers: cfHeaders(apiToken),
+  });
+
+  const data = (await response.json()) as {
+    success: boolean;
+    result?: Array<{ id: string; name: string; content: string; proxied: boolean }>;
+    errors?: Array<{ message: string }>;
+  };
+
+  if (!response.ok || !data.success) {
+    const msg = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
+    throw new Error(`Failed to query DNS records: ${msg}`);
+  }
+
+  return data.result ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// deleteDnsRecord
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete a DNS record by ID.
+ *
+ * DELETE /client/v4/zones/{zoneId}/dns_records/{recordId}
+ */
+export async function deleteDnsRecord(
+  apiToken: string,
+  zoneId: string,
+  recordId: string,
+): Promise<void> {
+  const url = `${CF_BASE}/zones/${zoneId}/dns_records/${recordId}`;
+
+  const response = await fetchWithRetry(url, {
+    method: 'DELETE',
+    headers: cfHeaders(apiToken),
+  });
+
+  if (response.status === 404) {
+    // Already deleted — treat as success
+    return;
+  }
+
+  const data = (await response.json()) as {
+    success: boolean;
+    errors?: Array<{ message: string }>;
+  };
+
+  if (!response.ok || !data.success) {
+    const msg = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
+    throw new Error(`Failed to delete DNS record: ${msg}`);
   }
 }
 

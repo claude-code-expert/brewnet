@@ -13,8 +13,8 @@ DEV.md
 
 # docs 
 /docs/license
-/docs/spec
-/docs/phase
+# /docs/spec
+# /docs/phase
 public/demo
 
 README.md.bak

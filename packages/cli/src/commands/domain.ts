@@ -29,6 +29,7 @@ import {
 import { TunnelLogger } from '../utils/tunnel-logger.js';
 import { QuickTunnelManager } from '../services/quick-tunnel.js';
 import { loadState, saveState, getLastProject } from '../wizard/state.js';
+import { DomainManager } from '../services/domain-manager.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,27 +63,47 @@ export function registerDomainCommand(program: Command): void {
 
   domain
     .command('connect')
-    .description('도메인을 기존 터널에 연결합니다 (Quick Tunnel → Named Tunnel 마이그레이션 포함)')
+    .argument('[app]', 'Name of the local app/service to connect (required when using --domain)')
+    .option('--domain <hostname>', 'Target external hostname (e.g., my-api.yourdomain.com)')
+    .option('--force', 'Overwrite existing CNAME record if conflict detected')
+    .description('도메인을 기존 터널에 연결합니다 (Quick Tunnel → Named Tunnel 마이그레이션 또는 개별 앱 외부 도메인 연결)')
     .helpOption('-h, --help', 'Show help information')
     .addHelpText('after', `
 Examples:
-  $ brewnet domain connect        Migrate Quick Tunnel → Named Tunnel with a permanent domain
-  $ brewnet domain connect        Attach a DNS zone to a Named Tunnel that was set up without a domain
+  $ brewnet domain connect                                    Migrate Quick Tunnel → Named Tunnel
+  $ brewnet domain connect my-api --domain my-api.example.com Connect a specific app to an external domain
+  $ brewnet domain connect my-api --domain my-api.example.com --force  Overwrite existing CNAME
 
 Prerequisites:
   - A Cloudflare API Token with Zone:Read, DNS:Edit, Tunnel:Edit permissions
   - An existing brewnet installation (run \`brewnet init\` first)
 
 What this command does:
-  Path A (Quick Tunnel → Named Tunnel):
-    Creates a new Named Tunnel, configures ingress rules, creates DNS CNAME records,
-    stops the old Quick Tunnel container, and updates the project state.
+  With --domain (NEW):
+    Connects a specific local app to an external domain via Cloudflare Tunnel.
+    Creates DNS CNAME, configures ingress, and adds Traefik routing labels.
 
-  Path B (Named Tunnel, no DNS yet):
-    Reuses the existing tunnel, selects a Cloudflare zone, configures ingress,
-    and creates DNS CNAME records for all active services.
+  Without --domain (legacy):
+    Path A (Quick Tunnel → Named Tunnel):
+      Creates a new Named Tunnel, configures ingress rules, creates DNS CNAME records,
+      stops the old Quick Tunnel container, and updates the project state.
+
+    Path B (Named Tunnel, no DNS yet):
+      Reuses the existing tunnel, selects a Cloudflare zone, configures ingress,
+      and creates DNS CNAME records for all active services.
 `)
-    .action(async () => {
+    .action(async (app: string | undefined, opts: { domain?: string; force?: boolean }) => {
+      // NEW: If --domain is provided, use DomainManager for external domain connection
+      if (opts.domain) {
+        if (!app) {
+          console.error(chalk.red('  앱 이름이 필요합니다. 예: brewnet domain connect my-api --domain my-api.example.com'));
+          process.exit(1);
+        }
+        await handleDomainConnect(app, opts.domain, opts.force ?? false);
+        return;
+      }
+
+      // LEGACY: Original Quick→Named migration flow (no --domain option)
       const tunnelLogger = new TunnelLogger();
 
       const state = loadCurrentState();
@@ -227,6 +248,47 @@ What this command does:
         }
         console.log();
       }
+    });
+
+  // ── domain disconnect ─────────────────────────────────────────────────
+
+  domain
+    .command('disconnect')
+    .argument('<app>', 'Name of the app to disconnect')
+    .description('앱의 외부 도메인 연결을 해제합니다')
+    .helpOption('-h, --help', 'Show help information')
+    .addHelpText('after', `
+Examples:
+  $ brewnet domain disconnect my-api    Remove external domain access for my-api
+
+What this command does:
+  Removes the tunnel ingress rule, deletes the DNS CNAME record,
+  removes Traefik external labels, and updates the project state.
+  The local service continues running.
+`)
+    .action(async (app: string) => {
+      await handleDomainDisconnect(app);
+    });
+
+  // ── domain status ────────────────────────────────────────────────────
+
+  domain
+    .command('status')
+    .argument('[app]', 'Optional app name (shows all if omitted)')
+    .description('도메인 연결 상태를 조회합니다')
+    .helpOption('-h, --help', 'Show help information')
+    .action(async (app: string | undefined) => {
+      await handleDomainStatus(app);
+    });
+
+  // ── domain list ──────────────────────────────────────────────────────
+
+  domain
+    .command('list')
+    .description('모든 외부 도메인 연결을 나열합니다')
+    .helpOption('-h, --help', 'Show help information')
+    .action(async () => {
+      await handleDomainList();
     });
 
   // ── domain tunnel ───────────────────────────────────────────────────────
@@ -743,4 +805,281 @@ function getQuickTunnelPath(subdomain: string): string {
     pgadmin: '/pgadmin',
   };
   return map[subdomain] ?? '';
+}
+
+// ---------------------------------------------------------------------------
+// handleDomainConnect — External domain connection via DomainManager
+// ---------------------------------------------------------------------------
+
+async function handleDomainConnect(
+  appName: string,
+  domainHostname: string,
+  force: boolean,
+): Promise<void> {
+  const tunnelLogger = new TunnelLogger();
+
+  const lastProject = getLastProject();
+  if (!lastProject) {
+    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    console.error(chalk.dim('  먼저 `brewnet init`을 실행하세요.'));
+    process.exit(1);
+  }
+
+  // Parse subdomain and domain from hostname
+  const dotIndex = domainHostname.indexOf('.');
+  if (dotIndex === -1) {
+    console.error(chalk.red(`  잘못된 도메인 형식입니다: ${domainHostname}`));
+    console.error(chalk.dim('  예: my-api.yourdomain.com'));
+    process.exit(1);
+  }
+  const subdomain = domainHostname.substring(0, dotIndex);
+  const domain = domainHostname.substring(dotIndex + 1);
+
+  console.log();
+  console.log(chalk.bold.cyan('  brewnet domain connect'));
+  console.log(chalk.dim(`  앱: ${appName} → ${domainHostname}`));
+  console.log();
+
+  let manager: DomainManager;
+  try {
+    manager = new DomainManager(lastProject);
+  } catch (err) {
+    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    process.exit(1);
+  }
+
+  const state = manager.getState();
+
+  // Check if this is a Scenario C (CNAME-only) setup
+  if (!state.domain.cloudflare.zoneId && state.domain.cloudflare.tunnelId) {
+    // Scenario C: CNAME-only mode — show manual instructions
+    const tunnelUuid = state.domain.cloudflare.tunnelId;
+    console.log(chalk.bold.yellow('  📋 Scenario C: CNAME 수동 설정 필요'));
+    console.log();
+    console.log(chalk.dim('  도메인 네임서버가 Cloudflare에 위임되지 않았습니다.'));
+    console.log(chalk.dim('  DNS 제공자에서 아래 CNAME 레코드를 직접 추가하세요:'));
+    console.log();
+    console.log(chalk.bold(`  이름:    ${subdomain}`));
+    console.log(chalk.bold(`  유형:    CNAME`));
+    console.log(chalk.bold(`  값:     ${tunnelUuid}.cfargotunnel.com`));
+    console.log();
+    console.log(chalk.dim('  주요 DNS 제공자 설정 방법:'));
+    console.log(chalk.dim('    GoDaddy:    DNS 관리 → 레코드 추가 → CNAME'));
+    console.log(chalk.dim('    Namecheap:  고급 DNS → 새 레코드 → CNAME'));
+    console.log(chalk.dim('    가비아:     DNS 관리 → 레코드 추가 → CNAME'));
+    console.log(chalk.dim('    Cafe24:     DNS 관리 → CNAME 추가'));
+    console.log();
+    return;
+  }
+
+  // Media streaming ToS warning (FR-012)
+  const mediaServices = ['jellyfin', 'media', 'plex', 'emby'];
+  if (mediaServices.includes(appName.toLowerCase())) {
+    console.log(chalk.yellow('  ⚠️  주의: Cloudflare는 대용량 미디어 스트리밍(비디오 등)을'));
+    console.log(chalk.yellow('  프록시를 통해 전송하는 것을 서비스 약관(ToS)에서 제한합니다.'));
+    console.log(chalk.yellow('  미디어 서비스 외부 연결은 ToS 위반 위험이 있습니다.'));
+    console.log();
+  }
+
+  const spinner = ora('외부 도메인 연결 중...').start();
+
+  const result = await manager.connect(appName, subdomain, domain, { force });
+
+  spinner.stop();
+
+  // Display step results
+  for (const step of result.steps) {
+    const icon = step.status === 'completed' ? chalk.green('✅')
+      : step.status === 'skipped' ? chalk.yellow('⏭️')
+      : chalk.red('❌');
+    const duration = step.durationMs ? chalk.dim(` (${(step.durationMs / 1000).toFixed(1)}s)`) : '';
+    const stepName = {
+      health_check: 'Local health check',
+      ingress_update: 'Tunnel ingress updated',
+      dns_creation: 'DNS CNAME record created',
+      traefik_labels: 'Traefik labels updated',
+      dns_propagation: 'DNS propagation verified',
+    }[step.step] ?? step.step;
+    console.log(`  ${icon} ${stepName}${duration}`);
+    if (step.status === 'failed' && step.error) {
+      console.log(chalk.dim(`     ${step.error}`));
+    }
+  }
+  console.log();
+
+  if (result.success) {
+    console.log(chalk.bold.green(`  ✅ ${result.externalUrl} is live!`));
+
+    tunnelLogger.log({
+      event: 'DOMAIN_CONNECT',
+      tunnelMode: 'named',
+      tunnelId: state.domain.cloudflare.tunnelId || undefined,
+      tunnelName: state.domain.cloudflare.tunnelName || undefined,
+      domain: domainHostname,
+      detail: `External domain connected: ${appName} → ${domainHostname}`,
+    });
+  } else {
+    console.error(chalk.red(`  ❌ 연결 실패: ${result.error}`));
+    if (result.error === 'CNAME_CONFLICT') {
+      console.log(chalk.dim('  기존 CNAME을 덮어쓰려면 --force 옵션을 사용하세요:'));
+      console.log(chalk.dim(`    brewnet domain connect ${appName} --domain ${domainHostname} --force`));
+    }
+    process.exit(1);
+  }
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
+// handleDomainDisconnect — T018-T021
+// ---------------------------------------------------------------------------
+
+async function handleDomainDisconnect(appName: string): Promise<void> {
+  const tunnelLogger = new TunnelLogger();
+  const lastProject = getLastProject();
+  if (!lastProject) {
+    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    process.exit(1);
+  }
+
+  let manager: DomainManager;
+  try {
+    manager = new DomainManager(lastProject);
+  } catch (err) {
+    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    process.exit(1);
+  }
+
+  console.log();
+  console.log(chalk.bold.cyan('  brewnet domain disconnect'));
+  console.log(chalk.dim(`  앱: ${appName}`));
+  console.log();
+
+  const spinner = ora('외부 도메인 연결 해제 중...').start();
+  const result = await manager.disconnect(appName);
+  spinner.stop();
+
+  for (const step of result.steps) {
+    const icon = step.status === 'completed' ? chalk.green('✅') : chalk.red('❌');
+    const stepName = {
+      ingress_removal: 'Tunnel ingress rule removed',
+      dns_deletion: 'DNS CNAME record deleted',
+      traefik_cleanup: 'Traefik external labels removed',
+    }[step.step] ?? step.step;
+    console.log(`  ${icon} ${stepName}`);
+    if (step.status === 'failed' && step.error) {
+      console.log(chalk.dim(`     ${step.error}`));
+    }
+  }
+  console.log();
+
+  if (result.success) {
+    console.log(chalk.green(`  ✅ ${appName}의 외부 도메인 연결이 해제되었습니다.`));
+    console.log(chalk.dim(`  ℹ  ${appName}은(는) 로컬에서 계속 실행 중입니다.`));
+
+    tunnelLogger.log({
+      event: 'DOMAIN_CONNECT',
+      tunnelMode: 'named',
+      detail: `External domain disconnected: ${appName} (${result.removedHostname})`,
+    });
+  } else {
+    console.error(chalk.red(`  ❌ 연결 해제 실패: ${result.error}`));
+    process.exit(1);
+  }
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
+// handleDomainStatus — T023-T026
+// ---------------------------------------------------------------------------
+
+async function handleDomainStatus(appName?: string): Promise<void> {
+  const lastProject = getLastProject();
+  if (!lastProject) {
+    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    process.exit(1);
+  }
+
+  let manager: DomainManager;
+  try {
+    manager = new DomainManager(lastProject);
+  } catch (err) {
+    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    process.exit(1);
+  }
+
+  const spinner = ora('도메인 상태 조회 중...').start();
+  const statuses = await manager.status(appName);
+  spinner.stop();
+
+  if (statuses.length === 0) {
+    console.log(chalk.dim('  연결된 외부 도메인이 없습니다.'));
+    console.log(chalk.dim('  `brewnet domain connect <app> --domain <hostname>` 명령으로 연결하세요.'));
+    console.log();
+    return;
+  }
+
+  console.log();
+  for (const s of statuses) {
+    const localIcon = s.local.healthy ? chalk.green('✅') : chalk.red('❌');
+    const externalIcon = s.external.httpsReachable ? chalk.green('✅') : chalk.red('❌');
+    const tunnelIcon = s.tunnel.status === 'healthy' ? chalk.green('✅')
+      : s.tunnel.status === 'degraded' ? chalk.yellow('⚠️')
+      : chalk.red('❌');
+    const dnsIcon = s.external.dnsResolved ? chalk.green('✅') : chalk.red('❌');
+
+    console.log(chalk.bold(`  ${s.appName}`));
+    console.log(`    Local:    ${s.local.url.padEnd(40)} ${localIcon}`);
+    console.log(`    External: ${s.external.url.padEnd(40)} ${externalIcon}${s.external.httpsReachable ? '' : ' unreachable'}`);
+    console.log(`    Tunnel:   ${(s.tunnel.status).padEnd(40)} ${tunnelIcon} (${s.tunnel.connectorCount} connections)`);
+    if (s.dns) {
+      console.log(`    DNS:      CNAME → ${s.dns.content.padEnd(28)} ${dnsIcon}`);
+    }
+    console.log();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// handleDomainList — T028-T029
+// ---------------------------------------------------------------------------
+
+async function handleDomainList(): Promise<void> {
+  const lastProject = getLastProject();
+  if (!lastProject) {
+    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    process.exit(1);
+  }
+
+  let manager: DomainManager;
+  try {
+    manager = new DomainManager(lastProject);
+  } catch (err) {
+    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    process.exit(1);
+  }
+
+  const connections = manager.list();
+
+  if (connections.length === 0) {
+    console.log();
+    console.log(chalk.dim('  연결된 외부 도메인이 없습니다.'));
+    console.log(chalk.dim('  `brewnet domain connect <app> --domain <hostname>` 명령으로 연결하세요.'));
+    console.log();
+    return;
+  }
+
+  console.log();
+  console.log(chalk.bold('  External Domain Connections'));
+  console.log(chalk.dim('  ─────────────────────────────────────────────────────────────'));
+
+  // Simple table output
+  const header = `  ${'App'.padEnd(12)} ${'External URL'.padEnd(40)} ${'Connected'}`;
+  console.log(chalk.bold(header));
+  console.log(chalk.dim('  ' + '─'.repeat(65)));
+
+  for (const conn of connections) {
+    const date = new Date(conn.connectedAt);
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    console.log(`  ${conn.appName.padEnd(12)} ${`https://${conn.hostname}`.padEnd(40)} ${dateStr}`);
+  }
+  console.log();
 }

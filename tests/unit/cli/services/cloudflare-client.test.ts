@@ -30,6 +30,8 @@ const {
   createDnsRecord,
   fetchWithRetry,
   deleteTunnel,
+  getDnsRecords,
+  deleteDnsRecord,
 } = await import('../../../../packages/cli/src/services/cloudflare-client.js');
 
 const { createDefaultWizardState } = await import(
@@ -550,5 +552,101 @@ describe('deleteTunnel', () => {
     expect(calledUrl).toContain('/accounts/my-account/cfd_tunnel/my-tunnel');
     expect(calledInit.method).toBe('DELETE');
     expect((calledInit.headers as Record<string, string>)['Authorization']).toBe('Bearer my-token');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getDnsRecords — T004
+// ---------------------------------------------------------------------------
+
+describe('getDnsRecords', () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it('returns CNAME records for a hostname', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({
+        success: true,
+        result: [
+          { id: 'rec-1', name: 'api.example.com', content: 'abc.cfargotunnel.com', proxied: true },
+        ],
+      }),
+    );
+
+    const records = await getDnsRecords('my-token', 'zone-1', 'api.example.com');
+    expect(records).toHaveLength(1);
+    expect(records[0].id).toBe('rec-1');
+    expect(records[0].content).toContain('cfargotunnel.com');
+  });
+
+  it('returns empty array when no records match', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({ success: true, result: [] }),
+    );
+
+    const records = await getDnsRecords('my-token', 'zone-1', 'nonexistent.example.com');
+    expect(records).toHaveLength(0);
+  });
+
+  it('throws on API failure', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({ success: false, errors: [{ message: 'Zone not found' }] }, false, 404),
+    );
+
+    await expect(getDnsRecords('my-token', 'bad-zone', 'test.com')).rejects.toThrow('Zone not found');
+  });
+
+  it('sends correct URL with query params', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({ success: true, result: [] }),
+    );
+
+    await getDnsRecords('token', 'z1', 'sub.example.com');
+    const [calledUrl] = (mockFetch as jest.Mock).mock.calls[0] as [string];
+    expect(calledUrl).toContain('/zones/z1/dns_records');
+    expect(calledUrl).toContain('type=CNAME');
+    expect(calledUrl).toContain('name=sub.example.com');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deleteDnsRecord — T005
+// ---------------------------------------------------------------------------
+
+describe('deleteDnsRecord', () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it('deletes a DNS record successfully', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({ success: true }),
+    );
+
+    await expect(deleteDnsRecord('my-token', 'zone-1', 'rec-1')).resolves.toBeUndefined();
+  });
+
+  it('treats 404 as success (already deleted)', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({}, false, 404),
+    );
+
+    await expect(deleteDnsRecord('my-token', 'zone-1', 'rec-gone')).resolves.toBeUndefined();
+  });
+
+  it('throws on API failure', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({ success: false, errors: [{ message: 'Permission denied' }] }, false, 403),
+    );
+
+    await expect(deleteDnsRecord('my-token', 'zone-1', 'rec-1')).rejects.toThrow('Permission denied');
+  });
+
+  it('sends DELETE request to correct URL', async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeFetchResponse({ success: true }),
+    );
+
+    await deleteDnsRecord('token', 'z1', 'r1');
+    const [calledUrl, calledInit] = (mockFetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toContain('/zones/z1/dns_records/r1');
+    expect(calledInit.method).toBe('DELETE');
   });
 });

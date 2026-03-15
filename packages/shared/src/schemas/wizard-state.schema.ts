@@ -149,6 +149,23 @@ export const domainConfigSchema = z.object({
   cloudflare: cloudflareConfigSchema,
 });
 
+export const domainScenarioSchema = z.enum(['A', 'B', 'C']);
+
+export const domainConnectionSchema = z.object({
+  appName: z.string().min(1, 'App name is required'),
+  subdomain: z.string().min(1, 'Subdomain is required').regex(
+    /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/,
+    'Subdomain must be a valid DNS label (lowercase alphanumeric + hyphens, max 63 chars)',
+  ),
+  domain: z.string().min(1, 'Domain is required'),
+  hostname: z.string().min(1, 'Hostname is required'),
+  tunnelId: z.string().min(1, 'Tunnel ID is required'),
+  cnameRecordId: z.string(),
+  containerPort: z.number().int().min(1).max(65535),
+  connectedAt: z.string().datetime(),
+  scenario: domainScenarioSchema,
+});
+
 // ─── Root Schema ─────────────────────────────────────────────────────────────
 
 export const wizardStateSchema = z.object({
@@ -164,6 +181,7 @@ export const wizardStateSchema = z.object({
   devStack: devStackConfigSchema,
   boilerplate: boilerplateConfigSchema,
   domain: domainConfigSchema,
+  domainConnections: z.array(domainConnectionSchema),
   portRemapping: z.record(z.coerce.number(), z.number().int().min(1).max(65535)),
 }) satisfies z.ZodType<WizardState>;
 

@@ -125,6 +125,7 @@ function buildValidState(overrides: Record<string, unknown> = {}): any {
       },
     },
     portRemapping: {},
+    domainConnections: [],
     ...overrides,
   };
 }

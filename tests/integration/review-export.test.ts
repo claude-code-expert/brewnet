@@ -354,6 +354,7 @@ function importConfig(configPath: string): WizardState {
       },
     },
     portRemapping: {},
+    domainConnections: [],
   };
 
   return state;

@@ -270,7 +270,8 @@ export function exportConfig(state: WizardState, projectPath: string): string {
         // tunnelToken excluded
       },
     },
-  };
+    domainConnections: state.domainConnections ?? [],
+  } as BrewnetConfig;
 
   mkdirSync(projectPath, { recursive: true });
   const filePath = join(projectPath, 'brewnet.config.json');
@@ -343,6 +344,7 @@ export function importConfig(configPath: string): WizardState {
         zoneName: '',
       },
     },
+    domainConnections: [],
   };
 
   return state;
