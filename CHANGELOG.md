@@ -3,6 +3,32 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-15
+
+### 🎯 Prompts
+1. "여전히 이미지가 깨지고 있어. 경로가 이게 맞아?" (App.tsx `/brewnet-site-banner.png`)
+2. "그럼 이전에도 이건 수정한건데 왜 문제가 반복되는거야?"
+3. "변경하고 /changelog 기록하고 오늘 문제 해결한거 troubleshooting에 파일로 추가해"
+
+### ✅ Changes
+- **Fixed (boilerplate)**: `nodejs-express` App.tsx 이미지 경로 — `src="/brewnet-site-banner.png"` → `src="./brewnet-site-banner.png"` (`brewnet-boilerplate` 리포에 커밋/푸시)
+- **Fixed (boilerplate)**: `nodejs-express` vite.config.ts — `base: './'` 추가 (Traefik subpath 에셋 경로 문제)
+- **Fixed (boilerplate)**: `nodejs-express` Dockerfile — healthcheck `localhost` → `127.0.0.1` (Alpine IPv6)
+- **Fixed (boilerplate)**: `nodejs-express` docker-compose.override.yml — Traefik `redirectregex` 미들웨어 추가 (트레일링 슬래시 리디렉트)
+
+### 🔍 Root Causes
+- **이미지 재발 원인**: 이전 세션에서 로컬 파일만 수정했고 `brewnet-boilerplate` GitHub 리포에 커밋/푸시하지 않음 → 컨테이너 재빌드나 git reset 시 원상복구됨
+- **절대경로 vs 상대경로**: `vite.config.ts`에 `base: './'` 설정 시, JSX의 `/path`는 도메인 루트 요청 → Traefik 라우트 없음 → 404. `./path`는 현재 페이지 URL 기준 → Traefik prefix strip 후 nginx 정상 서빙
+
+### 📁 Files Modified
+- `brewnet-boilerplate/stack/nodejs-express/frontend/src/App.tsx` (커밋: e6a26cc)
+- `brewnet-boilerplate/stack/nodejs-express/frontend/vite.config.ts` (커밋: e6a26cc)
+- `brewnet-boilerplate/stack/nodejs-express/frontend/Dockerfile` (커밋: e6a26cc)
+- `brewnet-boilerplate/stack/nodejs-express/docker-compose.override.yml` (커밋: e6a26cc)
+- `troubleshooting/boilerplate-fix-must-be-pushed-upstream.md` (신규)
+
+---
+
 ## [develop] - 2026-03-14
 
 ### 🎯 Prompts
