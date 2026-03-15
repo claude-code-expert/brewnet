@@ -26,6 +26,10 @@ import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
 import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
+import { generateAppsPageHtml, generateAppDetailHtml } from './apps-page.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, setupWebhook as appSetupWebhook, updateDeploySettings, getDeploySettings, getAppDir } from './app-manager.js';
+import type { DeploySettings } from '../types/app-entry.js';
+import type { CreateAppOptions } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
 // Types (per admin-api.md)
@@ -231,60 +235,19 @@ tr:hover td{background:#161b22}
 </table>
 ${config.boilerplateHtml}
 
+${config.domainProvider === 'tunnel' ? `
 <!-- ── Domains Section (T039) ── -->
 <div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
   External Domains
-  <span style="display:flex;gap:8px">
-    <span class="btn btn-start" style="font-size:11px" onclick="showConnectModal()">+ Connect Domain</span>
+  <span style="display:flex;gap:8px;align-items:center">
+    <input id="admin-pw" type="password" placeholder="Admin password" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;color:#c9d1d9;font-family:inherit;font-size:11px;width:140px"/>
     <span class="btn" style="font-size:11px;border-color:#58a6ff;color:#58a6ff" onclick="showCnameGuide()">CNAME Guide</span>
   </span>
 </div>
 <table id="domain-table">
   <thead><tr><th>App</th><th>External URL</th><th>Status</th><th>Connected</th><th>Actions</th></tr></thead>
   <tbody id="domain-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>
-
-<!-- ── Settings Section (T043) ── -->
-<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
-  Cloudflare Settings
-  <span id="cf-status" style="font-size:11px;color:#8b949e"></span>
-</div>
-<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin-bottom:24px">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">API Token</label>
-      <input id="cf-token" type="password" placeholder="Cloudflare API Token" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Account ID</label>
-      <input id="cf-account" type="text" placeholder="Account ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Zone ID</label>
-      <input id="cf-zone" type="text" placeholder="Zone ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Tunnel ID</label>
-      <input id="cf-tunnel" type="text" placeholder="Tunnel ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <span class="btn btn-start" onclick="saveCloudflareSettings()">Verify & Save</span>
-    <span id="cf-result" style="font-size:12px"></span>
-    <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" style="color:#58a6ff;font-size:11px;margin-left:auto">Create Token →</a>
-  </div>
-  <div style="margin-top:8px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Admin Password (for API auth)</label>
-    <input id="admin-pw" type="password" placeholder="Admin password" style="width:300px;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-</div>
-
-<!-- ── Connect Domain Modal (T040) ── -->
-<div id="connect-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal-box" style="max-width:500px">
-    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">Connect Domain</span></div>
-    <div style="padding:16px">
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">App</label>
-        <select id="conn-app" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"><option>Loading...</option></select></div>
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Subdomain</label>
-        <input id="conn-sub" type="text" placeholder="my-api" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Domain</label>
-        <input id="conn-domain" type="text" placeholder="yourdomain.com" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-      <div id="conn-steps" style="margin-bottom:12px;font-size:12px;color:#8b949e"></div>
-      <div style="display:flex;gap:8px"><span class="btn btn-start" onclick="connectDomain()">Connect</span><span class="btn btn-stop" onclick="document.getElementById('connect-modal').style.display='none'">Cancel</span></div>
-    </div>
-  </div>
-</div>
+</table>` : ''}
 
 <!-- ── CNAME Guide Modal (T041) ── -->
 <div id="cname-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
@@ -546,54 +509,10 @@ async function loadDomains(){
     if(conns.length===0){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">No external domain connections</td></tr>';return;}
     var rows=conns.map(function(c){
       var url='https://'+c.hostname;
-      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><span class="btn btn-stop" style="font-size:11px" onclick="disconnectDomain(\''+c.appName+'\')">Disconnect</span></td></tr>';
+      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><a href="/apps/'+encodeURIComponent(c.appName)+'?tab=domain" style="color:#58a6ff;font-size:11px">Manage \u2192</a></td></tr>';
     }).join('');
     document.getElementById('domain-body').innerHTML=rows;
   }catch(e){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">Enter admin password to view domains</td></tr>';}
-}
-async function disconnectDomain(app){
-  if(!confirm('Disconnect '+app+' from external domain?'))return;
-  log('Disconnecting '+app+'...','dim');
-  var r=await domainFetch('/api/domain/disconnect/'+app,{method:'DELETE'});
-  var d=await r.json();
-  if(d.success){log(app+' disconnected ✓','ok');}else{log('Disconnect failed: '+(d.message||d.error),'error');}
-  loadDomains();
-}
-function showConnectModal(){
-  document.getElementById('connect-modal').style.display='flex';
-  document.getElementById('conn-steps').innerHTML='';
-  // Load apps
-  domainFetch('/api/domain/apps').then(function(r){return r.json();}).then(function(d){
-    var sel=document.getElementById('conn-app');
-    sel.innerHTML=(d.apps||[]).map(function(a){
-      var lbl=a.name+(a.alreadyConnected?' (connected: '+a.hostname+')':'');
-      return '<option value="'+a.name+'" '+(a.alreadyConnected?'disabled':'')+'>'+lbl+'</option>';
-    }).join('')||'<option>No apps available</option>';
-    // Pre-fill domain from settings
-    var dc=DOMAIN_CONFIG;
-    if(dc.zoneName)document.getElementById('conn-domain').value=dc.zoneName;
-  });
-}
-async function connectDomain(){
-  var app=document.getElementById('conn-app').value;
-  var sub=document.getElementById('conn-sub').value.trim();
-  var dom=document.getElementById('conn-domain').value.trim();
-  if(!app||!sub||!dom){log('All fields required','error');return;}
-  var stepsDiv=document.getElementById('conn-steps');
-  stepsDiv.innerHTML='<span style="color:#e3b341">⏳ Connecting...</span>';
-  try{
-    var r=await domainFetch('/api/domain/connect',{method:'POST',body:JSON.stringify({appName:app,subdomain:sub,domain:dom})});
-    var d=await r.json();
-    if(d.success){
-      var html=(d.steps||[]).map(function(s){return '<div>'+(s.status==='completed'?'✅':'❌')+' '+s.step+(s.durationMs?' <span style="color:#8b949e">('+Math.round(s.durationMs/1000*10)/10+'s)</span>':'')+'</div>';}).join('');
-      stepsDiv.innerHTML=html+'<div style="color:#3fb950;margin-top:8px">✅ '+d.externalUrl+' is live!</div>';
-      log(app+' connected → '+d.externalUrl,'ok');
-      loadDomains();
-    }else{
-      stepsDiv.innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
-      log('Connect failed: '+(d.message||d.error),'error');
-    }
-  }catch(e){stepsDiv.innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
 }
 function showCnameGuide(){
   document.getElementById('cname-modal').style.display='flex';
@@ -1067,8 +986,8 @@ ${rows}
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
     tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
-    boilerplateHtml,
-    boilerplateStacksJson,
+    boilerplateHtml: '',
+    boilerplateStacksJson: '[]',
     domainConnectionsJson: JSON.stringify(wizardState?.domainConnections ?? []),
   };
 
@@ -1150,6 +1069,26 @@ ${rows}
     }
   }
 
+  /**
+   * Lazy-load boilerplate metadata from .brewnet-boilerplate.json.
+   * Re-checks on every GET / until the file appears.
+   */
+  let boilerplateLoaded = false;
+  function refreshBoilerplateMeta(): void {
+    if (boilerplateLoaded) return;
+    const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+    if (!existsSync(bpPath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+      dashConfig.boilerplateStacksJson = JSON.stringify(Array.isArray(raw) ? raw : [raw]);
+      boilerplateLoaded = true;
+      dashboardHtml = generateDashboardHtml(dashConfig);
+    } catch {
+      // Non-critical — keep empty array
+    }
+  }
+
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const parts = url.split('?')[0].split('/').filter(Boolean);
@@ -1193,6 +1132,24 @@ ${rows}
       res.end(dashboardHtml);
       return;
     }
+
+    // Serve Apps page
+    if (req.method === 'GET' && (url === '/apps' || url === '/apps/')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(generateAppsPageHtml());
+      return;
+    }
+
+    // Serve App Detail page at /apps/:name
+    if (req.method === 'GET' && parts.length === 2 && parts[0] === 'apps') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(generateAppDetailHtml(decodeURIComponent(parts[1]!), {
+        zoneName: dashConfig.zoneName ?? undefined,
+        tunnelId: dashConfig.tunnelId ?? undefined,
+      }));
+      return;
+    }
+
 
     // --- API routing ---
     if (parts[0] === 'api') {
@@ -1267,6 +1224,166 @@ ${rows}
             json(res, 200, result);
             return;
           }
+        }
+
+        if (parts[1] === 'apps') {
+          if (req.method === 'GET' && parts.length === 2) {
+            const apps = await listApps();
+            logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
+            json(res, 200, { apps });
+            return;
+          }
+          if (req.method === 'GET' && parts[2] === 'boilerplates') {
+            const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+            logger.info('admin-server', `[GET /api/apps/boilerplates] projectPath=${projectPath} bpPath=${bpPath} exists=${existsSync(bpPath)}`);
+            if (existsSync(bpPath)) {
+              const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+              const metas = Array.isArray(raw) ? raw : [raw];
+              logger.info('admin-server', `[GET /api/apps/boilerplates] returning ${metas.length} boilerplate(s)`);
+              json(res, 200, { boilerplates: metas });
+            } else {
+              logger.warn('admin-server', `[GET /api/apps/boilerplates] file not found at ${bpPath}`);
+              json(res, 200, { boilerplates: [] });
+            }
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'create') {
+            const opts = JSON.parse(body) as CreateAppOptions;
+            const jobId = await createApp(opts);
+            json(res, 202, { jobId });
+            return;
+          }
+          if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
+            const job = getJobStatus(parts[3]);
+            if (!job) { json(res, 404, { error: 'Job not found' }); return; }
+            json(res, 200, job as unknown as Record<string, unknown>);
+            return;
+          }
+          if (req.method === 'POST' && parts[3] === 'start') {
+            await startApp(decodeURIComponent(parts[2] ?? ''));
+            json(res, 200, { success: true });
+            return;
+          }
+          if (req.method === 'POST' && parts[3] === 'stop') {
+            await stopApp(decodeURIComponent(parts[2] ?? ''));
+            json(res, 200, { success: true });
+            return;
+          }
+          if (req.method === 'DELETE' && parts[2]) {
+            await appRemove(parts[2]);
+            json(res, 200, { success: true });
+            return;
+          }
+
+          // GET /api/apps/:name — single app detail
+          if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs'].includes(parts[2]) && parts.length === 3) {
+            const apps = await listApps();
+            const app = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
+            if (!app) { json(res, 404, { error: 'App not found' }); return; }
+            json(res, 200, { app });
+            return;
+          }
+
+          // GET /api/apps/:name/git
+          if (req.method === 'GET' && parts[3] === 'git' && parts.length === 4) {
+            try {
+              const git = await getAppGitInfo(decodeURIComponent(parts[2] ?? ''));
+              json(res, 200, { git });
+            } catch (err) {
+              json(res, 502, { error: String(err) });
+            }
+            return;
+          }
+
+          // GET /api/apps/:name/deploy/settings
+          if (req.method === 'GET' && parts[3] === 'deploy' && parts[4] === 'settings') {
+            const settings = getDeploySettings(decodeURIComponent(parts[2] ?? ''));
+            json(res, 200, settings);
+            return;
+          }
+
+          // PUT /api/apps/:name/deploy/settings
+          if (req.method === 'PUT' && parts[3] === 'deploy' && parts[4] === 'settings') {
+            const opts = JSON.parse(body) as Partial<DeploySettings>;
+            updateDeploySettings(decodeURIComponent(parts[2] ?? ''), opts);
+            json(res, 200, { success: true });
+            return;
+          }
+
+          // POST /api/apps/:name/deploy — manual deploy trigger
+          if (req.method === 'POST' && parts[3] === 'deploy' && !parts[4]) {
+            const jobId = await deployApp(decodeURIComponent(parts[2] ?? ''));
+            json(res, 202, { jobId });
+            return;
+          }
+
+          // GET /api/apps/:name/logs — SSE stream
+          if (req.method === 'GET' && parts[3] === 'logs') {
+            const appDir = getAppDir(decodeURIComponent(parts[2] ?? ''));
+            if (!appDir) { json(res, 404, { error: 'App not found' }); return; }
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
+            const { execa: execaLocal } = await import('execa');
+            const proc = execaLocal('docker', ['compose', 'logs', '--follow', '--tail', '50'], {
+              cwd: appDir,
+              reject: false,
+              stdout: 'pipe',
+              stderr: 'pipe',
+            });
+            const sendLine = (line: string) => {
+              if (line.trim()) res.write(`data: ${line.replace(/\r?\n/g, ' ')}\n\n`);
+            };
+            proc.stdout?.on('data', (chunk: Buffer) => {
+              for (const line of chunk.toString().split('\n')) sendLine(line);
+            });
+            proc.stderr?.on('data', (chunk: Buffer) => {
+              for (const line of chunk.toString().split('\n')) sendLine(line);
+            });
+            req.on('close', () => { try { proc.kill(); } catch { /* ignore */ } });
+            return;
+          }
+        }
+
+        // ── Deploy history, Git repos & Webhook ────────────────────
+        if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
+          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
+          const appFilter = reqUrl.searchParams.get('app') ?? undefined;
+          const entries = getDeployHistory(appFilter);
+          json(res, 200, { history: entries });
+          return;
+        }
+
+        if (parts[1] === 'git' && parts[2] === 'repos' && req.method === 'GET') {
+          try {
+            const repos = await listGiteaRepos();
+            json(res, 200, { repos });
+          } catch (err) {
+            json(res, 502, { success: false, error: String(err) });
+          }
+          return;
+        }
+
+        // POST /api/deploy/hook — Gitea push webhook for auto-deploy
+        if (parts[1] === 'deploy' && parts[2] === 'hook' && req.method === 'POST') {
+          try {
+            const payload = JSON.parse(body) as {
+              repository?: { name?: string };
+              ref?: string;
+            };
+            const appName = payload.repository?.name;
+            const branch = (payload.ref ?? '').replace('refs/heads/', '');
+            if (appName) {
+              const settings = getDeploySettings(appName);
+              if (settings.autoDeploy && branch === settings.deployBranch) {
+                void deployApp(appName);
+              }
+            }
+          } catch { /* ignore parse errors */ }
+          json(res, 200, { status: 'accepted' }); // always 200 to Gitea
+          return;
         }
 
         // ── Domain API (T031-T036) ──────────────────────────────────

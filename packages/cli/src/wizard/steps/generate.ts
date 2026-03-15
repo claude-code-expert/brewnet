@@ -13,7 +13,7 @@
  * @module wizard/steps/generate
  */
 
-import { writeFileSync, mkdirSync, appendFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
@@ -1134,7 +1134,54 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         });
 
         if ((result as { exitCode: number }).exitCode === 0) {
+          // Always sync password + reset must_change_password.
+          // --password syncs Gitea's stored password to match the current state on re-runs
+          // (first-run: no-op since user was just created with the same password).
+          await execaFn('docker', [
+            'exec', '-u', 'git', 'brewnet-gitea',
+            'gitea', 'admin', 'user', 'edit',
+            '--username', adminUser,
+            '--password', adminPass,
+            '--must-change-password', 'false',
+          ]).catch((e: unknown) => {
+            const msg = (e as { stderr?: string }).stderr ?? String(e);
+            gitea.warn(`  Gitea: 계정 동기화 실패 — ${msg.slice(0, 120)}`);
+          });
           gitea.succeed(`  Gitea: admin 계정 생성 완료 (${adminUser})`);
+
+          // Eager token creation — validates mustChangePassword=false immediately,
+          // not lazily at create-app time. Saves token to ~/.brewnet/gitea-token.
+          const tokenPath = join(homedir(), '.brewnet', 'gitea-token');
+          if (!existsSync(tokenPath)) {
+            const giteaDirectUrl = 'http://localhost:3000'; // direct port (health check passed)
+            const basic = Buffer.from(`${adminUser}:${adminPass}`).toString('base64');
+            try {
+              const tr = await fetch(`${giteaDirectUrl}/api/v1/users/${adminUser}/tokens`, {
+                method: 'POST',
+                headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: 'brewnet-init',
+                  scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
+                }),
+              });
+              if (tr.ok) {
+                const td = (await tr.json()) as { sha1: string };
+                mkdirSync(join(homedir(), '.brewnet'), { recursive: true });
+                writeFileSync(tokenPath, td.sha1, 'utf-8');
+                chmodSync(tokenPath, 0o600);
+                gitea.succeed('  Gitea: API 토큰 생성 완료');
+              } else {
+                const errBody = await tr.text();
+                gitea.warn(`  Gitea: API 토큰 생성 실패 (${tr.status}) — create-app 시 자동 재시도됩니다`);
+                if (errBody.includes('must change')) {
+                  gitea.warn('  Gitea: must-change-password 플래그가 여전히 설정되어 있습니다');
+                  gitea.warn(`  Fix: docker exec -u git brewnet-gitea gitea admin user edit --username ${adminUser} --must-change-password false`);
+                }
+              }
+            } catch {
+              gitea.warn('  Gitea: 토큰 사전 생성 건너뜀 — create-app 시 재시도됩니다');
+            }
+          }
         } else {
           gitea.warn('  Gitea: admin 계정 생성 실패 — 수동으로 생성하세요:');
           console.log(chalk.dim(`    docker exec -u git brewnet-gitea gitea admin user create --username ${adminUser} --password <password> --email ${adminEmail} --admin --must-change-password false`));

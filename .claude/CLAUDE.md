@@ -12,6 +12,21 @@ A self-hosted home server management platform that provides an interactive CLI t
 - **Target Platforms**: macOS (darwin), Linux (Ubuntu/Debian, CentOS/RHEL)
 
 
+## ⛔ NEVER Rules
+
+- Jellyfin 초기 설정 URL은 반드시 `http://<host>:8096/web/#/wizard/start`를 사용. `#/home`은 절대 사용하지 말 것.
+- 추측으로 경로, 설정값, URL을 답변하지 말 것 — 반드시 소스 코드를 먼저 읽을 것.
+- 에러 발생 시 수동 Fix 안내만 하고 끝내지 말 것 — 자동 복구가 가능하면 자동으로 처리하고, 처리 결과를 사용자에게 보여줄 것.
+- `.catch(() => {})` 로 에러를 silently 삼키지 말 것 — 최소한 로그에 남길 것.
+
+## 🔁 Process Decision Rules
+
+- **프로세스가 명세서(spec/MD)에 정의되어 있지 않은 경우**: 임의로 결정하지 말고 반드시 사용자에게 되물어볼 것.
+  - 예: 에러 복구 방식, 실패 시 동작, UX 흐름 등이 spec에 없으면 → 구현 전 먼저 질문
+- **같은 문제가 두 번 이상 반복될 경우**: 표면적 수정 전에 반드시 근본 원인(root cause)을 소스 레벨에서 확인할 것.
+- **수정 후 반드시 runtime 검증**: 코드 변경 후 빌드 성공만으로 완료 판단 금지 — 실제 동작 경로를 소스 레벨에서 추적해서 fix가 실제로 작동하는지 확인.
+
+
 ## Investigation Rules
 
 - When the same problem recurs and resolution is requested again, always perform a thorough source-level deep dive before responding.

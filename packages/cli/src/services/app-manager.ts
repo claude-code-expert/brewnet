@@ -5,9 +5,9 @@ import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { execa } from 'execa';
 import { GiteaClient } from './gitea-client.js';
-import { readApps, addApp, updateApp, removeApp as registryRemoveApp, readDeployHistory } from './app-registry.js';
+import { readApps, addApp, updateApp, removeApp as registryRemoveApp, readDeployHistory, appendDeployHistory } from './app-registry.js';
 import { getLastProject, loadState } from '../wizard/state.js';
-import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry } from '../types/app-entry.js';
+import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry, AppGitInfo, DeploySettings } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -66,7 +66,135 @@ export async function listGiteaRepos(): Promise<GitRepoEntry[]> {
     password: ctx.giteaPassword,
     tokenPath: GITEA_TOKEN_PATH,
   });
+  await gitea.prepare(); // validate/refresh token before listing
   return gitea.listRepos();
+}
+
+export function getDeploySettings(appName: string): DeploySettings {
+  const apps = readApps(resolveAppsJsonPath());
+  const app = apps.find((a) => a.name === appName);
+  const settings = (app as (AppEntry & { deploySettings?: DeploySettings }) | undefined)?.deploySettings;
+  return settings ?? { autoDeploy: false, deployBranch: 'main' };
+}
+
+export function updateDeploySettings(appName: string, settings: Partial<DeploySettings>): void {
+  const appsJson = resolveAppsJsonPath();
+  const apps = readApps(appsJson);
+  const app = apps.find((a) => a.name === appName);
+  if (!app) throw new Error(`App "${appName}" not found`);
+  const existing = (app as AppEntry & { deploySettings?: DeploySettings }).deploySettings
+    ?? { autoDeploy: false, deployBranch: 'main' };
+  (app as AppEntry & { deploySettings?: DeploySettings }).deploySettings = { ...existing, ...settings };
+  updateApp(appsJson, appName, app as Partial<AppEntry>);
+}
+
+export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
+  const ctx = resolveContext();
+  const apps = readApps(resolveAppsJsonPath());
+  const app = apps.find((a) => a.name === appName);
+  if (!app) throw new Error(`App "${appName}" not found`);
+
+  const gitea = new GiteaClient({
+    baseUrl: ctx.giteaBaseUrl,
+    username: ctx.giteaUser,
+    password: ctx.giteaPassword,
+    tokenPath: GITEA_TOKEN_PATH,
+  });
+
+  let branch = 'main';
+  let latestCommit: AppGitInfo['latestCommit'] = null;
+  let cloneUrlSsh = `ssh://git@localhost:2222/${ctx.giteaUser}/${appName}.git`;
+
+  try {
+    const repo = await gitea.getRepo(appName);
+    branch = repo.default_branch || 'main';
+    cloneUrlSsh = repo.ssh_url || cloneUrlSsh;
+    latestCommit = await gitea.getLatestCommit(appName, branch);
+  } catch {
+    // Gitea might not be running — return partial info
+  }
+
+  return {
+    giteaUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}`,
+    cloneUrlHttp: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`,
+    cloneUrlSsh,
+    localPath: app.appDir,
+    branch,
+    latestCommit,
+  };
+}
+
+export async function setupWebhook(appName: string, webhookUrl: string): Promise<void> {
+  const ctx = resolveContext();
+  const settings = getDeploySettings(appName);
+  const secret = settings.webhookSecret ?? randomBytes(16).toString('hex');
+
+  const gitea = new GiteaClient({
+    baseUrl: ctx.giteaBaseUrl,
+    username: ctx.giteaUser,
+    password: ctx.giteaPassword,
+    tokenPath: GITEA_TOKEN_PATH,
+  });
+
+  await gitea.createWebhook(appName, webhookUrl, secret);
+  updateDeploySettings(appName, { webhookSecret: secret });
+}
+
+export async function deployApp(appName: string): Promise<string> {
+  const job = newJob(appName, ['Pull', 'Build & Start', 'Health check']);
+  jobs.set(job.jobId, job);
+  setImmediate(() => void _runDeploy(job, appName));
+  return job.jobId;
+}
+
+async function _runDeploy(job: AppJob, appName: string): Promise<void> {
+  try {
+    const apps = readApps(resolveAppsJsonPath());
+    const app = apps.find((a) => a.name === appName);
+    if (!app) throw new Error(`App "${appName}" not found`);
+    const settings = getDeploySettings(appName);
+
+    setStep(job, 0, 'running');
+    await execa('git', ['pull', 'brewnet', settings.deployBranch], { cwd: app.appDir }).catch(() => {});
+    setStep(job, 0, 'done');
+
+    setStep(job, 1, 'running');
+    await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: app.appDir });
+    setStep(job, 1, 'done');
+
+    setStep(job, 2, 'running');
+    await _pollHealth(`http://127.0.0.1:${app.port}/health`);
+    setStep(job, 2, 'done');
+
+    updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
+    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+      appName,
+      commitHash: '',
+      commitMessage: 'Manual deploy',
+      status: 'success',
+      deployedAt: new Date().toISOString(),
+    });
+
+    job.status = 'done';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err instanceof Error ? err.message : String(err);
+    for (const step of job.steps) {
+      if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
+    }
+    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+      appName,
+      commitHash: '',
+      commitMessage: 'Manual deploy',
+      status: 'failed',
+      deployedAt: new Date().toISOString(),
+    });
+  }
+}
+
+export function getAppDir(appName: string): string | undefined {
+  const apps = readApps(resolveAppsJsonPath());
+  return apps.find((a) => a.name === appName)?.appDir;
 }
 
 export function getJobStatus(jobId: string): AppJob | undefined {
@@ -132,7 +260,10 @@ function resolveContext(): AppContext {
   const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
   const envPath = join(projectPath, '.env');
   const giteaUser = readDotEnvValue(envPath, 'GITEA_ADMIN_USER') || (state?.admin as { username?: string } | undefined)?.username || 'admin';
-  const giteaPassword = readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') || (state?.admin as { password?: string } | undefined)?.password || '';
+  // GITEA_ADMIN_PASSWORD is a Docker secret, NOT in .env — read from secrets file first
+  const secretsPath = join(projectPath, 'secrets', 'admin_password');
+  const secretsPassword = existsSync(secretsPath) ? readFileSync(secretsPath, 'utf-8').trim() : '';
+  const giteaPassword = secretsPassword || readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') || (state?.admin as { password?: string } | undefined)?.password || '';
   // Gitea is behind Traefik on port 80 at /git — port 3000 is internal only
   const giteaBaseUrl = 'http://localhost/git';
   return { projectPath, giteaBaseUrl, giteaUser, giteaPassword };
@@ -159,7 +290,7 @@ async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function createApp(opts: CreateAppOptions): Promise<string> {
-  const job = newJob(opts.appName, ['Validating', 'Gitea repo', 'Git push', 'Docker up', 'Health check']);
+  const job = newJob(opts.appName, ['Validating', 'Gitea setup', 'Gitea repo', 'Git push', 'Docker up', 'Health check']);
   jobs.set(job.jobId, job);
 
   // Run async — caller polls via getJobStatus
@@ -178,6 +309,11 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
       password: ctx.giteaPassword,
       tokenPath: GITEA_TOKEN_PATH,
     });
+
+    // Step 1: Gitea setup — ensure token exists, auto-fix mustChangePassword if needed
+    setStep(job, 1, 'running');
+    const giteaPrep = await gitea.prepare();
+    setStep(job, 1, 'done', giteaPrep.message);
 
     if (opts.mode === 'boilerplate') {
       await _createModeA(job, opts, ctx, gitea, appsJson);
@@ -212,8 +348,8 @@ async function _createModeA(
   const port = opts.port ?? meta.port ?? parseInt(meta.backendUrl.split(':').pop() ?? '8080', 10);
   setStep(job, 0, 'done');
 
-  // Step 1: Gitea repo
-  setStep(job, 1, 'running');
+  // Step 2: Gitea repo
+  setStep(job, 2, 'running');
   const alreadyExists = await gitea.repoExists(opts.appName);
   let cloneUrl: string;
   if (!alreadyExists) {
@@ -221,10 +357,10 @@ async function _createModeA(
   } else {
     cloneUrl = `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`;
   }
-  setStep(job, 1, 'done');
+  setStep(job, 2, 'done');
 
-  // Step 2: Git remote + push
-  setStep(job, 2, 'running');
+  // Step 3: Git remote + push
+  setStep(job, 3, 'running');
   // Boilerplates are cloned --depth 1; Gitea rejects shallow pushes to empty repos.
   // Unshallow first (try origin), fall back to a fresh git init if origin is unreachable.
   const shallowCheck = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: meta.appDir }).catch(() => ({ stdout: 'false' }));
@@ -239,17 +375,17 @@ async function _createModeA(
     return execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: meta.appDir });
   });
   await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: meta.appDir });
-  setStep(job, 2, 'done');
-
-  // Step 3: Docker up
-  setStep(job, 3, 'running');
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
   setStep(job, 3, 'done');
 
-  // Step 4: Health check
+  // Step 4: Docker up
   setStep(job, 4, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
   setStep(job, 4, 'done');
+
+  // Step 5: Health check
+  setStep(job, 5, 'running');
+  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  setStep(job, 5, 'done');
 
   // Register
   addApp(appsJson, {
@@ -264,6 +400,8 @@ async function _createModeA(
     status: 'running',
     createdAt: new Date().toISOString(),
   });
+  // Register Gitea webhook for auto-deploy (non-blocking — fail silently)
+  await setupWebhook(opts.appName, 'http://localhost:8088/api/deploy/hook').catch(() => {});
 }
 
 async function _createModeB(
@@ -284,26 +422,26 @@ async function _createModeB(
   await reinitGitB(appDir);
   setStep(job, 0, 'done');
 
-  setStep(job, 1, 'running');
+  setStep(job, 2, 'running');
   const alreadyExists = await gitea.repoExists(opts.appName);
   const cloneUrl = alreadyExists
     ? `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`
     : await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
-  setStep(job, 1, 'done');
-
-  setStep(job, 2, 'running');
-  const authedUrl = gitea.authedCloneUrl(cloneUrl);
-  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
-  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 2, 'done');
 
   setStep(job, 3, 'running');
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  const authedUrl = gitea.authedCloneUrl(cloneUrl);
+  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
+  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
   setStep(job, 4, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
   setStep(job, 4, 'done');
+
+  setStep(job, 5, 'running');
+  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  setStep(job, 5, 'done');
 
   addApp(appsJson, {
     name: opts.appName,
@@ -339,23 +477,23 @@ async function _createModeC(
   await reinitGit(appDir);
   setStep(job, 0, 'done');
 
-  setStep(job, 1, 'running');
-  const cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
-  setStep(job, 1, 'done');
-
   setStep(job, 2, 'running');
-  const authedUrl = gitea.authedCloneUrl(cloneUrl);
-  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
-  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
+  const cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
   setStep(job, 2, 'done');
 
   setStep(job, 3, 'running');
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  const authedUrl = gitea.authedCloneUrl(cloneUrl);
+  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
+  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
   setStep(job, 4, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`, 120_000);
+  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
   setStep(job, 4, 'done');
+
+  setStep(job, 5, 'running');
+  await _pollHealth(`http://127.0.0.1:${port}/health`, 120_000);
+  setStep(job, 5, 'done');
 
   addApp(appsJson, {
     name: opts.appName,
