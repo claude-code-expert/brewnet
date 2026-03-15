@@ -47,7 +47,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/gitea-client.js'
 // Mock app-registry
 const mockAddApp = jest.fn();
 const mockUpdateApp = jest.fn();
-const mockReadApps = jest.fn(() => []);
+const mockReadApps = jest.fn<() => unknown[]>(() => []);
 const mockRemoveApp = jest.fn();
 jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js', () => ({
   addApp: mockAddApp,

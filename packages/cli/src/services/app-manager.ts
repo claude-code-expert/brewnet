@@ -2,30 +2,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { randomBytes } from 'node:crypto';
-import { execa } from 'execa';
-import { GiteaClient } from './gitea-client.js';
-import { addApp, updateApp, readApps, removeApp as registryRemoveApp } from './app-registry.js';
-import type { AppEntry, AppJob, AppJobStep, CreateAppOptions } from '../types/app-entry.js';
-
-// ---------------------------------------------------------------------------
-// Suppress unused-import warnings for future-use symbols.
-// These are referenced by subsequent tasks that append code to this file.
-// ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _unused = { randomBytes, execa, GiteaClient, addApp, updateApp, registryRemoveApp } as unknown;
-// The types below are import-only; TypeScript will use them when the
-// corresponding functions are added in later tasks.
-type _AppJobStep = AppJobStep;
-type _CreateAppOptions = CreateAppOptions;
+import { readApps } from './app-registry.js';
+import type { AppEntry, AppJob } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const BREWNET_DIR = join(homedir(), '.brewnet');
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const GITEA_TOKEN_PATH = join(BREWNET_DIR, 'gitea-token');
 
 // ---------------------------------------------------------------------------
 // In-memory job store (ephemeral — cleared on server restart)
