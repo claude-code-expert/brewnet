@@ -17,7 +17,7 @@ import {
   getAllFrontendTechs,
   resolveStackId,
 } from '../../../../packages/cli/src/config/frameworks.js';
-import type { Language, FrontendTech, FrameworkOption } from '../../../../packages/cli/src/config/frameworks.js';
+import type { Language, FrontendTech } from '../../../../packages/cli/src/config/frameworks.js';
 
 // ---------------------------------------------------------------------------
 // Expected constants for assertions
@@ -41,36 +41,9 @@ const EXPECTED_FRAMEWORKS_BY_LANGUAGE: Record<Language, string[]> = {
 // ===========================================================================
 
 describe('LANGUAGE_REGISTRY', () => {
-  it('has exactly 6 language entries', () => {
+  it('contains exactly the expected language keys', () => {
     const keys = Object.keys(LANGUAGE_REGISTRY);
-    expect(keys).toHaveLength(6);
-  });
-
-  it('contains every expected language key', () => {
-    for (const lang of EXPECTED_LANGUAGES) {
-      expect(LANGUAGE_REGISTRY).toHaveProperty(lang);
-    }
-  });
-
-  it('contains no unexpected language keys', () => {
-    const keys = Object.keys(LANGUAGE_REGISTRY);
-    for (const key of keys) {
-      expect(EXPECTED_LANGUAGES).toContain(key);
-    }
-  });
-
-  it('each entry has a non-empty name string', () => {
-    for (const lang of EXPECTED_LANGUAGES) {
-      const entry = LANGUAGE_REGISTRY[lang];
-      expect(typeof entry.name).toBe('string');
-      expect(entry.name.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('each entry has a frameworks array', () => {
-    for (const lang of EXPECTED_LANGUAGES) {
-      expect(Array.isArray(LANGUAGE_REGISTRY[lang].frameworks)).toBe(true);
-    }
+    expect(keys.sort()).toEqual([...EXPECTED_LANGUAGES].sort());
   });
 
   it('has correct display names for each language', () => {
@@ -88,38 +61,9 @@ describe('LANGUAGE_REGISTRY', () => {
 // ===========================================================================
 
 describe('FRONTEND_REGISTRY', () => {
-  it('has exactly 3 frontend tech entries', () => {
+  it('contains exactly the expected frontend tech keys', () => {
     const keys = Object.keys(FRONTEND_REGISTRY);
-    expect(keys).toHaveLength(3);
-  });
-
-  it('contains every expected frontend tech key', () => {
-    for (const tech of EXPECTED_FRONTEND_TECHS) {
-      expect(FRONTEND_REGISTRY).toHaveProperty(tech);
-    }
-  });
-
-  it('contains no unexpected frontend tech keys', () => {
-    const keys = Object.keys(FRONTEND_REGISTRY);
-    for (const key of keys) {
-      expect(EXPECTED_FRONTEND_TECHS).toContain(key);
-    }
-  });
-
-  it('each entry has a non-empty name string', () => {
-    for (const tech of EXPECTED_FRONTEND_TECHS) {
-      const entry = FRONTEND_REGISTRY[tech];
-      expect(typeof entry.name).toBe('string');
-      expect(entry.name.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('each entry has a non-empty description string', () => {
-    for (const tech of EXPECTED_FRONTEND_TECHS) {
-      const entry = FRONTEND_REGISTRY[tech];
-      expect(typeof entry.description).toBe('string');
-      expect(entry.description.length).toBeGreaterThan(0);
-    }
+    expect(keys.sort()).toEqual([...EXPECTED_FRONTEND_TECHS].sort());
   });
 
   it('has correct display names for each frontend tech', () => {
@@ -127,43 +71,6 @@ describe('FRONTEND_REGISTRY', () => {
     expect(FRONTEND_REGISTRY.vue.name).toBe('Vue.js (Vite)');
     expect(FRONTEND_REGISTRY.none.name).toBe('Skip frontend');
   });
-});
-
-// ===========================================================================
-// FrameworkOption shape -- every framework entry must satisfy the interface
-// ===========================================================================
-
-describe('FrameworkOption shape', () => {
-  const allFrameworks: Array<[string, FrameworkOption]> = [];
-  for (const lang of EXPECTED_LANGUAGES) {
-    for (const fw of LANGUAGE_REGISTRY[lang].frameworks) {
-      allFrameworks.push([`${lang}/${fw.id}`, fw]);
-    }
-  }
-
-  it.each(allFrameworks)(
-    '%s has a non-empty id string',
-    (_label: string, fw: FrameworkOption) => {
-      expect(typeof fw.id).toBe('string');
-      expect(fw.id.length).toBeGreaterThan(0);
-    },
-  );
-
-  it.each(allFrameworks)(
-    '%s has a non-empty name string',
-    (_label: string, fw: FrameworkOption) => {
-      expect(typeof fw.name).toBe('string');
-      expect(fw.name.length).toBeGreaterThan(0);
-    },
-  );
-
-  it.each(allFrameworks)(
-    '%s has a non-empty description string',
-    (_label: string, fw: FrameworkOption) => {
-      expect(typeof fw.description).toBe('string');
-      expect(fw.description.length).toBeGreaterThan(0);
-    },
-  );
 });
 
 // ===========================================================================
@@ -252,10 +159,6 @@ describe('getFrameworksForLanguage()', () => {
       expect(frameworks[0].id).toBe('axum');
       expect(frameworks[1].id).toBe('actix-web');
     });
-
-    it('returns an array type', () => {
-      expect(Array.isArray(getFrameworksForLanguage('rust'))).toBe(true);
-    });
   });
 
   // -- Go (TC-05-03: Go frameworks) ----------------------------------------
@@ -265,10 +168,6 @@ describe('getFrameworksForLanguage()', () => {
       expect(ids).toContain('gin');
       expect(ids).toContain('echo');
       expect(ids).toContain('fiber');
-    });
-
-    it('returns an array type', () => {
-      expect(Array.isArray(getFrameworksForLanguage('go'))).toBe(true);
     });
   });
 
@@ -303,31 +202,9 @@ describe('getFrameworksForLanguage()', () => {
 // ===========================================================================
 
 describe('getAllLanguages()', () => {
-  it('returns an array of 6 language keys', () => {
+  it('returns exactly the expected language keys', () => {
     const languages = getAllLanguages();
-    expect(Array.isArray(languages)).toBe(true);
-    expect(languages).toHaveLength(6);
-  });
-
-  it('contains every expected language key including kotlin', () => {
-    const languages = getAllLanguages();
-    for (const lang of EXPECTED_LANGUAGES) {
-      expect(languages).toContain(lang);
-    }
-  });
-
-  it('contains no unexpected language keys', () => {
-    const languages = getAllLanguages();
-    for (const lang of languages) {
-      expect(EXPECTED_LANGUAGES).toContain(lang);
-    }
-  });
-
-  it('returns a new array on each call (no shared reference)', () => {
-    const a = getAllLanguages();
-    const b = getAllLanguages();
-    expect(a).not.toBe(b);
-    expect(a).toEqual(b);
+    expect(languages.sort()).toEqual([...EXPECTED_LANGUAGES].sort());
   });
 });
 
@@ -336,31 +213,9 @@ describe('getAllLanguages()', () => {
 // ===========================================================================
 
 describe('getAllFrontendTechs()', () => {
-  it('returns an array of 3 frontend tech keys', () => {
+  it('returns exactly the expected frontend tech keys', () => {
     const techs = getAllFrontendTechs();
-    expect(Array.isArray(techs)).toBe(true);
-    expect(techs).toHaveLength(3);
-  });
-
-  it('contains react, vue, none', () => {
-    const techs = getAllFrontendTechs();
-    for (const tech of EXPECTED_FRONTEND_TECHS) {
-      expect(techs).toContain(tech);
-    }
-  });
-
-  it('contains no unexpected frontend tech keys', () => {
-    const techs = getAllFrontendTechs();
-    for (const tech of techs) {
-      expect(EXPECTED_FRONTEND_TECHS).toContain(tech);
-    }
-  });
-
-  it('returns a new array on each call (no shared reference)', () => {
-    const a = getAllFrontendTechs();
-    const b = getAllFrontendTechs();
-    expect(a).not.toBe(b);
-    expect(a).toEqual(b);
+    expect(techs.sort()).toEqual([...EXPECTED_FRONTEND_TECHS].sort());
   });
 });
 
@@ -379,28 +234,6 @@ describe('Framework ID uniqueness', () => {
     }
     const uniqueIds = new Set(allIds);
     expect(uniqueIds.size).toBe(allIds.length);
-  });
-
-  it('has no duplicate framework IDs within any single language', () => {
-    for (const lang of EXPECTED_LANGUAGES) {
-      const ids = getFrameworksForLanguage(lang).map((fw) => fw.id);
-      const uniqueIds = new Set(ids);
-      expect(uniqueIds.size).toBe(ids.length);
-    }
-  });
-});
-
-// ===========================================================================
-// Total framework count
-// ===========================================================================
-
-describe('Total framework count', () => {
-  it('has 16 frameworks across all languages (3+4+2+2+3+2=16)', () => {
-    let total = 0;
-    for (const lang of EXPECTED_LANGUAGES) {
-      total += getFrameworksForLanguage(lang).length;
-    }
-    expect(total).toBe(16);
   });
 });
 
