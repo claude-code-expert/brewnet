@@ -786,7 +786,7 @@ async function captureQuickTunnelUrl(container: Dockerode.Container): Promise<st
         const match = URL_REGEX.exec(text);
         if (match) {
           clearTimeout(timer);
-          (stream as import('node:stream').Readable).destroy();
+          stream.destroy();
           resolve(match[0].startsWith('http') ? match[0] : `https://${match[1]}`);
         }
       });

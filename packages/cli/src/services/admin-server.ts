@@ -24,10 +24,8 @@ import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
-import type { WizardState } from '@brewnet/shared';
-import { generateAppsPageHtml } from './apps-page.js';
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos } from './app-manager.js';
-import type { CreateAppOptions } from '../types/app-entry.js';
+import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
+import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 
 // ---------------------------------------------------------------------------
 // Types (per admin-api.md)
@@ -44,8 +42,6 @@ export interface ServiceStatus {
   port: number | null;
   url: string | null;
   removable: boolean;
-  /** docker compose project name — used to identify which boilerplate stack this container belongs to */
-  project?: string;
 }
 
 export interface AdminServerOptions {
@@ -56,6 +52,22 @@ export interface AdminServerOptions {
 // ---------------------------------------------------------------------------
 // HTML Dashboard (inline, dynamically generated with embedded config)
 // ---------------------------------------------------------------------------
+
+/** Shape of a single stack entry in .brewnet-boilerplate.json */
+interface BoilerplateMeta {
+  stackId: string;
+  appDir?: string;
+  backendUrl?: string;
+  frontendUrl?: string;
+  isUnified?: boolean;
+  lang?: string;
+  frameworkId?: string;
+  dbDriver?: string;
+  dbUser?: string;
+  dbName?: string;
+  gitBranch?: string;
+  status?: string;
+}
 
 interface DashboardConfig {
   adminUsername: string;
@@ -103,6 +115,10 @@ const FAVICON_ICO = (() => {
   return null;
 })();
 
+/** Minimal HTML entity escaping for server-side string injection. */
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 /**
  * Name alias map: SERVICE_REGISTRY display names → SERVICE_DETAIL_MAP keys.
@@ -148,10 +164,23 @@ tr:hover td{background:#161b22}
 .btn-remove:hover{background:#21262d}
 .actions{display:flex;gap:4px;align-items:center}
 #log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;height:200px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
+.tab-bar{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #30363d}
+.tab-btn{padding:8px 16px;cursor:pointer;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;font-family:inherit;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+.tab-btn.active{color:#f5a623;border-bottom-color:#f5a623}
+.tab-btn:hover{color:#c9d1d9}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.log-filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.log-filters select,.log-filters input{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 8px;border-radius:4px;font-family:inherit;font-size:12px}
+.log-level-btn{padding:3px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-family:inherit;font-size:11px}
+.log-level-btn.active{border-color:#f5a623;color:#f5a623}
+#logs-table{width:100%;border-collapse:collapse;font-size:12px}
+#logs-table td{padding:4px 8px;border-bottom:1px solid #21262d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#logs-table td:last-child{white-space:normal}
+.log-src-cli{color:#58d1ff}.log-src-tunnel{color:#d2a8ff}.log-src-access{color:#79c0ff}.log-src-service{color:#c9d1d9}
+.log-lvl-info{color:#3fb950}.log-lvl-warn{color:#e3b341}.log-lvl-error{color:#f85149}.log-lvl-debug{color:#8b949e}
 .section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
 .header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
-.nav-link{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px;font-family:inherit}
-.nav-link:hover{background:#21262d}
 .refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
 .svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
 .svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
@@ -188,9 +217,13 @@ tr:hover td{background:#161b22}
     <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
-  <span class="refresh" onclick="loadServices(true)" style="margin-left:12px">&#8635; Refresh</span>
-  <a href="/apps" class="nav-link" style="margin-left:auto">🚀 App Deploy</a>
+  <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
 </div>
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('services')">Services</button>
+  <button class="tab-btn" onclick="switchTab('logs')">Logs</button>
+</div>
+<div id="tab-services" class="tab-content active">
 <div class="section-title">Services</div>
 <table id="svc-table">
   <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
@@ -286,8 +319,46 @@ ${config.boilerplateHtml}
   </div>
 </div>
 
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Log<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
+<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Activity<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
 <div id="log"></div>
+</div><!-- /tab-services -->
+
+<div id="tab-logs" class="tab-content">
+<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+  System Logs
+  <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e;text-transform:none;letter-spacing:0;cursor:pointer">
+    <input type="checkbox" id="logs-auto-refresh" checked style="accent-color:#f5a623"/> Auto-refresh (5s)
+  </label>
+</div>
+<div class="log-filters">
+  <select id="log-source" onchange="fetchLogs()">
+    <option value="">All Sources</option>
+    <option value="cli">CLI</option>
+    <option value="tunnel">Tunnel</option>
+    <option value="access">Access</option>
+    <option value="service">Service</option>
+  </select>
+  <select id="log-level" onchange="fetchLogs()">
+    <option value="">All Levels</option>
+    <option value="error">Error</option>
+    <option value="warn">Warn</option>
+    <option value="info">Info</option>
+    <option value="debug">Debug</option>
+  </select>
+  <select id="log-service-filter" onchange="fetchLogs()">
+    <option value="">All Services</option>
+  </select>
+  <input type="text" id="log-search" placeholder="Search..." onkeyup="if(event.key==='Enter')fetchLogs()" style="width:140px"/>
+  <span class="btn btn-start" style="font-size:11px" onclick="fetchLogs()">Search</span>
+</div>
+<div style="overflow-x:auto;max-height:500px;overflow-y:auto;border:1px solid #30363d;border-radius:4px">
+  <table id="logs-table">
+    <tbody id="logs-body"><tr><td colspan="5" style="color:#8b949e;padding:12px">Select the Logs tab to view system logs.</td></tr></tbody>
+  </table>
+</div>
+<div id="logs-stats" style="margin-top:8px;font-size:11px;color:#8b949e"></div>
+</div><!-- /tab-logs -->
+
 <script>
 var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
 var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
@@ -296,16 +367,11 @@ var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
 var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
 var DOMAIN_CONNECTIONS = ${config.domainConnectionsJson};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
-function getExternalUrl(id,port,project){
+function getExternalUrl(id){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
-  var base=c.quickTunnelUrl?c.quickTunnelUrl.replace(/\\/$/,''):(c.zoneName?'https://'+c.zoneName:'');
-  if(!base)return null;
-  // 1. Static known services (EXT_PATHS lookup by service ID)
-  var e=EXT_PATHS[id];
-  if(e){return base+e.path;}
-  // 2. Boilerplate containers — project label = compose project dir name (= stackId)
-  if(project&&id==='backend')return base+'/apps/'+project;
-  if(project&&id==='frontend')return base+'/apps/'+project+'-ui';
+  var e=EXT_PATHS[id];if(!e)return null;
+  if(c.quickTunnelUrl){var base=c.quickTunnelUrl.replace(/\\/$/,'');return base+e.path;}
+  if(c.zoneName){return e.sub?'https://'+e.sub+'.'+c.zoneName:'https://'+c.zoneName;}
   return null;
 }
 function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -355,27 +421,47 @@ function showServiceModal(name,localUrl,externalUrl){
 function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o)o.remove();document.removeEventListener('keydown',handleModalEsc);}
 function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
 function showBoilerplateModal(idx){
-  var stack=BOILERPLATE_STACKS[idx];if(!stack)return;
+  var s=BOILERPLATE_STACKS[idx];if(!s)return;
+  log('['+s.stackId+'] stack info — '+(s.lang||'')+(s.frameworkId?'/'+s.frameworkId:'')+(s.backendUrl?' | '+s.backendUrl:'')+' | status: '+(s.status||'?'),'info');
+  var repoBase='https://github.com/claude-code-expert/brewnet-boilerplate';
+  var readmeUrl=repoBase+'/tree/'+escapeHtml(s.gitBranch||('stack/'+s.stackId));
   var ov=document.createElement('div');ov.className='modal-overlay';
-  ov.onclick=function(e){if(e.target===ov)ov.remove();};
-  var endpoints=(stack.endpoints||[]).map(function(ep){return '<div class="modal-url"><span class="modal-url-label">'+escapeHtml(ep.label||ep.url)+':</span> <a href="'+escapeHtml(ep.url)+'" target="_blank" class="modal-url-a">'+escapeHtml(ep.url)+'</a></div>';}).join('');
-  var credHtml='';
-  if(stack.dbUser){credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(stack.dbUser)+'</span></div>';}
-  if(stack.dbName){credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(stack.dbName)+'</span></div>';}
+  ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
+  var accessHtml='';
+  var bu=s.backendUrl||'';
+  var fu=s.frontendUrl||'';
+  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Backend:</span> <a href="'+escapeHtml(bu)+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'</a></div>';}
+  if(!s.isUnified&&fu&&fu!==bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Frontend:</span> <a href="'+escapeHtml(fu)+'" target="_blank" class="modal-url-a">'+escapeHtml(fu)+'</a></div>';}
+  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
+  var stackLabel=(s.lang||'')+(s.frameworkId?' / '+s.frameworkId:'');
+  var dbLabel=(s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:'');
+  var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
+  var credHtml='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(s.dbUser||'brewnet')+'</span></div>';
+  credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(s.dbName||'brewnet_db')+'</span></div>';
+  credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+' (admin password)</span></div>';
+  var gitHtml='<div class="modal-url"><span class="modal-url-label">Branch:</span> <code style="color:#58a6ff">'+escapeHtml(s.gitBranch||'stack/'+s.stackId)+'</code></div>';
+  gitHtml+='<div class="modal-url"><a href="'+readmeUrl+'" target="_blank" class="modal-url-a">'+readmeUrl+'</a></div>';
+  var cmdBase=s.appDir||'.';
+  var cmdHtml='<div class="modal-cmd">cd '+escapeHtml(cmdBase)+'</div>';
+  cmdHtml+='<div style="margin-top:6px;color:#8b949e;font-size:12px">make logs &nbsp;&nbsp; # 컨테이너 로그 확인</div>';
+  cmdHtml+='<div style="color:#8b949e;font-size:12px">make down &nbsp;&nbsp; # 서비스 중지</div>';
+  cmdHtml+='<div style="color:#8b949e;font-size:12px">make validate # API 엔드포인트 검증</div>';
   ov.innerHTML='<div class="modal-box">'+
     '<div class="modal-titlebar">'+
       '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">'+escapeHtml(stack.stackId||'boilerplate')+' \\u2014 app info</span>'+
-      '<button class="modal-close">\\u00d7</button>'+
+      '<span class="modal-title">'+escapeHtml(s.stackId)+' \\u2014 dev stack info</span>'+
+      '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
     '</div>'+
     '<div class="modal-body">'+
-      (stack.branch?'<div class="modal-cred"><span class="modal-cred-l">Branch:</span> <span class="modal-cred-v">'+escapeHtml(stack.branch)+'</span></div>':'')+
-      credHtml+
-      (endpoints?'<div class="modal-sh">$ endpoints</div>'+endpoints:'')+
-      (stack.readme?'<div class="modal-sh">$ readme</div><div class="modal-url"><a href="'+escapeHtml(stack.readme)+'" target="_blank" class="modal-url-a">View README on GitHub</a></div>':'')+
+      '<div class="modal-desc">'+escapeHtml(stackLabel)+' boilerplate stack</div>'+
+      '<div class="modal-license">DB: '+escapeHtml(dbLabel)+' &nbsp;|&nbsp; Status: <span class="badge '+statusCls+'">'+escapeHtml(s.status||'unknown')+'</span></div>'+
+      '<div class="modal-sh">$ access</div>'+accessHtml+
+      '<div class="modal-sh">$ credentials</div>'+credHtml+
+      '<div class="modal-sh">$ git</div>'+gitHtml+
+      '<div class="modal-sh">$ commands</div>'+cmdHtml+
     '</div></div>';
-  var cb=ov.querySelector('.modal-close');if(cb)cb.onclick=function(){ov.remove();};
   document.body.appendChild(ov);
+  document.addEventListener('keydown',handleModalEsc);
 }
 const LOG_COL={info:'#58a6ff',ok:'#3fb950',warn:'#e3b341',error:'#f85149',dim:'#484f58'};
 const log=(msg,lv)=>{lv=lv||'info';const d=document.getElementById('log');const row=document.createElement('div');row.style.cssText='padding:1px 0;line-height:1.6';row.innerHTML='<span style="color:#30363d;user-select:none">'+new Date().toLocaleTimeString()+'</span> <span style="color:'+(LOG_COL[lv]||LOG_COL.info)+'">'+escapeHtml(String(msg))+'</span>';d.insertBefore(row,d.firstChild);while(d.children.length>80)d.removeChild(d.lastChild);};
@@ -387,15 +473,10 @@ async function loadServices(manual){
   const tbody=document.getElementById('svc-body');
   if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
   tbody.innerHTML=r.services.map(s=>{
-    var ext=getExternalUrl(s.id,s.port,s.project);
+    var ext=getExternalUrl(s.id);
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
-    var isUnifiedNext=(s.project||'').startsWith('nodejs-nextjs');
-    var localCellHtml;
-    if(!localUrl){localCellHtml='<span style="color:#8b949e">—</span>';}
-    else if(isUnifiedNext){var apiUrl=localUrl+'/api/hello';var frontLabel=s.project==='nodejs-nextjs-full'?'Frontend':'App';localCellHtml='<a href="'+localUrl+'" target="_blank" style="color:#58a6ff">'+localUrl+'</a> <span style="color:#8b949e;font-size:11px">'+frontLabel+'</span><br><a href="'+apiUrl+'" target="_blank" style="color:#58a6ff">'+apiUrl+'</a> <span style="color:#8b949e;font-size:11px">API</span>';}
-    else{localCellHtml='<a href="'+localUrl+'" target="_blank" style="color:#58a6ff">'+localUrl+'</a>';}
     var nameHtml=hasDetail
       ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
       :\`<b>\${s.name}</b>\`;
@@ -403,7 +484,7 @@ async function loadServices(manual){
     <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
     <td>\${badge(s.status)}</td>
     <td>\${s.port??'—'}</td>
-    <td>\${localCellHtml}</td>
+    <td>\${localUrl?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
     <td>\${ext?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
     <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
   </tr>\`;}).join('');
@@ -411,7 +492,7 @@ async function loadServices(manual){
   document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
   if(manual&&r.services){
     r.services.forEach(function(s){
-      var ext=getExternalUrl(s.id,s.port,s.project);
+      var ext=getExternalUrl(s.id);
       var lv=s.status==='running'?'ok':s.status==='error'?'error':'dim';
       var detail='['+s.id+'] '+s.status+(s.port?' port='+s.port:'')+(s.url?' — '+s.url:'')+(ext?' | ext: '+ext:'');
       log(detail,lv);
@@ -547,6 +628,73 @@ async function loadCloudflareStatus(){
     else{el.innerHTML='<span style="color:#e3b341">⚠️ Not configured</span>';}
   }catch(e){}
 }
+// ── Tab switching ──
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.tab-content').forEach(function(c){c.classList.remove('active');});
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelector('.tab-btn[onclick*="'+tab+'"]').classList.add('active');
+  if(tab==='logs'&&!window._logsLoaded){window._logsLoaded=true;fetchLogs();fetchLogStats();}
+}
+// ── Logs tab ──
+var _logsTimer=null;
+function fetchLogs(){
+  var src=document.getElementById('log-source').value;
+  var lvl=document.getElementById('log-level').value;
+  var svc=document.getElementById('log-service-filter').value;
+  var search=document.getElementById('log-search').value.trim();
+  var params=new URLSearchParams();
+  if(src)params.set('source',src);
+  if(lvl)params.set('level',lvl);
+  if(svc)params.set('service',svc);
+  if(search)params.set('search',search);
+  params.set('limit','200');
+  fetch('/api/logs?'+params.toString()).then(function(r){return r.json();}).then(function(d){
+    var body=document.getElementById('logs-body');
+    if(!d.entries||d.entries.length===0){body.innerHTML='<tr><td colspan="5" style="color:#8b949e;padding:12px">No log entries found.</td></tr>';return;}
+    var html='';
+    d.entries.forEach(function(e){
+      var ts=e.timestamp.replace('T',' ').replace(/\\.\\d+Z$/,'').replace('Z','');
+      var srcCls='log-src-'+(e.source||'service');
+      var lvlCls='log-lvl-'+(e.level||'info');
+      html+='<tr><td style="width:155px">'+escapeHtml(ts)+'</td><td class="'+srcCls+'" style="width:65px">'+escapeHtml((e.source||'').toUpperCase())+'</td><td class="'+lvlCls+'" style="width:50px">'+escapeHtml((e.level||'').toUpperCase())+'</td><td style="width:90px">'+escapeHtml(e.service||'')+'</td><td>'+escapeHtml(e.message)+'</td></tr>';
+    });
+    if(d.hasMore)html+='<tr><td colspan="5" style="color:#8b949e;font-style:italic">… '+(d.total-d.entries.length)+' more entries</td></tr>';
+    body.innerHTML=html;
+    // Populate service filter
+    var svcFilter=document.getElementById('log-service-filter');
+    var currentVal=svcFilter.value;
+    var services=new Set();d.entries.forEach(function(e){if(e.service)services.add(e.service);});
+    var opts='<option value="">All Services</option>';
+    Array.from(services).sort().forEach(function(s){var es=escapeHtml(s);opts+='<option value="'+es+'"'+(s===currentVal?' selected':'')+'>'+es+'</option>';});
+    svcFilter.innerHTML=opts;
+  }).catch(function(){
+    document.getElementById('logs-body').innerHTML='<tr><td colspan="5" style="color:#f85149;padding:12px">Failed to fetch logs.</td></tr>';
+  });
+}
+function fetchLogStats(){
+  fetch('/api/logs/stats').then(function(r){return r.json();}).then(function(d){
+    var el=document.getElementById('logs-stats');
+    var parts=['Total: '+d.total];
+    if(d.bySource){Object.keys(d.bySource).forEach(function(k){if(d.bySource[k]>0)parts.push(k+': '+d.bySource[k]);});}
+    if(d.byLevel&&d.byLevel.error>0)parts.push('<span style="color:#f85149">errors: '+d.byLevel.error+'</span>');
+    el.innerHTML=parts.join(' &middot; ');
+  }).catch(function(){});
+}
+// Auto-refresh logs every 5 seconds
+function startLogsAutoRefresh(){
+  if(_logsTimer)clearInterval(_logsTimer);
+  _logsTimer=setInterval(function(){
+    if(document.getElementById('logs-auto-refresh').checked&&document.getElementById('tab-logs').classList.contains('active')){
+      fetchLogs();fetchLogStats();
+    }
+  },5000);
+}
+document.getElementById('logs-auto-refresh').addEventListener('change',function(){
+  if(this.checked)startLogsAutoRefresh();else if(_logsTimer){clearInterval(_logsTimer);_logsTimer=null;}
+});
+startLogsAutoRefresh();
+
 // Auto-load domains and settings status
 setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
 </script>
@@ -628,7 +776,6 @@ async function handleGetServices(
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
       const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
 
-      const projectLabel = c.Labels?.['com.docker.compose.project'] ?? undefined;
       services.push({
         id: composeService,
         name: def?.name ?? composeService,
@@ -640,26 +787,15 @@ async function handleGetServices(
         port: port ?? null,
         url: WEB_UI_SERVICES.has(composeService) && port
           ? urlMap[composeService] ?? `http://localhost:${port}`
-          : (!def && port ? `http://localhost:${port}` : null),
+          : null,
         removable: !REQUIRED_SERVICES.has(composeService),
-        project: projectLabel,
       });
-
-      // Debug: log boilerplate container identifiers for external URL diagnosis
-      if (composeService === 'backend' || composeService === 'frontend') {
-        logger.info('admin-server', `[diag:docker] ${composeService}: project=${projectLabel ?? 'MISSING'} port=${port ?? '—'} name=${c.Names?.[0] ?? '?'} state=${s}`);
-      }
     }
 
-    // Deduplicate: if the main 'postgresql' service exists, hide the
-    // boilerplate's 'postgres' container to avoid duplicate dashboard entries.
-    const hasPostgresql = services.some((s) => s.id === 'postgresql');
-    const deduped = hasPostgresql ? services.filter((s) => s.id !== 'postgres') : services;
-
-    const running = deduped.filter((s) => s.status === 'running').length;
+    const running = services.filter((s) => s.status === 'running').length;
     json(res, 200, {
-      services: deduped,
-      summary: { total: deduped.length, running, stopped: deduped.length - running },
+      services,
+      summary: { total: services.length, running, stopped: services.length - running },
     });
   } catch (err) {
     json(res, 500, { success: false, error: String(err), code: 'BN001' });
@@ -668,7 +804,7 @@ async function handleGetServices(
 
 function inferType(id: string): string {
   if (['traefik', 'nginx', 'caddy'].includes(id)) return 'web';
-  if (['postgresql', 'postgres', 'mysql', 'redis', 'valkey', 'keydb'].includes(id)) return 'db';
+  if (['postgresql', 'mysql', 'redis', 'valkey', 'keydb'].includes(id)) return 'db';
   if (['nextcloud', 'minio', 'filebrowser'].includes(id)) return 'file';
   if (['jellyfin'].includes(id)) return 'media';
   if (['gitea'].includes(id)) return 'git';
@@ -854,28 +990,16 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   // Resolve project path and wizard state.
   // Always load wizard state from the last project — options.projectPath only
   // overrides the filesystem path, not whether state is loaded.
-  // Expand leading ~ — Node.js fs functions don't resolve shell tilde notation.
-  // Apply unconditionally so callers passing state.projectPath directly are also covered.
-  const rawPath = options.projectPath ?? process.cwd();
-  let projectPath = rawPath.startsWith('~') ? join(homedir(), rawPath.slice(1)) : rawPath;
+  let projectPath = options.projectPath ?? process.cwd();
   let wizardState: WizardState | null = null;
   const last = getLastProject();
-  logger.info('admin-server', `[init] lastProject=${JSON.stringify(last)} rawPath=${rawPath} projectPath=${projectPath}`);
   if (last) {
     const state = loadState(last);
     if (state) {
       wizardState = state;
       // Only fall back to state.projectPath when caller didn't supply one
-      if (!options.projectPath && state.projectPath) {
-        const raw = state.projectPath;
-        projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-        logger.info('admin-server', `[init] projectPath resolved from state: ${projectPath}`);
-      }
-    } else {
-      logger.warn('admin-server', `[init] loadState("${last}") returned null — state file missing?`);
+      if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
     }
-  } else {
-    logger.warn('admin-server', '[init] lastProject is empty — no wizard state loaded, projectPath fallback to cwd');
   }
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
@@ -886,10 +1010,55 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
-  // Boilerplate HTML/JSON are empty initially; refreshBoilerplateMeta() populates
-  // them lazily once .brewnet-boilerplate.json appears on disk.
-  const boilerplateHtml = '';
-  const boilerplateStacksJson = '[]';
+  // Read boilerplate metadata if available (supports both array and legacy single object)
+  let boilerplateHtml = '';
+  let boilerplateStacksJson = '[]';
+  try {
+    const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
+    if (existsSync(bpMetaPath)) {
+      const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+      // Normalize: legacy single-object → array
+      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
+
+      if (stacks.length > 0) {
+        boilerplateStacksJson = JSON.stringify(stacks);
+
+        // Build HTML table rows — each stack name is clickable (triggers modal)
+        const rows = stacks.map((s, idx) => {
+          const statusCls = s.status === 'running' ? 'running'
+            : s.status === 'timeout' ? 'error' : 'stopped';
+          const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
+          const backendLink = s.backendUrl
+            ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
+            : '—';
+          const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
+            ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
+            : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
+          const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
+          const docsCell = docsUrl
+            ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
+            : '—';
+          return `<tr>
+    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
+    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
+    <td>${backendLink}</td>
+    <td>${frontendCell}</td>
+    <td>${docsCell}</td>
+    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
+  </tr>`;
+        }).join('\n');
+
+        boilerplateHtml = `
+<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
+<table>
+  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
+  <tbody>
+${rows}
+  </tbody>
+</table>`;
+      }
+    }
+  } catch { /* non-fatal */ }
 
   const dashConfig: DashboardConfig = {
     adminUsername: username ? maskUser(username) : '**',
@@ -981,25 +1150,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     }
   }
 
-  /**
-   * Lazy-load boilerplate metadata from .brewnet-boilerplate.json.
-   * Re-checks on every GET / until the file appears.
-   */
-  let boilerplateLoaded = false;
-  function refreshBoilerplateMeta(): void {
-    if (boilerplateLoaded) return;
-    const bpPath = join(projectPath, '.brewnet-boilerplate.json');
-    if (!existsSync(bpPath)) return;
-    try {
-      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-      dashConfig.boilerplateStacks = Array.isArray(raw) ? raw : [raw];
-      boilerplateLoaded = true;
-      dashboardHtml = generateDashboardHtml(dashConfig);
-    } catch {
-      // Non-critical — keep empty array
-    }
-  }
-
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const parts = url.split('?')[0].split('/').filter(Boolean);
@@ -1035,20 +1185,12 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       return;
     }
 
-    // Serve dashboard HTML (with lazy Quick Tunnel + credential + boilerplate detection)
+    // Serve dashboard HTML (with lazy Quick Tunnel + credential detection)
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
       await detectQuickTunnelUrl();
       await detectCredentials();
-      refreshBoilerplateMeta();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(dashboardHtml);
-      return;
-    }
-
-    // Serve Apps page
-    if (req.method === 'GET' && (url === '/apps' || url === '/apps/')) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(generateAppsPageHtml());
       return;
     }
 
@@ -1091,77 +1233,45 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           return;
         }
 
-        if (parts[1] === 'apps') {
-          if (req.method === 'GET' && parts.length === 2) {
-            const apps = await listApps();
-            logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
-            json(res, 200, { apps });
+        // ── Logs API (T021-T022) ────────────────────────────────────
+        if (parts[1] === 'logs') {
+          if (req.method === 'GET' && parts[2] === 'stats') {
+            const stats = await getLogStats(projectPath);
+            json(res, 200, stats);
             return;
           }
-          if (req.method === 'GET' && parts[2] === 'boilerplates') {
-            const bpPath = join(projectPath, '.brewnet-boilerplate.json');
-            logger.info('admin-server', `[GET /api/apps/boilerplates] projectPath=${projectPath} bpPath=${bpPath} exists=${existsSync(bpPath)}`);
-            if (existsSync(bpPath)) {
-              const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-              const metas = Array.isArray(raw) ? raw : [raw];
-              logger.info('admin-server', `[GET /api/apps/boilerplates] returning ${metas.length} boilerplate(s)`);
-              json(res, 200, { boilerplates: metas });
-            } else {
-              logger.warn('admin-server', `[GET /api/apps/boilerplates] file not found at ${bpPath}`);
-              json(res, 200, { boilerplates: [] });
-            }
-            return;
-          }
-          if (req.method === 'POST' && parts[2] === 'create') {
-            const opts = JSON.parse(body) as CreateAppOptions;
-            const jobId = await createApp(opts);
-            json(res, 202, { jobId });
-            return;
-          }
-          if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
-            const job = getJobStatus(parts[3]);
-            if (!job) { json(res, 404, { error: 'Job not found' }); return; }
-            json(res, 200, job as unknown as Record<string, unknown>);
-            return;
-          }
-          if (req.method === 'POST' && parts[3] === 'start') {
-            await startApp(decodeURIComponent(parts[2] ?? ''));
-            json(res, 200, { success: true });
-            return;
-          }
-          if (req.method === 'POST' && parts[3] === 'stop') {
-            await stopApp(decodeURIComponent(parts[2] ?? ''));
-            json(res, 200, { success: true });
-            return;
-          }
-          if (req.method === 'DELETE' && parts[2]) {
-            await appRemove(parts[2]);
-            json(res, 200, { success: true });
-            return;
-          }
-        }
+          if (req.method === 'GET') {
+            const qUrl = new URL(url, 'http://localhost');
+            const sources = qUrl.searchParams.get('source');
+            const levels = qUrl.searchParams.get('level');
+            const services = qUrl.searchParams.get('service');
+            const since = qUrl.searchParams.get('since') ?? undefined;
+            const until = qUrl.searchParams.get('until') ?? undefined;
+            const search = qUrl.searchParams.get('search') ?? undefined;
+            const limit = parseInt(qUrl.searchParams.get('limit') ?? '100', 10);
+            const offset = parseInt(qUrl.searchParams.get('offset') ?? '0', 10);
 
-        // ── Deploy history & Git repos ──────────────────────────────
-        if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
-          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
-          const appFilter = reqUrl.searchParams.get('app') ?? undefined;
-          const entries = getDeployHistory(appFilter);
-          json(res, 200, { history: entries });
-          return;
-        }
-
-        if (parts[1] === 'git' && parts[2] === 'repos' && req.method === 'GET') {
-          try {
-            const repos = await listGiteaRepos();
-            json(res, 200, { repos });
-          } catch (err) {
-            json(res, 502, { success: false, error: String(err) });
+            const result = await queryLogs(
+              {
+                sources: sources ? [sources as LogSource] : undefined,
+                levels: levels ? [levels as UnifiedLogLevel] : undefined,
+                services: services ? [services] : undefined,
+                since,
+                until,
+                search,
+                limit: isNaN(limit) ? 100 : limit,
+                offset: isNaN(offset) ? 0 : offset,
+              },
+              projectPath,
+            );
+            json(res, 200, result);
+            return;
           }
-          return;
         }
 
         // ── Domain API (T031-T036) ──────────────────────────────────
         if (parts[1] === 'domain') {
+          // Auth check for domain endpoints
           if (!checkAdminAuth(req, res, wizardState)) return;
 
           if (req.method === 'GET' && parts[2] === 'list') {

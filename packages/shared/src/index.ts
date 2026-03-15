@@ -67,6 +67,16 @@ export type {
   GeneratedConfig,
 } from './types/errors.js';
 
+export type {
+  // Centralized logging types
+  LogSource,
+  UnifiedLogLevel,
+  UnifiedLogEntry,
+  LogQuery,
+  LogQueryResult,
+  LogStats,
+} from './types/logging.js';
+
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
 export {
@@ -194,4 +204,12 @@ export {
   DOCKER_START_TIMEOUT_MS,
   SSL_ISSUANCE_TIMEOUT_MS,
   DNS_PROPAGATION_TIMEOUT_MS,
+  // Logging
+  DOCKER_LOG_MAX_SIZE,
+  DOCKER_LOG_MAX_FILES,
+  CLI_LOG_RETENTION_DAYS,
+  ACCESS_LOG_MAX_BYTES,
+  LOG_QUERY_DEFAULT_LIMIT,
+  LOG_QUERY_MAX_LIMIT,
+  LOG_POLL_INTERVAL_MS,
 } from './utils/constants.js';
