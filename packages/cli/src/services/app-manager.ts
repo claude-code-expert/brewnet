@@ -289,8 +289,59 @@ async function _createModeB(
   });
 }
 
-// Stub implementation for Mode C — completed in Task 7
-async function _createModeC(..._: unknown[]): Promise<void> { throw new Error('Mode C: not yet implemented'); }
+async function _createModeC(
+  job: AppJob,
+  opts: CreateAppOptions,
+  ctx: AppContext,
+  gitea: GiteaClient,
+  appsJson: string,
+): Promise<void> {
+  const { cloneStack, generateEnv, reinitGit } = await import('./boilerplate-manager.js');
+  const { resolveStackId } = await import('../config/frameworks.js');
+
+  // resolveStackId can return null for unknown combos — fail fast
+  const stackId = resolveStackId(opts.language ?? 'nodejs', opts.frameworkId ?? 'express');
+  if (!stackId) throw new Error(`Unknown stack: ${opts.language}/${opts.frameworkId}`);
+  const port = opts.port ?? 8080;
+  const appDir = join(ctx.projectPath, 'apps', opts.appName);
+
+  setStep(job, 0, 'running');
+  await cloneStack(stackId, appDir);
+  generateEnv(appDir, stackId, 'sqlite3', { hostPort: port });
+  await reinitGit(appDir);
+  setStep(job, 0, 'done');
+
+  setStep(job, 1, 'running');
+  const cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
+  setStep(job, 1, 'done');
+
+  setStep(job, 2, 'running');
+  const authedUrl = gitea.authedCloneUrl(cloneUrl);
+  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
+  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
+  setStep(job, 2, 'done');
+
+  setStep(job, 3, 'running');
+  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  setStep(job, 3, 'done');
+
+  setStep(job, 4, 'running');
+  await _pollHealth(`http://127.0.0.1:${port}/health`, 120_000);
+  setStep(job, 4, 'done');
+
+  addApp(appsJson, {
+    name: opts.appName,
+    mode: 'new-project',
+    stackId,
+    appDir,
+    lang: opts.language,
+    framework: opts.frameworkId,
+    port,
+    giteaRepoUrl: `http://localhost:${ctx.giteaPort}/${ctx.giteaUser}/${opts.appName}`,
+    status: 'running',
+    createdAt: new Date().toISOString(),
+  });
+}
 
 export async function startApp(appName: string): Promise<void> {
   const appsJson = resolveAppsJsonPath();

@@ -85,6 +85,13 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-mana
   generateEnv: mockGenerateEnv,
 }));
 
+// Mock frameworks.ts (resolveStackId) — must be before await import(app-manager.js)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockResolveStackId = jest.fn<(...args: any[]) => string | null>(() => 'go-gin');
+jest.unstable_mockModule('../../../../packages/cli/src/config/frameworks.js', () => ({
+  resolveStackId: mockResolveStackId,
+}));
+
 // --------------------------------------------------------------------------
 // Imports (after mocks)
 // --------------------------------------------------------------------------
@@ -248,5 +255,59 @@ describe('createApp — mode B (git-url)', () => {
       (c) => (c[1] as string[])?.includes('clone'),
     );
     expect(cloneCalls.length).toBeGreaterThan(0);
+  });
+});
+
+describe('createApp — mode C (new project)', () => {
+  it('clones boilerplate, setups gitea, starts containers', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+    mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/new-app.git');
+    mockRepoExists.mockResolvedValue(false);
+    mockCloneStack.mockResolvedValue(undefined);
+    mockGenerateEnv.mockReturnValue(undefined);
+    mockReinitGit.mockResolvedValue(undefined);
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+
+    const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const jobId = await createApp({
+      mode: 'new-project',
+      appName: 'new-app',
+      language: 'go',
+      frameworkId: 'gin',
+      port: 8080,
+    });
+    // Poll until background job settles (max 1 s)
+    for (let i = 0; i < 50; i++) {
+      const j = getJobStatus(jobId);
+      if (j && j.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(mockCloneStack).toHaveBeenCalledWith('go-gin', expect.stringContaining('new-app'));
+  });
+});
+
+describe('startApp / stopApp', () => {
+  it('runs docker compose up and updates status', async () => {
+    mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'stopped' }]);
+    mockExeca.mockResolvedValue({});
+    const { startApp } = await import('../../../../packages/cli/src/services/app-manager.js');
+    await startApp('my-app');
+    expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'up', '-d'], expect.objectContaining({ cwd: '/dir' }));
+    expect(mockUpdateApp).toHaveBeenCalledWith(expect.any(String), 'my-app', { status: 'running' });
+  });
+
+  it('runs docker compose down and updates status', async () => {
+    mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'running' }]);
+    mockExeca.mockResolvedValue({});
+    const { stopApp } = await import('../../../../packages/cli/src/services/app-manager.js');
+    await stopApp('my-app');
+    expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'down'], expect.objectContaining({ cwd: '/dir' }));
+    expect(mockUpdateApp).toHaveBeenCalledWith(expect.any(String), 'my-app', { status: 'stopped' });
   });
 });
