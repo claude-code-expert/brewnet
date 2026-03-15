@@ -657,7 +657,7 @@ function fetchLogs(){
       var ts=e.timestamp.replace('T',' ').replace(/\\.\\d+Z$/,'').replace('Z','');
       var srcCls='log-src-'+(e.source||'service');
       var lvlCls='log-lvl-'+(e.level||'info');
-      html+='<tr><td style="width:155px">'+ts+'</td><td class="'+srcCls+'" style="width:65px">'+(e.source||'').toUpperCase()+'</td><td class="'+lvlCls+'" style="width:50px">'+(e.level||'').toUpperCase()+'</td><td style="width:90px">'+(e.service||'')+'</td><td>'+escapeHtml(e.message)+'</td></tr>';
+      html+='<tr><td style="width:155px">'+escapeHtml(ts)+'</td><td class="'+srcCls+'" style="width:65px">'+escapeHtml((e.source||'').toUpperCase())+'</td><td class="'+lvlCls+'" style="width:50px">'+escapeHtml((e.level||'').toUpperCase())+'</td><td style="width:90px">'+escapeHtml(e.service||'')+'</td><td>'+escapeHtml(e.message)+'</td></tr>';
     });
     if(d.hasMore)html+='<tr><td colspan="5" style="color:#8b949e;font-style:italic">… '+(d.total-d.entries.length)+' more entries</td></tr>';
     body.innerHTML=html;
@@ -666,7 +666,7 @@ function fetchLogs(){
     var currentVal=svcFilter.value;
     var services=new Set();d.entries.forEach(function(e){if(e.service)services.add(e.service);});
     var opts='<option value="">All Services</option>';
-    Array.from(services).sort().forEach(function(s){opts+='<option value="'+s+'"'+(s===currentVal?' selected':'')+'>'+s+'</option>';});
+    Array.from(services).sort().forEach(function(s){var es=escapeHtml(s);opts+='<option value="'+es+'"'+(s===currentVal?' selected':'')+'>'+es+'</option>';});
     svcFilter.innerHTML=opts;
   }).catch(function(){
     document.getElementById('logs-body').innerHTML='<tr><td colspan="5" style="color:#f85149;padding:12px">Failed to fetch logs.</td></tr>';

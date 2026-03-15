@@ -269,37 +269,56 @@ export async function readServiceLogs(
 
       try {
         const logBuffer = (await container.logs(logOpts)) as Buffer;
-        const logStr = typeof logBuffer === 'string' ? logBuffer : logBuffer.toString('utf-8');
 
-        // Parse Docker multiplexed log format
-        // When timestamps are enabled, format is: YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ <message>
-        for (const line of logStr.split('\n')) {
-          if (!line.trim()) continue;
+        // Demultiplex Docker's 8-byte header format:
+        // [stream_type(1), 0, 0, 0, size(4 big-endian)] + payload
+        const frames: { stream: number; text: string }[] = [];
+        if (Buffer.isBuffer(logBuffer)) {
+          let pos = 0;
+          while (pos + 8 <= logBuffer.length) {
+            const streamType = logBuffer[pos];
+            const payloadSize = logBuffer.readUInt32BE(pos + 4);
+            pos += 8;
+            if (pos + payloadSize > logBuffer.length) break;
+            const payload = logBuffer.subarray(pos, pos + payloadSize).toString('utf-8');
+            frames.push({ stream: streamType, text: payload });
+            pos += payloadSize;
+          }
+        } else {
+          // Fallback if logs() returns a plain string (no multiplexing)
+          frames.push({ stream: 1, text: String(logBuffer) });
+        }
 
-          // Docker timestamp format at the start of each line
-          const tsMatch = line.match(
-            /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(.*)/,
-          );
-          if (!tsMatch) continue;
+        for (const frame of frames) {
+          const level: UnifiedLogLevel = frame.stream === 2 ? 'error' : 'info';
+          for (const line of frame.text.split('\n')) {
+            if (!line.trim()) continue;
 
-          const timestamp = tsMatch[1].endsWith('Z') ? tsMatch[1] : tsMatch[1] + 'Z';
-          const message = tsMatch[2];
+            // Docker timestamp format at the start of each line
+            const tsMatch = line.match(
+              /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(.*)/,
+            );
+            if (!tsMatch) continue;
 
-          if (opts?.since && timestamp < opts.since) continue;
+            const timestamp = tsMatch[1].endsWith('Z') ? tsMatch[1] : tsMatch[1] + 'Z';
+            const message = tsMatch[2];
 
-          // Strip project prefix from container name for clean service name
-          const serviceName = containerName
-            .replace(new RegExp(`^${projectName}[-_]`), '')
-            .replace(/-\d+$/, '');
+            if (opts?.since && timestamp < opts.since) continue;
 
-          entries.push({
-            timestamp,
-            source: 'service',
-            level: 'info',
-            service: serviceName,
-            message,
-            metadata: { containerId: containerInfo.Id.slice(0, 12) },
-          });
+            // Strip project prefix from container name for clean service name
+            const serviceName = containerName
+              .replace(new RegExp(`^${projectName}[-_]`), '')
+              .replace(/-\d+$/, '');
+
+            entries.push({
+              timestamp,
+              source: 'service',
+              level,
+              service: serviceName,
+              message,
+              metadata: { containerId: containerInfo.Id.slice(0, 12) },
+            });
+          }
         }
       } catch {
         // Container may have stopped between list and logs call
@@ -322,14 +341,6 @@ export async function queryLogs(
   projectPath: string,
 ): Promise<LogQueryResult> {
   const logsDir = join(homedir(), '.brewnet', 'logs');
-
-  // Run log rotation before reading (non-blocking, best-effort)
-  try {
-    runRotation(logsDir, projectPath);
-  } catch {
-    // Rotation failure should never block log queries
-  }
-
   const since = query.since;
 
   // Determine which sources to read
@@ -353,6 +364,13 @@ export async function queryLogs(
 
   const results = await Promise.all(readers);
   let entries = results.flat();
+
+  // Run log rotation after reading (best-effort, never blocks queries)
+  try {
+    runRotation(logsDir, projectPath);
+  } catch {
+    // Rotation failure should never block log queries
+  }
 
   // Apply filters
   if (query.levels?.length) {
@@ -386,25 +404,34 @@ export async function queryLogs(
 
 /**
  * Compute aggregated statistics from all log sources.
+ * Reads all entries (bypassing pagination) to produce accurate counts.
  */
 export async function getLogStats(projectPath: string): Promise<LogStats> {
-  const result = await queryLogs(
-    { limit: LOG_QUERY_MAX_LIMIT },
-    projectPath,
-  );
+  const logsDir = join(homedir(), '.brewnet', 'logs');
+
+  // Read all sources directly (no pagination) for accurate stats
+  const [cliEntries, tunnelEntries, accessEntries, serviceEntries] = await Promise.all([
+    Promise.resolve(readCliLogs(logsDir)),
+    Promise.resolve(readTunnelLogs(logsDir)),
+    Promise.resolve(readAccessLogs(projectPath)),
+    readServiceLogs(projectPath, {}),
+  ]);
+  const allEntries = [...cliEntries, ...tunnelEntries, ...accessEntries, ...serviceEntries];
 
   const bySource: Record<LogSource, number> = { cli: 0, tunnel: 0, access: 0, service: 0 };
   const byLevel: Record<string, number> = { info: 0, warn: 0, error: 0, debug: 0 };
 
-  for (const entry of result.entries) {
+  for (const entry of allEntries) {
     bySource[entry.source]++;
     byLevel[entry.level] = (byLevel[entry.level] ?? 0) + 1;
   }
 
-  const recentErrors = result.entries.filter((e) => e.level === 'error').slice(0, 10);
+  // Sort descending to pick recent errors
+  allEntries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const recentErrors = allEntries.filter((e) => e.level === 'error').slice(0, 10);
 
   return {
-    total: result.total,
+    total: allEntries.length,
     bySource,
     byLevel,
     recentErrors,
