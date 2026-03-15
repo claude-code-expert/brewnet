@@ -321,6 +321,66 @@ describe('generateEnv — custom DB credentials (opts)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Integrated mode (wizard) — DB_HOST and DATABASE_URL use 'postgresql'
+// ---------------------------------------------------------------------------
+
+describe('generateEnv — integrated mode (wizard)', () => {
+  let dir: string;
+  let nodejsDir: string;
+
+  beforeEach(() => {
+    dir = createTempProject(STANDARD_ENV_EXAMPLE);
+    nodejsDir = createTempProject(NODEJS_ENV_EXAMPLE);
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(nodejsDir, { recursive: true, force: true });
+  });
+
+  it('overrides DB_HOST to postgresql when integrated and driver is postgres', () => {
+    generateEnv(dir, 'go-gin', 'postgres', { integrated: true });
+    const env = readFileSync(join(dir, '.env'), 'utf-8');
+    expect(env).toMatch(/^DB_HOST=postgresql$/m);
+  });
+
+  it('keeps DB_HOST as postgres when NOT integrated', () => {
+    generateEnv(dir, 'go-gin', 'postgres');
+    const env = readFileSync(join(dir, '.env'), 'utf-8');
+    expect(env).toMatch(/^DB_HOST=postgres$/m);
+  });
+
+  it('does not override DB_HOST for non-postgres drivers', () => {
+    generateEnv(dir, 'go-gin', 'mysql', { integrated: true });
+    const env = readFileSync(join(dir, '.env'), 'utf-8');
+    expect(env).toMatch(/^DB_HOST=postgres$/m); // unchanged from .env.example default
+  });
+
+  it('sets DATABASE_URL with postgresql hostname when integrated (nodejs)', () => {
+    generateEnv(nodejsDir, 'nodejs-express', 'postgres', { integrated: true });
+    const env = readFileSync(join(nodejsDir, '.env'), 'utf-8');
+    expect(env).toMatch(/^DATABASE_URL=postgresql:\/\/brewnet:.+@postgresql:5432\/brewnet_db$/m);
+  });
+
+  it('sets DATABASE_URL with postgres hostname when NOT integrated (nodejs)', () => {
+    generateEnv(nodejsDir, 'nodejs-express', 'postgres');
+    const env = readFileSync(join(nodejsDir, '.env'), 'utf-8');
+    expect(env).toMatch(/^DATABASE_URL=postgresql:\/\/brewnet:.+@postgres:5432\/brewnet_db$/m);
+  });
+
+  it('embeds custom credentials with postgresql hostname when integrated', () => {
+    generateEnv(nodejsDir, 'nodejs-express', 'postgres', {
+      dbUser: 'wizard_user',
+      dbPassword: 'wizard_pass',
+      dbName: 'wizard_db',
+      integrated: true,
+    });
+    const env = readFileSync(join(nodejsDir, '.env'), 'utf-8');
+    expect(env).toMatch(/^DATABASE_URL=postgresql:\/\/wizard_user:wizard_pass@postgresql:5432\/wizard_db$/m);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // hostPort override (auto port selection)
 // ---------------------------------------------------------------------------
 

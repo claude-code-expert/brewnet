@@ -323,7 +323,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       // Step 2: web server only, skip all optional components
       inputQueue = [];
       confirmQueue = [false, false, false, false]; // fileServer=false, db=false, media=false, ssh=false
-      selectQueue = ['traefik'];
+      selectQueue = ['configure', 'traefik'];
 
       state = await runServerComponentsStep(state);
       saveState(state);
@@ -525,7 +525,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       // Step 2: Server Components (fileServer=false, db=postgresql+17+redis, adminUI=false, media=false, ssh=false)
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['traefik', 'postgresql', '17', 'redis'];
+      selectQueue = ['configure', 'traefik', 'postgresql', '17', 'redis'];
 
       state = await runServerComponentsStep(state);
       saveState(state);
@@ -765,7 +765,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       // Step 2: fileServer=false, db=postgresql+17+redis, adminUI=false, media=false, ssh=false
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['traefik', 'postgresql', '17', 'redis'];
+      selectQueue = ['configure', 'traefik', 'postgresql', '17', 'redis'];
       state = await runServerComponentsStep(state);
       saveState(state);
 

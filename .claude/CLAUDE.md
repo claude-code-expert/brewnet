@@ -1,5 +1,16 @@
 # CLAUDE.md - Brewnet Project Context
 
+---
+## ⚠️ MANDATORY — 모든 응답 전 반드시 확인
+
+1. **응답 형식**: 모든 작업 완료 시 반드시 Korean summary로 마무리
+   - 무엇을 변경했는지
+   - 왜 그렇게 했는지
+   - 주의할 점이 있는지
+
+2. **조사 원칙**: 경로, 설정값, 코드 동작에 대해 답하기 전 반드시 소스 코드를 먼저 읽을 것. 추측으로 답변 금지.
+
+---
 
 ## Project Overview
 
@@ -11,6 +22,11 @@ A self-hosted home server management platform that provides an interactive CLI t
 - **Licensor**: Brewnet (codevillain)
 - **Target Platforms**: macOS (darwin), Linux (Ubuntu/Debian, CentOS/RHEL)
 
+
+## ⛔ NEVER Rules
+
+- Jellyfin 초기 설정 URL은 반드시 `http://<host>:8096/web/#/wizard/start`를 사용. `#/home`은 절대 사용하지 말 것.
+- 추측으로 경로, 설정값, URL을 답변하지 말 것 — 반드시 소스 코드를 먼저 읽을 것.
 
 ## Investigation Rules
 

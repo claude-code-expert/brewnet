@@ -162,7 +162,7 @@ export class QuickTunnelManager {
             if (match) {
               clearTimeout(timer);
               stream.removeListener('data', onData);
-              stream.destroy();
+              (stream as import('node:stream').Readable).destroy();
               // Use capture group 1 (domain only) to build a clean https URL.
               // Avoid using match[0] with replace(/\/.*$/) which incorrectly
               // strips the // from the https:// protocol prefix.

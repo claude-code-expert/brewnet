@@ -18,8 +18,9 @@
  * @module commands/init
  */
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { homedir } from 'node:os';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { runAdminSetupStep } from '../wizard/steps/admin-setup.js';
@@ -42,8 +43,70 @@ import {
   createState,
   saveState,
 } from '../wizard/state.js';
+import { resolveStackId } from '../config/frameworks.js';
 import type { WizardState } from '@brewnet/shared';
 import { generatePassword } from '../utils/password.js';
+
+// ---------------------------------------------------------------------------
+// Boilerplate stub writer
+// ---------------------------------------------------------------------------
+
+/**
+ * Write an initial .brewnet-boilerplate.json stub after Step 3 completes.
+ * Contains stack identity info (stackId, lang, frameworkId, DB config) but
+ * no URLs yet — those are filled in by generate.ts 7b after containers start.
+ *
+ * This ensures the admin panel always has BOILERPLATE_STACKS populated from
+ * the moment Dev Stack is configured, regardless of whether generate has run.
+ */
+function writeBoilerplateStub(state: WizardState): void {
+  if (!state.boilerplate.generate || state.devStack.languages.length === 0) return;
+
+  const raw = state.projectPath;
+  if (!raw) return;
+  const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
+
+  try {
+    mkdirSync(projectPath, { recursive: true });
+
+    const dbPrimary = state.servers.dbServer.primary;
+    const dbDriver = dbPrimary === 'postgresql' ? 'postgres'
+      : dbPrimary === 'mysql' ? 'mysql'
+      : 'sqlite3';
+
+    const stubs = state.devStack.languages.flatMap((lang) => {
+      const frameworkId = state.devStack.frameworks[lang] ?? '';
+      const stackId = resolveStackId(lang, frameworkId);
+      if (!stackId) return [];
+      return [{
+        stackId,
+        appDir: join(projectPath, stackId),
+        backendUrl: '',
+        frontendUrl: '',
+        externalUrl: '',
+        frontendExternalUrl: '',
+        isUnified: stackId.startsWith('nodejs-nextjs'),
+        lang,
+        frameworkId,
+        dbDriver,
+        dbUser: state.servers.dbServer.dbUser || 'brewnet',
+        dbName: state.servers.dbServer.dbName || 'brewnet_db',
+        gitBranch: `stack/${stackId}`,
+        status: 'pending',
+      }];
+    });
+
+    if (stubs.length > 0) {
+      writeFileSync(
+        join(projectPath, '.brewnet-boilerplate.json'),
+        JSON.stringify(stubs, null, 2),
+        'utf-8',
+      );
+    }
+  } catch {
+    // Non-critical — generate.ts 7b will write the full file later
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Command Registration
@@ -84,15 +147,16 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
   // -----------------------------------------------------------------------
   console.log();
   console.log(chalk.cyan([
-    '   ____                                _   ',
-    '  | __ ) _ __ _____      ___ __   ___| |_ ',
-    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|',
-    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_ ',
-    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|',
+    '   ____                                _        ) ) )    ',
+    '  | __ ) _ __ _____      ___ __   ___| |_     ( ( (     ',
+    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|  __________',
+    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_  |          |]',
+    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|  \\________/ ',
   ].join('\n')));
   console.log();
+  console.log(chalk.hex('#c8a96e').bold('  ☕ Set up your entire home server in the time it takes to brew a coffee.'));
   console.log(chalk.bold('  Brewnet') + chalk.dim(' — One command. Your entire server stack, on tap. Just brew it!'));
-  console.log(chalk.dim('  v1.0.1  •  MIT License'));
+  console.log(chalk.dim('  v1.0.1  •  Apache 2.0 License'));
   console.log(chalk.dim('  https://brewnet.dev  •  https://github.com/claude-code-expert/brewnet'));
   console.log(chalk.dim('  brewnet.dev@gmail.com'));
   console.log();
@@ -260,6 +324,10 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
 
           // Save state after this step
           saveState(state);
+
+          // Write stub .brewnet-boilerplate.json immediately so admin panel
+          // has BOILERPLATE_STACKS populated before generate.ts runs
+          writeBoilerplateStub(state);
 
           nav.goForward();
           break;

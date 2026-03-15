@@ -1,7 +1,8 @@
 ---
 name: troubleshooting
-description: Record a troubleshooting case to the troubleshooting/ folder. Use when the user reports an error, asks to document a solved issue, or says phrases like "트러블슈팅 기록", "에러 기록", "이슈 문서화", "/troubleshooting".
+description: Record error solutions to troubleshooting/ folder
 user-invocable: true
+disable-model-invocation: true
 handoffs:
   - After recording, suggest running /changelog to include the fix in the session changelog
 ---
@@ -244,4 +245,3 @@ troubleshooting/README.md 인덱스도 업데이트되었습니다.
 ## Related Skills
 
 - `/changelog`: 세션 변경사항 전체 기록
-- `/speckit.implement`: 구현 중 발생한 이슈 기록

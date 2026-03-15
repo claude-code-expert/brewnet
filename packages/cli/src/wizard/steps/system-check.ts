@@ -363,6 +363,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     const spinner = ora({ text: 'Running system checks...', indent: 2 }).start();
     const { results, hasCriticalFailure, warnings } = await runAllChecks();
     spinner.stop();
+    console.log(); // reset cursor to column 0 after ora indent:2 spinner
 
     // -----------------------------------------------------------------------
     // 4. Display results table
