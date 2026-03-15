@@ -149,9 +149,9 @@ async function loadApps(){
       '<td>'+badge(a.status)+'</td>'+
       '<td>'+(localUrl?'<a href="'+localUrl+'" target="_blank" class="app-link">'+localUrl+'</a>':'\u2014')+'</td>'+
       '<td>'+
-        (a.status==='running'?'<button class="btn btn-stop" onclick="stopApp(\''+escHtml(a.name)+'\')">Stop</button>':'')+
-        (a.status==='stopped'?'<button class="btn btn-start" onclick="startApp(\''+escHtml(a.name)+'\')">Start</button>':'')+
-        '<button class="btn btn-remove" onclick="removeApp(\''+escHtml(a.name)+'\')">Remove</button>'+
+        (a.status==='running'?'<button class="btn btn-stop" onclick="stopApp(\\''+escHtml(a.name)+'\\')">Stop</button>':'')+
+        (a.status==='stopped'?'<button class="btn btn-start" onclick="startApp(\\''+escHtml(a.name)+'\\')">Start</button>':'')+
+        '<button class="btn btn-remove" onclick="removeApp(\\''+escHtml(a.name)+'\\')">Remove</button>'+
       '</td>'+
     '</tr>';
   }).join('');
@@ -206,9 +206,9 @@ function buildNewAppModalHtml(){
     '</div>'+
     '<div class="modal-body">'+
       '<div class="mode-tabs">'+
-        '<button class="mode-tab active" id="tab-boilerplate" onclick="switchMode(\'boilerplate\')">Installed Boilerplate</button>'+
-        '<button class="mode-tab" id="tab-git-url" onclick="switchMode(\'git-url\')">Git URL</button>'+
-        '<button class="mode-tab" id="tab-new-project" onclick="switchMode(\'new-project\')">New Project</button>'+
+        '<button class="mode-tab active" id="tab-boilerplate" onclick="switchMode(\\'boilerplate\\')">Installed Boilerplate</button>'+
+        '<button class="mode-tab" id="tab-git-url" onclick="switchMode(\\'git-url\\')">Git URL</button>'+
+        '<button class="mode-tab" id="tab-new-project" onclick="switchMode(\\'new-project\\')">New Project</button>'+
       '</div>'+
       '<div id="mode-fields"></div>'+
       '<div class="form-actions">'+
@@ -253,7 +253,7 @@ function switchMode(mode){
       '</div>';
   } else {
     var langCards=Object.keys(LANGUAGE_MAP).map(function(lang){
-      return '<div class="lang-card" onclick="selectLang(\''+lang+'\')" id="lang-'+lang.replace(/[^a-z]/gi,'-')+'">'+lang+'</div>';
+      return '<div class="lang-card" onclick="selectLang(\\''+lang+'\\')" id="lang-'+lang.replace(/[^a-z]/gi,'-')+'">'+lang+'</div>';
     }).join('');
     fields.innerHTML=
       '<div class="form-group"><label class="form-label">Language</label><div class="lang-grid" id="lang-grid">'+langCards+'</div></div>'+

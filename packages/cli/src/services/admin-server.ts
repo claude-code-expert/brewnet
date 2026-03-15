@@ -905,15 +905,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             json(res, 200, { job });
             return;
           }
-          if (req.method === 'POST' && parts[2] === 'start') {
-            const { name } = JSON.parse(body) as { name: string };
-            await startApp(name);
+          if (req.method === 'POST' && parts[3] === 'start') {
+            await startApp(decodeURIComponent(parts[2] ?? ''));
             json(res, 200, { success: true });
             return;
           }
-          if (req.method === 'POST' && parts[2] === 'stop') {
-            const { name } = JSON.parse(body) as { name: string };
-            await stopApp(name);
+          if (req.method === 'POST' && parts[3] === 'stop') {
+            await stopApp(decodeURIComponent(parts[2] ?? ''));
             json(res, 200, { success: true });
             return;
           }
