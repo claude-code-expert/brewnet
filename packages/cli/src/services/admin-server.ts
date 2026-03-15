@@ -61,6 +61,7 @@ interface DashboardConfig {
   domainProvider: string;
   quickTunnelUrl: string;
   zoneName: string;
+  boilerplateStacks: unknown[];
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +193,7 @@ var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
 var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
 var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName })};
 var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
+var BOILERPLATE_STACKS = ${JSON.stringify(config.boilerplateStacks)};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
 function getExternalUrl(id,port,project){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
@@ -251,6 +253,28 @@ function showServiceModal(name,localUrl,externalUrl){
 }
 function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o)o.remove();document.removeEventListener('keydown',handleModalEsc);}
 function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
+function showBoilerplateModal(idx){
+  var stack=BOILERPLATE_STACKS[idx];if(!stack)return;
+  var ov=document.createElement('div');ov.className='modal-overlay';
+  ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  var endpoints=(stack.endpoints||[]).map(function(ep){return '<div class="modal-url"><span class="modal-url-label">'+escapeHtml(ep.label||ep.url)+':</span> <a href="'+escapeHtml(ep.url)+'" target="_blank" class="modal-url-a">'+escapeHtml(ep.url)+'</a></div>';}).join('');
+  var credHtml='';
+  if(stack.dbUser){credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(stack.dbUser)+'</span></div>';}
+  if(stack.dbName){credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(stack.dbName)+'</span></div>';}
+  ov.innerHTML='<div class="modal-box">'+
+    '<div class="modal-titlebar">'+
+      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
+      '<span class="modal-title">'+escapeHtml(stack.stackId||'boilerplate')+' \\u2014 app info</span>'+
+      '<button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">\\u00d7</button>'+
+    '</div>'+
+    '<div class="modal-body">'+
+      (stack.branch?'<div class="modal-cred"><span class="modal-cred-l">Branch:</span> <span class="modal-cred-v">'+escapeHtml(stack.branch)+'</span></div>':'')+
+      credHtml+
+      (endpoints?'<div class="modal-sh">$ endpoints</div>'+endpoints:'')+
+      (stack.readme?'<div class="modal-sh">$ readme</div><div class="modal-url"><a href="'+escapeHtml(stack.readme)+'" target="_blank" class="modal-url-a">View README on GitHub</a></div>':'')+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
 const LOG_COL={info:'#58a6ff',ok:'#3fb950',warn:'#e3b341',error:'#f85149',dim:'#484f58'};
 const log=(msg,lv)=>{lv=lv||'info';const d=document.getElementById('log');const row=document.createElement('div');row.style.cssText='padding:1px 0;line-height:1.6';row.innerHTML='<span style="color:#30363d;user-select:none">'+new Date().toLocaleTimeString()+'</span> <span style="color:'+(LOG_COL[lv]||LOG_COL.info)+'">'+escapeHtml(String(msg))+'</span>';d.insertBefore(row,d.firstChild);while(d.children.length>80)d.removeChild(d.lastChild);};
 const badge=(s)=>{const c=s==='running'?'running':s==='stopped'?'stopped':'error';return \`<span class="badge \${c}">\${s}</span>\`;}
@@ -660,6 +684,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     domainProvider: wizardState?.domain?.provider ?? 'local',
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
+    boilerplateStacks: [],
   };
 
   // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
@@ -740,6 +765,25 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     }
   }
 
+  /**
+   * Lazy-load boilerplate metadata from .brewnet-boilerplate.json.
+   * Re-checks on every GET / until the file appears.
+   */
+  let boilerplateLoaded = false;
+  function refreshBoilerplateMeta(): void {
+    if (boilerplateLoaded) return;
+    const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+    if (!existsSync(bpPath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+      dashConfig.boilerplateStacks = Array.isArray(raw) ? raw : [raw];
+      boilerplateLoaded = true;
+      dashboardHtml = generateDashboardHtml(dashConfig);
+    } catch {
+      // Non-critical — keep empty array
+    }
+  }
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const parts = url.split('?')[0].split('/').filter(Boolean);
@@ -779,6 +823,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
       await detectQuickTunnelUrl();
       await detectCredentials();
+      refreshBoilerplateMeta();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(dashboardHtml);
       return;
