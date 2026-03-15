@@ -23,6 +23,9 @@ import { SERVICE_DETAIL_MAP } from './status-page.js';
 import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import type { WizardState } from '@brewnet/shared';
+import { generateAppsPageHtml } from './apps-page.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove } from './app-manager.js';
+import type { CreateAppOptions } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
 // Types (per admin-api.md)
@@ -175,6 +178,7 @@ tr:hover td{background:#161b22}
     <div class="sub" id="subtitle">Loading...</div>
   </div>
   <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
+  <a href="/apps" style="margin-left:12px;color:#3fb950;font-size:12px;text-decoration:none;border:1px solid #3fb950;padding:2px 8px;border-radius:4px">🚀 App Deploy</a>
 </div>
 <div class="section-title">Services</div>
 <table id="svc-table">
@@ -421,10 +425,15 @@ async function handleGetServices(
       }
     }
 
-    const running = services.filter((s) => s.status === 'running').length;
+    // Deduplicate: if the main 'postgresql' service exists, hide the
+    // boilerplate's 'postgres' container to avoid duplicate dashboard entries.
+    const hasPostgresql = services.some((s) => s.id === 'postgresql');
+    const deduped = hasPostgresql ? services.filter((s) => s.id !== 'postgres') : services;
+
+    const running = deduped.filter((s) => s.status === 'running').length;
     json(res, 200, {
-      services,
-      summary: { total: services.length, running, stopped: services.length - running },
+      services: deduped,
+      summary: { total: deduped.length, running, stopped: deduped.length - running },
     });
   } catch (err) {
     json(res, 500, { success: false, error: String(err), code: 'BN001' });
@@ -433,7 +442,7 @@ async function handleGetServices(
 
 function inferType(id: string): string {
   if (['traefik', 'nginx', 'caddy'].includes(id)) return 'web';
-  if (['postgresql', 'mysql', 'redis', 'valkey', 'keydb'].includes(id)) return 'db';
+  if (['postgresql', 'postgres', 'mysql', 'redis', 'valkey', 'keydb'].includes(id)) return 'db';
   if (['nextcloud', 'minio', 'filebrowser'].includes(id)) return 'file';
   if (['jellyfin'].includes(id)) return 'media';
   if (['gitea'].includes(id)) return 'git';
@@ -775,6 +784,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       return;
     }
 
+    // Serve Apps page
+    if (req.method === 'GET' && (url === '/apps' || url === '/apps/')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(generateAppsPageHtml());
+      return;
+    }
+
     // --- API routing ---
     if (parts[0] === 'api') {
       try {
@@ -812,6 +828,54 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (parts[1] === 'backup') {
           await handleBackup(req, res, parts, body, projectPath);
           return;
+        }
+
+        if (parts[1] === 'apps') {
+          if (req.method === 'GET' && parts.length === 2) {
+            const apps = await listApps();
+            json(res, 200, { apps });
+            return;
+          }
+          if (req.method === 'GET' && parts[2] === 'boilerplates') {
+            const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+            if (existsSync(bpPath)) {
+              const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+              const metas = Array.isArray(raw) ? raw : [raw];
+              json(res, 200, { boilerplates: metas });
+            } else {
+              json(res, 200, { boilerplates: [] });
+            }
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'create') {
+            const opts = JSON.parse(body) as CreateAppOptions;
+            const jobId = await createApp(opts);
+            json(res, 202, { jobId });
+            return;
+          }
+          if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
+            const job = getJobStatus(parts[3]);
+            if (!job) { json(res, 404, { error: 'Job not found' }); return; }
+            json(res, 200, { job });
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'start') {
+            const { name } = JSON.parse(body) as { name: string };
+            await startApp(name);
+            json(res, 200, { success: true });
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'stop') {
+            const { name } = JSON.parse(body) as { name: string };
+            await stopApp(name);
+            json(res, 200, { success: true });
+            return;
+          }
+          if (req.method === 'DELETE' && parts[2]) {
+            await appRemove(parts[2]);
+            json(res, 200, { success: true });
+            return;
+          }
         }
 
         json(res, 404, { success: false, error: 'Not found' });
