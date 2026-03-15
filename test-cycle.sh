@@ -402,21 +402,58 @@ if [ "$INTERACTIVE" = true ]; then
   ok "Init 완료"
 else
   info "모드: non-interactive (프롬프트 없음, 자동 실행)"
-  sub "명령: brewnet init --config ${CONFIG_BACKUP} --non-interactive --no-open"
+  sub "명령: brewnet init --config ${CONFIG_BACKUP} --non-interactive --no-open (background)"
   echo ""
-  info "→ config 로드 → 패스워드 확인 → [Step 7/8 Generate & Start] 직행"
+
+  # Kill any existing admin server on the port — init will start a new one
+  EXISTING_ADMIN=$(lsof -ti :"$ADMIN_PORT" 2>/dev/null || true)
+  if [ -n "$EXISTING_ADMIN" ]; then
+    info "포트 ${ADMIN_PORT} 사용 중인 프로세스 종료 중... (PID: ${EXISTING_ADMIN})"
+    echo "$EXISTING_ADMIN" | xargs kill -9 2>/dev/null || true
+    sleep 1
+  fi
+
+  # brewnet init starts an admin HTTP server that never exits — run in background
+  INIT_LOG=$(mktemp /tmp/brewnet-init-XXXXXX.log)
+  info "Init 백그라운드 실행 시작 → 로그: ${INIT_LOG}"
+  "${BREWNET[@]}" init --config "$CONFIG_BACKUP" --non-interactive --no-open > "$INIT_LOG" 2>&1 &
+  INIT_PID=$!
+  info "Init PID: ${INIT_PID}"
   divider
 
-  set +e
-  run_streamed "${BREWNET[@]}" init --config "$CONFIG_BACKUP" --non-interactive --no-open
-  INIT_RC=$?
-  set -e
+  # Stream init log in background with colorizer
+  tail -f "$INIT_LOG" 2>/dev/null | while IFS= read -r line; do
+    colorize_line "$line"
+  done &
+  TAIL_PID=$!
 
-  if [ $INIT_RC -eq 0 ]; then
-    ok "Init 완료 (exit code: 0)"
+  # Wait for admin panel to come up — up to 5 minutes (60 × 5s)
+  info "Admin 패널 기동 대기 중 (최대 5분)..."
+  INIT_OK=false
+  for i in $(seq 1 60); do
+    sleep 5
+    if ! kill -0 "$INIT_PID" 2>/dev/null; then
+      fail "Init 프로세스 비정상 종료 (PID ${INIT_PID})"
+      break
+    fi
+    HTTP_CHK=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$ADMIN_PORT" 2>/dev/null || echo "000")
+    if [ "$HTTP_CHK" = "200" ]; then
+      ok "Admin 패널 기동 확인 → HTTP 200 (${i}번째 확인, $((i*5))초 경과)"
+      INIT_OK=true
+      break
+    fi
+    wait_ "Admin 패널 대기... HTTP ${HTTP_CHK} (${i}/60)"
+  done
+
+  kill "$TAIL_PID" 2>/dev/null || true
+
+  if [ "$INIT_OK" = true ]; then
+    ok "Init 완료 (Admin 패널 응답 확인됨)"
+    INIT_RC=0
   else
-    fail "Init 비정상 종료 (exit code: ${INIT_RC})"
-    echo -e "${DIM}  docker compose logs 또는 ~/brewnet/my-homeserver/logs/ 확인${NC}"
+    fail "Init 실패 또는 Admin 패널 기동 타임아웃 (5분)"
+    echo -e "${DIM}  Init 로그: ${INIT_LOG}${NC}"
+    INIT_RC=1
   fi
 fi
 
