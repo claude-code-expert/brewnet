@@ -40,11 +40,13 @@ const mockRepoExists = jest.fn<(...args: any[]) => Promise<boolean>>();
 const mockAuthedCloneUrl = jest.fn((url: string) => url.replace('http://', 'http://admin:pw@'));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockListRepos = jest.fn<(...args: any[]) => Promise<unknown[]>>();
+const mockPrepare = jest.fn<() => Promise<{ autoFixed: boolean; message: string }>>().mockResolvedValue({ autoFixed: false, message: 'token cached' });
 const MockGiteaClient = jest.fn().mockImplementation(() => ({
   createRepo: mockCreateRepo,
   repoExists: mockRepoExists,
   authedCloneUrl: mockAuthedCloneUrl,
   listRepos: mockListRepos,
+  prepare: mockPrepare,
 }));
 jest.unstable_mockModule('../../../../packages/cli/src/services/gitea-client.js', () => ({
   GiteaClient: MockGiteaClient,

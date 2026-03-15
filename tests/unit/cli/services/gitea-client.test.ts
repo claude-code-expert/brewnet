@@ -13,6 +13,7 @@ const mockWriteFileSync = jest.fn((p: unknown, data: unknown) => {
 });
 const mockChmodSync = jest.fn();
 const mockMkdirSync = jest.fn();
+const mockUnlinkSync = jest.fn((p: unknown) => { delete fsContent[p as string]; });
 
 jest.unstable_mockModule('node:fs', () => ({
   existsSync: mockExistsSync,
@@ -20,6 +21,7 @@ jest.unstable_mockModule('node:fs', () => ({
   writeFileSync: mockWriteFileSync,
   chmodSync: mockChmodSync,
   mkdirSync: mockMkdirSync,
+  unlinkSync: mockUnlinkSync,
 }));
 
 // Mock global fetch (Node.js 20+ has fetch as a global built-in — not via node:fetch)

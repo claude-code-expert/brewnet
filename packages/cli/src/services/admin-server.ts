@@ -27,7 +27,7 @@ import { verifyToken } from './cloudflare-client.js';
 import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { generateAppsPageHtml, generateAppDetailHtml } from './apps-page.js';
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, setupWebhook as appSetupWebhook, updateDeploySettings, getDeploySettings, getAppDir } from './app-manager.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, updateDeploySettings, getDeploySettings, getAppDir } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 
@@ -986,8 +986,8 @@ ${rows}
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
     tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
-    boilerplateHtml: '',
-    boilerplateStacksJson: '[]',
+    boilerplateHtml: boilerplateHtml,
+    boilerplateStacksJson: boilerplateStacksJson,
     domainConnectionsJson: JSON.stringify(wizardState?.domainConnections ?? []),
   };
 
@@ -1128,6 +1128,7 @@ ${rows}
     if ((req.method === 'GET' && url === '/') || url === '/index.html') {
       await detectQuickTunnelUrl();
       await detectCredentials();
+      refreshBoilerplateMeta();
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(dashboardHtml);
       return;
