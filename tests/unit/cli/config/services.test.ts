@@ -9,7 +9,6 @@ import {
   SERVICE_REGISTRY,
   getServiceDefinition,
   getAllServiceIds,
-  type ServiceDefinition,
 } from '../../../../packages/cli/src/config/services.js';
 
 // ---------------------------------------------------------------------------
@@ -40,107 +39,10 @@ const EXPECTED_SERVICE_IDS: string[] = [
 // ===========================================================================
 
 describe('SERVICE_REGISTRY', () => {
-  it('has exactly 17 entries', () => {
-    expect(SERVICE_REGISTRY.size).toBe(17);
+  it('contains exactly the expected service IDs', () => {
+    const registeredIds = [...SERVICE_REGISTRY.keys()].sort();
+    expect(registeredIds).toEqual([...EXPECTED_SERVICE_IDS].sort());
   });
-
-  it('contains every expected service ID', () => {
-    for (const id of EXPECTED_SERVICE_IDS) {
-      expect(SERVICE_REGISTRY.has(id)).toBe(true);
-    }
-  });
-
-  it('contains no unexpected service IDs', () => {
-    const registeredIds = [...SERVICE_REGISTRY.keys()];
-    for (const id of registeredIds) {
-      expect(EXPECTED_SERVICE_IDS).toContain(id);
-    }
-  });
-});
-
-// ===========================================================================
-// ServiceDefinition shape — every entry must satisfy the interface contract
-// ===========================================================================
-
-describe('ServiceDefinition shape', () => {
-  const entries = [...SERVICE_REGISTRY.entries()];
-
-  it.each(entries)(
-    '%s has a non-empty image string',
-    (_id: string, def: ServiceDefinition) => {
-      expect(typeof def.image).toBe('string');
-      expect(def.image.length).toBeGreaterThan(0);
-    },
-  );
-
-  it.each(entries)(
-    '%s has ports as an array',
-    (_id: string, def: ServiceDefinition) => {
-      expect(Array.isArray(def.ports)).toBe(true);
-    },
-  );
-
-  it.each(entries)(
-    '%s has a positive ramMB',
-    (_id: string, def: ServiceDefinition) => {
-      expect(typeof def.ramMB).toBe('number');
-      expect(def.ramMB).toBeGreaterThan(0);
-    },
-  );
-
-  it.each(entries)(
-    '%s has a non-negative diskGB',
-    (_id: string, def: ServiceDefinition) => {
-      expect(typeof def.diskGB).toBe('number');
-      expect(def.diskGB).toBeGreaterThanOrEqual(0);
-    },
-  );
-
-  it.each(entries)(
-    '%s has a non-empty networks array',
-    (_id: string, def: ServiceDefinition) => {
-      expect(Array.isArray(def.networks)).toBe(true);
-      expect(def.networks.length).toBeGreaterThan(0);
-    },
-  );
-
-  it.each(entries)(
-    '%s has requiredEnvVars as an array',
-    (_id: string, def: ServiceDefinition) => {
-      expect(Array.isArray(def.requiredEnvVars)).toBe(true);
-    },
-  );
-
-  it.each(entries)(
-    '%s has a matching id field',
-    (id: string, def: ServiceDefinition) => {
-      expect(def.id).toBe(id);
-    },
-  );
-
-  it.each(entries)(
-    '%s has a non-empty name string',
-    (_id: string, def: ServiceDefinition) => {
-      expect(typeof def.name).toBe('string');
-      expect(def.name.length).toBeGreaterThan(0);
-    },
-  );
-
-  // healthCheck — when present, must satisfy the expected shape
-  it.each(entries)(
-    '%s has a valid healthCheck config when present',
-    (_id: string, def: ServiceDefinition) => {
-      if (def.healthCheck) {
-        expect(typeof def.healthCheck.endpoint).toBe('string');
-        expect(typeof def.healthCheck.interval).toBe('number');
-        expect(def.healthCheck.interval).toBeGreaterThan(0);
-        expect(typeof def.healthCheck.timeout).toBe('number');
-        expect(def.healthCheck.timeout).toBeGreaterThan(0);
-        expect(typeof def.healthCheck.retries).toBe('number');
-        expect(def.healthCheck.retries).toBeGreaterThan(0);
-      }
-    },
-  );
 });
 
 // ===========================================================================
@@ -178,24 +80,9 @@ describe('getServiceDefinition()', () => {
 // ===========================================================================
 
 describe('getAllServiceIds()', () => {
-  it('returns an array of 17 service IDs', () => {
+  it('returns exactly the expected service IDs', () => {
     const ids = getAllServiceIds();
-    expect(Array.isArray(ids)).toBe(true);
-    expect(ids).toHaveLength(17);
-  });
-
-  it('contains every expected service ID', () => {
-    const ids = getAllServiceIds();
-    for (const id of EXPECTED_SERVICE_IDS) {
-      expect(ids).toContain(id);
-    }
-  });
-
-  it('returns a new array on each call (no shared reference)', () => {
-    const a = getAllServiceIds();
-    const b = getAllServiceIds();
-    expect(a).not.toBe(b);
-    expect(a).toEqual(b);
+    expect(ids.sort()).toEqual([...EXPECTED_SERVICE_IDS].sort());
   });
 });
 

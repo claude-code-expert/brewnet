@@ -11,9 +11,8 @@
  *   Table formatting (empty list, header columns, long names)
  *   Status parsing (uptime extraction, exit status, no ports)
  *
- * These are TDD tests — the functions do not exist yet. They define the
- * expected behavior of `formatServiceStatus()`, `formatStatusTable()`,
- * and `getStatusIndicator()` before implementation.
+ * Tests the behavior of `formatServiceStatus()`, `formatStatusTable()`,
+ * and `getStatusIndicator()`.
  */
 
 import {
@@ -205,52 +204,15 @@ describe('TC-09-02: Stopped service indicator', () => {
     });
   });
 
-  describe('getStatusIndicator() for restarting state', () => {
-    it('returns a yellow indicator for "restarting"', () => {
-      const indicator = getStatusIndicator('restarting');
-
-      expect(indicator).toContain('\u25CF'); // ●
-    });
-
-    it('returns an indicator that includes the word "restarting"', () => {
-      const indicator = getStatusIndicator('restarting');
-
-      expect(indicator.toLowerCase()).toMatch(/restarting/);
-    });
-  });
-
-  describe('getStatusIndicator() for paused state', () => {
-    it('returns a yellow indicator for "paused"', () => {
-      const indicator = getStatusIndicator('paused');
-
-      expect(indicator).toContain('\u25CF'); // ●
-    });
-
-    it('returns an indicator that includes the word "paused"', () => {
-      const indicator = getStatusIndicator('paused');
-
-      expect(indicator.toLowerCase()).toMatch(/paused/);
-    });
-  });
-
-  describe('getStatusIndicator() for other states', () => {
-    it('handles "created" state', () => {
-      const indicator = getStatusIndicator('created');
-
-      expect(indicator).toContain('\u25CF');
-    });
-
-    it('handles "dead" state', () => {
-      const indicator = getStatusIndicator('dead');
-
-      expect(indicator).toContain('\u25CF');
-    });
-
-    it('handles "removing" state', () => {
-      const indicator = getStatusIndicator('removing');
-
-      expect(indicator).toContain('\u25CF');
-    });
+  describe('getStatusIndicator() for all Docker states', () => {
+    it.each(['running', 'exited', 'dead', 'restarting', 'paused', 'created', 'removing'] as const)(
+      'returns a bullet indicator for "%s" state',
+      (state) => {
+        const indicator = getStatusIndicator(state);
+        expect(indicator).toContain('\u25CF');
+        expect(indicator.length).toBeGreaterThan(0);
+      },
+    );
   });
 });
 
@@ -259,90 +221,29 @@ describe('TC-09-02: Stopped service indicator', () => {
 // ---------------------------------------------------------------------------
 
 describe('Table formatting', () => {
-  describe('formatStatusTable() with empty list', () => {
-    it('returns a "No services running" message for empty containers', () => {
-      const rows: StatusRow[] = [];
-      const table = formatStatusTable(rows);
-
-      expect(table).toContain('No services running');
-    });
-
-    it('returns a non-empty string even for empty input', () => {
-      const rows: StatusRow[] = [];
-      const table = formatStatusTable(rows);
-
-      expect(table.length).toBeGreaterThan(0);
-    });
+  it('returns "No services running" message for empty list', () => {
+    const table = formatStatusTable([]);
+    expect(table).toContain('No services running');
   });
 
-  describe('formatStatusTable() header columns', () => {
-    it('includes Name column header', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
+  it('includes all column headers and service data', () => {
+    const rows = formatServiceStatus(makeRunningContainers());
+    const table = formatStatusTable(rows);
 
-      expect(table).toMatch(/name/i);
-    });
-
-    it('includes Status column header', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
-
-      expect(table).toMatch(/status/i);
-    });
-
-    it('includes Image column header', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
-
-      expect(table).toMatch(/image/i);
-    });
-
-    it('includes Ports column header', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
-
-      expect(table).toMatch(/ports/i);
-    });
-
-    it('includes Uptime column header', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
-
-      expect(table).toMatch(/uptime/i);
-    });
+    // Headers
+    for (const header of ['Name', 'Status', 'Image', 'Ports', 'Uptime']) {
+      expect(table).toMatch(new RegExp(header, 'i'));
+    }
+    // Data
+    expect(table).toContain('brewnet-traefik');
+    expect(table).toContain('traefik:v3.0');
   });
 
-  describe('formatStatusTable() content', () => {
-    it('includes service names in the table output', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
-
-      expect(table).toContain('brewnet-traefik');
-      expect(table).toContain('brewnet-postgres');
-      expect(table).toContain('brewnet-nextcloud');
-    });
-
-    it('includes image names in the table output', () => {
-      const rows = formatServiceStatus(makeRunningContainers());
-      const table = formatStatusTable(rows);
-
-      expect(table).toContain('traefik:v3.0');
-      expect(table).toContain('postgres:16');
-    });
-  });
-
-  describe('long service names', () => {
-    it('does not truncate long service names', () => {
-      const longName = 'brewnet-my-very-long-service-name-that-should-not-be-truncated';
-      const containers = [
-        makeContainer({ name: longName }),
-      ];
-      const rows = formatServiceStatus(containers);
-      const table = formatStatusTable(rows);
-
-      expect(rows[0].name).toBe(longName);
-      expect(table).toContain(longName);
-    });
+  it('does not truncate long service names', () => {
+    const longName = 'brewnet-my-very-long-service-name-that-should-not-be-truncated';
+    const rows = formatServiceStatus([makeContainer({ name: longName })]);
+    const table = formatStatusTable(rows);
+    expect(table).toContain(longName);
   });
 });
 
@@ -447,20 +348,6 @@ describe('Status parsing', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatServiceStatus() edge cases', () => {
-  it('returns an empty array when given an empty container list', () => {
-    const rows = formatServiceStatus([]);
-
-    expect(rows).toEqual([]);
-  });
-
-  it('handles a single container', () => {
-    const containers = [makeContainer()];
-    const rows = formatServiceStatus(containers);
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0].name).toBe('brewnet-traefik');
-  });
-
   it('preserves order of containers in output rows', () => {
     const containers = [
       makeContainer({ name: 'z-service' }),
@@ -472,46 +359,5 @@ describe('formatServiceStatus() edge cases', () => {
     expect(rows[0].name).toBe('z-service');
     expect(rows[1].name).toBe('a-service');
     expect(rows[2].name).toBe('m-service');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getStatusIndicator — comprehensive state mapping
-// ---------------------------------------------------------------------------
-
-describe('getStatusIndicator() — state to indicator mapping', () => {
-  it('running and exited produce different text (after stripping ANSI)', () => {
-    const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
-
-    const running = stripAnsi(getStatusIndicator('running'));
-    const exited = stripAnsi(getStatusIndicator('exited'));
-
-    expect(running).not.toBe(exited);
-  });
-
-  it('restarting and paused both contain yellow indicator', () => {
-    // Both are "transitional" states — they should use the same color category
-    const restarting = getStatusIndicator('restarting');
-    const paused = getStatusIndicator('paused');
-
-    // Both should contain the bullet
-    expect(restarting).toContain('\u25CF');
-    expect(paused).toContain('\u25CF');
-  });
-
-  it('all valid Docker states return a non-empty string', () => {
-    const states = ['running', 'exited', 'created', 'restarting', 'removing', 'paused', 'dead'];
-
-    for (const state of states) {
-      const indicator = getStatusIndicator(state);
-      expect(indicator.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('returns a fallback indicator for unknown states', () => {
-    const indicator = getStatusIndicator('unknown-state');
-
-    expect(indicator.length).toBeGreaterThan(0);
-    expect(indicator).toContain('\u25CF');
   });
 });

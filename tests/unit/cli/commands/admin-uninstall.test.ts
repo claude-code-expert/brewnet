@@ -67,6 +67,12 @@ jest.unstable_mockModule('@inquirer/prompts', () => ({
   password: jest.fn(),
 }));
 
+// Mock execa — uninstall orphan cleanup does dynamic import('execa')
+const mockExeca = jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+jest.unstable_mockModule('execa', () => ({
+  execa: mockExeca,
+}));
+
 // ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------

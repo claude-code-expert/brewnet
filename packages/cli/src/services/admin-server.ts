@@ -886,6 +886,11 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
+  // Boilerplate HTML/JSON are empty initially; refreshBoilerplateMeta() populates
+  // them lazily once .brewnet-boilerplate.json appears on disk.
+  const boilerplateHtml = '';
+  const boilerplateStacksJson = '[]';
+
   const dashConfig: DashboardConfig = {
     adminUsername: username ? maskUser(username) : '**',
     passwordHint: password ? maskPass(password) : '********',

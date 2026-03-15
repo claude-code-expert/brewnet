@@ -36,6 +36,12 @@ jest.unstable_mockModule(
   }),
 );
 
+// Mock execa — complete.ts does dynamic import('execa') to open browser
+const mockExeca = jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+jest.unstable_mockModule('execa', () => ({
+  execa: mockExeca,
+}));
+
 const mockGenerateEndpoints = jest.fn<() => { service: string; url: string }[]>();
 const mockSortByDependency = jest.fn<(s: string[]) => string[]>((s) => s);
 
