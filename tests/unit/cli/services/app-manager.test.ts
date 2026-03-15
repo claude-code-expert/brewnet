@@ -295,7 +295,7 @@ describe('createApp — mode C (new project)', () => {
 describe('startApp / stopApp', () => {
   it('runs docker compose up and updates status', async () => {
     mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'stopped' }]);
-    mockExeca.mockResolvedValue({});
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
     const { startApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await startApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'up', '-d'], expect.objectContaining({ cwd: '/dir' }));
@@ -304,7 +304,7 @@ describe('startApp / stopApp', () => {
 
   it('runs docker compose down and updates status', async () => {
     mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'running' }]);
-    mockExeca.mockResolvedValue({});
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
     const { stopApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await stopApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'down'], expect.objectContaining({ cwd: '/dir' }));
