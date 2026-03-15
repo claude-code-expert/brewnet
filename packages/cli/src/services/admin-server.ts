@@ -914,7 +914,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
             const job = getJobStatus(parts[3]);
             if (!job) { json(res, 404, { error: 'Job not found' }); return; }
-            json(res, 200, { job });
+            // Return flat job object — client polls r.status / r.steps directly
+            json(res, 200, job as unknown as Record<string, unknown>);
             return;
           }
           if (req.method === 'POST' && parts[3] === 'start') {
