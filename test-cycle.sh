@@ -439,10 +439,11 @@ else
   done &
   TAIL_PID=$!
 
-  # Wait for admin panel to come up — up to 5 minutes (60 × 5s)
-  info "Admin 패널 기동 대기 중 (최대 5분)..."
+  # Wait for admin panel to come up — up to 25 minutes (300 × 5s)
+  # Rust axum takes 15-20 min to compile; Java/Kotlin ~5 min; allow generous margin.
+  info "Admin 패널 기동 대기 중 (최대 25분 — Rust 컴파일 포함)..."
   INIT_OK=false
-  for i in $(seq 1 60); do
+  for i in $(seq 1 300); do
     sleep 5
     if ! kill -0 "$INIT_PID" 2>/dev/null; then
       fail "Init 프로세스 비정상 종료 (PID ${INIT_PID})"
@@ -450,11 +451,16 @@ else
     fi
     HTTP_CHK=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$ADMIN_PORT" 2>/dev/null || echo "000")
     if [ "$HTTP_CHK" = "200" ]; then
-      ok "Admin 패널 기동 확인 → HTTP 200 (${i}번째 확인, $((i*5))초 경과)"
+      ok "Admin 패널 기동 확인 → HTTP 200 (${i}번째 확인, $((i*5))초 = $((i*5/60))분 $((i*5%60))초 경과)"
       INIT_OK=true
       break
     fi
-    wait_ "Admin 패널 대기... HTTP ${HTTP_CHK} (${i}/60)"
+    # Print elapsed time every 60 iterations (5 min)
+    if (( i % 12 == 0 )); then
+      wait_ "Admin 패널 대기... HTTP ${HTTP_CHK} (${i}/300 — $((i*5/60))분 경과)"
+    else
+      wait_ "Admin 패널 대기... HTTP ${HTTP_CHK} (${i}/300)"
+    fi
   done
 
   kill "$TAIL_PID" 2>/dev/null || true
@@ -463,7 +469,7 @@ else
     ok "Init 완료 (Admin 패널 응답 확인됨)"
     INIT_RC=0
   else
-    fail "Init 실패 또는 Admin 패널 기동 타임아웃 (5분)"
+    fail "Init 실패 또는 Admin 패널 기동 타임아웃 (25분)"
     echo -e "${DIM}  Init 로그: ${INIT_LOG}${NC}"
     INIT_RC=1
   fi
