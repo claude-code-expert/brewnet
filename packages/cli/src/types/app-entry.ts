@@ -79,3 +79,31 @@ export interface GitRepoEntry {
   description: string;
   private: boolean;
 }
+
+/** Git + Gitea information for a managed app. */
+export interface AppGitInfo {
+  /** Gitea web URL, e.g. http://localhost/git/admin/my-api */
+  giteaUrl: string;
+  /** HTTP clone URL */
+  cloneUrlHttp: string;
+  /** SSH clone URL */
+  cloneUrlSsh: string;
+  /** Absolute path on disk */
+  localPath: string;
+  /** Current default branch */
+  branch: string;
+  /** Latest commit on the branch, null if repo is empty */
+  latestCommit: {
+    hash: string;
+    shortHash: string;
+    message: string;
+    date: string; // ISO 8601
+  } | null;
+}
+
+/** Per-app deploy settings (stored in apps.json alongside AppEntry). */
+export interface DeploySettings {
+  autoDeploy: boolean;
+  deployBranch: string;
+  webhookSecret?: string;
+}

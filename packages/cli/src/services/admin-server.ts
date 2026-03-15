@@ -25,8 +25,9 @@ import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
 import type { WizardState } from '@brewnet/shared';
-import { generateAppsPageHtml } from './apps-page.js';
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos } from './app-manager.js';
+import { generateAppsPageHtml, generateAppDetailHtml } from './apps-page.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, setupWebhook as appSetupWebhook, updateDeploySettings, getDeploySettings, getAppDir } from './app-manager.js';
+import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
@@ -893,8 +894,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
     tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
-    boilerplateHtml,
-    boilerplateStacksJson,
+    boilerplateHtml: '',
+    boilerplateStacksJson: '[]',
     domainConnectionsJson: JSON.stringify(wizardState?.domainConnections ?? []),
   };
 
@@ -987,7 +988,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (!existsSync(bpPath)) return;
     try {
       const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-      dashConfig.boilerplateStacks = Array.isArray(raw) ? raw : [raw];
+      dashConfig.boilerplateStacksJson = JSON.stringify(Array.isArray(raw) ? raw : [raw]);
       boilerplateLoaded = true;
       dashboardHtml = generateDashboardHtml(dashConfig);
     } catch {
@@ -1044,6 +1045,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (req.method === 'GET' && (url === '/apps' || url === '/apps/')) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(generateAppsPageHtml());
+      return;
+    }
+
+    // Serve App Detail page at /apps/:name
+    if (req.method === 'GET' && parts.length === 2 && parts[0] === 'apps') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(generateAppDetailHtml(decodeURIComponent(parts[1]!)));
       return;
     }
 
@@ -1134,9 +1142,80 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             json(res, 200, { success: true });
             return;
           }
+
+          // GET /api/apps/:name — single app detail
+          if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs'].includes(parts[2]) && parts.length === 3) {
+            const apps = await listApps();
+            const app = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
+            if (!app) { json(res, 404, { error: 'App not found' }); return; }
+            json(res, 200, { app });
+            return;
+          }
+
+          // GET /api/apps/:name/git
+          if (req.method === 'GET' && parts[3] === 'git' && parts.length === 4) {
+            try {
+              const git = await getAppGitInfo(decodeURIComponent(parts[2] ?? ''));
+              json(res, 200, { git });
+            } catch (err) {
+              json(res, 502, { error: String(err) });
+            }
+            return;
+          }
+
+          // GET /api/apps/:name/deploy/settings
+          if (req.method === 'GET' && parts[3] === 'deploy' && parts[4] === 'settings') {
+            const settings = getDeploySettings(decodeURIComponent(parts[2] ?? ''));
+            json(res, 200, settings);
+            return;
+          }
+
+          // PUT /api/apps/:name/deploy/settings
+          if (req.method === 'PUT' && parts[3] === 'deploy' && parts[4] === 'settings') {
+            const opts = JSON.parse(body) as Partial<DeploySettings>;
+            updateDeploySettings(decodeURIComponent(parts[2] ?? ''), opts);
+            json(res, 200, { success: true });
+            return;
+          }
+
+          // POST /api/apps/:name/deploy — manual deploy trigger
+          if (req.method === 'POST' && parts[3] === 'deploy' && !parts[4]) {
+            const jobId = await deployApp(decodeURIComponent(parts[2] ?? ''));
+            json(res, 202, { jobId });
+            return;
+          }
+
+          // GET /api/apps/:name/logs — SSE stream
+          if (req.method === 'GET' && parts[3] === 'logs') {
+            const appDir = getAppDir(decodeURIComponent(parts[2] ?? ''));
+            if (!appDir) { json(res, 404, { error: 'App not found' }); return; }
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
+            const { execa: execaLocal } = await import('execa');
+            const proc = execaLocal('docker', ['compose', 'logs', '--follow', '--tail', '50'], {
+              cwd: appDir,
+              reject: false,
+              stdout: 'pipe',
+              stderr: 'pipe',
+            });
+            const sendLine = (line: string) => {
+              if (line.trim()) res.write(`data: ${line.replace(/\r?\n/g, ' ')}\n\n`);
+            };
+            proc.stdout?.on('data', (chunk: Buffer) => {
+              for (const line of chunk.toString().split('\n')) sendLine(line);
+            });
+            proc.stderr?.on('data', (chunk: Buffer) => {
+              for (const line of chunk.toString().split('\n')) sendLine(line);
+            });
+            req.on('close', () => { try { proc.kill(); } catch { /* ignore */ } });
+            return;
+          }
         }
 
-        // ── Deploy history & Git repos ──────────────────────────────
+        // ── Deploy history, Git repos & Webhook ────────────────────
         if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
           const reqUrl = new URL(req.url ?? '/', 'http://localhost');
           const appFilter = reqUrl.searchParams.get('app') ?? undefined;
@@ -1152,6 +1231,26 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           } catch (err) {
             json(res, 502, { success: false, error: String(err) });
           }
+          return;
+        }
+
+        // POST /api/deploy/hook — Gitea push webhook for auto-deploy
+        if (parts[1] === 'deploy' && parts[2] === 'hook' && req.method === 'POST') {
+          try {
+            const payload = JSON.parse(body) as {
+              repository?: { name?: string };
+              ref?: string;
+            };
+            const appName = payload.repository?.name;
+            const branch = (payload.ref ?? '').replace('refs/heads/', '');
+            if (appName) {
+              const settings = getDeploySettings(appName);
+              if (settings.autoDeploy && branch === settings.deployBranch) {
+                void deployApp(appName);
+              }
+            }
+          } catch { /* ignore parse errors */ }
+          json(res, 200, { status: 'accepted' }); // always 200 to Gitea
           return;
         }
 

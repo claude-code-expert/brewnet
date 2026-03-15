@@ -115,6 +115,60 @@ export class GiteaClient {
     return (await res.json()) as GitRepoEntry[];
   }
 
+  /** Fetch a single repo's detail (includes default_branch, ssh_url). */
+  async getRepo(name: string): Promise<{
+    id: number; name: string; clone_url: string; ssh_url: string;
+    html_url: string; description: string; private: boolean; default_branch: string;
+  }> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/repos/${username}/${name}`, {
+      headers: await this.authHeaders(),
+    });
+    if (!res.ok) throw new Error(`Gitea getRepo failed: ${res.status} ${await res.text()}`);
+    return res.json() as Promise<{
+      id: number; name: string; clone_url: string; ssh_url: string;
+      html_url: string; description: string; private: boolean; default_branch: string;
+    }>;
+  }
+
+  /** Get the latest commit on a branch. Returns null for empty repos. */
+  async getLatestCommit(
+    repoName: string,
+    branch: string,
+  ): Promise<{ hash: string; shortHash: string; message: string; date: string } | null> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(
+      `${baseUrl}/api/v1/repos/${username}/${repoName}/commits?sha=${encodeURIComponent(branch)}&limit=1`,
+      { headers: await this.authHeaders() },
+    );
+    if (!res.ok) return null;
+    const commits = (await res.json()) as Array<{ sha: string; commit: { message: string; committer: { date: string } } }>;
+    if (!commits.length) return null;
+    const c = commits[0]!;
+    return {
+      hash: c.sha,
+      shortHash: c.sha.slice(0, 7),
+      message: c.commit.message.split('\n')[0]!,
+      date: c.commit.committer.date,
+    };
+  }
+
+  /** Register a push webhook on the repo. */
+  async createWebhook(repoName: string, webhookUrl: string, secret: string): Promise<void> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/repos/${username}/${repoName}/hooks`, {
+      method: 'POST',
+      headers: await this.authHeaders(),
+      body: JSON.stringify({
+        type: 'gitea',
+        config: { url: webhookUrl, content_type: 'json', secret },
+        events: ['push'],
+        active: true,
+      }),
+    });
+    if (!res.ok) throw new Error(`Gitea createWebhook failed: ${res.status} ${await res.text()}`);
+  }
+
   /** URL suitable for git remote add — includes credentials in URL (stored in .git/config which is chmod 600). */
   authedCloneUrl(cloneUrl: string): string {
     const { username, password } = this.config;

@@ -117,7 +117,7 @@ a.app-link:hover{text-decoration:underline}
 
 <div class="section-title">Managed Apps</div>
 <table id="app-table">
-  <thead><tr><th>Name</th><th>Mode</th><th>Stack / Source</th><th>Port</th><th>Status</th><th>Local URL</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>Mode</th><th>Stack / Source</th><th>Port</th><th>Status</th><th>Local URL</th><th>Actions</th><th></th></tr></thead>
   <tbody id="app-body"><tr><td colspan="7" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
 
@@ -173,6 +173,7 @@ async function loadApps(){
         (a.status==='stopped'?'<button class="btn btn-start" onclick="startApp(\\''+escHtml(a.name)+'\\')">Start</button>':'')+
         '<button class="btn btn-remove" onclick="removeApp(\\''+escHtml(a.name)+'\\')">Remove</button>'+
       '</td>'+
+      '<td><a href="/apps/'+encodeURIComponent(a.name)+'" class="btn btn-default" style="text-decoration:none;display:inline-block;margin-left:0">Details</a></td>'+
     '</tr>';
   }).join('');
 }
@@ -418,6 +419,281 @@ async function pollJob(appName,jobId){
 // ---------------------------------------------------------------------------
 loadApps();
 setInterval(loadApps,15000);
+</script>
+</body>
+</html>`;
+}
+
+// ---------------------------------------------------------------------------
+// App Detail page (/apps/:name) — 4 tabs: Overview | Git | Deploy | Logs
+// ---------------------------------------------------------------------------
+
+export function generateAppDetailHtml(appName: string): string {
+  const esc = (s: string) =>
+    String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Brewnet \u2014 ${esc(appName)}</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
+h1{color:#f5a623;font-size:18px;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.subtitle{color:#8b949e;font-size:12px;margin-bottom:20px}
+.header-row{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.nav-link{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px;font-family:inherit}
+.nav-link:hover{background:#21262d}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.running{background:#1a4731;color:#3fb950}.stopped{background:#3d1f1f;color:#f85149}
+.tabs{display:flex;border-bottom:1px solid #30363d;margin-bottom:20px}
+.tab{padding:8px 18px;cursor:pointer;color:#8b949e;font-size:13px;background:none;border:none;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:#c9d1d9}.tab.active{color:#f5a623;border-bottom-color:#f5a623}
+.tab-panel{display:none}.tab-panel.active{display:block}
+.section{margin-bottom:20px}
+.section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #21262d;font-size:13px}
+.info-key{color:#8b949e;min-width:120px}.info-val{color:#c9d1d9;font-family:monospace;word-break:break-all}
+.btn{padding:4px 12px;border:1px solid;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;background:transparent;margin-left:6px}
+.btn-primary{background:#f5a623;color:#0d1117;border-color:#f5a623;font-weight:700}
+.btn-primary:hover{background:#e09420}
+.btn-stop{border-color:#f85149;color:#f85149}.btn-stop:hover{background:#3d1f1f}
+.btn-start{border-color:#3fb950;color:#3fb950}.btn-start:hover{background:#1a4731}
+.btn-default{border-color:#30363d;color:#8b949e}.btn-default:hover{background:#21262d}
+.code-block{position:relative;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;color:#c9d1d9;white-space:pre-wrap;word-break:break-all;margin-bottom:8px}
+.copy-btn{position:absolute;top:8px;right:8px;padding:2px 8px;border:1px solid #30363d;border-radius:4px;cursor:pointer;background:#0d1117;color:#8b949e;font-size:11px;font-family:inherit}
+.copy-btn:hover{background:#21262d;color:#c9d1d9}
+.history-row{display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #21262d;font-size:12px}
+.history-hash{color:#58a6ff;font-family:monospace}.history-msg{flex:1;color:#c9d1d9}.history-time{color:#8b949e;white-space:nowrap}
+.toggle-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.toggle{position:relative;display:inline-block;width:38px;height:20px}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#30363d;border-radius:20px;transition:.2s}
+.slider:before{position:absolute;content:"";height:14px;width:14px;left:3px;bottom:3px;background:#c9d1d9;border-radius:50%;transition:.2s}
+input:checked+.slider{background:#f5a623}
+input:checked+.slider:before{transform:translateX(18px)}
+#log-output{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:12px;height:420px;overflow-y:auto;font-family:monospace;font-size:12px;color:#c9d1d9;white-space:pre-wrap}
+.log-err{color:#f85149}.log-warn{color:#e3b341}
+a.ext{color:#58a6ff;text-decoration:none}a.ext:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="header-row">
+  <div>
+    <h1 id="app-name">${esc(appName)} <span id="app-badge" class="badge stopped">loading</span></h1>
+    <div class="subtitle" id="app-subtitle">loading...</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+    <a href="/apps" class="nav-link">\u2190 Apps</a>
+    <button class="btn btn-default" id="btn-open" onclick="openApp()" style="display:none">Open \u2192</button>
+    <button class="btn btn-stop" id="btn-stop" onclick="doStop()" style="display:none">Stop</button>
+    <button class="btn btn-start" id="btn-start" onclick="doStart()" style="display:none">Start</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('overview')" id="tabn-overview">Overview</button>
+  <button class="tab" onclick="switchTab('git')" id="tabn-git">Git</button>
+  <button class="tab" onclick="switchTab('deploy')" id="tabn-deploy">Deploy</button>
+  <button class="tab" onclick="switchTab('logs')" id="tabn-logs">Logs</button>
+</div>
+
+<!-- OVERVIEW -->
+<div id="tab-overview" class="tab-panel active">
+  <div class="section">
+    <div class="section-title">App Info</div>
+    <div class="info-row"><span class="info-key">Name</span><span class="info-val">${esc(appName)}</span></div>
+    <div class="info-row"><span class="info-key">Mode</span><span class="info-val" id="ov-mode">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Stack</span><span class="info-val" id="ov-stack">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Port</span><span class="info-val" id="ov-port">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Status</span><span class="info-val" id="ov-status">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Local URL</span><span class="info-val" id="ov-url">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Created</span><span class="info-val" id="ov-created">\u2014</span></div>
+  </div>
+</div>
+
+<!-- GIT -->
+<div id="tab-git" class="tab-panel">
+  <div class="section">
+    <div class="section-title">Repository</div>
+    <div class="info-row"><span class="info-key">Gitea URL</span><span class="info-val" id="git-url">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Branch</span><span class="info-val" id="git-branch">\u2014</span></div>
+    <div class="info-row"><span class="info-key">Latest Commit</span><span class="info-val" id="git-commit">\u2014</span></div>
+  </div>
+  <div class="section">
+    <div class="section-title">Clone (HTTP)</div>
+    <div class="code-block" id="git-clone-http">loading...<button class="copy-btn" onclick="copyEl('git-clone-http')">Copy</button></div>
+  </div>
+  <div class="section">
+    <div class="section-title">Clone (SSH)</div>
+    <div class="code-block" id="git-clone-ssh">loading...<button class="copy-btn" onclick="copyEl('git-clone-ssh')">Copy</button></div>
+  </div>
+  <div class="section">
+    <div class="section-title">Local Path</div>
+    <div class="code-block" id="git-local-path">\u2014</div>
+  </div>
+  <div class="section">
+    <div class="section-title">Quick Setup (run on your dev machine)</div>
+    <div class="code-block" id="git-setup-cmds">loading...<button class="copy-btn" onclick="copyEl('git-setup-cmds')">Copy</button></div>
+  </div>
+</div>
+
+<!-- DEPLOY -->
+<div id="tab-deploy" class="tab-panel">
+  <div class="section">
+    <div class="section-title">Deploy Settings</div>
+    <div class="toggle-row">
+      <label class="toggle"><input type="checkbox" id="auto-deploy-toggle" onchange="saveSettings()"/><span class="slider"></span></label>
+      <span style="font-size:13px">Auto Deploy (on git push to branch)</span>
+    </div>
+    <div class="info-row" style="margin-bottom:14px">
+      <span class="info-key">Deploy Branch</span>
+      <input id="deploy-branch-input" value="main" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;padding:4px 8px;font-family:monospace;font-size:12px;width:160px" onchange="saveSettings()"/>
+    </div>
+    <button class="btn btn-primary" onclick="triggerDeploy()">Deploy Now</button>
+    <span id="deploy-msg" style="margin-left:12px;font-size:12px;color:#8b949e"></span>
+  </div>
+  <div class="section" style="margin-top:20px">
+    <div class="section-title">Deploy History</div>
+    <div id="deploy-history"><span style="color:#8b949e;font-size:12px">Loading...</span></div>
+  </div>
+</div>
+
+<!-- LOGS -->
+<div id="tab-logs" class="tab-panel">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <span style="font-size:12px;color:#8b949e">Live container logs</span>
+    <button class="btn btn-default" onclick="startLogs()" style="font-size:11px">Reconnect</button>
+    <button class="btn btn-default" onclick="document.getElementById('log-output').innerHTML=''" style="font-size:11px">Clear</button>
+  </div>
+  <div id="log-output"></div>
+</div>
+
+<script>
+var APP=${JSON.stringify(appName)};
+var appData=null;
+var gitData=null;
+var logSrc=null;
+var activeTab='overview';
+var gitLoaded=false;
+
+function switchTab(tab){
+  activeTab=tab;
+  ['overview','git','deploy','logs'].forEach(function(t){
+    document.getElementById('tabn-'+t).className='tab'+(t===tab?' active':'');
+    document.getElementById('tab-'+t).className='tab-panel'+(t===tab?' active':'');
+  });
+  if(tab==='git'&&!gitLoaded)loadGit();
+  if(tab==='deploy'){loadSettings();loadHistory();}
+  if(tab==='logs'&&!logSrc)startLogs();
+}
+
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function loadApp(){
+  var r=await fetch('/api/apps/'+encodeURIComponent(APP)).then(function(r){return r.json();}).catch(function(){return null;});
+  if(!r||!r.app){document.getElementById('app-subtitle').textContent='App not found';return;}
+  appData=r.app;var a=r.app;
+  var badge=document.getElementById('app-badge');
+  badge.textContent=a.status;badge.className='badge '+(a.status==='running'?'running':'stopped');
+  document.getElementById('app-subtitle').textContent=(a.lang||'')+(a.framework?' \u00b7 '+a.framework:'')+(a.port?' \u00b7 Port '+a.port:'');
+  document.getElementById('ov-mode').textContent=a.mode||'\u2014';
+  document.getElementById('ov-stack').textContent=a.stackId||a.sourceUrl||'\u2014';
+  document.getElementById('ov-port').textContent=a.port||'\u2014';
+  document.getElementById('ov-status').textContent=a.status||'\u2014';
+  var lu=a.port?'http://localhost:'+a.port:'';
+  document.getElementById('ov-url').innerHTML=lu?'<a class="ext" href="'+lu+'" target="_blank">'+lu+'</a>':'\u2014';
+  document.getElementById('ov-created').textContent=(a.createdAt||'\u2014').replace('T',' ').slice(0,16);
+  document.getElementById('btn-open').style.display=lu?'':'none';
+  document.getElementById('btn-stop').style.display=a.status==='running'?'':'none';
+  document.getElementById('btn-start').style.display=a.status!=='running'?'':'none';
+}
+function openApp(){if(appData&&appData.port)window.open('http://localhost:'+appData.port,'_blank');}
+async function doStop(){await fetch('/api/apps/'+encodeURIComponent(APP)+'/stop',{method:'POST'});loadApp();}
+async function doStart(){await fetch('/api/apps/'+encodeURIComponent(APP)+'/start',{method:'POST'});loadApp();}
+
+async function loadGit(){
+  gitLoaded=true;
+  var r=await fetch('/api/apps/'+encodeURIComponent(APP)+'/git').then(function(r){return r.json();}).catch(function(){return null;});
+  if(!r||!r.git){document.getElementById('git-url').textContent='Gitea not available';return;}
+  gitData=r.git;var g=r.git;
+  document.getElementById('git-url').innerHTML='<a class="ext" href="'+escH(g.giteaUrl)+'" target="_blank">'+escH(g.giteaUrl)+' [Open]</a>';
+  document.getElementById('git-branch').textContent=g.branch||'main';
+  var c=g.latestCommit;
+  document.getElementById('git-commit').textContent=c?(c.shortHash+' \u2014 '+c.message):'(empty repo)';
+  setText('git-clone-http','git clone '+g.cloneUrlHttp);
+  setText('git-clone-ssh','git clone '+g.cloneUrlSsh);
+  setText('git-local-path',g.localPath);
+  setText('git-setup-cmds','git remote add brewnet '+g.cloneUrlHttp+'\\ngit push brewnet '+(g.branch||'main'));
+}
+function setText(id,val){
+  var el=document.getElementById(id);if(!el)return;
+  var btn=el.querySelector('.copy-btn');
+  var html=escH(val);
+  el.innerHTML=html+(btn?'<button class="copy-btn" onclick="copyEl(\''+id+'\')">Copy</button>':'');
+}
+function copyEl(id){
+  var el=document.getElementById(id);if(!el)return;
+  var txt=el.textContent||el.innerText;
+  navigator.clipboard.writeText(txt.replace(/Copy$/,'').trim());
+  var btn=el.querySelector('.copy-btn');
+  if(btn){btn.textContent='Copied!';setTimeout(function(){btn.textContent='Copy';},1500);}
+}
+
+async function loadSettings(){
+  var r=await fetch('/api/apps/'+encodeURIComponent(APP)+'/deploy/settings').then(function(r){return r.json();}).catch(function(){return null;});
+  if(!r)return;
+  document.getElementById('auto-deploy-toggle').checked=!!r.autoDeploy;
+  document.getElementById('deploy-branch-input').value=r.deployBranch||'main';
+}
+async function saveSettings(){
+  var ad=document.getElementById('auto-deploy-toggle').checked;
+  var br=(document.getElementById('deploy-branch-input').value||'main').trim();
+  await fetch('/api/apps/'+encodeURIComponent(APP)+'/deploy/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoDeploy:ad,deployBranch:br})});
+}
+async function triggerDeploy(){
+  var msg=document.getElementById('deploy-msg');msg.textContent='Deploying...';
+  var r=await fetch('/api/apps/'+encodeURIComponent(APP)+'/deploy',{method:'POST'}).then(function(r){return r.json();}).catch(function(e){return{error:e.message};});
+  if(r.error){msg.textContent='Error: '+r.error;return;}
+  msg.textContent='Job '+r.jobId+' started...';
+  var t=setInterval(async function(){
+    var jr=await fetch('/api/apps/jobs/'+encodeURIComponent(r.jobId)).then(function(r){return r.json();}).catch(function(){return null;});
+    if(!jr)return;
+    if(jr.status==='done'){clearInterval(t);msg.textContent='\u2713 Deploy successful';loadHistory();loadApp();}
+    else if(jr.status==='failed'){clearInterval(t);msg.textContent='\u2717 Failed: '+(jr.error||'');loadHistory();}
+  },2000);
+}
+async function loadHistory(){
+  var r=await fetch('/api/deploy/history?app='+encodeURIComponent(APP)).then(function(r){return r.json();}).catch(function(){return{history:[]};});
+  var entries=(r.history||[]).slice().reverse();
+  var div=document.getElementById('deploy-history');
+  if(!entries.length){div.innerHTML='<span style="color:#8b949e;font-size:12px">No deployments yet.</span>';return;}
+  div.innerHTML=entries.map(function(e){
+    var icon=e.status==='success'?'<span style="color:#3fb950">\u2705</span>':'<span style="color:#f85149">\u274c</span>';
+    var t=(e.deployedAt||'').replace('T',' ').slice(0,16);
+    return '<div class="history-row">'+icon+'<span class="history-hash">'+(e.commitHash?e.commitHash.slice(0,7):'\u2014')+'</span><span class="history-msg">'+escH(e.commitMessage||'deploy')+'</span><span class="history-time">'+t+'</span></div>';
+  }).join('');
+}
+
+function startLogs(){
+  if(logSrc)logSrc.close();
+  var out=document.getElementById('log-output');
+  out.innerHTML='<span style="color:#8b949e">Connecting...</span>\\n';
+  logSrc=new EventSource('/api/apps/'+encodeURIComponent(APP)+'/logs');
+  logSrc.onmessage=function(e){
+    var div=document.createElement('div');
+    div.className=/error|fatal/i.test(e.data)?'log-err':/warn/i.test(e.data)?'log-warn':'';
+    div.textContent=e.data;out.appendChild(div);out.scrollTop=out.scrollHeight;
+  };
+  logSrc.onerror=function(){
+    var div=document.createElement('div');div.textContent='[stream ended]';div.style.color='#8b949e';out.appendChild(div);
+    logSrc=null;
+  };
+}
+
+loadApp();setInterval(loadApp,15000);
 </script>
 </body>
 </html>`;
