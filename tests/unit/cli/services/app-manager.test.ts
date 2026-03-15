@@ -28,12 +28,15 @@ jest.unstable_mockModule('node:os', () => ({
 }));
 
 // Mock execa (git commands)
-const mockExeca = jest.fn();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockExeca = jest.fn<(...args: any[]) => Promise<{ stdout: string; stderr: string }>>();
 jest.unstable_mockModule('execa', () => ({ execa: mockExeca }));
 
 // Mock GiteaClient
-const mockCreateRepo = jest.fn();
-const mockRepoExists = jest.fn();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockCreateRepo = jest.fn<(...args: any[]) => Promise<string>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockRepoExists = jest.fn<(...args: any[]) => Promise<boolean>>();
 const mockAuthedCloneUrl = jest.fn((url: string) => url.replace('http://', 'http://admin:pw@'));
 const MockGiteaClient = jest.fn().mockImplementation(() => ({
   createRepo: mockCreateRepo,
