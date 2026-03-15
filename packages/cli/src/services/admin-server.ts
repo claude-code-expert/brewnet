@@ -202,7 +202,8 @@ ${config.boilerplateHtml}
 <!-- ── Domains Section (T039) ── -->
 <div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
   External Domains
-  <span style="display:flex;gap:8px">
+  <span style="display:flex;gap:8px;align-items:center">
+    <input id="admin-pw" type="password" placeholder="Admin password" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;color:#c9d1d9;font-family:inherit;font-size:11px;width:140px"/>
     <span class="btn btn-start" style="font-size:11px" onclick="showConnectModal()">+ Connect Domain</span>
     <span class="btn" style="font-size:11px;border-color:#58a6ff;color:#58a6ff" onclick="showCnameGuide()">CNAME Guide</span>
   </span>
@@ -211,31 +212,6 @@ ${config.boilerplateHtml}
   <thead><tr><th>App</th><th>External URL</th><th>Status</th><th>Connected</th><th>Actions</th></tr></thead>
   <tbody id="domain-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
-
-<!-- ── Settings Section (T043) ── -->
-<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
-  Cloudflare Settings
-  <span id="cf-status" style="font-size:11px;color:#8b949e"></span>
-</div>
-<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin-bottom:24px">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">API Token</label>
-      <input id="cf-token" type="password" placeholder="Cloudflare API Token" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Account ID</label>
-      <input id="cf-account" type="text" placeholder="Account ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Zone ID</label>
-      <input id="cf-zone" type="text" placeholder="Zone ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Tunnel ID</label>
-      <input id="cf-tunnel" type="text" placeholder="Tunnel ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <span class="btn btn-start" onclick="saveCloudflareSettings()">Verify & Save</span>
-    <span id="cf-result" style="font-size:12px"></span>
-    <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" style="color:#58a6ff;font-size:11px;margin-left:auto">Create Token →</a>
-  </div>
-  <div style="margin-top:8px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Admin Password (for API auth)</label>
-    <input id="admin-pw" type="password" placeholder="Admin password" style="width:300px;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-</div>
 
 <!-- ── Connect Domain Modal (T040) ── -->
 <div id="connect-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
@@ -520,36 +496,8 @@ function showCnameGuide(){
   var tid=DOMAIN_CONFIG.tunnelId||DOMAIN_CONFIG.zoneName||'(configure tunnel first)';
   document.getElementById('cname-value').textContent=tid+'.cfargotunnel.com';
 }
-async function saveCloudflareSettings(){
-  var token=document.getElementById('cf-token').value.trim();
-  var acct=document.getElementById('cf-account').value.trim();
-  var zone=document.getElementById('cf-zone').value.trim();
-  var tunnel=document.getElementById('cf-tunnel').value.trim();
-  if(!token){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">API Token required</span>';return;}
-  document.getElementById('cf-result').innerHTML='<span style="color:#e3b341">Verifying...</span>';
-  try{
-    var r=await domainFetch('/api/settings/cloudflare',{method:'PUT',body:JSON.stringify({apiToken:token,accountId:acct,zoneId:zone,tunnelId:tunnel})});
-    var d=await r.json();
-    if(d.success){
-      document.getElementById('cf-result').innerHTML='<span style="color:#3fb950">✅ Verified'+(d.email?' ('+d.email+')':'')+(d.zoneName?' — '+d.zoneName:'')+'</span>';
-      log('Cloudflare settings saved ✓','ok');
-      loadDomains();
-    }else{
-      document.getElementById('cf-result').innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
-    }
-  }catch(e){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
-}
-async function loadCloudflareStatus(){
-  try{
-    var r=await domainFetch('/api/settings/cloudflare');
-    var d=await r.json();
-    var el=document.getElementById('cf-status');
-    if(d.configured){el.innerHTML='<span style="color:#3fb950">✅ Configured'+(d.zoneName?' ('+d.zoneName+')':'')+'</span>';}
-    else{el.innerHTML='<span style="color:#e3b341">⚠️ Not configured</span>';}
-  }catch(e){}
-}
-// Auto-load domains and settings status
-setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
+// Auto-load domains
+setTimeout(function(){loadDomains();},500);
 </script>
 </body>
 </html>`;
