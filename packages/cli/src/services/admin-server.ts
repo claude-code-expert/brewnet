@@ -22,6 +22,8 @@ import { getServiceDefinition, SERVICE_REGISTRY } from '../config/services.js';
 import { SERVICE_DETAIL_MAP } from './status-page.js';
 import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
+import { DomainManager } from './domain-manager.js';
+import { verifyToken } from './cloudflare-client.js';
 import type { WizardState } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
@@ -72,10 +74,13 @@ interface DashboardConfig {
   domainProvider: string;
   quickTunnelUrl: string;
   zoneName: string;
+  tunnelId: string;
   /** Pre-rendered HTML for the boilerplate Dev Stack App section (empty string when no app) */
   boilerplateHtml: string;
   /** JSON-serialised array of BoilerplateMeta for JS embedding */
   boilerplateStacksJson: string;
+  /** JSON-serialised array of DomainConnection for JS embedding */
+  domainConnectionsJson: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,14 +209,104 @@ tr:hover td{background:#161b22}
   <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
 ${config.boilerplateHtml}
+
+<!-- ── Domains Section (T039) ── -->
+<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
+  External Domains
+  <span style="display:flex;gap:8px">
+    <span class="btn btn-start" style="font-size:11px" onclick="showConnectModal()">+ Connect Domain</span>
+    <span class="btn" style="font-size:11px;border-color:#58a6ff;color:#58a6ff" onclick="showCnameGuide()">CNAME Guide</span>
+  </span>
+</div>
+<table id="domain-table">
+  <thead><tr><th>App</th><th>External URL</th><th>Status</th><th>Connected</th><th>Actions</th></tr></thead>
+  <tbody id="domain-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
+</table>
+
+<!-- ── Settings Section (T043) ── -->
+<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
+  Cloudflare Settings
+  <span id="cf-status" style="font-size:11px;color:#8b949e"></span>
+</div>
+<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin-bottom:24px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">API Token</label>
+      <input id="cf-token" type="password" placeholder="Cloudflare API Token" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Account ID</label>
+      <input id="cf-account" type="text" placeholder="Account ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Zone ID</label>
+      <input id="cf-zone" type="text" placeholder="Zone ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Tunnel ID</label>
+      <input id="cf-tunnel" type="text" placeholder="Tunnel ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="btn btn-start" onclick="saveCloudflareSettings()">Verify & Save</span>
+    <span id="cf-result" style="font-size:12px"></span>
+    <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" style="color:#58a6ff;font-size:11px;margin-left:auto">Create Token →</a>
+  </div>
+  <div style="margin-top:8px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Admin Password (for API auth)</label>
+    <input id="admin-pw" type="password" placeholder="Admin password" style="width:300px;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+</div>
+
+<!-- ── Connect Domain Modal (T040) ── -->
+<div id="connect-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal-box" style="max-width:500px">
+    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">Connect Domain</span></div>
+    <div style="padding:16px">
+      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">App</label>
+        <select id="conn-app" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"><option>Loading...</option></select></div>
+      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Subdomain</label>
+        <input id="conn-sub" type="text" placeholder="my-api" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Domain</label>
+        <input id="conn-domain" type="text" placeholder="yourdomain.com" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
+      <div id="conn-steps" style="margin-bottom:12px;font-size:12px;color:#8b949e"></div>
+      <div style="display:flex;gap:8px"><span class="btn btn-start" onclick="connectDomain()">Connect</span><span class="btn btn-stop" onclick="document.getElementById('connect-modal').style.display='none'">Cancel</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CNAME Guide Modal (T041) ── -->
+<div id="cname-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal-box" style="max-width:600px">
+    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">CNAME Setup Guide (Scenario C)</span></div>
+    <div style="padding:16px">
+      <p style="color:#c9d1d9;margin-bottom:12px">도메인 네임서버를 Cloudflare로 이전하지 않고, CNAME 레코드만으로 연결하는 방법입니다.</p>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:12px;margin-bottom:16px">
+        <p style="font-size:11px;color:#8b949e;margin-bottom:4px">CNAME 값 (터널 UUID):</p>
+        <div style="display:flex;align-items:center;gap:8px">
+          <code id="cname-value" style="color:#f5a623;font-size:13px;flex:1;word-break:break-all"></code>
+          <span class="btn" style="border-color:#58a6ff;color:#58a6ff;font-size:11px;white-space:nowrap" onclick="navigator.clipboard.writeText(document.getElementById('cname-value').textContent)">Copy</span>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <p style="font-weight:bold;color:#c9d1d9;margin-bottom:8px">DNS 제공자별 설정 방법:</p>
+        <table style="width:100%;font-size:12px">
+          <tr><td style="padding:4px 8px;color:#f5a623">GoDaddy</td><td style="padding:4px 8px">DNS 관리 → 레코드 추가 → 유형: CNAME → 이름: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
+          <tr><td style="padding:4px 8px;color:#f5a623">Namecheap</td><td style="padding:4px 8px">고급 DNS → 새 레코드 추가 → Type: CNAME → Host: {subdomain} → Value: {tunnelId}.cfargotunnel.com</td></tr>
+          <tr><td style="padding:4px 8px;color:#f5a623">가비아</td><td style="padding:4px 8px">DNS 관리 → 레코드 추가 → 타입: CNAME → 호스트: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
+          <tr><td style="padding:4px 8px;color:#f5a623">Cafe24</td><td style="padding:4px 8px">DNS 관리 → CNAME 추가 → 호스트: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
+        </table>
+      </div>
+      <div style="margin-bottom:16px">
+        <p style="font-weight:bold;color:#c9d1d9;margin-bottom:8px">CLI 명령어:</p>
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;font-size:12px">
+          <code style="color:#3fb950">brewnet domain connect &lt;app&gt; --domain &lt;subdomain&gt;.yourdomain.com</code>
+        </div>
+      </div>
+      <span class="btn btn-stop" onclick="document.getElementById('cname-modal').style.display='none'">Close</span>
+    </div>
+  </div>
+</div>
+
 <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Log<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
 <div id="log"></div>
 <script>
 var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
 var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
-var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName })};
+var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName, tunnelId: config.tunnelId })};
 var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
 var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
+var DOMAIN_CONNECTIONS = ${config.domainConnectionsJson};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
 function getExternalUrl(id){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
@@ -376,6 +471,106 @@ log('Brewnet admin panel connected — localhost:8088','ok');
 log('Click a service name for details · Refresh to reload status','dim');
 loadServices(true);
 setInterval(loadServices,15000);
+
+// ── Domain management JS (T042, T044) ──
+function getAdminPw(){return document.getElementById('admin-pw').value||'';}
+function domainFetch(url,opts){
+  var h=Object.assign({'Content-Type':'application/json','X-Admin-Password':getAdminPw()},opts&&opts.headers||{});
+  return fetch(url,Object.assign({},opts,{headers:h}));
+}
+async function loadDomains(){
+  try{
+    var r=await domainFetch('/api/domain/list');
+    var d=await r.json();
+    if(!r.ok){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#f85149">'+((d&&d.message)||'Auth required — enter admin password')+'</td></tr>';return;}
+    var conns=d.connections||[];
+    if(conns.length===0){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">No external domain connections</td></tr>';return;}
+    var rows=conns.map(function(c){
+      var url='https://'+c.hostname;
+      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><span class="btn btn-stop" style="font-size:11px" onclick="disconnectDomain(\''+c.appName+'\')">Disconnect</span></td></tr>';
+    }).join('');
+    document.getElementById('domain-body').innerHTML=rows;
+  }catch(e){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">Enter admin password to view domains</td></tr>';}
+}
+async function disconnectDomain(app){
+  if(!confirm('Disconnect '+app+' from external domain?'))return;
+  log('Disconnecting '+app+'...','dim');
+  var r=await domainFetch('/api/domain/disconnect/'+app,{method:'DELETE'});
+  var d=await r.json();
+  if(d.success){log(app+' disconnected ✓','ok');}else{log('Disconnect failed: '+(d.message||d.error),'error');}
+  loadDomains();
+}
+function showConnectModal(){
+  document.getElementById('connect-modal').style.display='flex';
+  document.getElementById('conn-steps').innerHTML='';
+  // Load apps
+  domainFetch('/api/domain/apps').then(function(r){return r.json();}).then(function(d){
+    var sel=document.getElementById('conn-app');
+    sel.innerHTML=(d.apps||[]).map(function(a){
+      var lbl=a.name+(a.alreadyConnected?' (connected: '+a.hostname+')':'');
+      return '<option value="'+a.name+'" '+(a.alreadyConnected?'disabled':'')+'>'+lbl+'</option>';
+    }).join('')||'<option>No apps available</option>';
+    // Pre-fill domain from settings
+    var dc=DOMAIN_CONFIG;
+    if(dc.zoneName)document.getElementById('conn-domain').value=dc.zoneName;
+  });
+}
+async function connectDomain(){
+  var app=document.getElementById('conn-app').value;
+  var sub=document.getElementById('conn-sub').value.trim();
+  var dom=document.getElementById('conn-domain').value.trim();
+  if(!app||!sub||!dom){log('All fields required','error');return;}
+  var stepsDiv=document.getElementById('conn-steps');
+  stepsDiv.innerHTML='<span style="color:#e3b341">⏳ Connecting...</span>';
+  try{
+    var r=await domainFetch('/api/domain/connect',{method:'POST',body:JSON.stringify({appName:app,subdomain:sub,domain:dom})});
+    var d=await r.json();
+    if(d.success){
+      var html=(d.steps||[]).map(function(s){return '<div>'+(s.status==='completed'?'✅':'❌')+' '+s.step+(s.durationMs?' <span style="color:#8b949e">('+Math.round(s.durationMs/1000*10)/10+'s)</span>':'')+'</div>';}).join('');
+      stepsDiv.innerHTML=html+'<div style="color:#3fb950;margin-top:8px">✅ '+d.externalUrl+' is live!</div>';
+      log(app+' connected → '+d.externalUrl,'ok');
+      loadDomains();
+    }else{
+      stepsDiv.innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
+      log('Connect failed: '+(d.message||d.error),'error');
+    }
+  }catch(e){stepsDiv.innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
+}
+function showCnameGuide(){
+  document.getElementById('cname-modal').style.display='flex';
+  var tid=DOMAIN_CONFIG.tunnelId||DOMAIN_CONFIG.zoneName||'(configure tunnel first)';
+  document.getElementById('cname-value').textContent=tid+'.cfargotunnel.com';
+}
+async function saveCloudflareSettings(){
+  var token=document.getElementById('cf-token').value.trim();
+  var acct=document.getElementById('cf-account').value.trim();
+  var zone=document.getElementById('cf-zone').value.trim();
+  var tunnel=document.getElementById('cf-tunnel').value.trim();
+  if(!token){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">API Token required</span>';return;}
+  document.getElementById('cf-result').innerHTML='<span style="color:#e3b341">Verifying...</span>';
+  try{
+    var r=await domainFetch('/api/settings/cloudflare',{method:'PUT',body:JSON.stringify({apiToken:token,accountId:acct,zoneId:zone,tunnelId:tunnel})});
+    var d=await r.json();
+    if(d.success){
+      document.getElementById('cf-result').innerHTML='<span style="color:#3fb950">✅ Verified'+(d.email?' ('+d.email+')':'')+(d.zoneName?' — '+d.zoneName:'')+'</span>';
+      log('Cloudflare settings saved ✓','ok');
+      loadDomains();
+    }else{
+      document.getElementById('cf-result').innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
+    }
+  }catch(e){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
+}
+async function loadCloudflareStatus(){
+  try{
+    var r=await domainFetch('/api/settings/cloudflare');
+    var d=await r.json();
+    var el=document.getElementById('cf-status');
+    if(d.configured){el.innerHTML='<span style="color:#3fb950">✅ Configured'+(d.zoneName?' ('+d.zoneName+')':'')+'</span>';}
+    else{el.innerHTML='<span style="color:#e3b341">⚠️ Not configured</span>';}
+  }catch(e){}
+}
+// Auto-load domains and settings status
+setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
 </script>
 </body>
 </html>`;
@@ -745,8 +940,10 @@ ${rows}
     domainProvider: wizardState?.domain?.provider ?? 'local',
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
+    tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
     boilerplateHtml,
     boilerplateStacksJson,
+    domainConnectionsJson: JSON.stringify(wizardState?.domainConnections ?? []),
   };
 
   // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
@@ -835,7 +1032,7 @@ ${rows}
     // CORS for dev convenience
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Password');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -910,6 +1107,47 @@ ${rows}
           return;
         }
 
+        // ── Domain API (T031-T036) ──────────────────────────────────
+        if (parts[1] === 'domain') {
+          // Auth check for domain endpoints
+          if (!checkAdminAuth(req, res, wizardState)) return;
+
+          if (req.method === 'GET' && parts[2] === 'list') {
+            await handleDomainList(res, wizardState);
+            return;
+          }
+          if (req.method === 'GET' && parts[2] === 'apps') {
+            handleDomainApps(res, wizardState);
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'connect') {
+            await handleDomainConnect(res, body, wizardState);
+            return;
+          }
+          if (req.method === 'DELETE' && parts[2] === 'disconnect' && parts[3]) {
+            await handleDomainDisconnect(res, parts[3], wizardState);
+            return;
+          }
+          if (req.method === 'GET' && parts[2] === 'status' && parts[3]) {
+            await handleDomainStatus(res, parts[3], wizardState);
+            return;
+          }
+        }
+
+        // ── Settings API (T037-T038) ────────────────────────────────
+        if (parts[1] === 'settings') {
+          if (!checkAdminAuth(req, res, wizardState)) return;
+
+          if (req.method === 'GET' && parts[2] === 'cloudflare') {
+            handleSettingsCloudflareGet(res, wizardState);
+            return;
+          }
+          if (req.method === 'PUT' && parts[2] === 'cloudflare') {
+            await handleSettingsCloudflarePut(res, body, wizardState);
+            return;
+          }
+        }
+
         json(res, 404, { success: false, error: 'Not found' });
       } catch (err) {
         logger.error('admin-server', 'Unhandled error', { error: String(err) });
@@ -937,4 +1175,289 @@ ${rows}
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Admin password middleware (T031)
+// ---------------------------------------------------------------------------
+
+function checkAdminAuth(
+  req: IncomingMessage,
+  res: ServerResponse,
+  state: WizardState | null,
+): boolean {
+  if (!state?.admin?.password) {
+    json(res, 401, { error: 'Unauthorized', message: 'Admin password not configured' });
+    return false;
+  }
+  const provided = req.headers['x-admin-password'] as string | undefined;
+  if (!provided || provided !== state.admin.password) {
+    json(res, 401, { error: 'Unauthorized', message: 'Admin password required for this operation' });
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Domain API handlers (T032-T036)
+// ---------------------------------------------------------------------------
+
+async function handleDomainList(
+  res: ServerResponse,
+  state: WizardState | null,
+): Promise<void> {
+  if (!state) {
+    json(res, 200, { connections: [], tunnel: null, credentialsConfigured: false });
+    return;
+  }
+
+  try {
+    const mgr = new DomainManager(state.projectName);
+    const connections = mgr.list().map((c) => ({
+      ...c,
+      externalUrl: `https://${c.hostname}`,
+    }));
+
+    let tunnel = null;
+    const cf = state.domain.cloudflare;
+    if (cf.tunnelId && cf.apiToken && cf.accountId) {
+      try {
+        const { getTunnelHealth } = await import('./cloudflare-client.js');
+        const health = await getTunnelHealth(cf.apiToken, cf.accountId, cf.tunnelId);
+        tunnel = { ...health, tunnelName: cf.tunnelName };
+      } catch { /* leave null */ }
+    }
+
+    const credentialsConfigured = !!(cf.apiToken && cf.accountId && cf.zoneId && cf.tunnelId);
+
+    json(res, 200, { connections, tunnel, credentialsConfigured });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
+function handleDomainApps(
+  res: ServerResponse,
+  state: WizardState | null,
+): void {
+  if (!state) {
+    json(res, 200, { apps: [] });
+    return;
+  }
+
+  try {
+    const mgr = new DomainManager(state.projectName);
+    const apps = mgr.getConnectableApps();
+    json(res, 200, { apps });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
+async function handleDomainConnect(
+  res: ServerResponse,
+  body: string,
+  state: WizardState | null,
+): Promise<void> {
+  if (!state) {
+    json(res, 500, { success: false, error: 'No project state' });
+    return;
+  }
+
+  let parsed: { appName?: string; subdomain?: string; domain?: string };
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    json(res, 400, { success: false, error: 'INVALID_JSON', message: 'Request body must be valid JSON' });
+    return;
+  }
+
+  const { appName, subdomain, domain } = parsed;
+  if (!appName || !subdomain || !domain) {
+    json(res, 400, { success: false, error: 'MISSING_FIELDS', message: 'appName, subdomain, and domain are required' });
+    return;
+  }
+
+  // Validate subdomain format
+  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) {
+    json(res, 400, { success: false, error: 'INVALID_SUBDOMAIN', message: 'Subdomain must be a valid DNS label' });
+    return;
+  }
+
+  try {
+    const mgr = new DomainManager(state.projectName);
+    const result = await mgr.connect(appName, subdomain, domain);
+
+    if (!result.success) {
+      const statusCode = result.error === 'CNAME_CONFLICT' ? 409
+        : result.error?.startsWith('APP_NOT_RUNNING') ? 503
+        : 400;
+      json(res, statusCode, { success: false, error: result.error, message: result.error, steps: result.steps });
+      return;
+    }
+
+    json(res, 200, {
+      success: true,
+      hostname: result.hostname,
+      externalUrl: result.externalUrl,
+      steps: result.steps,
+    });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
+async function handleDomainDisconnect(
+  res: ServerResponse,
+  appName: string,
+  state: WizardState | null,
+): Promise<void> {
+  if (!state) {
+    json(res, 500, { success: false, error: 'No project state' });
+    return;
+  }
+
+  try {
+    const mgr = new DomainManager(state.projectName);
+    const result = await mgr.disconnect(appName);
+
+    if (!result.success) {
+      const statusCode = result.error?.startsWith('NOT_CONNECTED') ? 404 : 500;
+      json(res, statusCode, { success: false, error: result.error?.split(':')[0], message: result.error });
+      return;
+    }
+
+    json(res, 200, {
+      success: true,
+      appName: result.appName,
+      removedHostname: result.removedHostname,
+      steps: result.steps,
+    });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
+async function handleDomainStatus(
+  res: ServerResponse,
+  appName: string,
+  state: WizardState | null,
+): Promise<void> {
+  if (!state) {
+    json(res, 404, { success: false, error: 'No project state' });
+    return;
+  }
+
+  try {
+    const mgr = new DomainManager(state.projectName);
+    const statuses = await mgr.status(appName);
+
+    if (statuses.length === 0) {
+      json(res, 404, { success: false, error: 'NOT_CONNECTED', message: `No domain connection for app: ${appName}` });
+      return;
+    }
+
+    json(res, 200, statuses[0]);
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings API handlers (T037-T038)
+// ---------------------------------------------------------------------------
+
+function handleSettingsCloudflareGet(
+  res: ServerResponse,
+  state: WizardState | null,
+): void {
+  if (!state) {
+    json(res, 200, { configured: false });
+    return;
+  }
+
+  const cf = state.domain.cloudflare;
+  const mask = (s: string) => s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : s ? '***set***' : 'not set';
+
+  json(res, 200, {
+    configured: !!(cf.apiToken && cf.accountId && cf.zoneId),
+    accountId: mask(cf.accountId),
+    zoneId: mask(cf.zoneId),
+    zoneName: cf.zoneName || '',
+    tunnelId: mask(cf.tunnelId),
+    tunnelName: cf.tunnelName || '',
+    apiTokenSet: !!cf.apiToken,
+    apiTokenValid: !!cf.apiToken, // Validated on save, assumed valid if set
+  });
+}
+
+async function handleSettingsCloudflarePut(
+  res: ServerResponse,
+  body: string,
+  state: WizardState | null,
+): Promise<void> {
+  if (!state) {
+    json(res, 500, { success: false, error: 'No project state' });
+    return;
+  }
+
+  let parsed: { apiToken?: string; accountId?: string; zoneId?: string; tunnelId?: string };
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    json(res, 400, { success: false, error: 'INVALID_JSON', message: 'Request body must be valid JSON' });
+    return;
+  }
+
+  const { apiToken, accountId, zoneId, tunnelId } = parsed;
+  if (!apiToken) {
+    json(res, 400, { success: false, error: 'MISSING_TOKEN', message: 'apiToken is required' });
+    return;
+  }
+
+  // Verify the token
+  try {
+    const result = await verifyToken(apiToken);
+    if (!result.valid) {
+      json(res, 400, {
+        success: false,
+        error: 'INVALID_TOKEN',
+        message: 'API token verification failed. Ensure the token has Tunnel:Edit, DNS:Edit, Zone:Read permissions.',
+      });
+      return;
+    }
+
+    // Update state
+    const { saveState: save } = await import('../wizard/state.js');
+    const updated = structuredClone(state);
+    updated.domain.cloudflare.apiToken = apiToken;
+    if (accountId) updated.domain.cloudflare.accountId = accountId;
+    if (zoneId) updated.domain.cloudflare.zoneId = zoneId;
+    if (tunnelId) updated.domain.cloudflare.tunnelId = tunnelId;
+    save(updated);
+
+    // Get zone name for response
+    let zoneName = updated.domain.cloudflare.zoneName;
+    if (zoneId && !zoneName) {
+      try {
+        const { getZones } = await import('./cloudflare-client.js');
+        const zones = await getZones(apiToken);
+        const found = zones.find((z) => z.id === zoneId);
+        if (found) {
+          zoneName = found.name;
+          updated.domain.cloudflare.zoneName = zoneName;
+          save(updated);
+        }
+      } catch { /* non-critical */ }
+    }
+
+    json(res, 200, {
+      success: true,
+      verified: true,
+      email: result.email ?? '',
+      zoneName,
+    });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
 }

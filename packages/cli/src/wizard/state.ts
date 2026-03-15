@@ -161,6 +161,11 @@ export function loadState(projectName: string): WizardState | null {
       return null;
     }
 
+    // Backfill domainConnections for existing v7 state files (added in 003-domain-external-access)
+    if (!Array.isArray(obj.domainConnections)) {
+      obj.domainConnections = [];
+    }
+
     return parsed as WizardState;
   } catch (err) {
     logger.warn('wizard', 'Failed to load saved state', {

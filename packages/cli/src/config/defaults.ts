@@ -95,6 +95,8 @@ export function createDefaultWizardState(): WizardState {
         zoneName: '',
       },
     },
+
+    domainConnections: [],
   };
 }
 

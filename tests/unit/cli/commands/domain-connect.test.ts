@@ -100,6 +100,32 @@ jest.unstable_mockModule(
 );
 
 // ---------------------------------------------------------------------------
+// Mock DomainManager
+// ---------------------------------------------------------------------------
+
+const mockDomainManagerConnect = jest.fn<any>();
+const mockDomainManagerDisconnect = jest.fn<any>();
+const mockDomainManagerList = jest.fn<any>();
+const mockDomainManagerStatus = jest.fn<any>();
+const mockDomainManagerGetConnectableApps = jest.fn<any>();
+const mockDomainManagerGetState = jest.fn<any>();
+
+jest.unstable_mockModule(
+  '../../../../packages/cli/src/services/domain-manager.js',
+  () => ({
+    DomainManager: jest.fn().mockImplementation(() => ({
+      connect: mockDomainManagerConnect,
+      disconnect: mockDomainManagerDisconnect,
+      list: mockDomainManagerList,
+      status: mockDomainManagerStatus,
+      getConnectableApps: mockDomainManagerGetConnectableApps,
+      getState: mockDomainManagerGetState,
+      reload: jest.fn(),
+    })),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Mock QuickTunnelManager
 // ---------------------------------------------------------------------------
 
@@ -520,5 +546,135 @@ describe('domain connect — guard: tunnelMode=none', () => {
     mockExit.mockRestore();
     expect(mockVerifyToken).not.toHaveBeenCalled();
     expect(mockCreateTunnel).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T016 — domain connect --domain (external domain connection via DomainManager)
+// ---------------------------------------------------------------------------
+
+describe('domain connect --domain (external domain connection)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+
+    const state = createDefaultWizardState();
+    const stateWithTunnel = {
+      ...state,
+      projectName: 'my-server',
+      domainConnections: [],
+      domain: {
+        ...state.domain,
+        provider: 'tunnel' as const,
+        cloudflare: {
+          ...state.domain.cloudflare,
+          enabled: true,
+          tunnelMode: 'named' as const,
+          tunnelId: 'tun-123',
+          tunnelToken: 'tok-123',
+          tunnelName: 'my-server',
+          accountId: 'acc-123',
+          apiToken: 'test-token',
+          zoneId: 'zone-456',
+          zoneName: 'example.com',
+        },
+      },
+    };
+
+    mockDomainManagerGetState.mockReturnValue(stateWithTunnel);
+    mockDomainManagerConnect.mockResolvedValue({
+      success: true,
+      hostname: 'my-api.example.com',
+      externalUrl: 'https://my-api.example.com',
+      steps: [
+        { step: 'health_check', status: 'completed', durationMs: 50 },
+        { step: 'ingress_update', status: 'completed', durationMs: 200 },
+        { step: 'dns_creation', status: 'completed', durationMs: 300 },
+        { step: 'traefik_labels', status: 'completed' },
+        { step: 'dns_propagation', status: 'completed', durationMs: 3200 },
+      ],
+    });
+  });
+
+  async function runDomainConnectWithDomain(program: Command, app: string, domain: string, force = false): Promise<void> {
+    try {
+      const args = ['domain', 'connect', app, '--domain', domain];
+      if (force) args.push('--force');
+      await program.parseAsync(args, { from: 'user' });
+    } catch {
+      // Absorb exits
+    }
+  }
+
+  it('calls DomainManager.connect() when --domain is provided', async () => {
+    const p = makeProgram();
+    registerDomainCommand(p);
+
+    await runDomainConnectWithDomain(p, 'my-api', 'my-api.example.com');
+
+    expect(mockDomainManagerConnect).toHaveBeenCalledWith(
+      'my-api',
+      'my-api',
+      'example.com',
+      expect.objectContaining({ force: false }),
+    );
+  });
+
+  it('passes --force flag to DomainManager.connect()', async () => {
+    const p = makeProgram();
+    registerDomainCommand(p);
+
+    await runDomainConnectWithDomain(p, 'my-api', 'my-api.example.com', true);
+
+    expect(mockDomainManagerConnect).toHaveBeenCalledWith(
+      'my-api',
+      'my-api',
+      'example.com',
+      expect.objectContaining({ force: true }),
+    );
+  });
+
+  it('does NOT call legacy flow (verifyToken, createTunnel) when --domain is used', async () => {
+    const p = makeProgram();
+    registerDomainCommand(p);
+
+    await runDomainConnectWithDomain(p, 'my-api', 'my-api.example.com');
+
+    expect(mockVerifyToken).not.toHaveBeenCalled();
+    expect(mockCreateTunnel).not.toHaveBeenCalled();
+  });
+
+  it('shows Scenario C CNAME instructions when zoneId is empty', async () => {
+    const stateNoZone = createDefaultWizardState();
+    const stateWithTunnelNoZone = {
+      ...stateNoZone,
+      projectName: 'my-server',
+      domainConnections: [],
+      domain: {
+        ...stateNoZone.domain,
+        provider: 'tunnel' as const,
+        cloudflare: {
+          ...stateNoZone.domain.cloudflare,
+          enabled: true,
+          tunnelMode: 'named' as const,
+          tunnelId: 'tun-123',
+          tunnelToken: 'tok-123',
+          tunnelName: 'my-server',
+          accountId: 'acc-123',
+          apiToken: 'test-token',
+          zoneId: '',  // No zone → Scenario C
+          zoneName: '',
+        },
+      },
+    };
+    mockDomainManagerGetState.mockReturnValue(stateWithTunnelNoZone);
+
+    const p = makeProgram();
+    registerDomainCommand(p);
+
+    // Should not call DomainManager.connect() — just display instructions
+    await runDomainConnectWithDomain(p, 'my-api', 'my-api.example.com');
+
+    expect(mockDomainManagerConnect).not.toHaveBeenCalled();
   });
 });
