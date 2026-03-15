@@ -178,8 +178,10 @@ tr:hover td{background:#161b22}
     <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
     <div class="sub" id="subtitle">Loading...</div>
   </div>
-  <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
-  <a href="/apps" style="margin-left:12px;color:#3fb950;font-size:12px;text-decoration:none;border:1px solid #3fb950;padding:2px 8px;border-radius:4px">🚀 App Deploy</a>
+  <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
+    <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
+    <a href="/apps" style="color:#3fb950;font-size:12px;text-decoration:none;border:1px solid #3fb950;padding:2px 8px;border-radius:4px">🚀 App Deploy</a>
+  </div>
 </div>
 <div class="section-title">Services</div>
 <table id="svc-table">
@@ -659,6 +661,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   let projectPath = rawPath.startsWith('~') ? join(homedir(), rawPath.slice(1)) : rawPath;
   let wizardState: WizardState | null = null;
   const last = getLastProject();
+  logger.info('admin-server', `[init] lastProject=${JSON.stringify(last)} rawPath=${rawPath} projectPath=${projectPath}`);
   if (last) {
     const state = loadState(last);
     if (state) {
@@ -667,8 +670,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       if (!options.projectPath && state.projectPath) {
         const raw = state.projectPath;
         projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
+        logger.info('admin-server', `[init] projectPath resolved from state: ${projectPath}`);
       }
+    } else {
+      logger.warn('admin-server', `[init] loadState("${last}") returned null — state file missing?`);
     }
+  } else {
+    logger.warn('admin-server', '[init] lastProject is empty — no wizard state loaded, projectPath fallback to cwd');
   }
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
@@ -879,16 +887,20 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (parts[1] === 'apps') {
           if (req.method === 'GET' && parts.length === 2) {
             const apps = await listApps();
+            logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
             json(res, 200, { apps });
             return;
           }
           if (req.method === 'GET' && parts[2] === 'boilerplates') {
             const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+            logger.info('admin-server', `[GET /api/apps/boilerplates] projectPath=${projectPath} bpPath=${bpPath} exists=${existsSync(bpPath)}`);
             if (existsSync(bpPath)) {
               const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
               const metas = Array.isArray(raw) ? raw : [raw];
+              logger.info('admin-server', `[GET /api/apps/boilerplates] returning ${metas.length} boilerplate(s)`);
               json(res, 200, { boilerplates: metas });
             } else {
+              logger.warn('admin-server', `[GET /api/apps/boilerplates] file not found at ${bpPath}`);
               json(res, 200, { boilerplates: [] });
             }
             return;

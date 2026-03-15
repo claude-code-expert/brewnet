@@ -864,7 +864,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
 
         // Step 2: generate .env with wizard DB settings (hostPort/frontendPort ensure correct port bindings)
         bpSpinner.text = `  [${stackId}] 런타임 환경 구성 중... (DB: ${dbDriver}, user: ${dbOpts.dbUser})`;
-        boilerplateGenerateEnv(appDir, stackId, dbDriver, { ...dbOpts, hostPort: backendPort, frontendPort });
+        boilerplateGenerateEnv(appDir, stackId, dbDriver, { ...dbOpts, hostPort: backendPort, frontendPort, integrated: true });
 
         // Step 2b: write docker-compose.override.yml to join brewnet network + Traefik labels
         // Frontend containers in boilerplate stacks are nginx-served builds: internal port 80.

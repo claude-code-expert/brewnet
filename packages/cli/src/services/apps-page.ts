@@ -109,9 +109,10 @@ a.app-link:hover{text-decoration:underline}
     </svg>
     App Deploy
   </h1>
-  <a href="/" class="back">\u2190 Admin</a>
-  <span style="flex:1"></span>
-  <button class="btn-primary" onclick="openNewAppModal()">+ New App</button>
+  <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
+    <a href="/" class="back">\u2190 Admin</a>
+    <button class="btn-primary" onclick="openNewAppModal()">+ New App</button>
+  </div>
 </div>
 
 <div class="section-title">Managed Apps</div>
@@ -134,10 +135,29 @@ function badge(status){var c={running:'running',stopped:'stopped',creating:'crea
 // ---------------------------------------------------------------------------
 // App table
 // ---------------------------------------------------------------------------
+function extractPort(url){var m=url&&url.match(/:([0-9]+)/);return m?parseInt(m[1],10):null;}
+
 async function loadApps(){
   var r=await fetch('/api/apps').then(function(r){return r.json();}).catch(function(){return {apps:[]};});
   var tbody=document.getElementById('app-body');
-  if(!r.apps||r.apps.length===0){tbody.innerHTML='<tr><td colspan="7" style="color:#8b949e">No apps yet \u2014 click "+ New App" to get started.</td></tr>';return;}
+  if(!r.apps||r.apps.length===0){
+    // Check if there are unregistered boilerplates from brewnet init
+    var bp=await fetch('/api/apps/boilerplates').then(function(r){return r.json();}).catch(function(){return {boilerplates:[]};});
+    if(bp.boilerplates&&bp.boilerplates.length>0){
+      tbody.innerHTML='<tr><td colspan="7" style="color:#8b949e">'+
+        bp.boilerplates.length+' boilerplate(s) from <code>brewnet init</code> not yet registered.'+
+        ' Click \u201c+ New App\u201d \u2192 \u201cInstalled Boilerplate\u201d tab to add them.'+
+        '<br/><br/>'+
+        bp.boilerplates.map(function(b){
+          var port=b.port||extractPort(b.backendUrl)||'';
+          return '\u2022 <b>'+escHtml(b.stackId)+'</b> (port '+port+') \u2014 <a href="'+escHtml(b.backendUrl||'')+'" target="_blank" class="app-link">'+escHtml(b.backendUrl||'')+'</a>';
+        }).join('<br/>')+
+        '</td></tr>';
+    }else{
+      tbody.innerHTML='<tr><td colspan="7" style="color:#8b949e">No apps yet \u2014 click "+ New App" to get started.</td></tr>';
+    }
+    return;
+  }
   tbody.innerHTML=r.apps.map(function(a){
     var localUrl=a.port?'http://localhost:'+a.port:'';
     var stackLabel=a.stackId||a.sourceUrl||'\u2014';
@@ -229,16 +249,19 @@ function switchMode(mode){
   if(!fields)return;
   if(mode==='boilerplate'){
     var bpOpts=BOILERPLATES.length
-      ?BOILERPLATES.map(function(b){return '<option value="'+escHtml(b.stackId)+'">'+escHtml(b.stackId)+' (port '+b.port+')</option>';}).join('')
+      ?BOILERPLATES.map(function(b){
+          var label=b.isUnified
+            ?(extractPort(b.backendUrl)||'?')
+            :'backend :'+(extractPort(b.backendUrl)||'?')+' + frontend :'+(extractPort(b.frontendUrl)||'?');
+          return '<option value="'+escHtml(b.stackId)+'">'+escHtml(b.stackId)+' ('+label+')</option>';
+        }).join('')
       :'<option disabled value="">No installed boilerplates</option>';
     fields.innerHTML=
       '<div class="form-group"><label class="form-label">Stack (installed)</label>'+
       '<select class="form-select" id="f-stackId" onchange="onStackChange()">'+bpOpts+'</select>'+
-      '<p class="form-hint">Already installed during brewnet init. Connects to Gitea and starts Docker.</p></div>'+
-      '<div class="form-row">'+
-        '<div class="form-group"><label class="form-label">App Name</label><input class="form-input" id="f-appName" placeholder="my-app"/></div>'+
-        '<div class="form-group"><label class="form-label">Port</label><input class="form-input" id="f-port" type="number" placeholder="3000"/></div>'+
-      '</div>'+
+      '<p class="form-hint">Monorepo with backend + frontend. Creates one Gitea repo for the whole stack.</p></div>'+
+      '<div class="form-group"><label class="form-label">App Name</label><input class="form-input" id="f-appName" placeholder="my-app"/></div>'+
+      '<div id="f-ports-info" style="font-size:12px;color:#8b949e;margin-bottom:12px"></div>'+
       '<div class="form-group"><label class="form-label">Framework</label><input class="form-input" id="f-framework" readonly style="opacity:.5"/></div>'+
       '<div class="form-group"><label class="form-label">Local Path</label><input class="form-input" id="f-appDir" readonly style="opacity:.5"/></div>';
     if(BOILERPLATES.length)onStackChange();
@@ -271,10 +294,19 @@ function onStackChange(){
   var stackId=sel?sel.value:'';
   var meta=BOILERPLATES.find(function(b){return b.stackId===stackId;});
   if(!meta)return;
-  var portEl=document.getElementById('f-port');
+  var portsEl=document.getElementById('f-ports-info');
   var fwEl=document.getElementById('f-framework');
   var dirEl=document.getElementById('f-appDir');
-  if(portEl)portEl.value=String(meta.port||'');
+  if(portsEl){
+    if(meta.isUnified){
+      portsEl.innerHTML='Port: <b>'+(extractPort(meta.backendUrl)||'?')+'</b>';
+    }else{
+      portsEl.innerHTML=
+        'Backend port: <b>'+(extractPort(meta.backendUrl)||'?')+'</b> &nbsp;|&nbsp; '+
+        'Frontend port: <b>'+(extractPort(meta.frontendUrl)||'?')+'</b> &nbsp;&mdash;&nbsp; '+
+        'one Gitea repo for both';
+    }
+  }
   if(fwEl)fwEl.value=meta.frameworkId||'';
   if(dirEl)dirEl.value=meta.appDir||'';
 }

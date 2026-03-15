@@ -471,8 +471,10 @@ export function writeTraefikOverride(
       `      - "traefik.docker.network=brewnet"`,
       `      - "traefik.http.routers.${frn}.rule=PathPrefix(\`${fpp}\`)"`,
       `      - "traefik.http.routers.${frn}.entrypoints=web"`,
+      `      - "traefik.http.middlewares.${frn}-slash.redirectregex.regex=${fpp}$$"`,
+      `      - "traefik.http.middlewares.${frn}-slash.redirectregex.replacement=${fpp}/"`,
       `      - "traefik.http.middlewares.${frn}-strip.stripprefix.prefixes=${fpp}"`,
-      `      - "traefik.http.routers.${frn}.middlewares=${frn}-strip"`,
+      `      - "traefik.http.routers.${frn}.middlewares=${frn}-slash,${frn}-strip"`,
       `      - "traefik.http.services.${frn}.loadbalancer.server.port=${frontendContainerPort}"`,
     );
   }
