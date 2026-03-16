@@ -15,8 +15,8 @@
  * @module services/boilerplate-manager
  */
 
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { join, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { execa } from 'execa';
@@ -74,6 +74,35 @@ export async function cloneStack(stackId: string, projectDir: string): Promise<v
     BOILERPLATE_REPO_URL,
     projectDir,
   ]);
+  patchImagePaths(projectDir);
+}
+
+/**
+ * Patch image paths in cloned boilerplate source files.
+ *
+ * The boilerplate uses `src="./brewnet-site-banner.png"` (relative path).
+ * This works in plain <img> tags but breaks Next.js <Image> component which
+ * requires an absolute path (`/brewnet-site-banner.png`).
+ * Normalise to absolute paths across all stacks for consistency and
+ * to satisfy Next.js image optimisation requirements.
+ */
+function patchImagePaths(dir: string): void {
+  const jsxExts = new Set(['.tsx', '.ts', '.jsx', '.js']);
+  const walk = (d: string) => {
+    for (const entry of readdirSync(d)) {
+      if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue;
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) { walk(full); continue; }
+      if (!jsxExts.has(extname(entry))) continue;
+      const original = readFileSync(full, 'utf-8');
+      const patched = original.replaceAll(
+        'src="./brewnet-site-banner.png"',
+        'src="/brewnet-site-banner.png"',
+      );
+      if (patched !== original) writeFileSync(full, patched, 'utf-8');
+    }
+  };
+  walk(dir);
 }
 
 // ---------------------------------------------------------------------------
