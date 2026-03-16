@@ -11,8 +11,9 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
+import { createConnection } from 'node:net';
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import Dockerode from 'dockerode';
@@ -236,7 +237,6 @@ tr:hover td{background:#161b22}
   <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
   <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
 </table>
-${config.boilerplateHtml}
 
 ${config.domainProvider === 'tunnel' ? `
 <!-- ── Domains Section (T039) ── -->
@@ -335,7 +335,7 @@ var DOMAIN_CONNECTIONS = ${config.domainConnectionsJson};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
 function getExternalUrl(id){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
-  var e=EXT_PATHS[id];if(!e)return null;
+  var e=EXT_PATHS[id];if(!e){var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});return conn?'https://'+conn.hostname:null;}
   if(c.quickTunnelUrl){var base=c.quickTunnelUrl.replace(/\\/$/,'');return base+e.path;}
   if(c.zoneName){return e.sub?'https://'+e.sub+'.'+c.zoneName:'https://'+c.zoneName;}
   return null;
@@ -443,6 +443,8 @@ async function loadServices(manual){
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
+    var isUnifiedSvc=localUrl&&(BOILERPLATE_STACKS||[]).some(function(bs){if(!bs.isUnified||!bs.backendUrl)return false;try{return new URL(bs.backendUrl).port===String(s.port);}catch(e){return false;}});
+    var localCell=localUrl?(isUnifiedSvc?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a><br><a href="\${localUrl}/api/hello" target="_blank" style="color:#8b949e;font-size:11px">/api/hello ↗</a>\`:\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`):'<span style="color:#8b949e">—</span>';
     var nameHtml=hasDetail
       ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
       :\`<b>\${s.name}</b>\`;
@@ -450,7 +452,7 @@ async function loadServices(manual){
     <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
     <td>\${badge(s.status)}</td>
     <td>\${s.port??'—'}</td>
-    <td>\${localUrl?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
+    <td>\${localCell}</td>
     <td>\${ext?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
     <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
   </tr>\`;}).join('');
@@ -634,9 +636,11 @@ const REQUIRED_SERVICES = new Set(['traefik', 'nginx', 'caddy', 'gitea']);
 
 const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudflared']);
 
-const WEB_UI_SERVICES = new Set([
-  'traefik', 'nginx', 'caddy', 'gitea', 'nextcloud', 'minio',
-  'jellyfin', 'pgadmin', 'filebrowser',
+// Non-HTTP services that should never show a clickable local URL.
+// All other services with a public TCP port get http://localhost:<port>.
+const NO_HTTP_SERVICES = new Set([
+  'postgresql', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb',
+  'openssh-server', 'docker-mailserver',
 ]);
 
 // Services that must be accessed through Traefik path-prefix routing.
@@ -707,7 +711,10 @@ async function handleGetServices(
         memory: '—',
         uptime: c.Status?.startsWith('Up') ? c.Status.replace(/^Up /, '') : '—',
         port: port ?? null,
-        url: WEB_UI_SERVICES.has(composeService) && port
+        // Show a local URL for any service with a public HTTP port.
+        // Database/queue services (non-HTTP) are excluded via NO_HTTP_SERVICES.
+        // urlMap overrides apply first (e.g. Traefik-path services like gitea → /git).
+        url: port && !NO_HTTP_SERVICES.has(composeService)
           ? urlMap[composeService] ?? `http://localhost:${port}`
           : null,
         removable: !REQUIRED_SERVICES.has(composeService),
@@ -922,6 +929,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       // Only fall back to state.projectPath when caller didn't supply one
       if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
     }
+  }
+  // Expand leading ~ — Node.js fs APIs do not interpret tilde as home directory
+  if (projectPath.startsWith('~/') || projectPath === '~') {
+    projectPath = join(homedir(), projectPath.slice(1));
   }
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
@@ -1256,6 +1267,31 @@ ${rows}
             }
             return;
           }
+          // POST /api/apps/boilerplates/:stackId/stop — docker compose down
+          // POST /api/apps/boilerplates/:stackId/start — docker compose up -d
+          if (req.method === 'POST' && parts[2] === 'boilerplates' && parts[3] && (parts[4] === 'stop' || parts[4] === 'start')) {
+            const stackId = decodeURIComponent(parts[3]);
+            const action = parts[4] as 'stop' | 'start';
+            const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+            if (!existsSync(bpPath)) { json(res, 404, { error: 'No boilerplates found' }); return; }
+            const bpRaw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+            const bpMetas: BoilerplateMeta[] = Array.isArray(bpRaw) ? bpRaw : [bpRaw];
+            const meta = bpMetas.find((m) => m.stackId === stackId);
+            if (!meta) { json(res, 404, { error: `Boilerplate "${stackId}" not found` }); return; }
+            const { execa: execaBp } = await import('execa');
+            if (action === 'stop') {
+              await execaBp('docker', ['compose', 'down'], { cwd: meta.appDir });
+              meta.status = 'stopped';
+            } else {
+              await execaBp('docker', ['compose', 'up', '-d'], { cwd: meta.appDir });
+              meta.status = 'running';
+            }
+            // Persist status update back to .brewnet-boilerplate.json
+            const { writeFileSync } = await import('node:fs');
+            writeFileSync(bpPath, JSON.stringify(bpMetas, null, 2), 'utf-8');
+            json(res, 200, { success: true });
+            return;
+          }
           if (req.method === 'POST' && parts[2] === 'create') {
             const opts = JSON.parse(body) as CreateAppOptions;
             const jobId = await createApp(opts);
@@ -1285,7 +1321,7 @@ ${rows}
           }
 
           // GET /api/apps/:name — single app detail
-          if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs'].includes(parts[2]) && parts.length === 3) {
+          if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs', 'check-port'].includes(parts[2]) && parts.length === 3) {
             const apps = await listApps();
             const app = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
             if (!app) { json(res, 404, { error: 'App not found' }); return; }
@@ -1368,10 +1404,75 @@ ${rows}
         if (parts[1] === 'git' && parts[2] === 'repos' && req.method === 'GET') {
           try {
             const repos = await listGiteaRepos();
-            json(res, 200, { repos });
+            const appsForEnrich = await listApps();
+            // Enrich repos: map Gitea field names + attach connected appName
+            const enriched = repos.map((repo) => {
+              const r = repo as unknown as Record<string, unknown>;
+              const connectedApp = appsForEnrich.find((app) =>
+                app.giteaRepoUrl && (
+                  app.giteaRepoUrl.endsWith('/' + repo.name) ||
+                  app.giteaRepoUrl.includes('/' + repo.name + '.')
+                ),
+              );
+              return {
+                ...repo,
+                language: (r['language'] as string | undefined) ?? '',
+                stars: (r['stars_count'] as number | undefined) ?? 0,
+                updatedAt: (r['updated'] as string | undefined) ?? '',
+                appName: connectedApp?.name,
+              };
+            });
+            json(res, 200, { repos: enriched });
           } catch (err) {
             json(res, 502, { success: false, error: String(err) });
           }
+          return;
+        }
+
+        // POST /api/git/repos/:name/connect — Associate repo with an app
+        if (parts[1] === 'git' && parts[2] === 'repos' && parts[3] && parts[4] === 'connect' && req.method === 'POST') {
+          const repoName = decodeURIComponent(parts[3]);
+          let parsed: { appName?: string } = {};
+          try { parsed = JSON.parse(body); } catch { json(res, 400, { error: 'Invalid JSON' }); return; }
+          const appName = parsed.appName?.trim();
+          if (!appName) { json(res, 400, { error: 'appName required' }); return; }
+          try {
+            const appsPath = join(homedir(), '.brewnet', 'apps.json');
+            const existing = existsSync(appsPath) ? JSON.parse(readFileSync(appsPath, 'utf-8')) : [];
+            const app = Array.isArray(existing) ? existing.find((a: { name: string }) => a.name === appName) : null;
+            if (!app) { json(res, 404, { error: `App '${appName}' not found` }); return; }
+            const repos = await listGiteaRepos();
+            const repo = repos.find(r => r.name === repoName);
+            if (!repo) { json(res, 404, { error: `Repo '${repoName}' not found in Gitea` }); return; }
+            // Check not already connected to a different app
+            const conflict = Array.isArray(existing) ? existing.find((a: { name: string; giteaRepoUrl?: string }) =>
+              a.name !== appName && a.giteaRepoUrl && (a.giteaRepoUrl.endsWith('/' + repoName) || a.giteaRepoUrl.includes('/' + repoName + '.'))) : null;
+            if (conflict) { json(res, 409, { error: `Repo already connected to app '${conflict.name}'` }); return; }
+            app.giteaRepoUrl = repo.clone_url.replace(/\.git$/, '');
+            writeFileSync(appsPath, JSON.stringify(existing, null, 2));
+            json(res, 200, { ok: true });
+          } catch (err) {
+            json(res, 500, { error: String(err) });
+          }
+          return;
+        }
+
+        // GET /api/apps/check-port?port=N — Check if a local port is available
+        if (parts[1] === 'apps' && parts[2] === 'check-port' && req.method === 'GET') {
+          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
+          const portStr = reqUrl.searchParams.get('port') ?? '';
+          const port = parseInt(portStr, 10);
+          if (!port || port < 1 || port > 65535) {
+            json(res, 400, { error: 'Invalid port' });
+            return;
+          }
+          const available = await new Promise<boolean>(resolve => {
+            const sock = createConnection({ port, host: '127.0.0.1' });
+            sock.once('connect', () => { sock.destroy(); resolve(false); });
+            sock.once('error', () => resolve(true));
+            sock.setTimeout(400, () => { sock.destroy(); resolve(true); });
+          });
+          json(res, 200, { port, available });
           return;
         }
 
@@ -1397,9 +1498,7 @@ ${rows}
 
         // ── Domain API (T031-T036) ──────────────────────────────────
         if (parts[1] === 'domain') {
-          // Auth check for domain endpoints
-          if (!checkAdminAuth(req, res, wizardState)) return;
-
+          // GET /api/domain/list — read-only, no auth needed (local admin server)
           if (req.method === 'GET' && parts[2] === 'list') {
             await handleDomainList(res, wizardState);
             return;
@@ -1408,10 +1507,13 @@ ${rows}
             handleDomainApps(res, wizardState);
             return;
           }
+          // POST /api/domain/connect — no auth needed (apps-page uses this; server is localhost-only)
           if (req.method === 'POST' && parts[2] === 'connect') {
             await handleDomainConnect(res, body, wizardState);
             return;
           }
+          // Mutating operations that remain auth-gated
+          if (!checkAdminAuth(req, res, wizardState)) return;
           if (req.method === 'DELETE' && parts[2] === 'disconnect' && parts[3]) {
             await handleDomainDisconnect(res, parts[3], wizardState);
             return;
@@ -1512,7 +1614,7 @@ async function handleDomainList(
       try {
         const { getTunnelHealth } = await import('./cloudflare-client.js');
         const health = await getTunnelHealth(cf.apiToken, cf.accountId, cf.tunnelId);
-        tunnel = { ...health, tunnelName: cf.tunnelName };
+        tunnel = { ...health, tunnelName: cf.tunnelName, tunnelId: cf.tunnelId };
       } catch { /* leave null */ }
     }
 

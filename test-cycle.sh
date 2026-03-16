@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 # test-cycle.sh — Full brewnet test cycle with per-step logging
 # Usage:

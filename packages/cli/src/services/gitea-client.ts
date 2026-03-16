@@ -41,6 +41,7 @@ export class GiteaClient {
           name: `brewnet-${Date.now()}`,
           scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
         }),
+        signal: AbortSignal.timeout(8000),
       });
 
     let res = await makeRequest();
@@ -96,6 +97,7 @@ export class GiteaClient {
       try {
         const check = await fetch(`${baseUrl}/api/v1/user`, {
           headers: { Authorization: `token ${token}` },
+          signal: AbortSignal.timeout(8000),
         });
         if (check.status !== 401) {
           return { autoFixed: false, message: 'token cached' };
@@ -175,6 +177,7 @@ export class GiteaClient {
     const { baseUrl } = this.config;
     const res = await fetch(`${baseUrl}/api/v1/user/repos`, {
       headers: await this.authHeaders(),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       throw new Error(`Gitea listRepos failed: ${res.status} ${await res.text()}`);

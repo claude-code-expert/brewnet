@@ -28,6 +28,7 @@
 | [uninstall-orphaned-docker-resources.md](./uninstall-orphaned-docker-resources.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [gitea-password-bash-history-expansion.md](./gitea-password-bash-history-expansion.md) | Runtime / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [traefik-port-443-browser-https-upgrade.md](./traefik-port-443-browser-https-upgrade.md) | Configuration / Docker / Network | 2026-03-04 | ✅ 해결됨 | 1 |
+| [admin-services-table-url-blank.md](./admin-services-table-url-blank.md) | Configuration / Runtime | 2026-03-16 | ✅ 해결됨 | 2 |
 
 ## 에러 타입별 분류
 
@@ -77,6 +78,9 @@
 
 ### Configuration / Docker / Network
 - [Traefik 포트 443 불필요하게 오픈 — 브라우저 HTTP→HTTPS 자동 업그레이드로 서비스 접근 불가](./traefik-port-443-browser-https-upgrade.md)
+
+### Configuration / Runtime
+- [Admin Dashboard 서비스 테이블 Local/External URL "—" — 화이트리스트 방식으로 보일러플레이트 서비스 제외 (2회 재발)](./admin-services-table-url-blank.md)
 
 ## 신규 트러블슈팅 기록 방법
 

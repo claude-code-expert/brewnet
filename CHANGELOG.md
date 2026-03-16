@@ -3,6 +3,62 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [005-app-deploy-ui] - 2026-03-17 00:30
+
+### 🎯 Prompts
+1. "apps 페이지에 아무것도 안나오고 상단 텍스트와 불러오는중이라는 텍스트만 나와 — 원인이 뭔지 근본적인 문제를 찾아서 해결하고 완료될 때까지 반복해"
+2. "깃 로컬 주소는 http://localhost/git 이게 실제 주소인데 http://localhost:8088/git 로 연결하고 있어"
+3. "앱 생성중 모달에서 다음단계로 진입을 못하는거 같은데 — 왜 진행이 안되는지 화면에 단계별 로그부터 출력하면서 어떤단계에서 에러가 나는지 추가해서 보여줘"
+4. "new app의 보일러 플레이팅과 new project는 뭐가 다른거지?"
+5. "ADMIN에서 프론트, 백엔드 external 주소 안나와"
+6. "현재 설치된 것만 기본값으로 보여줘. 거기서 gitea에 연결하는 작업만 진행"
+
+### ✅ Changes
+
+**esbuild Template Literal 호환성 (JS SyntaxError 전수 제거)**:
+- **Fixed**: `apps-page.ts` — `\/` in regex → `new RegExp()` 전환 (esbuild가 `\/`→`/` 정규화 → `//` 주석 생성)
+- **Fixed**: `apps-page.ts` — `'\n'` in template literal → `'\\n'` (실제 LF로 컴파일됨)
+- **Fixed**: `apps-page.ts` — `\'` in onclick → `&#39;` HTML entity 전환 (10곳+)
+
+**Git Server 링크 404 (Issue 1)**:
+- **Fixed**: `apps-page.ts:204` — `/git` 상대경로 → `http://localhost/git` 절대 URL
+
+**앱 생성 Progress 모달 멈춤 (Issue 2)**:
+- **Fixed**: `app-manager.ts:319-367` — Step 순서 정상화: Step 0(Validating) → Step 1(Gitea setup) → Step 2~5 순차 실행
+- **Fixed**: `apps-page.ts:768` — Progress 모달 실패 시 에러 메시지 + 실패 단계를 log-content에 표시
+- **Fixed**: `apps-page.ts` — 완료/실패 후 apps + repos 모두 새로고침
+
+**Boilerplate 탭 설치된 것만 표시 (Issue 2d)**:
+- **Modified**: `apps-page.ts` — `loadInstalledBp()` 추가: `/api/apps/boilerplates`에서 설치 목록 조회
+- **Modified**: `apps-page.ts` — `renderBpGrid()`: 설치된 stackId만 필터링, 미설치 시 안내 메시지
+- **Modified**: `apps-page.ts` — Boilerplate 탭 안내 문구 개선: "이미 설치된 보일러플레이트를 Gitea에 연결합니다"
+
+**quickTunnelUrl 영속화 (Issue 5a)**:
+- **Fixed**: `init.ts:309` — Generate step 완료 후 `saveState(state)` 호출 추가 (quickTunnelUrl 등 런타임 값 영속화)
+
+**Spec 준수**:
+- **Added**: ebox 태그에 `Cloudflare Tunnel 자동 연결` 추가 (spec 2.2)
+- **Fixed**: Running 앱 삭제 버튼: building만 disable, running은 클릭 → 모달 경고 (spec 9.2)
+
+### 📊 Test Results
+- Unit tests: 68/69 suites passed, 2431/2469 tests passed (1 skipped suite)
+- JS Syntax check: ✅ apps-page 33K+ bytes SyntaxError 0
+- test-cycle.sh: ✅ 전 단계 통과 (Step 0~6)
+  - Step 5.5 create-app E2E: ✔ Validating | ✔ Gitea setup | ✔ Gitea repo | ✔ Git push | ✔ Docker up | ✔ Health check
+  - Step 6: 6/6 보일러플레이트 스택 Backend + Frontend + Image 전부 통과
+
+### 📁 Files Modified
+- `packages/cli/src/services/apps-page.ts` (+1420, -400)
+- `packages/cli/src/services/app-manager.ts` (+80, -50)
+- `packages/cli/src/services/admin-server.ts` (+130, -20)
+- `packages/cli/src/commands/init.ts` (+2)
+- `packages/cli/src/services/gitea-client.ts` (+3)
+- `packages/cli/src/types/app-entry.ts` (+8)
+- `docs/research/GITEA_APP_DEPLOY_SPEC.md` (3 시나리오 추가)
+- `CURRENT_PLAN.md` (신규)
+
+---
+
 ## [001-create-app → develop] - 2026-03-04 17:00
 
 ### 🎯 Prompts

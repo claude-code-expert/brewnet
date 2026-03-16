@@ -18,6 +18,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-25
 - `~/.brewnet/projects/<name>/selections.json` (project state, adding `domainConnections[]`) (003-domain-external-access)
 - TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, dockerode, js-yaml, chalk, ora, cli-table3, execa, zod (004-centralized-logging)
 - File-based (JSONL, NDJSON, JSON access logs) + Docker json-file driver (004-centralized-logging)
+- TypeScript 5.x strict mode, Node.js 20+ + `packages/cli` — no new dependencies. Inline HTML/CSS/JS generation via template literal in `apps-page.ts` (005-app-deploy-ui)
+- `~/.brewnet/apps.json` (AppEntry[] registry), in-memory AppJob Map (005-app-deploy-ui)
 
 - TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, better-sqlite3, zod, conf (001-cli-init-wizard)
 
@@ -38,9 +40,9 @@ npm test && npm run lint
 TypeScript 5.x strict mode, Node.js 20+ (ESM): Follow standard conventions
 
 ## Recent Changes
+- 005-app-deploy-ui: Added TypeScript 5.x strict mode, Node.js 20+ + `packages/cli` — no new dependencies. Inline HTML/CSS/JS generation via template literal in `apps-page.ts`
 - 004-centralized-logging: Added TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, dockerode, js-yaml, chalk, ora, cli-table3, execa, zod
 - 003-domain-external-access: Added TypeScript 5.x strict mode, Node.js 20+ (ESM) + Commander.js, @inquirer/prompts, chalk, ora, cli-table3, dockerode, execa, js-yaml, zod
-- 001-create-app: Added TypeScript 5.x strict mode, Node.js 20+ + Commander.js, @inquirer/prompts, chalk, ora, execa, zod, node:crypto (built-in), node:fs (built-in)
 
 
 <!-- MANUAL ADDITIONS START -->

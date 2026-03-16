@@ -78,6 +78,14 @@ export interface GitRepoEntry {
   html_url: string;
   description: string;
   private: boolean;
+  // Raw Gitea API fields
+  language?: string;
+  stars_count?: number;
+  updated?: string;
+  // Enriched by admin server before returning to client
+  appName?: string;
+  stars?: number;
+  updatedAt?: string;
 }
 
 /** Git + Gitea information for a managed app. */

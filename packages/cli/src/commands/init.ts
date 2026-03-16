@@ -306,6 +306,8 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
         // -----------------------------------------------------------------
         case WizardStep.Generate: {
           const generateResult: GenerateResult = await runGenerateStep(state);
+          // Persist runtime values (quickTunnelUrl, domain.name, etc.) captured during generation
+          try { saveState(state); } catch (e) { console.warn('Failed to save state after generate:', e instanceof Error ? e.message : e); }
 
           switch (generateResult) {
             case 'success':

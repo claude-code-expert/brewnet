@@ -170,6 +170,8 @@ describe('createApp — mode A (installed boilerplate)', () => {
       frameworkId: 'nextjs-full',
       status: 'running',
     }]);
+    // assertComposeFile() requires docker-compose.yml in the app dir
+    fsContent['/proj/nodejs-nextjs-full/docker-compose.yml'] = 'version: "3"';
 
     mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/my-app.git');
     mockRepoExists.mockResolvedValue(false);

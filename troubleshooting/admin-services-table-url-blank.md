@@ -1,0 +1,148 @@
+# Admin Dashboard Services Table — Local URL "—" 표시
+
+> 이 문서는 Admin Dashboard 서비스 테이블에서 Local/External 주소가 "—"로 표시되는 문제의 트러블슈팅 히스토리를 기록합니다.
+
+---
+
+## 발생일: 2026-03-16 (재발: 2026-03-16)
+
+### 메타데이터
+
+| 항목 | 내용 |
+|------|------|
+| **날짜** | 2026-03-16 |
+| **상태** | ✅ 해결됨 |
+| **에러 타입** | Configuration / Runtime |
+| **브랜치** | feature/apps-domain |
+| **재발 여부** | 1회 재발 |
+| **재발 주기** | 새 케이스: External URL "—" (동일 패턴, 다른 필드) |
+
+### 문제 요약
+
+Admin Dashboard 서비스 테이블에서 `nodejs-nextjs-full-backend-1` 컨테이너 (`backend` 서비스)의 Local URL 열이 "—"로 표시됨. External URL도 동일. 포트(3000)는 정상 표시되나 클릭 가능한 링크가 없어 직접 접속 불가.
+
+### 에러 상세
+
+```
+Services 테이블:
+  Service: backend
+  Status:  running
+  Port:    3000
+  Local:   —          ← 기대값: http://localhost:3000
+  External: —
+```
+
+### 근본 원인
+
+`packages/cli/src/services/admin-server.ts`의 `handleGetServices()` 함수(L709)에서 URL이 오직 `WEB_UI_SERVICES` 화이트리스트에 등록된 서비스에만 설정됨:
+
+```typescript
+// Before (L709)
+const WEB_UI_SERVICES = new Set([
+  'traefik', 'nginx', 'caddy', 'gitea', 'nextcloud', 'minio',
+  'jellyfin', 'pgadmin', 'filebrowser',
+]);
+
+url: WEB_UI_SERVICES.has(composeService) && port
+  ? urlMap[composeService] ?? `http://localhost:${port}`
+  : null,
+```
+
+보일러플레이트 컨테이너(`com.docker.compose.service=backend`)는 `WEB_UI_SERVICES`에 없으므로 `url = null` → "—" 표시.
+
+- **`WEB_UI_SERVICES`**: 홈서버 서비스 8개만 포함 (화이트리스트 방식)
+- 보일러플레이트 서비스명(`backend`, `frontend`, `app` 등)은 임의적이어서 화이트리스트에 사전 등록 불가
+- 신규 boilerplate 스택 추가 시마다 화이트리스트 업데이트 필요 → 반복적으로 "—" 버그 재발
+
+### 재현 조건
+
+1. `brewnet init`으로 홈서버 설치 후 `nodejs-nextjs-full` 보일러플레이트 선택
+2. Admin Dashboard 접속 → Services 탭
+3. `backend` 행의 Local 열 → "—"
+
+### 해결 방안
+
+화이트리스트 방식(`WEB_UI_SERVICES`) → 블랙리스트 방식(`NO_HTTP_SERVICES`)으로 전환.
+HTTP가 아닌 서비스(DB, SSH, Mail)만 URL 표시 제외하고, 나머지 모든 서비스는 포트가 있으면 URL 표시.
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `packages/cli/src/services/admin-server.ts` L636-639 | `WEB_UI_SERVICES` → `NO_HTTP_SERVICES` 블랙리스트로 교체 |
+| `packages/cli/src/services/admin-server.ts` L709-712 | URL 로직 조건 반전 (`has` → `!has`) |
+
+```typescript
+// After
+const NO_HTTP_SERVICES = new Set([
+  'postgresql', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb',
+  'openssh-server', 'docker-mailserver',
+]);
+
+url: port && !NO_HTTP_SERVICES.has(composeService)
+  ? urlMap[composeService] ?? `http://localhost:${port}`
+  : null,
+```
+
+### 검증 결과
+
+```
+backend                             port=3000   url=http://localhost:3000   ✅
+nextcloud                           port=80     url=http://localhost/cloud  ✅
+pgadmin                             port=5050   url=http://localhost:5050/pgadmin ✅
+gitea                               port=3000   url=http://localhost/git    ✅
+postgresql                          port=5432   url=—                       ✅ (DB, 올바르게 제외)
+redis                               port=6379   url=—                       ✅ (DB, 올바르게 제외)
+openssh-server                      port=2222   url=—                       ✅ (SSH, 올바르게 제외)
+filebrowser                         port=8085   url=http://localhost:8085   ✅
+jellyfin                            port=8096   url=http://localhost:8096/jellyfin/web/ ✅
+```
+
+---
+
+## 재발: External URL "—" — 2026-03-16
+
+### 문제 요약
+
+Local URL 수정 후에도 External URL 컬럼이 "—"로 표시. 사용자가 도메인 연결을 한 boilerplate 서비스(`backend`)에서 발생.
+
+### 근본 원인
+
+`getExternalUrl(id)` 함수(L336)가 `EXT_PATHS` 화이트리스트(홈서버 서비스 9개만 포함)만 조회하고, 화이트리스트에 없으면 즉시 `null` 반환:
+
+```javascript
+// Before
+var e=EXT_PATHS[id];if(!e)return null;
+```
+
+`DOMAIN_CONNECTIONS`(Cloudflare Tunnel 연결 정보)가 이미 HTML에 embed되어 있었지만 `getExternalUrl`이 전혀 조회하지 않음.
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `packages/cli/src/services/admin-server.ts` L338 | `EXT_PATHS` 미등록 서비스는 `DOMAIN_CONNECTIONS`에서 `appName` 매칭 후 `https://hostname` 반환 |
+
+```javascript
+// After
+var e=EXT_PATHS[id];if(!e){var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});return conn?'https://'+conn.hostname:null;}
+```
+
+### 동작 원리
+
+- `DOMAIN_CONNECTIONS`는 `wizardState.domainConnections` 배열 (Cloudflare Tunnel 연결 시 저장됨)
+- 각 entry에 `appName`, `hostname` 포함 (`DomainConnection` 타입, `packages/shared`)
+- 도메인 미연결 앱 → `conn = undefined` → `null` 반환 → "—" (올바른 동작)
+- 도메인 연결 앱 → `conn.hostname = 'api.example.com'` → `'https://api.example.com'` 반환
+
+### 예방 방법
+
+- 신규 서비스/스택 추가 시 `WEB_UI_SERVICES` 화이트리스트 업데이트 불필요 (블랙리스트 방식으로 전환됨)
+- HTTP가 아닌 신규 서비스(DB, 메시지큐 등) 추가 시에만 `NO_HTTP_SERVICES`에 추가
+- `TRAEFIK_PATH_SERVICES`의 urlMap 오버라이드는 그대로 유지 (Gitea `/git`, pgAdmin 등)
+- External URL: `EXT_PATHS`에 없는 서비스는 자동으로 `DOMAIN_CONNECTIONS` fallback 조회 → 새 보일러플레이트 스택 추가 시 별도 작업 불필요
+
+### 관련 참고
+
+- 관련 파일: `packages/cli/src/services/admin-server.ts` L636-714
+- 관련 상수: `TRAEFIK_PATH_SERVICES`, `INTERNAL_SERVICES`, `REQUIRED_SERVICES`

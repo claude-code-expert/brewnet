@@ -1,424 +1,1122 @@
 // packages/cli/src/services/apps-page.ts
 
 /**
- * HTML template for the /apps page — App Build & Deploy (Phase 1).
+ * HTML template for the /apps page — App Build & Deploy.
  *
- * Intentionally self-contained: all CSS and JS inline, matching the
- * admin panel dark theme. Loaded once at server start; no file I/O at
- * request time.
+ * generateAppsPageHtml() — amber/dark theme, all CSS/JS inline.
+ * generateAppDetailHtml() — individual app detail (preserved from previous implementation).
  */
-
-import { STACK_CATALOG } from '../config/stacks.js';
-
-// Serialise catalog for embedded JS (language → frameworks list)
-const LANGUAGE_MAP: Record<string, Array<{ id: string; label: string }>> = {};
-for (const s of STACK_CATALOG) {
-  if (!LANGUAGE_MAP[s.language]) LANGUAGE_MAP[s.language] = [];
-  LANGUAGE_MAP[s.language]!.push({ id: s.id, label: s.framework });
-}
-const DEFAULT_PORTS: Record<string, number> = {
-  Go: 8080, Python: 8000, Java: 8080, 'Node.js': 3000, Rust: 8080, Kotlin: 8080,
-};
 
 export function generateAppsPageHtml(): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Brewnet — App Deploy</title>
 <link rel="icon" type="image/svg+xml" href="/icon.svg"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+:root{
+  --bg0:#070d1a;--bg1:#0c1525;--bg2:#111e33;--bg3:#162640;--bg4:#1c3052;
+  --bdr:#1a2d47;--bdr2:#22385c;--bdr3:#2c4a70;
+  --amber:#e8a849;--amber2:#f5c97e;--amber3:#b07a18;
+  --teal:#3dd6c8;--teal2:#26a89c;
+  --green:#3de89a;--red:#f04b5a;--blue:#5b8fff;--violet:#a78bfa;--oran:#fb923c;
+  --txt:#d2dff5;--txt2:#7a93be;--txt3:#3a5070;
+  --mono:'JetBrains Mono',monospace;--sans:'Outfit',sans-serif;
+  --r:8px;--r2:12px;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
-h1{color:#f5a623;font-size:20px;display:flex;align-items:center;gap:10px;margin-bottom:4px}
-.sub{color:#8b949e;font-size:12px;margin-bottom:24px}
-.header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
-.nav-link{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px;font-family:inherit}
-.nav-link:hover{background:#21262d}
-.btn-primary{padding:5px 14px;background:#f5a623;color:#0d1117;border:none;border-radius:4px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700}
-.btn-primary:hover{background:#e09420}
-table{width:100%;border-collapse:collapse;margin-bottom:24px}
-th{text-align:left;padding:8px 12px;background:#161b22;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d}
-td{padding:8px 12px;border-bottom:1px solid #21262d;vertical-align:middle}
-tr:hover td{background:#161b22}
-.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
-.running{background:#1a4731;color:#3fb950}
-.stopped{background:#3d1f1f;color:#f85149}
-.creating{background:#2d2a1f;color:#e3b341}
-.failed{background:#3d2b1f;color:#e3b341}
-.btn{padding:4px 10px;border:1px solid;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;background:transparent;margin-left:4px}
-.btn-stop{border-color:#f85149;color:#f85149}.btn-stop:hover{background:#3d1f1f}
-.btn-start{border-color:#3fb950;color:#3fb950}.btn-start:hover{background:#1a4731}
-.btn-remove{border-color:#8b949e;color:#8b949e}.btn-remove:hover{background:#21262d}
-.section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-/* Modal */
-.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100}
-.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:600px;width:92%;max-height:85vh;overflow-y:auto;font-family:'Courier New',monospace;font-size:14px}
-.modal-titlebar{background:#0d1117;padding:10px 16px;display:flex;align-items:center;gap:8px;border-radius:10px 10px 0 0;position:sticky;top:0;z-index:1}
-.modal-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
-.modal-dot.r{background:#f85149}.modal-dot.y{background:#e3b341}.modal-dot.g{background:#3fb950}
-.modal-title{flex:1;color:#8b949e;font-size:13px;margin-left:4px}
-.modal-close{background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;line-height:1}
-.modal-close:hover{color:#c9d1d9}
-.modal-body{padding:20px}
-/* Form */
-.mode-tabs{display:flex;gap:0;margin-bottom:20px;border:1px solid #30363d;border-radius:6px;overflow:hidden}
-.mode-tab{flex:1;padding:8px;text-align:center;cursor:pointer;font-size:12px;color:#8b949e;background:#0d1117;border:none;font-family:inherit;transition:all .15s}
-.mode-tab.active{background:#1c2128;color:#f5a623;font-weight:700}
-.mode-tab:hover:not(.active){background:#161b22;color:#c9d1d9}
-.form-group{margin-bottom:14px}
-.form-label{display:block;color:#8b949e;font-size:12px;margin-bottom:5px}
-.form-input{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;padding:7px 10px;font-family:inherit;font-size:13px}
-.form-input:focus{outline:none;border-color:#58a6ff}
-.form-select{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;padding:7px 10px;font-family:inherit;font-size:13px}
-.lang-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
-.lang-card{padding:8px;text-align:center;border:1px solid #30363d;border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s}
-.lang-card:hover{border-color:#58a6ff;color:#58a6ff}
-.lang-card.selected{border-color:#f5a623;color:#f5a623;background:#1c1a12}
-.form-hint{color:#484f58;font-size:11px;margin-top:4px}
-.form-row{display:flex;gap:10px}
-.form-row .form-group{flex:1}
-.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid #30363d}
-.btn-cancel{padding:6px 16px;background:transparent;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer;font-family:inherit;font-size:13px}
-.btn-cancel:hover{border-color:#8b949e;color:#c9d1d9}
-.btn-submit{padding:6px 16px;background:#f5a623;border:none;border-radius:4px;color:#0d1117;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700}
-.btn-submit:hover{background:#e09420}
-.btn-submit:disabled{opacity:.4;cursor:default}
-/* Progress */
-.progress-step{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px}
-.step-icon{width:18px;text-align:center;flex-shrink:0}
-.step-label{flex:1;color:#c9d1d9}
-.step-msg{color:#8b949e;font-size:11px}
-.info-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #21262d;font-size:13px}
-.info-key{color:#8b949e}
-.info-val{color:#c9d1d9;font-family:monospace}
-a.app-link{color:#58a6ff;text-decoration:none}
-a.app-link:hover{text-decoration:underline}
+html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--sans);overflow:hidden;font-size:14px}
+#shell{display:flex;height:100vh}
+#main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+#topbar{height:52px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 24px;gap:10px;flex-shrink:0}
+#content{flex:1;overflow-y:auto;padding:28px 30px}
+.bc{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt2)}
+.bc .sep{color:var(--txt3)}.bc .cur{color:var(--txt);font-weight:600}
+.tbr{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border-radius:var(--r);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .14s;white-space:nowrap;user-select:none;line-height:1}
+.btn:active{transform:scale(.97)}
+.bp{background:var(--amber);color:#000}.bp:hover{background:var(--amber2)}
+.bg{background:transparent;color:var(--txt2);border:1px solid var(--bdr2)}.bg:hover{background:var(--bg3);color:var(--txt)}
+.bt{background:rgba(61,214,200,.1);color:var(--teal);border:1px solid rgba(61,214,200,.22)}.bt:hover{background:rgba(61,214,200,.18)}
+.br{background:rgba(240,75,90,.1);color:var(--red);border:1px solid rgba(240,75,90,.22)}.br:hover{background:rgba(240,75,90,.18)}
+.bv{background:rgba(167,139,250,.1);color:var(--violet);border:1px solid rgba(167,139,250,.22)}.bv:hover{background:rgba(167,139,250,.18)}
+.bgrn{background:rgba(61,232,154,.1);color:var(--green);border:1px solid rgba(61,232,154,.22)}.bgrn:hover{background:rgba(61,232,154,.18)}
+.bsm{padding:6px 12px;font-size:12px}.bxs{padding:4px 10px;font-size:11.5px}
+.bdg{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-family:var(--mono);font-weight:600;padding:3px 9px;border-radius:20px}
+.b-run{background:rgba(61,232,154,.09);color:var(--green);border:1px solid rgba(61,232,154,.2)}
+.b-stop{background:rgba(240,75,90,.09);color:var(--red);border:1px solid rgba(240,75,90,.2)}
+.b-build{background:rgba(232,168,73,.09);color:var(--amber);border:1px solid rgba(232,168,73,.2)}
+.b-idle{background:rgba(122,147,190,.07);color:var(--txt3);border:1px solid var(--bdr)}
+.blink-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:bpulse 1.2s infinite;display:inline-block}
+@keyframes bpulse{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes mUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.fg{margin-bottom:16px}
+.fl{display:block;font-size:11.5px;color:var(--txt2);font-weight:500;margin-bottom:7px;letter-spacing:.2px}
+.fi{width:100%;background:var(--bg3);border:1px solid var(--bdr2);border-radius:var(--r);padding:9px 13px;font-family:var(--mono);font-size:13px;color:var(--txt);outline:none;transition:border-color .14s}
+.fi:focus{border-color:var(--amber)}.fi::placeholder{color:var(--txt3)}
+.fhint{font-size:11px;color:var(--txt3);font-family:var(--mono);margin-top:5px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.overlay{position:fixed;inset:0;background:rgba(4,8,18,.88);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;z-index:900;padding:16px;animation:fadeIn .15s ease}
+.modal{background:var(--bg2);border:1px solid var(--bdr2);border-radius:14px;width:100%;box-shadow:0 30px 100px rgba(0,0,0,.65);animation:mUp .2s ease;max-height:90vh;display:flex;flex-direction:column}
+.msm{max-width:460px}.mmd{max-width:580px}.mlg{max-width:720px}
+.mh{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 24px 0;flex-shrink:0}
+.mt-m{font-size:15px;font-weight:700}.ms{font-size:12px;color:var(--txt2);margin-top:3px}
+.mb-m{padding:20px 24px;overflow-y:auto;flex:1}
+.mfoot{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:14px 24px;border-top:1px solid var(--bdr);flex-shrink:0}
+.xbtn{width:28px;height:28px;border-radius:6px;background:var(--bg3);border:none;color:var(--txt2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .14s;flex-shrink:0}
+.xbtn:hover{background:var(--bdr2);color:var(--txt)}
+.tabs{display:flex;border-bottom:1px solid var(--bdr);margin-bottom:20px;gap:0}
+.tab{padding:10px 17px;font-size:13px;cursor:pointer;color:var(--txt2);border-bottom:2px solid transparent;transition:all .14s;margin-bottom:-1px;font-weight:500;user-select:none}
+.tab:hover{color:var(--txt)}.tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.ebox{background:linear-gradient(135deg,rgba(232,168,73,.04),rgba(61,214,200,.03));border:1px solid rgba(232,168,73,.18);border-left:3px solid var(--amber);border-radius:var(--r);padding:14px 16px;margin-bottom:22px}
+.ebox-title{font-size:13px;font-weight:700;color:var(--amber);display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.ebox-desc{font-size:12.5px;color:var(--txt2);line-height:1.65}
+.ebox-tags{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.etag{font-size:10.5px;font-family:var(--mono);background:var(--bg3);color:var(--txt3);padding:2px 8px;border-radius:4px}
+.stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+.sbox{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r2);padding:15px 17px}
+.sk{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.8px;font-family:var(--mono);margin-bottom:6px}
+.sv{font-size:22px;font-weight:700;font-family:var(--mono)}
+.app-card{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r2);margin-bottom:12px;overflow:hidden;transition:border-color .15s}
+.app-card:hover{border-color:var(--bdr3)}
+.app-card-top{display:flex;align-items:flex-start;gap:14px;padding:16px 18px 12px}
+.app-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;font-family:var(--mono);font-weight:800;flex-shrink:0;margin-top:2px}
+.app-meta{flex:1;min-width:0}
+.app-name{font-size:14px;font-weight:700;color:var(--txt);margin-bottom:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.app-info{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--txt2);flex-wrap:wrap;margin-bottom:6px}
+.app-info-item{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11.5px}
+.app-domain{margin-top:4px}
+.domain-link{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-family:var(--mono);color:var(--teal);text-decoration:none;background:rgba(61,214,200,.07);border:1px solid rgba(61,214,200,.18);padding:3px 9px;border-radius:20px;transition:all .14s}
+.domain-link:hover{background:rgba(61,214,200,.14);border-color:rgba(61,214,200,.3)}
+.no-domain{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-family:var(--mono);color:var(--txt3);cursor:pointer;padding:3px 9px;border:1px dashed var(--bdr2);border-radius:20px;transition:all .14s}
+.no-domain:hover{border-color:var(--amber);color:var(--amber)}
+.app-actions{display:flex;align-items:center;gap:7px;padding:10px 18px 14px;background:rgba(0,0,0,.15);border-top:1px solid var(--bdr);flex-wrap:wrap}
+.app-actions-r{margin-left:auto;display:flex;gap:7px}
+.lang-chip{font-size:10.5px;font-family:var(--mono);font-weight:700;padding:2px 7px;border-radius:4px}
+.lc-go{background:rgba(0,173,216,.12);color:#00add8}
+.lc-python{background:rgba(55,118,171,.12);color:#3776ab}
+.lc-node{background:rgba(104,160,99,.12);color:#68a063}
+.lc-rust{background:rgba(222,165,132,.12);color:#dea584}
+.lc-java{background:rgba(248,152,32,.12);color:#f89820}
+.lc-kotlin{background:rgba(167,139,250,.12);color:#a78bfa}
+.lc-react{background:rgba(91,211,255,.12);color:#5bd3ff}
+.lgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:18px}
+.lcard{background:var(--bg3);border:1.5px solid var(--bdr);border-radius:var(--r);padding:12px 6px;text-align:center;cursor:pointer;transition:all .14s;user-select:none}
+.lcard:hover{border-color:var(--bdr3)}.lcard.sel{border-color:var(--amber);background:rgba(232,168,73,.08)}
+.lem{font-size:20px;margin-bottom:4px}.lnm{font-size:11px;font-weight:700;font-family:var(--mono)}
+.fwrow{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
+.fchip{padding:5px 13px;border-radius:20px;border:1.5px solid var(--bdr2);font-size:12px;font-family:var(--mono);cursor:pointer;background:var(--bg3);color:var(--txt2);transition:all .14s;user-select:none}
+.fchip:hover{border-color:var(--amber);color:var(--amber)}.fchip.sel{border-color:var(--amber);background:rgba(232,168,73,.09);color:var(--amber)}
+.bp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:18px}
+.bp-card{background:var(--bg3);border:1.5px solid var(--bdr);border-radius:var(--r);padding:13px;cursor:pointer;transition:all .14s;user-select:none}
+.bp-card:hover{border-color:var(--bdr3)}.bp-card.sel{border-color:var(--amber);background:rgba(232,168,73,.08)}
+.bp-head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.bp-em{font-size:18px}.bp-nm{font-size:12.5px;font-weight:700;font-family:var(--mono)}
+.bp-fw{font-size:11px;color:var(--amber);font-family:var(--mono);margin-bottom:3px}
+.bp-desc{font-size:11px;color:var(--txt3)}
+.alert{padding:11px 14px;border-radius:var(--r);font-size:12.5px;line-height:1.5;margin-bottom:14px}
+.a-warn{background:rgba(232,168,73,.07);border:1px solid rgba(232,168,73,.2);color:var(--amber)}
+.a-info{background:rgba(61,214,200,.06);border:1px solid rgba(61,214,200,.17);color:var(--teal)}
+.a-err{background:rgba(240,75,90,.07);border:1px solid rgba(240,75,90,.2);color:var(--red)}
+.a-ok{background:rgba(61,232,154,.07);border:1px solid rgba(61,232,154,.2);color:var(--green)}
+.a-dim{background:rgba(255,255,255,.03);border:1px solid var(--bdr);color:var(--txt2)}
+.cb{background:var(--bg0);border:1px solid var(--bdr);border-radius:var(--r);padding:12px 15px;font-family:var(--mono);font-size:12px;color:var(--txt2);line-height:1.8;position:relative;white-space:pre-wrap;word-break:break-all;margin-top:10px}
+.cpb{position:absolute;top:8px;right:8px;background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt2);font-size:11px;padding:3px 9px;border-radius:5px;cursor:pointer;font-family:var(--sans);transition:all .14s;border:none}
+.cpb:hover{background:var(--bdr2);color:var(--txt)}
+.ppl{display:flex;flex-direction:column;gap:8px}
+.pst{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:var(--r);background:var(--bg3);border:1px solid transparent;transition:all .3s}
+.pst.done{border-color:rgba(61,232,154,.18)}.pst.active{border-color:rgba(232,168,73,.3);background:rgba(232,168,73,.05)}.pst.wait{opacity:.4}
+.pnum{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono);font-weight:700;flex-shrink:0}
+.pnum.done{background:rgba(61,232,154,.18);color:var(--green)}.pnum.active{background:rgba(232,168,73,.18);color:var(--amber)}.pnum.wait{background:var(--bg0);color:var(--txt3)}
+.spin-ic{animation:spin .8s linear infinite;display:inline-block}
+.rtbl{width:100%;border-collapse:collapse;font-size:13px}
+.rtbl th{font-size:10.5px;text-align:left;padding:8px 12px;color:var(--txt3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--bdr);font-weight:600}
+.rtbl td{padding:11px 12px;border-bottom:1px solid var(--bdr);vertical-align:middle}
+.rtbl tr:last-child td{border-bottom:none}.rtbl tr:hover td{background:rgba(255,255,255,.018)}
+.rtbl-wrap{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r2);overflow:hidden}
+.dns-row{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;background:var(--bg3);border-radius:var(--r);margin-bottom:7px}
+.dns-key{font-size:11.5px;color:var(--txt2);font-family:var(--mono);font-weight:600}
+.dns-val{font-size:12px;font-family:var(--mono);color:var(--teal);word-break:break-all;text-align:right;flex:1;margin-left:12px}
+.ir{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg3);border-radius:var(--r);margin-bottom:7px}
+.ik{font-size:11.5px;color:var(--txt2);font-weight:500}
+.iv{font-size:12px;font-family:var(--mono);color:var(--teal)}
+.sec-title{font-size:13.5px;font-weight:700;color:var(--txt);display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.nbadge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;background:var(--bg3);border:1px solid var(--bdr2);border-radius:10px;font-size:11px;font-family:var(--mono);color:var(--txt2);margin-left:6px}
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--bdr2);border-radius:var(--r);padding:10px 18px;font-size:13px;color:var(--txt);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:9999;display:none;align-items:center;gap:8px;animation:fadeIn .2s ease}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>
-    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/>
-      <path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/>
-      <path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/>
-      <path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/>
-      <path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/>
-    </svg>
-    App Deploy
-  </h1>
-  <div style="display:flex;align-items:center;gap:10px;margin-left:auto">
-    <a href="/" class="nav-link">\u2190 Admin</a>
-    <button class="btn-primary" onclick="openNewAppModal()">+ New App</button>
+<div id="shell">
+<div id="main">
+  <div id="topbar">
+    <div class="bc">
+      <a href="/" style="color:var(--txt2);text-decoration:none">Home</a>
+      <span class="sep">/</span>
+      <span class="cur">App Deploy</span>
+    </div>
+    <div class="tbr">
+      <button class="btn bg bsm" onclick="refreshAll()">↻ Refresh</button>
+      <button class="btn bp" onclick="openModal('modal-new-app')">＋ New App</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="ebox">
+      <div class="ebox-title">🚀 App Deploy</div>
+      <div class="ebox-desc">Gitea에 연결된 앱을 빌드하고 배포합니다. <strong>Build</strong>는 Docker 이미지 빌드만 수행하며, <strong>Deploy</strong>는 Traefik 라우팅 등록을 포함한 전체 배포를 실행합니다.</div>
+      <div class="ebox-tags">
+        <span class="etag">Build = Docker 이미지 빌드</span>
+        <span class="etag">Deploy = Traefik 라우팅 포함 전체 배포</span>
+        <span class="etag">Cloudflare Tunnel 자동 연결</span>
+        <span class="etag">Gitea 전체 Repo 관리</span>
+      </div>
+    </div>
+
+    <div class="stats4">
+      <div class="sbox"><div class="sk">TOTAL APPS</div><div class="sv" style="color:var(--txt)" id="stat-total">—</div></div>
+      <div class="sbox"><div class="sk">RUNNING</div><div class="sv" style="color:var(--green)" id="stat-run">—</div></div>
+      <div class="sbox"><div class="sk">STOPPED</div><div class="sv" style="color:var(--red)" id="stat-stop">—</div></div>
+      <div class="sbox"><div class="sk">BUILDING</div><div class="sv" style="color:var(--amber)" id="stat-build">—</div></div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="sec-title">🚀 배포 앱 <span class="nbadge" id="badge-apps">0</span></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="fi" style="width:auto;padding:5px 11px;font-size:12px" onchange="filterApps(this.value)">
+          <option value="all">전체 상태</option>
+          <option value="running">Running</option>
+          <option value="stopped">Stopped</option>
+          <option value="building">Building</option>
+        </select>
+      </div>
+    </div>
+    <div id="app-list"><div style="text-align:center;padding:40px;color:var(--txt3)">불러오는 중...</div></div>
+
+    <div style="margin-top:30px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="sec-title">📦 Gitea Repositories <span class="nbadge" id="badge-repos">0</span></div>
+        <a href="http://localhost/git" class="btn bg bsm" style="text-decoration:none;font-size:12px" target="_blank" rel="noopener">Git Server에서 관리 →</a>
+      </div>
+      <div class="rtbl-wrap">
+        <table class="rtbl">
+          <thead>
+            <tr>
+              <th>Repository</th><th>언어</th><th>App Deploy</th><th>접근</th><th>최근 업데이트</th><th>액션</th>
+            </tr>
+          </thead>
+          <tbody id="repo-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--txt3)">불러오는 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: NEW APP -->
+<div id="modal-new-app" class="overlay" style="display:none" onclick="closeOnOverlay(event,'modal-new-app')">
+  <div class="modal mlg">
+    <div class="mh">
+      <div>
+        <div class="mt-m">New App</div>
+        <div class="ms">보일러플레이트, Git Clone, 또는 새 프로젝트를 Gitea에 자동 연결합니다</div>
+      </div>
+      <button class="xbtn" onclick="closeModal('modal-new-app')">✕</button>
+    </div>
+    <div class="mb-m">
+      <div class="tabs" id="newapp-tabs">
+        <div class="tab active" onclick="switchTab('newapp',0)">📦 보일러플레이트</div>
+        <div class="tab" onclick="switchTab('newapp',1)">⬇ Git Clone</div>
+        <div class="tab" onclick="switchTab('newapp',2)">✨ New Project</div>
+      </div>
+      <!-- TAB 0: BOILERPLATE -->
+      <div id="newapp-tab-0">
+        <div class="alert a-info" style="margin-bottom:16px">이미 설치된 보일러플레이트를 Gitea에 연결합니다. 새 프로젝트를 처음부터 생성하려면 <strong>New Project</strong> 탭을 사용하세요.</div>
+        <div class="bp-grid" id="bp-grid"></div>
+        <div class="row2">
+          <div class="fg">
+            <label class="fl">앱 이름 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="bp-appname" placeholder="my-app" oninput="sanitizeAppName(this)">
+            <div class="fhint">Gitea repo 이름으로 사용됩니다 (소문자·하이픈)</div>
+          </div>
+          <div class="fg">
+            <label class="fl">포트 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="bp-port" placeholder="8080" type="number" min="1024" max="65535" oninput="debouncedPortCheck('bp-port')">
+            <div class="fhint" id="bp-port-hint"></div>
+          </div>
+        </div>
+        <div id="bp-selected-info" style="display:none">
+          <div class="ir"><span class="ik">선택된 템플릿</span><span class="iv" id="bp-sel-nm">—</span></div>
+          <div class="ir"><span class="ik">Gitea 레포 경로</span><span class="iv" id="bp-sel-repo">—</span></div>
+        </div>
+      </div>
+      <!-- TAB 1: GIT CLONE -->
+      <div id="newapp-tab-1" style="display:none">
+        <div class="alert a-dim" style="margin-bottom:16px">외부 Git URL(GitHub, GitLab 등)의 레포지토리를 클론한 뒤 로컬 Gitea에 자동으로 미러링합니다.</div>
+        <div class="fg">
+          <label class="fl">Git URL <span style="color:var(--red)">*</span></label>
+          <input class="fi" id="clone-url" placeholder="https://github.com/user/repo.git" oninput="autoFillFromUrl(this.value)">
+        </div>
+        <div class="row3">
+          <div class="fg">
+            <label class="fl">앱 이름 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="clone-name" placeholder="repo-name" oninput="sanitizeAppName(this)">
+          </div>
+          <div class="fg">
+            <label class="fl">포트 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="clone-port" placeholder="8080" type="number" oninput="debouncedPortCheck('clone-port')">
+            <div class="fhint" id="clone-port-hint"></div>
+          </div>
+          <div class="fg">
+            <label class="fl">브랜치</label>
+            <input class="fi" id="clone-branch" placeholder="main">
+          </div>
+        </div>
+      </div>
+      <!-- TAB 2: NEW PROJECT -->
+      <div id="newapp-tab-2" style="display:none">
+        <label class="fl" style="margin-bottom:10px">언어 선택 <span style="color:var(--red)">*</span></label>
+        <div class="lgrid" id="lang-grid"></div>
+        <div id="fw-section" style="display:none">
+          <label class="fl" style="margin-bottom:10px">프레임워크 <span style="color:var(--red)">*</span></label>
+          <div class="fwrow" id="fw-row"></div>
+        </div>
+        <div class="row2">
+          <div class="fg">
+            <label class="fl">앱 이름 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="proj-name" placeholder="my-app" oninput="sanitizeAppName(this)">
+          </div>
+          <div class="fg">
+            <label class="fl">포트 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="proj-port" placeholder="8080" type="number" oninput="debouncedPortCheck('proj-port')">
+            <div class="fhint" id="proj-port-hint"></div>
+          </div>
+        </div>
+        <div id="proj-preview" style="display:none">
+          <div class="ir"><span class="ik">생성될 Gitea 레포</span><span class="iv" id="proj-repo-preview">—</span></div>
+          <div class="ir"><span class="ik">Docker 포트 바인딩</span><span class="iv" id="proj-port-preview">—</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn bg" onclick="closeModal('modal-new-app')">취소</button>
+      <button class="btn bp" id="newapp-submit" onclick="submitNewApp()">🚀 앱 생성 및 Gitea 푸시</button>
+    </div>
   </div>
 </div>
 
-<div class="section-title">Managed Apps</div>
-<table id="app-table">
-  <thead><tr><th>Name</th><th>Mode</th><th>Stack / Source</th><th>Port</th><th>Status</th><th>Local URL</th><th>Actions</th><th></th></tr></thead>
-  <tbody id="app-body"><tr><td colspan="7" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>
+<!-- MODAL: DOMAIN SETUP -->
+<div id="modal-domain" class="overlay" style="display:none" onclick="closeOnOverlay(event,'modal-domain')">
+  <div class="modal mlg">
+    <div class="mh">
+      <div>
+        <div class="mt-m">🌐 도메인 연결 — <span id="domain-app-name" style="color:var(--amber)">—</span></div>
+        <div class="ms">외부 도메인을 앱에 연결합니다</div>
+      </div>
+      <button class="xbtn" onclick="closeModal('modal-domain')">✕</button>
+    </div>
+    <div class="mb-m">
+      <div class="tabs" id="domain-tabs">
+        <div class="tab active" onclick="switchTab('domain',0)">☁ 새 Cloudflare 도메인</div>
+        <div class="tab" onclick="switchTab('domain',1)">🔗 기존 도메인 연결</div>
+        <div class="tab" onclick="switchTab('domain',2)">🔀 서브도메인 추가</div>
+      </div>
+      <!-- TAB 0: CLOUDFLARE AUTO -->
+      <div id="domain-tab-0">
+        <div id="cf-creds-status" class="alert a-info" style="margin-bottom:16px">Cloudflare API를 통해 Tunnel ingress rule과 DNS CNAME 레코드를 자동으로 생성합니다.</div>
+        <div class="row2">
+          <div class="fg">
+            <label class="fl">도메인 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="cf-domain" placeholder="example.com" oninput="updateCfPreview()">
+          </div>
+          <div class="fg">
+            <label class="fl">서브도메인 (선택)</label>
+            <input class="fi" id="cf-sub" placeholder="myapp" oninput="updateCfPreview()">
+            <div class="fhint">결과: <span id="cf-preview" style="color:var(--teal);font-family:var(--mono)">myapp.example.com</span></div>
+          </div>
+        </div>
+      </div>
+      <!-- TAB 1: EXISTING DOMAIN (MANUAL) -->
+      <div id="domain-tab-1" style="display:none">
+        <div class="alert a-warn" style="margin-bottom:16px">이미 도메인이 있는 경우, 아래 가이드에 따라 DNS를 수동으로 설정하세요.</div>
+        <div class="fg">
+          <label class="fl">연결할 서브도메인 <span style="color:var(--red)">*</span></label>
+          <input class="fi" id="ext-sub" placeholder="myapp.yourdomain.com" oninput="updateExtPreview()">
+        </div>
+        <div style="font-size:12px;font-weight:700;color:var(--txt);margin-bottom:10px">DNS 설정 방법</div>
+        <div class="dns-row"><span class="dns-key">Type</span><span class="dns-val">CNAME</span></div>
+        <div class="dns-row"><span class="dns-key">Name</span><span class="dns-val" id="ext-dns-name">myapp</span></div>
+        <div class="dns-row" style="margin-bottom:14px">
+          <span class="dns-key">Target</span>
+          <span class="dns-val" style="display:flex;align-items:center;gap:8px">
+            <span id="ext-dns-target">tunnel-id.cfargotunnel.com</span>
+            <button class="cpb" onclick="copyText('ext-dns-target','복사됨!')">복사</button>
+          </span>
+        </div>
+        <div class="alert a-info">Cloudflare를 사용 중이라면 Proxy 상태를 🟠 Proxied로 설정하세요.</div>
+      </div>
+      <!-- TAB 2: SUBDOMAIN ONLY -->
+      <div id="domain-tab-2" style="display:none">
+        <div class="alert a-info" style="margin-bottom:16px">이미 Cloudflare Tunnel이 루트 도메인에 연결되어 있다면, 서브도메인만 추가 등록할 수 있습니다.</div>
+        <div class="fg">
+          <label class="fl">베이스 도메인 <span style="color:var(--red)">*</span></label>
+          <select class="fi" id="sub-base"><option value="">— 연결된 도메인 선택 —</option></select>
+        </div>
+        <div class="fg">
+          <label class="fl">서브도메인 프리픽스 <span style="color:var(--red)">*</span></label>
+          <div style="display:flex;align-items:center;gap:0">
+            <input class="fi" id="sub-prefix" placeholder="myapp" oninput="updateSubPreview()" style="border-radius:var(--r) 0 0 var(--r);border-right:none">
+            <div style="background:var(--bg0);border:1px solid var(--bdr2);border-radius:0 var(--r) var(--r) 0;padding:9px 12px;font-family:var(--mono);font-size:13px;color:var(--txt3);white-space:nowrap" id="sub-base-display">.example.com</div>
+          </div>
+          <div class="fhint">최종 도메인: <span id="sub-preview" style="color:var(--teal);font-family:var(--mono)">myapp.example.com</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn bg" onclick="closeModal('modal-domain')">취소</button>
+      <button class="btn bp" onclick="submitDomain()">연결 적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: DELETE CONFIRM -->
+<div id="modal-delete" class="overlay" style="display:none" onclick="closeOnOverlay(event,'modal-delete')">
+  <div class="modal msm">
+    <div class="mh">
+      <div>
+        <div class="mt-m" style="color:var(--red)">⚠ 앱 삭제</div>
+        <div class="ms">이 작업은 되돌릴 수 없습니다</div>
+      </div>
+      <button class="xbtn" onclick="closeModal('modal-delete')">✕</button>
+    </div>
+    <div class="mb-m">
+      <div id="delete-warn-running" class="alert a-err" style="display:none;margin-bottom:14px">
+        🔴 이 앱은 현재 <strong>실행 중</strong>입니다. 삭제하려면 먼저 Stop 버튼을 눌러 앱을 중지한 후 삭제하세요.
+      </div>
+      <div id="delete-warn-normal" class="alert a-warn" style="margin-bottom:14px">
+        <strong id="delete-app-name">앱 이름</strong> 을 삭제하면 Gitea 레포지토리와 빌드 이미지가 함께 제거됩니다.
+      </div>
+      <div class="fg">
+        <label class="fl">확인을 위해 앱 이름을 입력하세요</label>
+        <input class="fi" id="delete-confirm-input" placeholder="앱 이름 입력" oninput="checkDeleteConfirm()">
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn bg" onclick="closeModal('modal-delete')">취소</button>
+      <button class="btn br" id="delete-submit-btn" disabled onclick="confirmDelete()">삭제 확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BUILD / DEPLOY PROGRESS -->
+<div id="modal-progress" class="overlay" style="display:none">
+  <div class="modal mmd">
+    <div class="mh">
+      <div>
+        <div class="mt-m" id="progress-title">진행 중...</div>
+        <div class="ms" id="progress-subtitle"></div>
+      </div>
+    </div>
+    <div class="mb-m">
+      <div class="ppl" id="progress-steps"></div>
+      <div id="progress-log" style="display:none;margin-top:16px">
+        <div style="font-size:11.5px;color:var(--txt3);font-family:var(--mono);margin-bottom:6px">로그</div>
+        <div style="background:var(--bg0);border:1px solid var(--bdr);border-radius:var(--r);padding:12px 14px;font-family:var(--mono);font-size:11.5px;color:var(--txt2);line-height:1.8;height:130px;overflow-y:auto" id="log-content"></div>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn bg" id="progress-close-btn" style="display:none" onclick="closeProgressModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
 
 <script>
-var LANGUAGE_MAP = ${JSON.stringify(LANGUAGE_MAP)};
-var DEFAULT_PORTS = ${JSON.stringify(DEFAULT_PORTS)};
-var BOILERPLATES = [];  // loaded from /api/apps/boilerplates on modal open
+/* ─── STATE ─── */
+var apps = [];
+var repos = [];
+var domains = [];
+var domainTunnel = null;
+var domainCredentialsConfigured = false;
+var appGitInfo = {};
+var filterState = 'all';
+var selectedBp = null;
+var selectedLang = null;
+var selectedFw = null;
+var currentNewAppTab = 0;
+var currentDomainTab = 0;
+var domainTargetName = null;
+var deleteTargetName = null;
+var activeJobId = null;
+var jobPollTimer = null;
+var sseSource = null;
+var portCheckTimers = {};
+var connectInputShown = {};
+var installedBp = [];
 
-// ---------------------------------------------------------------------------
-// Utility
-// ---------------------------------------------------------------------------
-function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function badge(status){var c={running:'running',stopped:'stopped',creating:'creating',failed:'failed'}[status]||'stopped';return '<span class="badge '+c+'">'+status+'</span>';}
+/* ─── STATIC DATA ─── */
+var BOILERPLATES = [
+  {id:'go-gin',           lang:'Go',      fw:'Gin',          desc:'REST API + PostgreSQL',  emoji:'🐹', port:8080},
+  {id:'go-echo',          lang:'Go',      fw:'Echo v4',      desc:'Web server + Redis',     emoji:'🐹', port:8081},
+  {id:'go-fiber',         lang:'Go',      fw:'Fiber v3',     desc:'High-perf REST API',     emoji:'🐹', port:8082},
+  {id:'python-fastapi',   lang:'Python',  fw:'FastAPI',      desc:'Async API + SQLAlchemy', emoji:'🐍', port:8000},
+  {id:'python-django',    lang:'Python',  fw:'Django',       desc:'Full-stack + ORM',       emoji:'🐍', port:8001},
+  {id:'python-flask',     lang:'Python',  fw:'Flask',        desc:'Lightweight REST API',   emoji:'🐍', port:5000},
+  {id:'nodejs-nestjs',    lang:'Node.js', fw:'NestJS',       desc:'TypeScript + Prisma',    emoji:'🟨', port:3000},
+  {id:'nodejs-express',   lang:'Node.js', fw:'Express',      desc:'Minimal REST API',       emoji:'🟨', port:3001},
+  {id:'rust-actix-web',   lang:'Rust',    fw:'Actix-web',    desc:'High-perf REST API',     emoji:'🦀', port:8888},
+  {id:'java-springboot',  lang:'Java',    fw:'Spring Boot',  desc:'Enterprise REST + JPA',  emoji:'☕', port:8080},
+  {id:'kotlin-ktor',      lang:'Kotlin',  fw:'Ktor',         desc:'Lightweight web server', emoji:'🟣', port:8082},
+  {id:'nodejs-nextjs-full',lang:'React',  fw:'Next.js',      desc:'Full-stack App Router',  emoji:'⚛️', port:3000},
+];
+var LANG_DATA = {
+  'Go':     {emoji:'🐹', fw:['Gin','Echo v4','Fiber v3','Chi']},
+  'Python': {emoji:'🐍', fw:['FastAPI','Django','Flask','Starlette']},
+  'Node.js':{emoji:'🟨', fw:['Express','NestJS','Fastify','Hono']},
+  'Rust':   {emoji:'🦀', fw:['Actix-web','Axum','Rocket','Warp']},
+  'Java':   {emoji:'☕', fw:['Spring Boot','Spring Framework','Quarkus']},
+  'Kotlin': {emoji:'🟣', fw:['Ktor','Spring Boot (Kotlin)']},
+  'React':  {emoji:'⚛️', fw:['Next.js','Vite + React','Remix']},
+};
+var LANG_COLOR = {
+  'Go':'lc-go','Python':'lc-python','Node.js':'lc-node','JavaScript':'lc-node',
+  'TypeScript':'lc-node','Rust':'lc-rust','Java':'lc-java','Kotlin':'lc-kotlin',
+  'React':'lc-react','Shell':'lc-rust','YAML':'lc-python'
+};
+var LANG_ICON_BG = {
+  'Go':'rgba(0,173,216,.15)','Python':'rgba(55,118,171,.15)','Node.js':'rgba(104,160,99,.15)',
+  'JavaScript':'rgba(104,160,99,.15)','Rust':'rgba(222,165,132,.15)','Java':'rgba(248,152,32,.15)',
+  'Kotlin':'rgba(167,139,250,.15)','React':'rgba(91,211,255,.15)'
+};
 
-// ---------------------------------------------------------------------------
-// App table
-// ---------------------------------------------------------------------------
-function extractPort(url){var m=url&&url.match(/:([0-9]+)/);return m?parseInt(m[1],10):null;}
+/* ─── HTML ESCAPE ─── */
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
+/* ─── TIME AGO ─── */
+function timeAgo(iso){
+  if(!iso)return '—';
+  var diff=Date.now()-new Date(iso).getTime();
+  var m=Math.floor(diff/60000);
+  if(m<1)return 'just now';
+  if(m<60)return m+'m ago';
+  var h=Math.floor(m/60);
+  if(h<24)return h+'h ago';
+  return Math.floor(h/24)+'d ago';
+}
+
+/* ─── STATUS HELPERS ─── */
+function uiStatus(app){return app.status==='creating'?'building':app.status;}
+function langClass(lang){return LANG_COLOR[lang]||'lc-node';}
+function iconBg(lang){return LANG_ICON_BG[lang]||'rgba(122,147,190,.12)';}
+
+/* ─── API HELPERS ─── */
+async function apiFetch(url,opts){
+  try{
+    var r=await fetch(url,opts);
+    var d=await r.json();
+    if(!r.ok){showToast('\u26a0 BN'+String(r.status)+': '+(d.error||d.message||'API error'));}
+    return {ok:r.ok,status:r.status,data:d};
+  }catch(e){showToast('\u26a0 네트워크 오류: '+e.message);return {ok:false,data:{}};}
+}
+
+/* ─── LOAD DATA ─── */
 async function loadApps(){
-  var r=await fetch('/api/apps').then(function(r){return r.json();}).catch(function(){return {apps:[]};});
-  var tbody=document.getElementById('app-body');
-  if(!r.apps||r.apps.length===0){
-    // Check if there are unregistered boilerplates from brewnet init
-    var bp=await fetch('/api/apps/boilerplates').then(function(r){return r.json();}).catch(function(){return {boilerplates:[]};});
-    if(bp.boilerplates&&bp.boilerplates.length>0){
-      tbody.innerHTML='<tr><td colspan="7" style="color:#8b949e">'+
-        bp.boilerplates.length+' boilerplate(s) from <code>brewnet init</code> not yet registered.'+
-        ' Click \u201c+ New App\u201d \u2192 \u201cInstalled Boilerplate\u201d tab to add them.'+
-        '<br/><br/>'+
-        bp.boilerplates.map(function(b){
-          var port=b.port||extractPort(b.backendUrl)||'';
-          return '\u2022 <b>'+escHtml(b.stackId)+'</b> (port '+port+') \u2014 <a href="'+escHtml(b.backendUrl||'')+'" target="_blank" class="app-link">'+escHtml(b.backendUrl||'')+'</a>';
-        }).join('<br/>')+
-        '</td></tr>';
-    }else{
-      tbody.innerHTML='<tr><td colspan="7" style="color:#8b949e">No apps yet \u2014 click "+ New App" to get started.</td></tr>';
-    }
+  var r=await apiFetch('/api/apps');
+  apps=Array.isArray(r.data)?r.data:(r.data.apps||[]);
+}
+async function loadRepos(){
+  var r=await apiFetch('/api/git/repos');
+  repos=Array.isArray(r.data)?r.data:(r.data.repos||[]);
+}
+async function loadInstalledBp(){
+  var r=await apiFetch('/api/apps/boilerplates');
+  installedBp=Array.isArray(r.data)?r.data:(r.data.boilerplates||[]);
+}
+async function loadDomains(){
+  var r=await apiFetch('/api/domain/list');
+  // API returns { connections: DomainConnection[], tunnel, credentialsConfigured }
+  domains=Array.isArray(r.data)?r.data:(r.data.connections||[]);
+  domainTunnel=r.data.tunnel||null;
+  domainCredentialsConfigured=!!r.data.credentialsConfigured;
+}
+async function loadGitInfo(){
+  var results=await Promise.all(apps.map(function(a){
+    return fetch('/api/apps/'+encodeURIComponent(a.name)+'/git')
+      .then(function(r){return r.json();})
+      .then(function(d){return {name:a.name,git:d.git||null};})
+      .catch(function(){return {name:a.name,git:null};});
+  }));
+  appGitInfo={};
+  results.forEach(function(r){appGitInfo[r.name]=r.git;});
+}
+
+async function refreshAll(){
+  // Load apps + domains + installed boilerplates first (fast: file read + local state)
+  // Do NOT await repos here — Gitea may be unreachable and would block forever
+  await Promise.all([loadApps(),loadDomains().catch(function(){}),loadInstalledBp().catch(function(){})]);
+  await loadGitInfo();
+  renderApps();renderBpGrid();
+  showToast('\u21bb \uc0c8\ub85c\uace0\uce68 \uc644\ub8cc');
+  // Load repos in background — render when ready, never blocks app list
+  loadRepos().catch(function(){}).then(function(){renderRepos();});
+}
+
+/* ─── STATS ─── */
+function updateStats(){
+  document.getElementById('stat-total').textContent=apps.length;
+  document.getElementById('stat-run').textContent=apps.filter(function(a){return uiStatus(a)==='running';}).length;
+  document.getElementById('stat-stop').textContent=apps.filter(function(a){return uiStatus(a)==='stopped'||uiStatus(a)==='failed';}).length;
+  document.getElementById('stat-build').textContent=apps.filter(function(a){return uiStatus(a)==='building';}).length;
+}
+
+/* ─── FILTER ─── */
+function filterApps(val){filterState=val;renderApps();}
+
+/* ─── RENDER APPS ─── */
+function renderApps(){
+  var list=document.getElementById('app-list');
+  document.getElementById('badge-apps').textContent=apps.length;
+  updateStats();
+  var filtered=filterState==='all'?apps:apps.filter(function(a){return uiStatus(a)===filterState;});
+  if(apps.length===0){
+    list.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--txt3)"><div style="font-size:32px;margin-bottom:10px">📭</div><div style="font-size:13px">아직 등록된 앱이 없습니다. New App을 눌러 시작하세요.</div></div>';
     return;
   }
-  tbody.innerHTML=r.apps.map(function(a){
-    var localUrl=a.port?'http://localhost:'+a.port:'';
-    var stackLabel=a.stackId||a.sourceUrl||'\u2014';
-    return '<tr>'+
-      '<td><b>'+escHtml(a.name)+'</b></td>'+
-      '<td><span style="color:#8b949e">'+escHtml(a.mode)+'</span></td>'+
-      '<td style="font-size:12px;color:#8b949e">'+escHtml(stackLabel)+'</td>'+
-      '<td>'+escHtml(String(a.port||'\u2014'))+'</td>'+
-      '<td>'+badge(a.status)+'</td>'+
-      '<td>'+(localUrl?'<a href="'+localUrl+'" target="_blank" class="app-link">'+localUrl+'</a>':'\u2014')+'</td>'+
-      '<td>'+
-        (a.status==='running'?'<button class="btn btn-stop" onclick="stopApp(\\''+escHtml(a.name)+'\\')">Stop</button>':'')+
-        (a.status==='stopped'?'<button class="btn btn-start" onclick="startApp(\\''+escHtml(a.name)+'\\')">Start</button>':'')+
-        '<button class="btn btn-remove" onclick="removeApp(\\''+escHtml(a.name)+'\\')">Remove</button>'+
-      '</td>'+
-      '<td><a href="/apps/'+encodeURIComponent(a.name)+'" class="btn btn-default" style="text-decoration:none;display:inline-block;margin-left:0">Details</a></td>'+
-    '</tr>';
+  if(filtered.length===0){
+    list.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--txt3)"><div style="font-size:32px;margin-bottom:10px">📭</div><div style="font-size:13px">해당 상태의 앱이 없습니다</div></div>';
+    return;
+  }
+  list.innerHTML=filtered.map(function(app){
+    var st=uiStatus(app);
+    var isBuilding=st==='building';
+    var isRunning=st==='running';
+    var isStopped=st==='stopped'||st==='failed';
+    var statusBadge=isRunning
+      ?'<span class="bdg b-run"><span class="blink-dot"></span> RUNNING</span>'
+      :isBuilding
+      ?'<span class="bdg b-build"><span class="spin-ic">⟳</span> BUILDING</span>'
+      :'<span class="bdg b-stop">■ STOPPED</span>';
+    var domain=domains.find(function(d){return d.appName===app.name;});
+    var domainHtml=domain
+      ?('<a class="domain-link" href="https://'+escH(domain.hostname||domain.domain)+'" target="_blank" rel="noopener">🌐 '+escH(domain.hostname||domain.domain)+' ↗</a>')
+      :('<span class="no-domain" onclick="openDomainModal(&#39;'+escH(app.name)+'&#39;)">+ 도메인 연결</span>');
+    var startStopBtn=isBuilding
+      ?'<button class="btn bg bxs" disabled style="opacity:.4;cursor:not-allowed">▶ Start</button>'
+      :isRunning
+      ?'<button class="btn bg bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;stop&#39;)">■ Stop</button>'
+      :'<button class="btn bgrn bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;start&#39;)">▶ Start</button>';
+    var git=appGitInfo[app.name];
+    var repoPath=app.giteaRepoUrl?app.giteaRepoUrl.replace(new RegExp('^https?://[^/]+/'),''):'—';
+    var commitInfo=git&&git.latestCommit?(git.latestCommit.shortHash+' '+git.latestCommit.message.slice(0,30)):'(empty)';
+    var lc=langClass(app.lang||'');
+    var appInit=(app.name||'??').slice(0,2).toUpperCase();
+    var ic=iconBg(app.lang||'');
+    var disAttr=isBuilding?' disabled style="opacity:.4;cursor:not-allowed"':'';
+    return '<div class="app-card" id="appcard-'+escH(app.name)+'">'
+      +'<div class="app-card-top">'
+      +'<div class="app-icon" style="background:'+ic+'">'+appInit+'</div>'
+      +'<div class="app-meta">'
+      +'<div class="app-name">'+escH(app.name)+' '+statusBadge
+      +(app.lang?(' <span class="lang-chip '+lc+'">'+escH(app.lang)+'</span>'):'')
+      +(app.framework?(' <span style="font-size:11px;font-family:var(--mono);color:var(--txt3)">'+escH(app.framework)+'</span>'):'')
+      +'</div>'
+      +'<div class="app-info">'
+      +'<span class="app-info-item">🔌 :'+app.port+'</span>'
+      +'<span class="app-info-item" style="color:var(--txt3)">|</span>'
+      +'<span class="app-info-item">📦 '+escH(repoPath)+'</span>'
+      +'<span class="app-info-item" style="color:var(--txt3)">|</span>'
+      +'<span class="app-info-item" style="color:var(--txt3)">📝 '+escH(commitInfo)+'</span>'
+      +'<span class="app-info-item" style="color:var(--txt3)">· '+timeAgo(app.createdAt)+'</span>'
+      +'</div>'
+      +'<div class="app-domain">'+domainHtml+'</div>'
+      +'</div></div>'
+      +'<div class="app-actions">'
+      +'<button class="btn bg bxs" onclick="runBuild(&#39;'+escH(app.name)+'&#39;)"'+disAttr+'>🔨 Build</button>'
+      +'<button class="btn bt bxs" onclick="runDeploy(&#39;'+escH(app.name)+'&#39;)"'+disAttr+'>🚀 Deploy</button>'
+      +startStopBtn
+      +'<div class="app-actions-r">'
+      +'<button class="btn bg bxs" onclick="openDomainModal(&#39;'+escH(app.name)+'&#39;)">🌐 도메인</button>'
+      +(isBuilding
+        ?('<button class="btn br bxs" disabled style="opacity:.4;cursor:not-allowed" title="빌드 중에는 삭제 불가">🗑 삭제</button>')
+        :('<button class="btn br bxs" onclick="openDeleteModal(&#39;'+escH(app.name)+'&#39;)">🗑 삭제</button>'))
+      +'</div></div></div>';
   }).join('');
 }
 
-async function stopApp(name){
-  await fetch('/api/apps/'+encodeURIComponent(name)+'/stop',{method:'POST'});
-  loadApps();
-}
-async function startApp(name){
-  await fetch('/api/apps/'+encodeURIComponent(name)+'/start',{method:'POST'});
-  loadApps();
-}
-async function removeApp(name){
-  if(!confirm('Remove app "'+name+'"? The source files will NOT be deleted.'))return;
-  await fetch('/api/apps/'+encodeURIComponent(name),{method:'DELETE'});
-  loadApps();
-}
-
-// ---------------------------------------------------------------------------
-// New App modal — 3 modes
-// ---------------------------------------------------------------------------
-var currentMode='boilerplate';
-var selectedLang='';
-
-async function openNewAppModal(){
-  BOILERPLATES=await fetch('/api/apps/boilerplates').then(function(r){return r.json();}).then(function(r){return r.boilerplates||[];}).catch(function(){return [];});
-  var ov=document.createElement('div');
-  ov.className='modal-overlay';
-  ov.id='new-app-overlay';
-  ov.onclick=function(e){if(e.target===ov)closeNewAppModal();};
-  ov.innerHTML=buildNewAppModalHtml();
-  document.body.appendChild(ov);
-  document.addEventListener('keydown',handleEsc);
-  switchMode('boilerplate');
-}
-
-function closeNewAppModal(){
-  var o=document.getElementById('new-app-overlay');
-  if(o)o.remove();
-  document.removeEventListener('keydown',handleEsc);
-}
-
-function handleEsc(e){if(e.key==='Escape')closeNewAppModal();}
-
-function buildNewAppModalHtml(){
-  return '<div class="modal-box">'+
-    '<div class="modal-titlebar">'+
-      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">New App</span>'+
-      '<button class="modal-close" onclick="closeNewAppModal()">\u00d7</button>'+
-    '</div>'+
-    '<div class="modal-body">'+
-      '<div class="mode-tabs">'+
-        '<button class="mode-tab active" id="tab-boilerplate" onclick="switchMode(\\'boilerplate\\')">Installed Boilerplate</button>'+
-        '<button class="mode-tab" id="tab-git-url" onclick="switchMode(\\'git-url\\')">Git URL</button>'+
-        '<button class="mode-tab" id="tab-new-project" onclick="switchMode(\\'new-project\\')">New Project</button>'+
-      '</div>'+
-      '<div id="mode-fields"></div>'+
-      '<div class="form-actions">'+
-        '<button class="btn-cancel" onclick="closeNewAppModal()">Cancel</button>'+
-        '<button class="btn-submit" id="submit-btn" onclick="submitNewApp()">Create App \u2192</button>'+
-      '</div>'+
-    '</div></div>';
-}
-
-function switchMode(mode){
-  currentMode=mode;
-  selectedLang='';
-  ['boilerplate','git-url','new-project'].forEach(function(m){
-    var tab=document.getElementById('tab-'+m);
-    if(tab)tab.className='mode-tab'+(m===mode?' active':'');
-  });
-  var fields=document.getElementById('mode-fields');
-  if(!fields)return;
-  if(mode==='boilerplate'){
-    var bpOpts=BOILERPLATES.length
-      ?BOILERPLATES.map(function(b){
-          var label=b.isUnified
-            ?(extractPort(b.backendUrl)||'?')
-            :'backend :'+(extractPort(b.backendUrl)||'?')+' + frontend :'+(extractPort(b.frontendUrl)||'?');
-          return '<option value="'+escHtml(b.stackId)+'">'+escHtml(b.stackId)+' ('+label+')</option>';
-        }).join('')
-      :'<option disabled value="">No installed boilerplates</option>';
-    fields.innerHTML=
-      '<div class="form-group"><label class="form-label">Stack (installed)</label>'+
-      '<select class="form-select" id="f-stackId" onchange="onStackChange()">'+bpOpts+'</select>'+
-      '<p class="form-hint">Monorepo with backend + frontend. Creates one Gitea repo for the whole stack.</p></div>'+
-      '<div class="form-group"><label class="form-label">App Name</label><input class="form-input" id="f-appName" placeholder="my-app"/></div>'+
-      '<div id="f-ports-info" style="font-size:12px;color:#8b949e;margin-bottom:12px"></div>'+
-      '<div class="form-group"><label class="form-label">Framework</label><input class="form-input" id="f-framework" readonly style="opacity:.5"/></div>'+
-      '<div class="form-group"><label class="form-label">Local Path</label><input class="form-input" id="f-appDir" readonly style="opacity:.5"/></div>';
-    if(BOILERPLATES.length)onStackChange();
-  } else if(mode==='git-url'){
-    fields.innerHTML=
-      '<div class="form-group"><label class="form-label">Git URL</label>'+
-      '<input class="form-input" id="f-gitUrl" placeholder="https://github.com/user/repo.git"/>'+
-      '<p class="form-hint">Will be cloned, git history reset, and pushed to your local Gitea.</p></div>'+
-      '<div class="form-row">'+
-        '<div class="form-group"><label class="form-label">App Name</label><input class="form-input" id="f-appName" placeholder="my-app"/></div>'+
-        '<div class="form-group"><label class="form-label">Port</label><input class="form-input" id="f-port" type="number" value="8080"/></div>'+
-      '</div>';
-  } else {
-    var langCards=Object.keys(LANGUAGE_MAP).map(function(lang){
-      return '<div class="lang-card" onclick="selectLang(\\''+lang+'\\')" id="lang-'+lang.replace(/[^a-z]/gi,'-')+'">'+lang+'</div>';
-    }).join('');
-    fields.innerHTML=
-      '<div class="form-group"><label class="form-label">Language</label><div class="lang-grid" id="lang-grid">'+langCards+'</div></div>'+
-      '<div class="form-group" id="fw-group" style="display:none"><label class="form-label">Framework</label>'+
-        '<select class="form-select" id="f-frameworkId"></select></div>'+
-      '<div class="form-row">'+
-        '<div class="form-group"><label class="form-label">App Name</label><input class="form-input" id="f-appName" placeholder="my-app"/></div>'+
-        '<div class="form-group"><label class="form-label">Port</label><input class="form-input" id="f-port" type="number" placeholder="8080"/></div>'+
-      '</div>';
-  }
-}
-
-function onStackChange(){
-  var sel=document.getElementById('f-stackId');
-  var stackId=sel?sel.value:'';
-  var meta=BOILERPLATES.find(function(b){return b.stackId===stackId;});
-  if(!meta)return;
-  var portsEl=document.getElementById('f-ports-info');
-  var fwEl=document.getElementById('f-framework');
-  var dirEl=document.getElementById('f-appDir');
-  if(portsEl){
-    if(meta.isUnified){
-      portsEl.innerHTML='Port: <b>'+(extractPort(meta.backendUrl)||'?')+'</b>';
+/* ─── RENDER REPOS ─── */
+function renderRepos(){
+  var tbody=document.getElementById('repo-tbody');
+  document.getElementById('badge-repos').textContent=repos.length;
+  if(!repos.length){tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--txt3)">Gitea 레포지토리가 없습니다</td></tr>';return;}
+  tbody.innerHTML=repos.map(function(r){
+    var lc=LANG_COLOR[r.language]||'lc-node';
+    var connectedApp=r.appName?apps.find(function(a){return a.name===r.appName;}):null;
+    var deployBadge=connectedApp
+      ?('<span class="bdg b-run" style="font-size:10px">✔ '+escH(connectedApp.name)+'</span>')
+      :'<span class="bdg b-idle" style="font-size:10px">미연결</span>';
+    var actionCell;
+    if(connectInputShown[r.name]){
+      actionCell='<div style="display:flex;gap:6px;align-items:center">'
+        +'<input class="fi" id="ci-'+escH(r.name)+'" placeholder="앱 이름" style="width:120px;padding:5px 9px;font-size:12px">'
+        +'<button class="btn bt bxs" onclick="doConnectRepo(&#39;'+escH(r.name)+'&#39;)">연결</button>'
+        +'<button class="btn bg bxs" onclick="cancelConnect(&#39;'+escH(r.name)+'&#39;)">취소</button>'
+        +'</div>';
+    }else if(connectedApp){
+      actionCell='<a href="/apps/'+encodeURIComponent(r.name)+'" class="btn bg bxs" style="text-decoration:none">앱 보기 →</a>';
     }else{
-      portsEl.innerHTML=
-        'Backend port: <b>'+(extractPort(meta.backendUrl)||'?')+'</b> &nbsp;|&nbsp; '+
-        'Frontend port: <b>'+(extractPort(meta.frontendUrl)||'?')+'</b> &nbsp;&mdash;&nbsp; '+
-        'one Gitea repo for both';
+      actionCell='<button class="btn bt bxs" onclick="showConnectInput(&#39;'+escH(r.name)+'&#39;)">+ 연결</button>';
     }
-  }
-  if(fwEl)fwEl.value=meta.frameworkId||'';
-  if(dirEl)dirEl.value=meta.appDir||'';
+    var updated=r.updatedAt?timeAgo(r.updatedAt):'—';
+    var gitUrl=r.html_url||('http://localhost/git/admin/'+encodeURIComponent(r.name));
+    return '<tr>'
+      +'<td><div style="display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:13px;font-weight:600;font-family:var(--mono)">'+escH(r.name)+'</span>'
+      +(r.private?'<span style="font-size:10px;background:var(--bg3);color:var(--txt3);border:1px solid var(--bdr);padding:1px 6px;border-radius:4px;font-family:var(--mono)">private</span>':'')
+      +'<span style="font-size:10.5px;color:var(--txt3)">⭐ '+(r.stars||0)+'</span>'
+      +'</div></td>'
+      +'<td>'+( r.language?('<span class="lang-chip '+lc+'">'+escH(r.language)+'</span>'):'—')+'</td>'
+      +'<td>'+deployBadge+'</td>'
+      +'<td><a href="'+gitUrl+'" target="_blank" rel="noopener" style="font-size:11.5px;font-family:var(--mono);color:var(--teal);text-decoration:none">git.local/admin/'+escH(r.name)+' ↗</a></td>'
+      +'<td style="font-size:12px;color:var(--txt3);font-family:var(--mono)">'+updated+'</td>'
+      +'<td>'+actionCell+'</td>'
+      +'</tr>';
+  }).join('');
 }
 
-function selectLang(lang){
-  selectedLang=lang;
-  document.querySelectorAll('.lang-card').forEach(function(el){el.classList.remove('selected');});
-  var card=document.getElementById('lang-'+lang.replace(/[^a-z]/gi,'-'));
-  if(card)card.classList.add('selected');
-  var fwGroup=document.getElementById('fw-group');
-  var fwSel=document.getElementById('f-frameworkId');
-  var portEl=document.getElementById('f-port');
-  if(fwSel){
-    fwSel.innerHTML=(LANGUAGE_MAP[lang]||[]).map(function(f){return '<option value="'+escHtml(f.id)+'">'+escHtml(f.label)+'</option>';}).join('');
+/* ─── CONNECT REPO HELPERS ─── */
+function showConnectInput(repoName){connectInputShown[repoName]=true;renderRepos();}
+function cancelConnect(repoName){delete connectInputShown[repoName];renderRepos();}
+async function doConnectRepo(repoName){
+  var inp=document.getElementById('ci-'+repoName);
+  if(!inp)return;
+  var appName=inp.value.trim();
+  if(!appName){showToast('\u26a0 앱 이름을 입력하세요');return;}
+  var r=await apiFetch('/api/git/repos/'+encodeURIComponent(repoName)+'/connect',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({appName:appName})
+  });
+  if(r.ok){
+    delete connectInputShown[repoName];
+    showToast('\u2705 '+repoName+' \u2192 '+appName+' \uc5f0\uacb0 \uc644\ub8cc');
+    await refreshAll();
   }
-  if(fwGroup)fwGroup.style.display='';
-  if(portEl)portEl.value=String(DEFAULT_PORTS[lang]||8080);
 }
 
-async function submitNewApp(){
-  var appName=(document.getElementById('f-appName')||{}).value||'';
-  if(!appName){alert('App name is required');return;}
-  if(!/^[a-z0-9-]+$/.test(appName)){alert('App name must be lowercase letters, numbers, hyphens only');return;}
-
-  var body={mode:currentMode,appName:appName};
-  var portEl=document.getElementById('f-port');
-  if(portEl&&portEl.value)body.port=parseInt(portEl.value,10);
-
-  if(currentMode==='boilerplate'){
-    var stackSel=document.getElementById('f-stackId');
-    body.stackId=stackSel?stackSel.value:'';
-  } else if(currentMode==='git-url'){
-    var urlEl=document.getElementById('f-gitUrl');
-    body.gitUrl=urlEl?urlEl.value:'';
-    if(!body.gitUrl){alert('Git URL is required');return;}
-  } else {
-    if(!selectedLang){alert('Please select a language');return;}
-    var fwSel=document.getElementById('f-frameworkId');
-    var LANG_CODE_MAP={'Node.js':'nodejs','Go':'go','Python':'python','Java':'java','Rust':'rust','Kotlin':'kotlin'};
-    body.language=LANG_CODE_MAP[selectedLang]||selectedLang.toLowerCase();
-    body.frameworkId=fwSel?fwSel.value:'';
+/* ─── TOGGLE APP ─── */
+async function toggleApp(name,action){
+  var r=await apiFetch('/api/apps/'+encodeURIComponent(name)+'/'+action,{method:'POST'});
+  if(r.ok){
+    showToast((action==='start'?'\u25b6 ':'\u25a0 ')+name+' '+(action==='start'?'\uc2dc\uc791':'\uc911\uc9c0')+'\ub428');
+    await loadApps();renderApps();
   }
-
-  var submitBtn=document.getElementById('submit-btn');
-  if(submitBtn)submitBtn.disabled=true;
-
-  var r=await fetch('/api/apps/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}).catch(function(e){return{error:e.message};});
-  if(r.error){alert('Error: '+r.error);if(submitBtn)submitBtn.disabled=false;return;}
-
-  closeNewAppModal();
-  openProgressModal(appName,r.jobId);
 }
 
-// ---------------------------------------------------------------------------
-// Progress modal (polls /api/apps/jobs/:jobId)
-// ---------------------------------------------------------------------------
-var progressTimer=null;
+/* ─── BUILD & DEPLOY ─── */
+async function runBuild(name){
+  var r=await apiFetch('/api/apps/'+encodeURIComponent(name)+'/deploy',{method:'POST'});
+  if(!r.ok)return;
+  var jobId=r.data.jobId;
+  openProgressModal('\uc774\ubbf8\uc9c0 \ube4c\ub4dc \uc911...',name,4);
+  startJobPoll(jobId,name,4);
+}
+async function runDeploy(name){
+  var r=await apiFetch('/api/apps/'+encodeURIComponent(name)+'/deploy',{method:'POST'});
+  if(!r.ok)return;
+  var jobId=r.data.jobId;
+  openProgressModal('\uc804\uccb4 \ubc30\ud3ec \uc911...',name,6);
+  startJobPoll(jobId,name,6);
+  startSseLogs(name);
+}
 
-function openProgressModal(appName,jobId){
-  var ov=document.createElement('div');
-  ov.className='modal-overlay';
-  ov.id='progress-overlay';
-  ov.innerHTML='<div class="modal-box">'+
-    '<div class="modal-titlebar">'+
-      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">Creating '+escHtml(appName)+'...</span>'+
-      '<button class="modal-close" onclick="closeProgressModal()">\u00d7</button>'+
-    '</div>'+
-    '<div class="modal-body" id="progress-body"><p style="color:#8b949e">Starting...</p></div>'+
-  '</div>';
-  document.body.appendChild(ov);
-  pollJob(appName,jobId);
+/* ─── PROGRESS MODAL ─── */
+function openProgressModal(title,appName,maxSteps){
+  document.getElementById('progress-title').textContent=title;
+  document.getElementById('progress-subtitle').textContent=appName;
+  document.getElementById('progress-steps').innerHTML='';
+  document.getElementById('progress-log').style.display='none';
+  document.getElementById('progress-close-btn').style.display='none';
+  document.getElementById('log-content').textContent='';
+  openModal('modal-progress');
+}
+
+function renderProgressSteps(steps,maxSteps){
+  var show=steps.slice(0,maxSteps);
+  document.getElementById('progress-steps').innerHTML=show.map(function(s,i){
+    var cls=s.status==='done'?'done':s.status==='running'?'active':'wait';
+    var numCls=cls;
+    var numHtml=s.status==='done'?'\u2713':s.status==='running'?'<span class="spin-ic">\u27f3</span>':String(i+1);
+    return '<div class="pst '+cls+'">'
+      +'<div class="pnum '+numCls+'">'+numHtml+'</div>'
+      +'<div><div style="font-size:12.5px;font-weight:600">'+escH(s.label)+'</div>'
+      +(s.message?'<div style="font-size:11px;color:var(--txt3)">'+escH(s.message)+'</div>':'')
+      +'</div></div>';
+  }).join('');
+}
+
+function startJobPoll(jobId,appName,maxSteps){
+  if(jobPollTimer)clearInterval(jobPollTimer);
+  activeJobId=jobId;
+  jobPollTimer=setInterval(async function(){
+    var r=await fetch('/api/apps/jobs/'+encodeURIComponent(jobId)).then(function(x){return x.json();}).catch(function(){return null;});
+    if(!r)return;
+    if(r.steps)renderProgressSteps(r.steps,maxSteps);
+    if(r.status==='running'){
+      document.getElementById('progress-log').style.display='block';
+    }
+    if(r.status==='done'||r.status==='failed'){
+      clearInterval(jobPollTimer);jobPollTimer=null;activeJobId=null;
+      if(sseSource){sseSource.close();sseSource=null;}
+      document.getElementById('progress-close-btn').style.display='flex';
+      if(r.status==='done'){
+        showToast('\u2705 '+appName+' \uc644\ub8cc');
+      }else{
+        showToast('\u274c '+appName+' \uc2e4\ud328: '+(r.error||''));
+        document.getElementById('progress-log').style.display='block';
+        var logEl=document.getElementById('log-content');
+        logEl.textContent='\u274c Error: '+(r.error||'Unknown error');
+        var failedStep=r.steps?r.steps.find(function(s){return s.status==='failed';}):null;
+        if(failedStep){logEl.textContent+='\\nFailed at: '+failedStep.label+(failedStep.message?' ('+failedStep.message+')':'');}
+      }
+      await loadApps();await loadRepos();renderApps();renderRepos();
+    }
+  },1500);
+}
+
+function startSseLogs(appName){
+  if(sseSource)sseSource.close();
+  var logEl=document.getElementById('log-content');
+  sseSource=new EventSource('/api/apps/'+encodeURIComponent(appName)+'/logs');
+  sseSource.onmessage=function(e){
+    try{var d=JSON.parse(e.data);logEl.textContent+=(d.line||e.data)+'\\n';}
+    catch(_){logEl.textContent+=e.data+'\\n';}
+    logEl.scrollTop=logEl.scrollHeight;
+    document.getElementById('progress-log').style.display='block';
+  };
+  sseSource.onerror=function(){if(sseSource){sseSource.close();sseSource=null;}};
 }
 
 function closeProgressModal(){
-  var o=document.getElementById('progress-overlay');if(o)o.remove();
-  if(progressTimer)clearTimeout(progressTimer);
+  if(jobPollTimer){clearInterval(jobPollTimer);jobPollTimer=null;}
+  if(sseSource){sseSource.close();sseSource=null;}
+  closeModal('modal-progress');
 }
 
-function stepIcon(status){
-  if(status==='done')return'<span style="color:#3fb950">\u2713</span>';
-  if(status==='running')return'<span style="color:#e3b341">\u23f3</span>';
-  if(status==='failed')return'<span style="color:#f85149">\u2717</span>';
-  return'<span style="color:#484f58">\u25cb</span>';
-}
+/* ─── MODALS ─── */
+function openModal(id){document.getElementById(id).style.display='flex';}
+function closeModal(id){document.getElementById(id).style.display='none';}
+function closeOnOverlay(e,id){if(e.target===document.getElementById(id))closeModal(id);}
 
-async function pollJob(appName,jobId){
-  var r=await fetch('/api/apps/jobs/'+encodeURIComponent(jobId)).then(function(r){return r.json();}).catch(function(){return null;});
-  if(!r){progressTimer=setTimeout(function(){pollJob(appName,jobId);},2000);return;}
-  var body=document.getElementById('progress-body');
-  if(!body)return;
-  var stepsHtml=(r.steps||[]).map(function(s){
-    return '<div class="progress-step">'+stepIcon(s.status)+'<span class="step-label">'+escHtml(s.label)+'</span>'+(s.message?'<span class="step-msg">'+escHtml(s.message)+'</span>':'')+'</div>';
-  }).join('');
-  if(r.status==='done'){
-    body.innerHTML=stepsHtml+'<div style="margin-top:16px;color:#3fb950;font-weight:700">\u2713 App created successfully</div>'+
-      '<div style="margin-top:16px;text-align:right"><button class="btn-primary" onclick="closeProgressModal();loadApps()">Done</button></div>';
-  } else if(r.status==='failed'){
-    body.innerHTML=stepsHtml+'<div style="margin-top:12px;color:#f85149">\u2717 Failed: '+escHtml(r.error||'Unknown error')+'</div>'+
-      '<div style="margin-top:16px;text-align:right"><button class="btn-cancel" onclick="closeProgressModal()">Close</button></div>';
-  } else {
-    body.innerHTML=stepsHtml;
-    progressTimer=setTimeout(function(){pollJob(appName,jobId);},2000);
+/* ─── NEW APP MODAL ─── */
+function switchTab(group,idx){
+  var tabs=document.getElementById(group+'-tabs').querySelectorAll('.tab');
+  tabs.forEach(function(t,i){t.classList.toggle('active',i===idx);});
+  if(group==='newapp'){
+    [0,1,2].forEach(function(i){document.getElementById('newapp-tab-'+i).style.display=i===idx?'block':'none';});
+    currentNewAppTab=idx;
+  }else if(group==='domain'){
+    [0,1,2].forEach(function(i){document.getElementById('domain-tab-'+i).style.display=i===idx?'block':'none';});
+    currentDomainTab=idx;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Boot
-// ---------------------------------------------------------------------------
-loadApps();
-setInterval(loadApps,15000);
+/* ─── BOILERPLATE GRID ─── */
+function renderBpGrid(){
+  // Filter to only show installed boilerplates (from /api/apps/boilerplates)
+  var installedIds=installedBp.map(function(b){return b.stackId;});
+  var available=BOILERPLATES.filter(function(bp){return installedIds.indexOf(bp.id)>=0;});
+  if(available.length===0){
+    document.getElementById('bp-grid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--txt3);font-size:13px">설치된 보일러플레이트가 없습니다. <strong>New Project</strong> 탭에서 새 프로젝트를 생성하세요.</div>';
+    return;
+  }
+  document.getElementById('bp-grid').innerHTML=available.map(function(bp){
+    return '<div class="bp-card" id="bpc-'+bp.id+'" onclick="selectBp(&#39;'+bp.id+'&#39;)"><div class="bp-head"><span class="bp-em">'+bp.emoji+'</span><span class="bp-nm">'+escH(bp.lang)+'</span></div><div class="bp-fw">'+escH(bp.fw)+'</div><div class="bp-desc">'+escH(bp.desc)+'</div></div>';
+  }).join('');
+}
+
+function selectBp(id){
+  document.querySelectorAll('.bp-card').forEach(function(c){c.classList.remove('sel');});
+  document.getElementById('bpc-'+id).classList.add('sel');
+  selectedBp=BOILERPLATES.find(function(b){return b.id===id;});
+  document.getElementById('bp-port').value=selectedBp.port;
+  document.getElementById('bp-sel-nm').textContent=selectedBp.lang+' \u00b7 '+selectedBp.fw;
+  var nm=document.getElementById('bp-appname').value||'my-app';
+  document.getElementById('bp-sel-repo').textContent='git.local/admin/'+nm;
+  document.getElementById('bp-selected-info').style.display='block';
+  debouncedPortCheck('bp-port');
+}
+
+/* ─── LANG GRID ─── */
+function renderLangGrid(){
+  document.getElementById('lang-grid').innerHTML=Object.keys(LANG_DATA).map(function(l){
+    var key=l.replace(/[^a-z0-9]/gi,'');
+    return '<div class="lcard" onclick="selectLang(&#39;'+escH(l)+'&#39;)" id="lc-'+key+'"><div class="lem">'+LANG_DATA[l].emoji+'</div><div class="lnm">'+escH(l)+'</div></div>';
+  }).join('');
+}
+
+function selectLang(lang){
+  document.querySelectorAll('.lcard').forEach(function(c){c.classList.remove('sel');});
+  var key=lang.replace(/[^a-z0-9]/gi,'');
+  var el=document.getElementById('lc-'+key);
+  if(el)el.classList.add('sel');
+  selectedLang=lang;selectedFw=null;
+  var fw=LANG_DATA[lang]?LANG_DATA[lang].fw:[];
+  document.getElementById('fw-section').style.display=fw.length?'block':'none';
+  document.getElementById('fw-row').innerHTML=fw.map(function(f){
+    return '<div class="fchip" onclick="selectFw(this,&#39;'+escH(f)+'&#39;)">'+escH(f)+'</div>';
+  }).join('');
+  updateProjPreview();
+}
+
+function selectFw(el,fw){
+  document.querySelectorAll('.fchip').forEach(function(c){c.classList.remove('sel');});
+  el.classList.add('sel');selectedFw=fw;updateProjPreview();
+}
+
+function updateProjPreview(){
+  var nm=document.getElementById('proj-name').value;
+  var port=document.getElementById('proj-port').value;
+  if(nm){
+    document.getElementById('proj-repo-preview').textContent='git.local/admin/'+nm;
+    document.getElementById('proj-port-preview').textContent='0.0.0.0:'+(port||'?')+'->PORT/tcp';
+    document.getElementById('proj-preview').style.display='block';
+  }
+}
+
+/* ─── AUTO-FILL FROM URL ─── */
+function autoFillFromUrl(url){
+  var match=url.match(new RegExp('/([^/]+?)(\\.git)?$'));
+  if(match)document.getElementById('clone-name').value=match[1].toLowerCase().replace(/[^a-z0-9-]/g,'-');
+}
+
+/* ─── SANITIZE APP NAME ─── */
+function sanitizeAppName(el){
+  el.value=el.value.toLowerCase().replace(/[^a-z0-9-]/g,'-');
+  if(el.id==='bp-appname'&&selectedBp){
+    document.getElementById('bp-sel-repo').textContent='git.local/admin/'+(el.value||'my-app');
+  }
+  if(el.id==='proj-name')updateProjPreview();
+}
+
+/* ─── PORT CONFLICT CHECK ─── */
+function debouncedPortCheck(inputId){
+  if(portCheckTimers[inputId])clearTimeout(portCheckTimers[inputId]);
+  portCheckTimers[inputId]=setTimeout(function(){checkPortConflict(inputId);},600);
+}
+async function checkPortConflict(inputId){
+  var el=document.getElementById(inputId);
+  var hintId=inputId.replace('-port','-port-hint');
+  if(inputId==='bp-port')hintId='bp-port-hint';
+  else if(inputId==='clone-port')hintId='clone-port-hint';
+  else if(inputId==='proj-port')hintId='proj-port-hint';
+  var hintEl=document.getElementById(hintId);
+  if(!el||!hintEl)return;
+  var port=parseInt(el.value);
+  if(!port||port<1024||port>65535){hintEl.textContent='';return;}
+  var r=await fetch('/api/apps/check-port?port='+port).then(function(x){return x.json();}).catch(function(){return null;});
+  if(!r){hintEl.textContent='';return;}
+  if(!r.available){
+    hintEl.style.color='var(--red)';
+    hintEl.textContent='\u26a0 포트 '+port+' 사용 중';
+    // Find next available port suggestion
+    for(var p=port+1;p<=port+10;p++){
+      var r2=await fetch('/api/apps/check-port?port='+p).then(function(x){return x.json();}).catch(function(){return null;});
+      if(r2&&r2.available){
+        var suggested=p;
+        hintEl.innerHTML='\u26a0 포트 '+port+' \uc0ac\uc6a9 \uc911 — <button onclick="usePort(&#39;'+inputId+'&#39;,'+suggested+')" style="background:none;border:none;color:var(--amber);cursor:pointer;font-family:var(--mono);font-size:11px;padding:0;text-decoration:underline">'+suggested+' \uc0ac\uc6a9</button> \ud558\uc2dc\uaca0\uc2b5\ub2c8\uae4c?';
+        break;
+      }
+    }
+  }else{
+    hintEl.style.color='var(--green)';hintEl.textContent='\u2713 \uc0ac\uc6a9 \uac00\ub2a5\ud55c \ud3ec\ud2b8';
+  }
+}
+function usePort(inputId,port){
+  var el=document.getElementById(inputId);
+  if(el){el.value=port;debouncedPortCheck(inputId);}
+}
+
+/* ─── SUBMIT NEW APP ─── */
+async function submitNewApp(){
+  var name='',port='',body={};
+  if(currentNewAppTab===0){
+    name=document.getElementById('bp-appname').value;
+    port=document.getElementById('bp-port').value;
+    if(!selectedBp||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
+    body={mode:'boilerplate',appName:name,port:parseInt(port),stackId:selectedBp.id};
+  }else if(currentNewAppTab===1){
+    name=document.getElementById('clone-name').value;
+    port=document.getElementById('clone-port').value;
+    var gitUrl=document.getElementById('clone-url').value;
+    if(!gitUrl||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
+    body={mode:'git-url',appName:name,port:parseInt(port),gitUrl:gitUrl};
+  }else{
+    name=document.getElementById('proj-name').value;
+    port=document.getElementById('proj-port').value;
+    if(!selectedLang||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
+    var LANG_CODE_MAP={'Go':'go','Python':'python','Node.js':'nodejs','Rust':'rust','Java':'java','Kotlin':'kotlin','React':'nodejs'};
+    var FW_CODE_MAP={'Gin':'gin','Echo v4':'echo','Fiber v3':'fiber','FastAPI':'fastapi','Django':'django','Flask':'flask','Express':'express','NestJS':'nestjs','Fastify':'fastify','Hono':'hono','Actix-web':'actix-web','Axum':'axum','Rocket':'rocket','Warp':'warp','Spring Boot':'springboot','Spring Framework':'spring','Quarkus':'quarkus','Ktor':'ktor','Spring Boot (Kotlin)':'springboot-kt','Next.js':'nextjs','Vite + React':'vite-react','Remix':'remix'};
+    body={mode:'new-project',appName:name,port:parseInt(port),language:LANG_CODE_MAP[selectedLang]||selectedLang.toLowerCase()};
+    if(selectedFw)body.frameworkId=FW_CODE_MAP[selectedFw]||selectedFw.toLowerCase().replace(/[^a-z0-9-]/g,'-');
+  }
+  document.getElementById('newapp-submit').disabled=true;
+  var r=await apiFetch('/api/apps/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  document.getElementById('newapp-submit').disabled=false;
+  if(!r.ok)return;
+  var jobId=r.data.jobId;
+  closeModal('modal-new-app');
+  openProgressModal('\uc571 \uc0dd\uc131 \uc911...',name,6);
+  startJobPoll(jobId,name,6);
+  showToast('\ud83d\ude80 '+name+' \uc0dd\uc131 \uc2dc\uc791\ub428 (Job: '+jobId+')');
+}
+
+/* ─── DOMAIN MODAL ─── */
+function openDomainModal(name){
+  domainTargetName=name;
+  document.getElementById('domain-app-name').textContent=name;
+  // Populate sub-base dropdown with unique base domains from existing connections
+  var sel=document.getElementById('sub-base');
+  var uniqueBases=[...new Set(domains.map(function(d){return d.domain;}))].filter(Boolean);
+  sel.innerHTML='<option value="">— 연결된 도메인 선택 —</option>'+
+    uniqueBases.map(function(d){return '<option value="'+escH(d)+'">'+escH(d)+'</option>';}).join('');
+  updateSubPreview();
+  // Show CF credentials status in tab 0
+  var cfAlert=document.getElementById('cf-creds-status');
+  if(cfAlert){
+    if(domainCredentialsConfigured){
+      cfAlert.className='alert a-ok';cfAlert.textContent='✅ Cloudflare 자격증명 구성됨 — 자동 연결 가능합니다.';
+    }else{
+      cfAlert.className='alert a-warn';cfAlert.textContent='⚠ Cloudflare 자격증명이 구성되지 않았습니다. Admin 설정 페이지에서 먼저 API Token / Tunnel ID를 등록하세요.';
+    }
+  }
+  // Update DNS target in tab 1 (manual guide) with actual tunnel ID if available
+  var tunnelIdVal=(domainTunnel&&domainTunnel.tunnelId)?domainTunnel.tunnelId+'':'<tunnel-id>';
+  document.getElementById('ext-dns-target').textContent=tunnelIdVal+'.cfargotunnel.com';
+  switchTab('domain',0);updateCfPreview();
+  openModal('modal-domain');
+}
+
+function updateCfPreview(){
+  var d=document.getElementById('cf-domain').value||'example.com';
+  var s=document.getElementById('cf-sub').value;
+  document.getElementById('cf-preview').textContent=s?s+'.'+d:d;
+}
+
+function updateExtPreview(){
+  var v=document.getElementById('ext-sub').value;
+  var parts=v.split('.');
+  document.getElementById('ext-dns-name').textContent=parts[0]||'myapp';
+}
+
+function updateSubPreview(){
+  var base=document.getElementById('sub-base').value||'example.com';
+  var prefix=document.getElementById('sub-prefix').value||'myapp';
+  document.getElementById('sub-base-display').textContent='.'+base;
+  document.getElementById('sub-preview').textContent=prefix+'.'+base;
+}
+
+async function submitDomain(){
+  if(!domainTargetName)return;
+  var subdomain='',domain='';
+  if(currentDomainTab===0){
+    domain=document.getElementById('cf-domain').value.trim();
+    subdomain=document.getElementById('cf-sub').value.trim();
+    if(!domain){showToast('⚠ 도메인을 입력하세요');return;}
+    if(!subdomain){showToast('⚠ 서브도메인을 입력하세요');return;}
+    if(!domainCredentialsConfigured){showToast('⚠ Cloudflare 자격증명이 구성되지 않았습니다. 설정 페이지에서 먼저 등록하세요.');return;}
+  }else if(currentDomainTab===1){
+    var full=document.getElementById('ext-sub').value.trim();
+    if(!full||full.indexOf('.')<1){showToast('⚠ 전체 서브도메인을 입력하세요 (예: myapp.example.com)');return;}
+    var dotIdx=full.indexOf('.');
+    subdomain=full.slice(0,dotIdx);
+    domain=full.slice(dotIdx+1);
+    if(!subdomain||!domain){showToast('⚠ 유효한 도메인 형식이 아닙니다');return;}
+  }else{
+    domain=document.getElementById('sub-base').value;
+    subdomain=document.getElementById('sub-prefix').value.trim();
+    if(!domain||!subdomain){showToast('⚠ 도메인과 서브도메인 프리픽스를 입력하세요');return;}
+  }
+  var payload={appName:domainTargetName,subdomain:subdomain,domain:domain};
+  var r=await apiFetch('/api/domain/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(r.ok){
+    closeModal('modal-domain');
+    showToast('🌐 도메인 연결 완료: '+subdomain+'.'+domain);
+    await loadDomains();renderApps();
+  }
+}
+
+/* ─── DELETE MODAL ─── */
+function openDeleteModal(name){
+  deleteTargetName=name;
+  var app=apps.find(function(a){return a.name===name;});
+  document.getElementById('delete-app-name').textContent=name;
+  document.getElementById('delete-confirm-input').value='';
+  document.getElementById('delete-submit-btn').disabled=true;
+  var isRunning=app&&(uiStatus(app)==='running'||uiStatus(app)==='building');
+  document.getElementById('delete-warn-running').style.display=isRunning?'block':'none';
+  document.getElementById('delete-warn-normal').style.display=isRunning?'none':'block';
+  if(isRunning){document.getElementById('delete-submit-btn').disabled=true;}
+  openModal('modal-delete');
+}
+
+function checkDeleteConfirm(){
+  var app=apps.find(function(a){return a.name===deleteTargetName;});
+  if(!app||uiStatus(app)==='running'||uiStatus(app)==='building'){
+    document.getElementById('delete-submit-btn').disabled=true;return;
+  }
+  var val=document.getElementById('delete-confirm-input').value;
+  document.getElementById('delete-submit-btn').disabled=(val!==deleteTargetName);
+}
+
+async function confirmDelete(){
+  var app=apps.find(function(a){return a.name===deleteTargetName;});
+  if(!app)return;
+  var st=uiStatus(app);
+  if(st==='running'||st==='building'){showToast('\u26a0 \uc2e4\ud589 \uc911\uc778 \uc571\uc740 \uc0ad\uc81c\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4');return;}
+  var r=await apiFetch('/api/apps/'+encodeURIComponent(deleteTargetName),{method:'DELETE'});
+  if(r.ok){
+    closeModal('modal-delete');
+    showToast('\uD83D\uDDD1 '+deleteTargetName+' \uc0ad\uc81c \uc644\ub8cc');
+    await refreshAll();
+  }
+}
+
+/* ─── COPY ─── */
+function copyText(elId,msg){
+  var txt=document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(txt).catch(function(){});
+  showToast('\uD83D\uDCCB '+(msg||'\ubcf5\uc0ac\ub428!'));
+}
+
+/* ─── TOAST ─── */
+function showToast(msg){
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='flex';
+  clearTimeout(t._timer);
+  t._timer=setTimeout(function(){t.style.display='none';},2600);
+}
+
+/* ─── INIT ─── */
+window.addEventListener('load',function(){
+  renderBpGrid();
+  renderLangGrid();
+  document.getElementById('sub-base').addEventListener('change',updateSubPreview);
+  document.getElementById('proj-name').addEventListener('input',updateProjPreview);
+  document.getElementById('proj-port').addEventListener('input',updateProjPreview);
+  // Restore building state for creating-status apps from localStorage
+  var pending=JSON.parse(localStorage.getItem('bn_pending_jobs')||'{}');
+  Object.keys(pending).forEach(function(jobId){
+    var appName=pending[jobId];
+    startJobPoll(jobId,appName,6);
+  });
+  refreshAll();
+});
 </script>
 </body>
 </html>`;
@@ -709,7 +1407,7 @@ function setText(id,val){
   var el=document.getElementById(id);if(!el)return;
   var btn=el.querySelector('.copy-btn');
   var html=escH(val);
-  el.innerHTML=html+(btn?'<button class="copy-btn" onclick="copyEl(\''+id+'\')">Copy</button>':'');
+  el.innerHTML=html+(btn?'<button class="copy-btn" onclick="copyEl(&#39;'+id+'&#39;)">Copy</button>':'');
 }
 function copyEl(id){
   var el=document.getElementById(id);if(!el)return;
@@ -770,7 +1468,7 @@ function startLogs(){
   };
 }
 
-// ── Domain tab functions ──
+// \u2500\u2500 Domain tab functions \u2500\u2500
 function domainFetch(url,opts){
   var pw=document.getElementById('dom-pw').value||'';
   var h=Object.assign({'Content-Type':'application/json','X-Admin-Password':pw},(opts&&opts.headers)||{});

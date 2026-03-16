@@ -273,6 +273,23 @@ function resolveContext(): AppContext {
 // Internal: simple health poll
 // ---------------------------------------------------------------------------
 
+/**
+ * Assert that a docker-compose.yml (or compose.yml) exists in `dir`.
+ *
+ * Docker Compose v2 traverses parent directories when no compose file is found
+ * in the working directory. Without this guard, a missing compose file would
+ * silently run the parent project's compose (e.g. my-homeserver), report
+ * Docker up as "done", and leave the app's health check permanently failing.
+ */
+function assertComposeFile(dir: string): void {
+  if (!existsSync(join(dir, 'docker-compose.yml')) && !existsSync(join(dir, 'compose.yml'))) {
+    throw new Error(
+      `No docker-compose.yml found in ${dir}. ` +
+        'The cloned repository must contain a Docker Compose configuration at its root.',
+    );
+  }
+}
+
 async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
@@ -303,15 +320,33 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
   try {
     const ctx = resolveContext();
     const appsJson = resolveAppsJsonPath();
+
+    // Step 0: Validating — mode-specific pre-checks
+    setStep(job, 0, 'running');
+    if (opts.mode === 'boilerplate') {
+      const metas = readBoilerplateMeta(ctx.projectPath);
+      const meta = metas.find((m) => m.stackId === opts.stackId);
+      if (!meta) throw new Error(`Installed boilerplate "${opts.stackId}" not found. Use "New Project" tab to create a fresh project.`);
+      // Stash validated meta on opts for use in _createModeA
+      (opts as CreateAppOptions & { _meta?: unknown })._meta = meta;
+    } else if (opts.mode === 'git-url') {
+      if (!opts.gitUrl) throw new Error('gitUrl is required for Git Clone mode');
+    } else if (opts.mode === 'new-project') {
+      const { resolveStackId } = await import('../config/frameworks.js');
+      const stackId = resolveStackId(opts.language ?? 'nodejs', opts.frameworkId ?? 'express');
+      if (!stackId) throw new Error(`Unknown stack: ${opts.language}/${opts.frameworkId}`);
+      (opts as CreateAppOptions & { _resolvedStackId?: string })._resolvedStackId = stackId;
+    }
+    setStep(job, 0, 'done');
+
+    // Step 1: Gitea setup — ensure token exists, auto-fix mustChangePassword if needed
+    setStep(job, 1, 'running');
     const gitea = new GiteaClient({
       baseUrl: ctx.giteaBaseUrl,
       username: ctx.giteaUser,
       password: ctx.giteaPassword,
       tokenPath: GITEA_TOKEN_PATH,
     });
-
-    // Step 1: Gitea setup — ensure token exists, auto-fix mustChangePassword if needed
-    setStep(job, 1, 'running');
     const giteaPrep = await gitea.prepare();
     setStep(job, 1, 'done', giteaPrep.message);
 
@@ -340,13 +375,9 @@ async function _createModeA(
   gitea: GiteaClient,
   appsJson: string,
 ): Promise<void> {
-  // Step 0: Validate
-  setStep(job, 0, 'running');
-  const metas = readBoilerplateMeta(ctx.projectPath);
-  const meta = metas.find((m) => m.stackId === opts.stackId);
-  if (!meta) throw new Error(`Installed boilerplate "${opts.stackId}" not found`);
+  // Step 0 already done in _runCreateApp — retrieve validated meta
+  const meta = (opts as CreateAppOptions & { _meta?: BoilerplateMeta })._meta!;
   const port = opts.port ?? meta.port ?? parseInt(meta.backendUrl.split(':').pop() ?? '8080', 10);
-  setStep(job, 0, 'done');
 
   // Step 2: Gitea repo
   setStep(job, 2, 'running');
@@ -379,6 +410,7 @@ async function _createModeA(
 
   // Step 4: Docker up
   setStep(job, 4, 'running');
+  assertComposeFile(meta.appDir);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
   setStep(job, 4, 'done');
 
@@ -411,18 +443,15 @@ async function _createModeB(
   gitea: GiteaClient,
   appsJson: string,
 ): Promise<void> {
-  if (!opts.gitUrl) throw new Error('gitUrl is required for mode B');
+  // Step 0 already done in _runCreateApp
   const port = opts.port ?? 8080;
   const appDir = join(ctx.projectPath, 'apps', opts.appName);
 
-  // Step 0: Clone + reinit (reinitGit from boilerplate-manager uses rmSync, not shell rm -rf)
-  setStep(job, 0, 'running');
+  // Step 2: Clone external repo + create Gitea repo
+  setStep(job, 2, 'running', 'Cloning external repository...');
   const { reinitGit: reinitGitB } = await import('./boilerplate-manager.js');
-  await execa('git', ['clone', '--depth', '1', opts.gitUrl, appDir]);
+  await execa('git', ['clone', '--depth', '1', opts.gitUrl!, appDir]);
   await reinitGitB(appDir);
-  setStep(job, 0, 'done');
-
-  setStep(job, 2, 'running');
   const alreadyExists = await gitea.repoExists(opts.appName);
   const cloneUrl = alreadyExists
     ? `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`
@@ -436,6 +465,7 @@ async function _createModeB(
   setStep(job, 3, 'done');
 
   setStep(job, 4, 'running');
+  assertComposeFile(appDir);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
   setStep(job, 4, 'done');
 
@@ -462,20 +492,23 @@ async function _createModeC(
   gitea: GiteaClient,
   appsJson: string,
 ): Promise<void> {
-  const { cloneStack, generateEnv, reinitGit } = await import('./boilerplate-manager.js');
-  const { resolveStackId } = await import('../config/frameworks.js');
+  const { cloneStack, generateEnv, reinitGit, findFreePort } = await import('./boilerplate-manager.js');
+  const { getStackById } = await import('../config/stacks.js');
 
-  // resolveStackId can return null for unknown combos — fail fast
-  const stackId = resolveStackId(opts.language ?? 'nodejs', opts.frameworkId ?? 'express');
-  if (!stackId) throw new Error(`Unknown stack: ${opts.language}/${opts.frameworkId}`);
+  // Step 0 already done in _runCreateApp — retrieve resolved stackId
+  const stackId = (opts as CreateAppOptions & { _resolvedStackId?: string })._resolvedStackId!;
   const port = opts.port ?? 8080;
   const appDir = join(ctx.projectPath, 'apps', opts.appName);
 
-  setStep(job, 0, 'running');
+  // Clone and scaffold (visible as part of Gitea repo step context)
   await cloneStack(stackId, appDir);
-  generateEnv(appDir, stackId, 'sqlite3', { hostPort: port });
+  // Non-unified stacks have a separate frontend container on port 3000 by default.
+  // Auto-detect a free port to prevent "port already allocated" errors when the
+  // homeserver boilerplate is already running on port 3000.
+  const stackInfo = getStackById(stackId);
+  const frontendPort = (stackInfo && !stackInfo.isUnified) ? await findFreePort(3000) : undefined;
+  generateEnv(appDir, stackId, 'sqlite3', { hostPort: port, frontendPort });
   await reinitGit(appDir);
-  setStep(job, 0, 'done');
 
   setStep(job, 2, 'running');
   const cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
@@ -488,6 +521,7 @@ async function _createModeC(
   setStep(job, 3, 'done');
 
   setStep(job, 4, 'running');
+  assertComposeFile(appDir);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
   setStep(job, 4, 'done');
 
