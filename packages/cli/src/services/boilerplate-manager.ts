@@ -95,8 +95,10 @@ export async function cloneStack(stackId: string, projectDir: string): Promise<v
  * Relative `./image.png` resolves correctly to `/apps/{name}/image.png` when the
  * trailing-slash redirect middleware ensures the browser URL has a trailing slash.
  */
-function patchImagePaths(dir: string, replacement: string): void {
+function patchImagePaths(dir: string, replacement: string, search = './brewnet-site-banner.png'): void {
   const jsxExts = new Set(['.tsx', '.ts', '.jsx', '.js']);
+  const needle = `src="${search}"`;
+  const insert = `src="${replacement}"`;
   const walk = (d: string) => {
     for (const entry of readdirSync(d)) {
       if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue;
@@ -104,10 +106,7 @@ function patchImagePaths(dir: string, replacement: string): void {
       if (statSync(full).isDirectory()) { walk(full); continue; }
       if (!jsxExts.has(extname(entry))) continue;
       const original = readFileSync(full, 'utf-8');
-      const patched = original.replaceAll(
-        'src="./brewnet-site-banner.png"',
-        `src="${replacement}"`,
-      );
+      const patched = original.replaceAll(needle, insert);
       if (patched !== original) writeFileSync(full, patched, 'utf-8');
     }
   };
@@ -313,13 +312,26 @@ export function patchNextConfig(projectDir: string, appName: string): void {
   // Already patched — skip
   if (content.includes('basePath')) return;
 
-  // Insert basePath after output: 'standalone'
+  // Insert basePath + unoptimized images after output: 'standalone'.
+  // images.unoptimized is required because Next.js standalone _next/image optimizer
+  // fails to resolve local images when basePath is set (fetches /img.png instead of
+  // /apps/{name}/img.png internally → 400 "not a valid image").
+  // With unoptimized: true, <Image> renders a plain <img> tag pointing directly to
+  // /apps/{name}/img.png which Traefik routes correctly.
   content = content.replace(
     /output:\s*['"]standalone['"]/,
-    `output: 'standalone',\n    basePath: '${basePath}'`,
+    `output: 'standalone',\n    basePath: '${basePath}',\n    images: { unoptimized: true }`,
   );
 
   writeFileSync(configPath, content, 'utf-8');
+
+  // Re-patch image paths to include basePath prefix.
+  // With images.unoptimized=true, <Image src="/foo.png"> renders <img src="/foo.png">.
+  // The browser resolves absolute paths from the tunnel root, missing Traefik's
+  // PathPrefix route. Must be /apps/{appName}/foo.png for correct routing.
+  // cloneStack() already converted ./brewnet-site-banner.png → /brewnet-site-banner.png
+  // for Next.js stacks; now add the basePath prefix.
+  patchImagePaths(projectDir, `${basePath}/brewnet-site-banner.png`, '/brewnet-site-banner.png');
 
   // Also patch docker-compose.yml healthcheck: /health → /apps/{appName}/health
   // With basePath set, Next.js serves all routes (including /health) under the prefix.

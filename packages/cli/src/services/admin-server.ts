@@ -732,37 +732,44 @@ async function handleGetServices(
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
       const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
 
+      // Detect Traefik PathPrefix and strip-prefix from container labels
+      const labels = c.Labels ?? {};
+      const routerRule = Object.entries(labels).find(
+        ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && String(v).includes('PathPrefix'),
+      );
+      let traefikPath = '';
+      if (routerRule) {
+        const pathMatch = String(routerRule[1]).match(/PathPrefix\(`([^`]+)`\)/);
+        if (pathMatch) traefikPath = pathMatch[1]!;
+      }
+      // basePath stacks (e.g. Next.js): PathPrefix exists but no strip-prefix middleware.
+      // The app serves content at the sub-path even on direct port access.
+      const hasStripPrefix = Object.keys(labels).some(
+        (k) => k.includes('.stripprefix.'),
+      );
+      const localBasePath = (traefikPath && !hasStripPrefix) ? traefikPath : '';
+
       // Compute external URL from Traefik PathPrefix labels on the container
       let externalUrl: string | null = null;
       const qtUrl = quickTunnelUrl;
-      if (qtUrl) {
-        const labels = c.Labels ?? {};
-        // Find PathPrefix rule in Traefik router labels (e.g. "PathPrefix(`/apps/spring-app`)")
-        const routerRule = Object.entries(labels).find(
-          ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && String(v).includes('PathPrefix'),
-        );
-        if (routerRule) {
-          const pathMatch = String(routerRule[1]).match(/PathPrefix\(`([^`]+)`\)/);
-          if (pathMatch) {
-            let extPath = pathMatch[1];
-            // Unified API-only stacks (e.g. nextjs-app): append /api/hello
-            // so the external URL points to the API endpoint, not the empty root
-            const stackLabel = labels['com.brewnet.stack'] ?? '';
-            if (stackLabel === 'nodejs-nextjs' || (composeService === 'backend' && extPath.includes('nextjs-app'))) {
-              extPath += '/api/hello';
-            }
-            externalUrl = qtUrl.replace(/\/$/, '') + extPath;
-          }
+      if (qtUrl && traefikPath) {
+        let extPath = traefikPath;
+        // Unified API-only stacks (e.g. nextjs-app): append /api/hello
+        // so the external URL points to the API endpoint, not the empty root
+        const stackLabel = labels['com.brewnet.stack'] ?? '';
+        if (stackLabel === 'nodejs-nextjs' || (composeService === 'backend' && extPath.includes('nextjs-app'))) {
+          extPath += '/api/hello';
         }
+        externalUrl = qtUrl.replace(/\/$/, '') + extPath;
+      }
+      if (!externalUrl && qtUrl) {
         // Fallback for known homeserver services (EXT_PATHS)
-        if (!externalUrl) {
-          const EXT_PATH_MAP: Record<string, string> = {
-            traefik: '', gitea: '/git', nextcloud: '/cloud', pgadmin: '/pgadmin',
-            jellyfin: '/jellyfin', filebrowser: '/files', minio: '/minio',
-          };
-          if (EXT_PATH_MAP[composeService] !== undefined) {
-            externalUrl = qtUrl.replace(/\/$/, '') + EXT_PATH_MAP[composeService];
-          }
+        const EXT_PATH_MAP: Record<string, string> = {
+          traefik: '', gitea: '/git', nextcloud: '/cloud', pgadmin: '/pgadmin',
+          jellyfin: '/jellyfin', filebrowser: '/files', minio: '/minio',
+        };
+        if (EXT_PATH_MAP[composeService] !== undefined) {
+          externalUrl = qtUrl.replace(/\/$/, '') + EXT_PATH_MAP[composeService];
         }
       }
 
@@ -778,8 +785,9 @@ async function handleGetServices(
         // Show a local URL for any service with a public HTTP port.
         // Database/queue services (non-HTTP) are excluded via NO_HTTP_SERVICES.
         // urlMap overrides apply first (e.g. Traefik-path services like gitea → /git).
+        // localBasePath: Next.js basePath stacks serve at /apps/{name} even locally.
         url: port && !NO_HTTP_SERVICES.has(composeService)
-          ? urlMap[composeService] ?? `http://localhost:${port}`
+          ? urlMap[composeService] ?? `http://localhost:${port}${localBasePath}`
           : null,
         externalUrl,
         removable: !REQUIRED_SERVICES.has(composeService),
