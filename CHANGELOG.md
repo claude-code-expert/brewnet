@@ -3,6 +3,28 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-18
+
+### fix(admin): FileBrowser external URL /static → /files
+- **증상**: Admin Dashboard에서 FileBrowser external URL이 `...trycloudflare.com/static`으로 표시
+- **원인**: `handleGetServices()`의 `Object.entries(labels).find()`가 보조 라우터 `quicktunnel-filebrowser-static`을 메인 라우터 `quicktunnel-filebrowser`보다 먼저 매칭
+- **해결**: `primaryRouterKey`로 `traefik.http.routers.quicktunnel-{serviceId}.rule`을 먼저 직접 조회, 없을 때만 fallback
+- **파일**: `packages/cli/src/services/admin-server.ts`
+
+### fix(apps): New Project UI 미지원 프레임워크 9개 제거
+- **증상**: New Project 탭에서 Chi, Starlette, Fastify 등 보일러플레이트가 없는 프레임워크 선택 시 앱 생성 실패
+- **해결**: `LANG_DATA`와 `FW_CODE_MAP`에서 CONNECT_BOILERPLATE.md에 없는 9개 프레임워크 제거
+- **제거 목록**: Go/Chi, Python/Starlette, Node.js/Fastify, Node.js/Hono, Rust/Rocket, Rust/Warp, Java/Quarkus, React/Vite+React, React/Remix
+- **잔존**: 15개 지원 프레임워크 (7개 언어)
+- **파일**: `packages/cli/src/services/apps-page.ts`
+
+### test(cycle): Phase 7 프레임워크 검증 추가 (7.7 + 7.8)
+- 7.7: 미지원 프레임워크 9개 absence 확인
+- 7.8: 지원 프레임워크 15개 presence 확인
+- **파일**: `test-cycle.sh`
+
+---
+
 ## [feature/apps-ui → develop] - 2026-03-17 20:30
 
 ### 🎯 Prompts
