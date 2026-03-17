@@ -1041,6 +1041,35 @@ else
   fail "로고 헤더 누락"
 fi
 
+# 7.7 New Project 프레임워크 검증 (CONNECT_BOILERPLATE.md 기준 미지원 제거 확인)
+label "7.7 New Project 미지원 프레임워크 제거 확인"
+_APPS_HTML=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null)
+UNSUPPORTED_FW="Chi|Starlette|Fastify|Hono|Rocket|Warp|Quarkus|Vite + React|Remix"
+UNSUPPORTED_FOUND=$(echo "$_APPS_HTML" | grep -oE "$UNSUPPORTED_FW" | sort -u || true)
+if [ -z "$UNSUPPORTED_FOUND" ]; then
+  ok "미지원 프레임워크 없음 (Chi/Starlette/Fastify/Hono/Rocket/Warp/Quarkus/Vite+React/Remix 모두 제거됨)"
+else
+  fail "미지원 프레임워크 발견: ${UNSUPPORTED_FOUND}"
+  ALL_PASS=false
+fi
+
+# 7.8 New Project 지원 프레임워크 존재 확인 (15개)
+label "7.8 New Project 지원 프레임워크 존재 확인"
+SUPPORTED_COUNT=0
+for fw in "Gin" "Echo v4" "Fiber v3" "FastAPI" "Django" "Flask" "Express" "NestJS" "Actix-web" "Axum" "Spring Boot" "Spring Framework" "Ktor" "Spring Boot (Kotlin)" "Next.js"; do
+  if echo "$_APPS_HTML" | grep -q "$fw"; then
+    SUPPORTED_COUNT=$((SUPPORTED_COUNT + 1))
+  else
+    fail "지원 프레임워크 누락: ${fw}"
+    ALL_PASS=false
+  fi
+done
+if [ "$SUPPORTED_COUNT" -eq 15 ]; then
+  ok "15개 지원 프레임워크 모두 존재"
+else
+  fail "지원 프레임워크 ${SUPPORTED_COUNT}/15개만 발견"
+fi
+
 step_done
 
 # ─────────────────────────────────────────────────────────────────────────────
