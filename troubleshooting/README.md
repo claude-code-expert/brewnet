@@ -28,7 +28,10 @@
 | [uninstall-orphaned-docker-resources.md](./uninstall-orphaned-docker-resources.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [gitea-password-bash-history-expansion.md](./gitea-password-bash-history-expansion.md) | Runtime / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [traefik-port-443-browser-https-upgrade.md](./traefik-port-443-browser-https-upgrade.md) | Configuration / Docker / Network | 2026-03-04 | ✅ 해결됨 | 1 |
-| [admin-services-table-url-blank.md](./admin-services-table-url-blank.md) | Configuration / Runtime / Network | 2026-03-17 | ✅ 해결됨 | 3 |
+| [admin-services-table-url-blank.md](./admin-services-table-url-blank.md) | Configuration / Runtime / Network | 2026-03-17 | ✅ 해결됨 | 4 |
+| [template-literal-regex-js-parse-failure.md](./template-literal-regex-js-parse-failure.md) | Build / Runtime | 2026-03-17 | ✅ 해결됨 | 1 |
+| [boilerplate-compose-array-labels-corruption.md](./boilerplate-compose-array-labels-corruption.md) | Configuration / Docker | 2026-03-17 | ✅ 해결됨 | 1 |
+| [vite-spa-trailing-slash-blank-screen.md](./vite-spa-trailing-slash-blank-screen.md) | Configuration / Network | 2026-03-17 | ✅ 해결됨 | 2 |
 
 ## 에러 타입별 분류
 

@@ -18,6 +18,11 @@ A self-hosted home server management platform that provides an interactive CLI t
 - 추측으로 경로, 설정값, URL을 답변하지 말 것 — 반드시 소스 코드를 먼저 읽을 것.
 - 에러 발생 시 수동 Fix 안내만 하고 끝내지 말 것 — 자동 복구가 가능하면 자동으로 처리하고, 처리 결과를 사용자에게 보여줄 것.
 - `.catch(() => {})` 로 에러를 silently 삼키지 말 것 — 최소한 로그에 남길 것.
+- **Template literal 안 인라인 JS에서 regex 리터럴(`/.../`) 절대 사용 금지** — `\/`가 template escape로 소비되어 `//` 주석이 됨 → 전체 JS 파싱 실패. 반드시 `new RegExp('...')` 사용.
+- **yaml.load() 결과의 Docker Compose labels를 사용할 때 반드시 `Array.isArray()` 체크** — 보일러플레이트 compose는 array 형식 `["key=val"]` 사용. Object로 캐스팅하면 `{0: "key=val"}` 깨짐.
+- **External URL을 클라이언트에서 추측하지 말 것** — compose 서비스명과 앱 이름이 다를 수 있음. 반드시 서버사이드에서 컨테이너 Traefik 라벨 기반으로 계산.
+- **Traefik PathPrefix로 SPA를 서빙할 때 trailing slash redirect 미들웨어 필수** — 없으면 `./assets/...` 상대경로가 잘못된 디렉토리로 해석되어 빈 화면.
+- **자동 테스트에서 "통과" 보고 전 실제 사용자 경험 경로 검증 필수** — 직접 포트 curl과 admin 대시보드 External URL 링크 클릭은 완전히 다른 경로. 브라우저가 보는 것과 동일한 URL을 테스트할 것.
 
 ## 🔁 Process Decision Rules
 

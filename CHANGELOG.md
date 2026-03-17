@@ -3,55 +3,115 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
-## [develop] - 2026-03-17 18:00
+## [feature/apps-ui → develop] - 2026-03-17 20:30
 
 ### 🎯 Prompts
 1. "apps 영역에 백엔드, 프론트엔드 주소 노출하고 링크 걸어. git 주소도 링크걸고, Gitea 자동 로그인 걸어서 화면 노출할 수 있도록 해"
 2. "현재 어드민과 apps에 구현된 전체 기능을 체크해서 md로 만들어줘"
-3. "수정으로 http://localhost:8088/apps 잘 나오던 화면이 또 불러오는 중...으로 표시되고 — 로고는 그대로 어떤 화면이든 최상단에 나와야 하는거 아냐?"
-4. "왜 external을 Quick tunnel인데 못 캡쳐하지? 원래 연결되던거 아냐? — 분석하고 해결방안 찾아"
+3. "수정으로 /apps 잘 나오던 화면이 또 불러오는 중...으로 표시되고 — 로고는 그대로 어떤 화면이든 최상단에 나와야 하는거 아냐?"
+4. "왜 external을 Quick tunnel인데 못 캡쳐하지? 원래 연결되던거 아냐?"
 5. "1번으로 우선해서 구현하고 전체적으로 개발 계획을 세워서 진행해"
 6. "BREWNET_UX_GIT_DOMAIN.md가 새롭게 분석한 apps 내의 서버 출력과 도메인 세팅 플로우야 — UI분석해서 연결해"
+7. "로그 패널 펼쳐질 때 기존 /apps/:name 기능탭이 다 같이 포함되어야지 — overview, git, deploy, log, domain"
+8. "설치된 보일러플레이트가 없다고 나오는데 이미 깔려있어. external은 기본 static 페이지만 나와"
+9. "node-nest 배포앱 목록에 안보이고, 연결 버튼 누르면 BN-404"
+10. "프론트는 빈 화면만 나와 (Vite SPA 에셋 로드 실패)"
+11. "localhost는 되는데 external은 기본 페이지만 나와 — 루프 테스트할 때 뭘 보고 해결했다고 보고한거지?"
+
+### 🔍 근본 원인 분석 (5개 독립 버그)
+
+**Bug 1: Template literal regex → JS 파싱 실패**
+- **증상**: `/apps` 페이지 "불러오는 중..." 고정, New App 버튼 미동작
+- **원인**: `/^https?:\/\/[^/]+/` regex 리터럴이 TypeScript template literal 안에서 `\/` → `/` 변환 → `//`가 JS 라인 코멘트로 해석 → `<script>` 블록 전체 파싱 실패
+- **해결**: `new RegExp('^https?://[^/]+')` 문자열 방식으로 변경
+- **교훈**: template literal 안 인라인 JS에서는 regex 리터럴 절대 사용 금지 → `new RegExp()` 필수
+
+**Bug 2: Docker 네트워크 분리 → Traefik이 보일러플레이트 컨테이너 미발견**
+- **증상**: Quick Tunnel external URL이 Brewnet landing 페이지(static) 반환
+- **원인**: 보일러플레이트 compose의 `networks: { brewnet: { driver: bridge } }` → Docker Compose가 `spring-app_brewnet` 별도 네트워크 생성. Traefik은 `brewnet` (external) 네트워크만 감시
+- **해결**: `addQuickTunnelAppLabels()`에서 `brewnet: { external: true }` 강제 덮어쓰기. 기존 `if (!topNetworks['brewnet'])` 조건을 제거하고 무조건 설정
+- **교훈**: 보일러플레이트 compose에 `brewnet` 네트워크가 선언되어 있어도 `external: true`가 아니면 별도 네트워크
+
+**Bug 3: Array 라벨 → Object 캐스팅 깨짐 → Traefik 라벨 무시**
+- **증상**: 컨테이너 재시작 후에도 Traefik 라벨 0개
+- **원인**: 보일러플레이트 compose의 labels가 array 형식 `["key=val"]`. `addQuickTunnelAppLabels()`에서 `(svc['labels'] ?? {}) as Record<string, string>` 캐스팅 → `{0: "key=val"}` 생성 → Docker Compose가 Traefik 라벨 무시
+- **해결**: Array 감지 후 `{key: "val"}` object 형식으로 변환하는 로직 추가
+- **교훈**: compose labels는 array 또는 object 형식 가능. yaml.load() 결과를 캐스팅 전 반드시 `Array.isArray()` 체크
+
+**Bug 4: PathPrefix 충돌 + Vite SPA trailing slash**
+- **증상**: `/apps/nodejs-nestjs-ui` 요청이 backend로 라우팅됨; frontend 빈 화면
+- **원인 1**: PathPrefix(`/apps/nodejs-nestjs`)가 `/apps/nodejs-nestjs-ui`도 매칭. 같은 priority(10)에서 짧은 prefix가 먼저 매칭
+- **원인 2**: trailing slash 없이 `/apps/spring-app-ui` 접근 시 `./assets/...` 상대경로가 `/apps/assets/...`로 해석 → Traefik 매칭 실패 → landing page
+- **해결**: priority를 path 길이 기반으로 동적 설정 (`10 + pathPrefix.length`). Traefik `redirectregex` 미들웨어로 trailing slash 자동 추가. Docker Compose `$$` 이스케이프로 `${1}` 캡처 그룹 보존
+- **교훈**: Traefik PathPrefix는 explicit priority 설정 시 길이 자동 계산이 무시됨. Vite SPA는 반드시 trailing slash redirect 필요
+
+**Bug 5: Admin 대시보드 External URL 경로 불일치**
+- **증상**: 대시보드에 `/apps/frontend`, `/apps/backend` 표시 → 접근 시 landing page
+- **원인**: `getExternalUrl(id)` 함수가 compose 서비스명(`frontend`)을 경로로 사용했으나, 실제 Traefik 라우트는 앱 이름(`/apps/spring-app`). `BOILERPLATE_STACKS`가 비어있어 매핑 실패 → fallback으로 서비스명 사용
+- **해결**: `handleGetServices`에서 각 컨테이너의 Traefik 라벨(`traefik.http.routers.*.rule`)에서 PathPrefix를 파싱하여 `externalUrl`을 서버사이드 계산. 클라이언트 fallback 함수보다 서버 응답 우선 사용 (`s.externalUrl || getExternalUrl(s.id)`)
+- **교훈**: External URL은 서버사이드에서 컨테이너 라벨 기반으로 계산해야 정확. 클라이언트 추측(compose 서비스명 기반)은 앱명과 서비스명이 다를 때 실패
 
 ### ✅ Changes
 
-**앱 카드 링크 + Gitea 자동 로그인 (Prompt 1)**:
-- **Added**: `admin-server.ts` — `GET /api/gitea/autologin?redirect=<path>` 엔드포인트 (서버사이드 CSRF 로그인 → 세션 쿠키 전달 → 302 리다이렉트)
-- **Modified**: `apps-page.ts` — 포트 링크 (`http://localhost:PORT ↗`, RUNNING 시만), Git 레포 링크 (`/api/gitea/autologin` 경유 자동 로그인)
-- **Added**: `apps-page.ts` — `.app-info-item a` CSS 호버 스타일
+**Gitea 자동 로그인 (Prompt 1)**:
+- **Added**: `admin-server.ts` — `GET /api/gitea/autologin?redirect=<path>` (서버사이드 CSRF 로그인 → `i_like_gitea` 세션 쿠키 → 302 리다이렉트)
+- **Modified**: `apps-page.ts` — 앱 카드 포트 링크, git 레포 링크, Gitea 레포 테이블 전부 autologin 경유
 
-**전체 기능 체크 문서 (Prompt 2)**:
-- **Added**: `spec/ADMIN_APPS_FEATURES.md` — 42개 API 엔드포인트, 전체 UI 섹션, 데이터 타입, 비즈니스 로직 흐름, 9개 섹션 문서
+**문서 생성 (Prompt 2)**:
+- **Added**: `spec/ADMIN_APPS_FEATURES.md` — 42개 API, 전체 UI, 데이터 타입, 비즈니스 로직 9섹션 문서
 
-**regex 버그 수정 + 로고 헤더 (Prompt 3)**:
-- **Fixed**: `apps-page.ts` — `/^https?:\/\/[^/]+/` regex 리터럴 → `new RegExp('^https?://[^/]+')` (template literal 안 `\/` → `/` 변환 → `//` 주석 해석 → 전체 JS 파싱 실패)
-- **Added**: `apps-page.ts` — `/apps` 페이지 `#header` 로고 바 (Brewnet SVG + 태그라인 + Dashboard/Apps 네비게이션)
-- **Added**: `apps-page.ts` — `/apps/:name` 상세 페이지 `.site-header` 로고 바 (동일 SVG + 네비게이션)
+**JS 파싱 버그 + 로고 헤더 (Prompt 3, Bug 1)**:
+- **Fixed**: regex 리터럴 → `new RegExp()` (template literal 호환)
+- **Added**: `/apps` + `/apps/:name` 페이지에 Brewnet SVG 로고 + Dashboard/Apps 네비게이션 헤더
 
-**앱 카드 UX 대폭 개선 — BREWNET_UX_GIT_DOMAIN.md 스펙 적용 (Prompt 6)**:
-- **Modified**: `apps-page.ts` `renderApps()` — 목업 기반 3가지 상태 카드 레이아웃 (Running/Building/Stopped)
-- **Added**: CSS: `.card-running/.card-building/.card-stopped` (상단 보더 색상), `.meta-grid` (4열 정보), `.commit-row` (커밋 해시+링크), `.health-badges` (DNS/Tunnel/HTTPS), `.build-progress` (인라인 빌드 프로그레스), `.stopped-meta` (간결 메타)
-- **Added**: 커밋 hash 클릭 → Gitea diff 직접 이동 (`/api/gitea/autologin?redirect=.../commit/{hash}`)
-- **Added**: Job 완료 시 auto deploy 설정 자동 적용 (`autoDeploy:true, deployBranch:main`)
+**Quick Tunnel 외부 접근 (Prompt 4-5, Bug 2-5)**:
+- **Added**: `compose-generator.ts` — `addQuickTunnelAppLabels()` (PathPrefix + stripprefix + redirectregex + brewnet external 네트워크 주입)
+- **Added**: `boilerplate-manager.ts` — `injectTraefikForQuickTunnel()` (compose 파싱, 서비스 자동 감지, 컨테이너 내부 포트 추출, array→object 라벨 변환)
+- **Modified**: `generate.ts` Section 7b — Quick Tunnel 모드에서 라벨 주입 호출
+- **Modified**: `app-manager.ts` — 3가지 모드 (A/B/C) docker compose up 직전 `_injectQuickTunnelIfNeeded()` 호출
+- **Fixed**: `admin-server.ts` `handleGetServices()` — `externalUrl` 서버사이드 계산 (컨테이너 Traefik 라벨 PathPrefix 파싱)
 
-**Quick Tunnel boilerplate 서비스 External URL 자동 노출 (Prompt 4-5)**:
-- **Added**: `compose-generator.ts` — `addQuickTunnelAppLabels()` 신규 함수 (Traefik PathPrefix 라벨 + brewnet 외부 네트워크 주입)
-- **Added**: `boilerplate-manager.ts` — `injectTraefikForQuickTunnel()` (compose primary 서비스 자동 감지 + 라벨 주입)
-- **Modified**: `generate.ts` Section 7b — Quick Tunnel 모드일 때 `injectTraefikForQuickTunnel()` 호출 (컨테이너 시작 전)
-- **Modified**: `app-manager.ts` — `_injectQuickTunnelIfNeeded()` 3가지 모드 (boilerplate/git-url/new-project) docker compose up 직전 호출
-- **Fixed**: `admin-server.ts` `getExternalUrl()` — Quick Tunnel fallback: `EXT_PATHS` 미등록 서비스는 `quickTunnelUrl + '/apps/' + id` 반환 (DB/SSH/Mail 제외)
+**앱 카드 UX 개선 (Prompt 6, BREWNET_UX_GIT_DOMAIN.md)**:
+- **Modified**: `apps-page.ts` `renderApps()` — Running/Building/Stopped 3상태 카드
+- **Added**: CSS: `.card-running` 상단 보더, `.meta-grid` 4열 정보, `.commit-row` + Gitea diff 링크, `.health-badges`, `.build-progress` 인라인, `.stopped-meta`
+- **Added**: Job 완료 시 auto deploy 설정 자동 적용
+
+**아코디언 Detail 패널 (Prompt 7)**:
+- **Added**: `apps-page.ts` — 5탭 아코디언 (Overview/Git/Deploy/Logs/Domain) 카드 하단 펼침/접힘
+- **Added**: 각 탭 lazy loading (`loadAccOverview`, `loadAccGit`, `loadAccDeploy`, `startAccLogs`, `loadAccDomain`)
+- **Modified**: Logs 버튼 → 아코디언 Logs 탭 직접 열기 (페이지 전환 없음)
+- **Modified**: 레포 테이블 "앱 보기 →" → 카드 스크롤 + amber 하이라이트 + 아코디언 열기
+
+**Health check 백엔드 포트 고정**:
+- **Fixed**: `app-manager.ts` — `_resolveBackendPort()` 추가. `.env`의 `BACKEND_PORT` 읽어 항상 backend 체크 (frontend nginx `/health` 접근 방지)
+- **적용**: Mode A/B/C + Deploy 총 4곳
+
+**미연결 앱 자동 등록 (Prompt 9)**:
+- **Fixed**: `admin-server.ts` `POST /api/git/repos/:name/connect` — 앱이 apps.json에 없으면 Docker 컨테이너 스캔 후 자동 생성 + 연결
+
+### 📊 Test Results
+- Phase 4-8 E2E: 6회 연속 전체 통과
+- Backend Local == External: ✅ (health JSON timestamp 제외 일치)
+- Frontend Local == External: ✅ (HTML md5 일치)
+- Gitea API/Autologin/WebUI: 200/302/200 ✅
+- JS syntax check (admin + apps): OK ✅
 
 ### 📁 Files Modified
-- `packages/cli/src/services/admin-server.ts` (+87, -2)
-- `packages/cli/src/services/apps-page.ts` (+58, -5)
-- `packages/cli/src/services/compose-generator.ts` (+71)
-- `packages/cli/src/services/boilerplate-manager.ts` (+45)
-- `packages/cli/src/services/app-manager.ts` (+14)
+- `packages/cli/src/services/admin-server.ts` (+175, -5)
+- `packages/cli/src/services/apps-page.ts` (+404, -18)
+- `packages/cli/src/services/compose-generator.ts` (+96)
+- `packages/cli/src/services/boilerplate-manager.ts` (+95)
+- `packages/cli/src/services/app-manager.ts` (+41, -4)
 - `packages/cli/src/wizard/steps/generate.ts` (+7)
-- `spec/ADMIN_APPS_FEATURES.md` (신규)
-- `troubleshooting/admin-services-table-url-blank.md` (+91, 3회차 재발 기록)
-- `troubleshooting/README.md` (인덱스 업데이트)
-- `test-cycle.sh` (+80, Phase 7 추가: Apps UI + Quick Tunnel External 검증)
+- `spec/ADMIN_APPS_FEATURES.md` (+408, 신규)
+- `test-cycle.sh` (+272)
+- `troubleshooting/admin-services-table-url-blank.md` (+91)
+- `troubleshooting/README.md` (+1, -1)
+- `CHANGELOG.md` (+52)
+
+### 🌿 Branches
+- `feature/apps-ui` (commit: b4124e4)
+- `develop` (fast-forward merge: b4124e4)
 
 ---
 

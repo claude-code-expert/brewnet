@@ -237,3 +237,88 @@ if(c.quickTunnelUrl && !NO_QT[id]){
 - 관련 파일: `compose-generator.ts`, `boilerplate-manager.ts`, `generate.ts`, `app-manager.ts`, `admin-server.ts`
 - Traefik 네트워크: `brewnet` (external: true, `docker network create brewnet`으로 생성)
 - Quick Tunnel 경로 패턴: `https://xxx.trycloudflare.com/apps/{appName}`
+
+---
+
+## 재발: External URL 경로 불일치 (compose 서비스명 vs 앱 이름) — 2026-03-17 (4회차)
+
+### 메타데이터
+
+| 항목 | 내용 |
+|------|------|
+| **날짜** | 2026-03-17 |
+| **상태** | ✅ 해결됨 |
+| **에러 타입** | Configuration / Runtime |
+| **브랜치** | feature/apps-ui → develop |
+| **재발 여부** | 4회차 재발 |
+| **재발 주기** | 3회차 수정 불충분 — 클라이언트 추측 방식의 근본 한계 |
+
+### 문제 요약
+
+Admin 대시보드 서비스 테이블에서 `backend`/`frontend` 컨테이너의 External URL이 `/apps/frontend`, `/apps/backend`로 표시되지만, 실제 Traefik 라우트는 `/apps/spring-app`, `/apps/spring-app-ui`. 브라우저에서 클릭 시 Brewnet landing 페이지(static) 반환.
+
+### 근본 원인 (3단계 복합)
+
+**1단계: 클라이언트 `getExternalUrl()` 함수의 한계**
+
+3회차 수정에서 `BOILERPLATE_STACKS`에서 stackId를 매핑하는 fallback을 추가했으나, 이번 설치에서는 `languages: []`로 wizard 실행 → `.brewnet-boilerplate.json` 미생성 → `BOILERPLATE_STACKS`가 빈 배열 → 매핑 불가 → fallback으로 compose 서비스명(`backend`) 사용 → 잘못된 경로.
+
+**2단계: 고아 컨테이너**
+
+이전 설치의 `nodejs-nestjs-backend-1`, `nodejs-nestjs-frontend-1` 컨테이너가 정리되지 않고 남아 있어, `backend`/`frontend` 서비스가 2쌍 존재. 첫 번째 쌍(nodejs-nestjs)은 Traefik 라벨 없음 → External URL null.
+
+**3단계: 자동 테스트의 맹점**
+
+`curl http://localhost:8081/health`로 직접 포트 테스트 → 200 통과. 하지만 실제 admin 대시보드의 External URL 링크(`/apps/frontend`)는 Traefik PathPrefix 매칭 실패 → landing page. **테스트가 실제 사용자 경험과 다른 경로를 검증**했기 때문에 "통과" 보고가 잘못됨.
+
+### 해결 방안 (서버사이드 계산으로 전환)
+
+```typescript
+// handleGetServices에서 각 컨테이너의 Traefik 라벨을 직접 읽음
+const routerRule = Object.entries(c.Labels).find(
+  ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && v.includes('PathPrefix')
+);
+if (routerRule) {
+  const pathMatch = routerRule[1].match(/PathPrefix\(`([^`]+)`\)/);
+  if (pathMatch) externalUrl = quickTunnelUrl + pathMatch[1];
+}
+```
+
+ServiceStatus 인터페이스에 `externalUrl` 필드 추가. 클라이언트에서는 `s.externalUrl || getExternalUrl(s.id)` 우선순위로 서버 응답 우선 사용.
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `admin-server.ts` ServiceStatus | `externalUrl: string | null` 필드 추가 |
+| `admin-server.ts` handleGetServices | 컨테이너 Traefik 라벨에서 PathPrefix 파싱 → externalUrl 서버사이드 계산 |
+| `admin-server.ts` handleGetServices | `quickTunnelUrl` 파라미터 추가 (dashConfig에서 전달) |
+| `admin-server.ts` dashboard HTML | `s.externalUrl || getExternalUrl(s.id)` 우선순위 적용 |
+
+### 검증 결과
+
+```
+/api/services 응답:
+  frontend: externalUrl=https://xxx.trycloudflare.com/apps/spring-app-ui  ✅
+  backend:  externalUrl=https://xxx.trycloudflare.com/apps/spring-app     ✅
+  gitea:    externalUrl=https://xxx.trycloudflare.com/git                  ✅
+  nextcloud: externalUrl=https://xxx.trycloudflare.com/cloud              ✅
+
+실제 접근:
+  tunnel/apps/spring-app → 200 (JSON health)            ✅
+  tunnel/apps/spring-app-ui/ → 200 (React SPA HTML)     ✅
+  Backend Local == External content: ✅ YES
+  Frontend Local == External content: ✅ YES
+```
+
+### 예방 방법
+
+1. **External URL은 반드시 서버사이드에서 계산** — 컨테이너 Traefik 라벨이 유일한 source of truth. 클라이언트 추측(서비스명/stackId 매핑)은 불안정
+2. **고아 컨테이너 정리** — `brewnet uninstall` 또는 재설치 시 이전 프로젝트의 컨테이너/네트워크 잔재 확인
+3. **자동 테스트에서 실제 사용자 경로 검증** — 직접 포트 접근이 아닌 admin 대시보드의 External URL 링크를 따라가서 페이지 소스 비교
+
+### 관련 참고
+
+- 관련 커밋: `b4124e4` (feature/apps-ui → develop)
+- 관련 이슈: admin-services-table-url-blank 4회 연속 재발 → **서버사이드 계산으로 최종 해결**
+- 관련 파일: `admin-server.ts` handleGetServices, ServiceStatus 인터페이스
