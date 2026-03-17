@@ -741,11 +741,19 @@ async function handleGetServices(
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
       const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
 
-      // Detect Traefik PathPrefix and strip-prefix from container labels
+      // Detect Traefik PathPrefix and strip-prefix from container labels.
+      // A container may have multiple PathPrefix routers (e.g. FileBrowser has
+      // /files as main route and /static as an extra asset route).  We need the
+      // primary router whose name matches `quicktunnel-{serviceId}` exactly,
+      // not auxiliary routers like `quicktunnel-{serviceId}-static`.
       const labels = c.Labels ?? {};
-      const routerRule = Object.entries(labels).find(
-        ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && String(v).includes('PathPrefix'),
-      );
+      const primaryRouterKey = `traefik.http.routers.quicktunnel-${composeService}.rule`;
+      const routerRule: [string, string] | undefined =
+        labels[primaryRouterKey] && String(labels[primaryRouterKey]).includes('PathPrefix')
+          ? [primaryRouterKey, labels[primaryRouterKey]]
+          : Object.entries(labels).find(
+              ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && String(v).includes('PathPrefix'),
+            );
       let traefikPath = '';
       if (routerRule) {
         const pathMatch = String(routerRule[1]).match(/PathPrefix\(`([^`]+)`\)/);
