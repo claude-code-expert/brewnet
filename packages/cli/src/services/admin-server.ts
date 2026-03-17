@@ -743,7 +743,16 @@ async function handleGetServices(
         );
         if (routerRule) {
           const pathMatch = String(routerRule[1]).match(/PathPrefix\(`([^`]+)`\)/);
-          if (pathMatch) externalUrl = qtUrl.replace(/\/$/, '') + pathMatch[1];
+          if (pathMatch) {
+            let extPath = pathMatch[1];
+            // Unified API-only stacks (e.g. nextjs-app): append /api/hello
+            // so the external URL points to the API endpoint, not the empty root
+            const stackLabel = labels['com.brewnet.stack'] ?? '';
+            if (stackLabel === 'nodejs-nextjs' || (composeService === 'backend' && extPath.includes('nextjs-app'))) {
+              extPath += '/api/hello';
+            }
+            externalUrl = qtUrl.replace(/\/$/, '') + extPath;
+          }
         }
         // Fallback for known homeserver services (EXT_PATHS)
         if (!externalUrl) {
