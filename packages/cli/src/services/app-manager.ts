@@ -163,7 +163,8 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     setStep(job, 1, 'done');
 
     setStep(job, 2, 'running');
-    await _pollHealth(`http://127.0.0.1:${app.port}/health`);
+    const healthPortDeploy = _resolveBackendPort(app.appDir, app.port);
+    await _pollHealth(`http://127.0.0.1:${healthPortDeploy}/health`);
     setStep(job, 2, 'done');
 
     updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
@@ -269,6 +270,17 @@ function resolveContext(): AppContext {
   return { projectPath, giteaBaseUrl, giteaUser, giteaPassword };
 }
 
+/** Inject Traefik Quick Tunnel labels if running in quick tunnel mode. */
+function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: number): void {
+  try {
+    const last = getLastProject();
+    const state = loadState(last ?? '');
+    if (state?.domain?.cloudflare?.tunnelMode !== 'quick') return;
+    const { injectTraefikForQuickTunnel } = require('./boilerplate-manager.js') as typeof import('./boilerplate-manager.js');
+    injectTraefikForQuickTunnel(appDir, appName, port);
+  } catch { /* non-critical */ }
+}
+
 // ---------------------------------------------------------------------------
 // Internal: simple health poll
 // ---------------------------------------------------------------------------
@@ -288,6 +300,19 @@ function assertComposeFile(dir: string): void {
         'The cloned repository must contain a Docker Compose configuration at its root.',
     );
   }
+}
+
+/**
+ * Resolve the backend health check port for a given app directory.
+ * Reads BACKEND_PORT from .env (set by generateEnv).
+ * Falls back to the provided port if .env is absent or has no BACKEND_PORT.
+ * This ensures health checks always target the backend, not the frontend nginx.
+ */
+function _resolveBackendPort(appDir: string, fallbackPort: number): number {
+  const envPath = join(appDir, '.env');
+  const val = readDotEnvValue(envPath, 'BACKEND_PORT');
+  const parsed = val ? parseInt(val, 10) : NaN;
+  return isNaN(parsed) ? fallbackPort : parsed;
 }
 
 async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
@@ -411,12 +436,14 @@ async function _createModeA(
   // Step 4: Docker up
   setStep(job, 4, 'running');
   assertComposeFile(meta.appDir);
+  _injectQuickTunnelIfNeeded(meta.appDir, opts.appName, port);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
   setStep(job, 4, 'done');
 
-  // Step 5: Health check
+  // Step 5: Health check — always target backend port (not frontend nginx)
   setStep(job, 5, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  const healthPortA = _resolveBackendPort(meta.appDir, port);
+  await _pollHealth(`http://127.0.0.1:${healthPortA}/health`);
   setStep(job, 5, 'done');
 
   // Register
@@ -466,11 +493,13 @@ async function _createModeB(
 
   setStep(job, 4, 'running');
   assertComposeFile(appDir);
+  _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
   setStep(job, 4, 'done');
 
   setStep(job, 5, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`);
+  const healthPortB = _resolveBackendPort(appDir, port);
+  await _pollHealth(`http://127.0.0.1:${healthPortB}/health`);
   setStep(job, 5, 'done');
 
   addApp(appsJson, {
@@ -522,11 +551,13 @@ async function _createModeC(
 
   setStep(job, 4, 'running');
   assertComposeFile(appDir);
+  _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
   setStep(job, 4, 'done');
 
   setStep(job, 5, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`, 120_000);
+  const healthPortC = _resolveBackendPort(appDir, port);
+  await _pollHealth(`http://127.0.0.1:${healthPortC}/health`, 120_000);
   setStep(job, 5, 'done');
 
   addApp(appsJson, {

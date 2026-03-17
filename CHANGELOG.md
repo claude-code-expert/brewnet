@@ -3,6 +3,58 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-17 18:00
+
+### 🎯 Prompts
+1. "apps 영역에 백엔드, 프론트엔드 주소 노출하고 링크 걸어. git 주소도 링크걸고, Gitea 자동 로그인 걸어서 화면 노출할 수 있도록 해"
+2. "현재 어드민과 apps에 구현된 전체 기능을 체크해서 md로 만들어줘"
+3. "수정으로 http://localhost:8088/apps 잘 나오던 화면이 또 불러오는 중...으로 표시되고 — 로고는 그대로 어떤 화면이든 최상단에 나와야 하는거 아냐?"
+4. "왜 external을 Quick tunnel인데 못 캡쳐하지? 원래 연결되던거 아냐? — 분석하고 해결방안 찾아"
+5. "1번으로 우선해서 구현하고 전체적으로 개발 계획을 세워서 진행해"
+6. "BREWNET_UX_GIT_DOMAIN.md가 새롭게 분석한 apps 내의 서버 출력과 도메인 세팅 플로우야 — UI분석해서 연결해"
+
+### ✅ Changes
+
+**앱 카드 링크 + Gitea 자동 로그인 (Prompt 1)**:
+- **Added**: `admin-server.ts` — `GET /api/gitea/autologin?redirect=<path>` 엔드포인트 (서버사이드 CSRF 로그인 → 세션 쿠키 전달 → 302 리다이렉트)
+- **Modified**: `apps-page.ts` — 포트 링크 (`http://localhost:PORT ↗`, RUNNING 시만), Git 레포 링크 (`/api/gitea/autologin` 경유 자동 로그인)
+- **Added**: `apps-page.ts` — `.app-info-item a` CSS 호버 스타일
+
+**전체 기능 체크 문서 (Prompt 2)**:
+- **Added**: `spec/ADMIN_APPS_FEATURES.md` — 42개 API 엔드포인트, 전체 UI 섹션, 데이터 타입, 비즈니스 로직 흐름, 9개 섹션 문서
+
+**regex 버그 수정 + 로고 헤더 (Prompt 3)**:
+- **Fixed**: `apps-page.ts` — `/^https?:\/\/[^/]+/` regex 리터럴 → `new RegExp('^https?://[^/]+')` (template literal 안 `\/` → `/` 변환 → `//` 주석 해석 → 전체 JS 파싱 실패)
+- **Added**: `apps-page.ts` — `/apps` 페이지 `#header` 로고 바 (Brewnet SVG + 태그라인 + Dashboard/Apps 네비게이션)
+- **Added**: `apps-page.ts` — `/apps/:name` 상세 페이지 `.site-header` 로고 바 (동일 SVG + 네비게이션)
+
+**앱 카드 UX 대폭 개선 — BREWNET_UX_GIT_DOMAIN.md 스펙 적용 (Prompt 6)**:
+- **Modified**: `apps-page.ts` `renderApps()` — 목업 기반 3가지 상태 카드 레이아웃 (Running/Building/Stopped)
+- **Added**: CSS: `.card-running/.card-building/.card-stopped` (상단 보더 색상), `.meta-grid` (4열 정보), `.commit-row` (커밋 해시+링크), `.health-badges` (DNS/Tunnel/HTTPS), `.build-progress` (인라인 빌드 프로그레스), `.stopped-meta` (간결 메타)
+- **Added**: 커밋 hash 클릭 → Gitea diff 직접 이동 (`/api/gitea/autologin?redirect=.../commit/{hash}`)
+- **Added**: Job 완료 시 auto deploy 설정 자동 적용 (`autoDeploy:true, deployBranch:main`)
+
+**Quick Tunnel boilerplate 서비스 External URL 자동 노출 (Prompt 4-5)**:
+- **Added**: `compose-generator.ts` — `addQuickTunnelAppLabels()` 신규 함수 (Traefik PathPrefix 라벨 + brewnet 외부 네트워크 주입)
+- **Added**: `boilerplate-manager.ts` — `injectTraefikForQuickTunnel()` (compose primary 서비스 자동 감지 + 라벨 주입)
+- **Modified**: `generate.ts` Section 7b — Quick Tunnel 모드일 때 `injectTraefikForQuickTunnel()` 호출 (컨테이너 시작 전)
+- **Modified**: `app-manager.ts` — `_injectQuickTunnelIfNeeded()` 3가지 모드 (boilerplate/git-url/new-project) docker compose up 직전 호출
+- **Fixed**: `admin-server.ts` `getExternalUrl()` — Quick Tunnel fallback: `EXT_PATHS` 미등록 서비스는 `quickTunnelUrl + '/apps/' + id` 반환 (DB/SSH/Mail 제외)
+
+### 📁 Files Modified
+- `packages/cli/src/services/admin-server.ts` (+87, -2)
+- `packages/cli/src/services/apps-page.ts` (+58, -5)
+- `packages/cli/src/services/compose-generator.ts` (+71)
+- `packages/cli/src/services/boilerplate-manager.ts` (+45)
+- `packages/cli/src/services/app-manager.ts` (+14)
+- `packages/cli/src/wizard/steps/generate.ts` (+7)
+- `spec/ADMIN_APPS_FEATURES.md` (신규)
+- `troubleshooting/admin-services-table-url-blank.md` (+91, 3회차 재발 기록)
+- `troubleshooting/README.md` (인덱스 업데이트)
+- `test-cycle.sh` (+80, Phase 7 추가: Apps UI + Quick Tunnel External 검증)
+
+---
+
 ## [005-app-deploy-ui] - 2026-03-17 00:30
 
 ### 🎯 Prompts

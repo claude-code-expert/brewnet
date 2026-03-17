@@ -146,3 +146,94 @@ var e=EXT_PATHS[id];if(!e){var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){r
 
 - 관련 파일: `packages/cli/src/services/admin-server.ts` L636-714
 - 관련 상수: `TRAEFIK_PATH_SERVICES`, `INTERNAL_SERVICES`, `REQUIRED_SERVICES`
+
+---
+
+## 재발: Quick Tunnel 모드 External URL "—" — 2026-03-17 (3회차)
+
+### 메타데이터
+
+| 항목 | 내용 |
+|------|------|
+| **날짜** | 2026-03-17 |
+| **상태** | ✅ 해결됨 |
+| **에러 타입** | Configuration / Runtime / Network |
+| **브랜치** | develop |
+| **재발 여부** | 3회차 재발 |
+| **재발 주기** | 이전 수정이 Named Tunnel만 커버, Quick Tunnel 미처리 |
+
+### 문제 요약
+
+Quick Tunnel 모드에서 boilerplate 서비스(`frontend`, `backend`)의 External URL이 "—"으로 표시. 2회차 수정에서 `DOMAIN_CONNECTIONS` fallback을 추가했지만 이것은 Named Tunnel(도메인 연결)에만 작동. Quick Tunnel 모드에서는 `DOMAIN_CONNECTIONS`가 비어있어 여전히 null 반환.
+
+### 근본 원인 (2단계)
+
+**1단계: Dashboard `getExternalUrl()` 미지원**
+
+`getExternalUrl(id)`에서 `EXT_PATHS[id]`가 없는 서비스는 `DOMAIN_CONNECTIONS` fallback만 조회. Quick Tunnel 모드에서 `DOMAIN_CONNECTIONS`가 비어있으면 null.
+
+```javascript
+// Before (2회차 수정 후)
+var e=EXT_PATHS[id];
+if(!e){
+  var conn=(DOMAIN_CONNECTIONS||[]).find(...);
+  return conn ? 'https://'+conn.hostname : null;  // Quick Tunnel: 항상 null
+}
+```
+
+**2단계: Docker 네트워크 분리**
+
+보일러플레이트 컨테이너는 `<stackId>_default` 네트워크에만 속하고, Traefik은 `brewnet` 네트워크만 감시. 따라서 Traefik이 보일러플레이트 컨테이너를 발견하지 못해 실제 라우팅도 불가.
+
+### 해결 방안 (3단계)
+
+**1. `compose-generator.ts` — `addQuickTunnelAppLabels()` 신규 함수**
+- boilerplate/app docker-compose.yml에 Traefik PathPrefix 라벨 주입
+- `brewnet` 외부 네트워크 조인
+- 경로: `/apps/{appName}` (strip-prefix 미들웨어 포함)
+
+**2. `boilerplate-manager.ts` — `injectTraefikForQuickTunnel()` 함수**
+- `startContainers()` 전에 호출
+- compose 파일의 primary HTTP 서비스 자동 감지 (backend, app, web 등)
+
+**3. `generate.ts` Section 7b — Quick Tunnel 모드일 때 라벨 주입**
+```typescript
+if (state.domain.cloudflare.tunnelMode === 'quick') {
+  injectTraefikForQuickTunnel(appDir, stackId, backendPort);
+}
+```
+
+**4. `app-manager.ts` — 3가지 모드 모두에 적용**
+```typescript
+_injectQuickTunnelIfNeeded(appDir, appName, port);
+```
+
+**5. `admin-server.ts` — `getExternalUrl()` Quick Tunnel fallback**
+```javascript
+if(c.quickTunnelUrl && !NO_QT[id]){
+  return quickTunnelUrl + '/apps/' + id;
+}
+```
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `compose-generator.ts` | `addQuickTunnelAppLabels()` 신규 — PathPrefix + brewnet 네트워크 주입 |
+| `boilerplate-manager.ts` | `injectTraefikForQuickTunnel()` 신규 — compose 서비스 자동 감지 + 라벨 주입 |
+| `generate.ts` Section 7b | Quick Tunnel 모드일 때 `injectTraefikForQuickTunnel()` 호출 |
+| `app-manager.ts` | `_injectQuickTunnelIfNeeded()` — 3가지 모드 docker compose up 직전 호출 |
+| `admin-server.ts` L336-349 | `getExternalUrl()` Quick Tunnel fallback: `/apps/{id}` URL 생성 |
+
+### 예방 방법
+
+- Quick Tunnel 모드에서 새 서비스/앱 추가 시 `brewnet` 네트워크 조인은 자동 처리됨
+- `EXT_PATHS` 화이트리스트 업데이트 불필요 — Quick Tunnel fallback이 자동으로 `/apps/{id}` 구성
+- `NO_HTTP_SERVICES`에 등록된 DB/SSH/Mail 서비스만 External URL 제외
+
+### 관련 참고
+
+- 관련 커밋: develop 브랜치 (2026-03-17)
+- 관련 파일: `compose-generator.ts`, `boilerplate-manager.ts`, `generate.ts`, `app-manager.ts`, `admin-server.ts`
+- Traefik 네트워크: `brewnet` (external: true, `docker network create brewnet`으로 생성)
+- Quick Tunnel 경로 패턴: `https://xxx.trycloudflare.com/apps/{appName}`

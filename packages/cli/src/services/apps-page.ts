@@ -31,7 +31,16 @@ export function generateAppsPageHtml(): string {
 html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--sans);overflow:hidden;font-size:14px}
 #shell{display:flex;height:100vh}
 #main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
-#topbar{height:52px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 24px;gap:10px;flex-shrink:0}
+#header{height:50px;background:var(--bg1);border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;padding:0 24px;flex-shrink:0}
+#header .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--txt)}
+#header .logo-text{display:flex;flex-direction:column;line-height:1.25}
+#header .logo-name{font-size:16px;font-weight:800;color:var(--amber)}
+#header .logo-tag{font-size:9.5px;color:var(--txt3);font-weight:400}
+#header .nav-links{display:flex;align-items:center;gap:10px}
+#header .nav-link{font-size:12px;font-family:var(--mono);color:var(--txt2);text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid var(--bdr2);transition:all .14s}
+#header .nav-link:hover{color:var(--txt);border-color:var(--bdr3);background:var(--bg3)}
+#header .nav-link.active{color:var(--amber);border-color:rgba(232,168,73,.3);background:rgba(232,168,73,.06)}
+#topbar{height:44px;background:var(--bg0);border-bottom:1px solid var(--bdr);display:flex;align-items:center;padding:0 24px;gap:10px;flex-shrink:0}
 #content{flex:1;overflow-y:auto;padding:28px 30px}
 .bc{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt2)}
 .bc .sep{color:var(--txt3)}.bc .cur{color:var(--txt);font-weight:600}
@@ -90,7 +99,7 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
 .app-meta{flex:1;min-width:0}
 .app-name{font-size:14px;font-weight:700;color:var(--txt);margin-bottom:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .app-info{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--txt2);flex-wrap:wrap;margin-bottom:6px}
-.app-info-item{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11.5px}
+.app-info-item{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11.5px}.app-info-item a{color:var(--teal);text-decoration:none;transition:opacity .14s}.app-info-item a:hover{opacity:.8;text-decoration:underline}
 .app-domain{margin-top:4px}
 .domain-link{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-family:var(--mono);color:var(--teal);text-decoration:none;background:rgba(61,214,200,.07);border:1px solid rgba(61,214,200,.18);padding:3px 9px;border-radius:20px;transition:all .14s}
 .domain-link:hover{background:rgba(61,214,200,.14);border-color:rgba(61,214,200,.3)}
@@ -149,11 +158,77 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
 .sec-title{font-size:13.5px;font-weight:700;color:var(--txt);display:flex;align-items:center;gap:8px;margin-bottom:14px}
 .nbadge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;background:var(--bg3);border:1px solid var(--bdr2);border-radius:10px;font-size:11px;font-family:var(--mono);color:var(--txt2);margin-left:6px}
 #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--bdr2);border-radius:var(--r);padding:10px 18px;font-size:13px;color:var(--txt);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:9999;display:none;align-items:center;gap:8px;animation:fadeIn .2s ease}
+/* Card top border by status */
+.app-card.card-running{border-top:2px solid rgba(61,232,154,.4)}
+.app-card.card-building{border-top:2px solid rgba(232,168,73,.4)}
+.app-card.card-stopped{border-top:2px solid rgba(58,80,112,.3);opacity:.85}
+.app-card.card-stopped:hover{opacity:1}
+/* Meta grid (4-column info row) */
+.meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px 8px;padding:10px 0;border-top:1px solid var(--bdr);border-bottom:1px solid var(--bdr);margin:10px 0}
+.meta-item{display:flex;flex-direction:column;gap:2px}
+.meta-key{font-size:9px;color:var(--txt3);font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase}
+.meta-val{font-size:11px;color:var(--txt2);font-family:var(--mono)}
+.meta-val a{color:var(--teal);text-decoration:none}.meta-val a:hover{text-decoration:underline}
+/* Commit row */
+.commit-row{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border:1px solid var(--bdr);border-radius:8px;margin-bottom:12px}
+.commit-hash{font-family:var(--mono);font-size:11px;color:var(--amber);cursor:pointer;white-space:nowrap}.commit-hash:hover{text-decoration:underline}
+.commit-msg{font-size:11px;color:var(--txt2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.commit-time{font-size:10px;color:var(--txt3);font-family:var(--mono);white-space:nowrap}
+.gitea-link{font-size:10px;color:var(--txt3);font-family:var(--mono);padding:2px 8px;border:1px solid var(--bdr);border-radius:4px;cursor:pointer;white-space:nowrap;text-decoration:none;transition:all .14s}
+.gitea-link:hover{color:var(--txt);border-color:var(--bdr3)}
+/* Health badges */
+.health-badges{display:flex;gap:5px;justify-content:flex-end;margin-top:4px}
+.hbadge{font-size:9px;font-family:var(--mono);padding:1px 6px;border-radius:4px}
+.hbadge-ok{background:rgba(61,232,154,.08);color:var(--green);border:1px solid rgba(61,232,154,.2)}
+.hbadge-fail{background:rgba(240,75,90,.08);color:var(--red);border:1px solid rgba(240,75,90,.2)}
+/* Inline build progress */
+.build-progress{background:rgba(232,168,73,.06);border:1px solid rgba(232,168,73,.2);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.build-progress-header{font-size:10px;font-family:var(--mono);color:var(--amber);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.build-steps{display:flex;flex-direction:column;gap:5px}
+.build-step{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-family:var(--mono)}
+.build-step-name{display:flex;align-items:center;gap:7px}
+.build-step-time{color:var(--txt3)}
+.build-step-name.bsok{color:var(--green)}.build-step-name.bsrun{color:var(--amber)}.build-step-name.bswait{color:var(--txt3)}
+.build-spinner{width:12px;height:12px;border:1.5px solid var(--amber);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;display:inline-block}
+.progress-bar-wrap{height:3px;background:var(--bg4);border-radius:2px;margin-top:10px;overflow:hidden}
+.progress-bar-fill{height:100%;background:var(--amber);border-radius:2px}
+/* Stopped meta */
+.stopped-meta{padding:8px 10px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--txt3);font-family:var(--mono);margin-bottom:12px}
+/* Accordion log panel */
+.acc-panel{display:none;border-top:1px solid var(--bdr);background:var(--bg0);padding:0}
+.acc-panel.open{display:block}
+.acc-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--bg3);border-bottom:1px solid var(--bdr)}
+.acc-header span{font-size:11px;font-family:var(--mono);color:var(--txt3)}
+.acc-log{height:220px;overflow-y:auto;padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--txt2);white-space:pre-wrap;line-height:1.7}
+.acc-log .log-err{color:var(--red)}.acc-log .log-warn{color:var(--amber)}
+.acc-tabs{display:flex;gap:0;border-bottom:1px solid var(--bdr);background:var(--bg2)}
+.acc-tab{padding:8px 16px;font-size:11.5px;font-family:var(--mono);color:var(--txt3);cursor:pointer;border-bottom:2px solid transparent;transition:all .14s}
+.acc-tab:hover{color:var(--txt2)}.acc-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.acc-body{padding:0}.acc-tp{display:none;padding:14px 16px}.acc-tp.active{display:block}
+.acc-info-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bdr);font-size:12px}
+.acc-info-key{color:var(--txt3);font-family:var(--mono);min-width:100px}
+.acc-info-val{color:var(--txt2);font-family:var(--mono);word-break:break-all}
+.acc-info-val a{color:var(--teal);text-decoration:none}.acc-info-val a:hover{text-decoration:underline}
+.acc-code{background:var(--bg0);border:1px solid var(--bdr);border-radius:var(--r);padding:8px 12px;font-family:var(--mono);font-size:11px;color:var(--txt2);white-space:pre-wrap;word-break:break-all;margin:6px 0;position:relative}
+.acc-cpb{position:absolute;top:6px;right:6px;background:var(--bg3);border:1px solid var(--bdr2);color:var(--txt3);font-size:10px;padding:2px 8px;border-radius:4px;cursor:pointer;border:none;font-family:var(--sans)}
+.acc-cpb:hover{color:var(--txt);background:var(--bdr2)}
+.acc-section{margin-bottom:14px}
+.acc-section-title{font-size:10px;color:var(--txt3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
 </style>
 </head>
 <body>
 <div id="shell">
 <div id="main">
+  <div id="header">
+    <a href="/" class="logo">
+      <svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="var(--amber)" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="var(--amber)" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg>
+      <span class="logo-text"><span class="logo-name">Brewnet</span><span class="logo-tag">Your server on tap. Just brew it.</span></span>
+    </a>
+    <div class="nav-links">
+      <a href="/" class="nav-link">Dashboard</a>
+      <a href="/apps" class="nav-link active">Apps</a>
+    </div>
+  </div>
   <div id="topbar">
     <div class="bc">
       <a href="/" style="color:var(--txt2);text-decoration:none">Home</a>
@@ -599,54 +674,129 @@ function renderApps(){
     var isRunning=st==='running';
     var isStopped=st==='stopped'||st==='failed';
     var statusBadge=isRunning
-      ?'<span class="bdg b-run"><span class="blink-dot"></span> RUNNING</span>'
+      ?'<span class="bdg b-run"><span class="blink-dot"></span> Running</span>'
       :isBuilding
-      ?'<span class="bdg b-build"><span class="spin-ic">⟳</span> BUILDING</span>'
-      :'<span class="bdg b-stop">■ STOPPED</span>';
+      ?'<span class="bdg b-build"><span class="spin-ic">⟳</span> Building</span>'
+      :'<span class="bdg b-stop">Stopped</span>';
     var domain=domains.find(function(d){return d.appName===app.name;});
-    var domainHtml=domain
-      ?('<a class="domain-link" href="https://'+escH(domain.hostname||domain.domain)+'" target="_blank" rel="noopener">🌐 '+escH(domain.hostname||domain.domain)+' ↗</a>')
-      :('<span class="no-domain" onclick="openDomainModal(&#39;'+escH(app.name)+'&#39;)">+ 도메인 연결</span>');
-    var startStopBtn=isBuilding
-      ?'<button class="btn bg bxs" disabled style="opacity:.4;cursor:not-allowed">▶ Start</button>'
-      :isRunning
-      ?'<button class="btn bg bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;stop&#39;)">■ Stop</button>'
-      :'<button class="btn bgrn bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;start&#39;)">▶ Start</button>';
     var git=appGitInfo[app.name];
-    var repoPath=app.giteaRepoUrl?app.giteaRepoUrl.replace(new RegExp('^https?://[^/]+/'),''):'—';
-    var commitInfo=git&&git.latestCommit?(git.latestCommit.shortHash+' '+git.latestCommit.message.slice(0,30)):'(empty)';
+    var repoPath=app.giteaRepoUrl?app.giteaRepoUrl.replace(new RegExp('^https?://[^/]+/'),''):'';
+    var gitInternalPath=app.giteaRepoUrl?app.giteaRepoUrl.replace(new RegExp('^https?://[^/]+'),''):'';
+    var commitInfo=git&&git.latestCommit?git.latestCommit:null;
     var lc=langClass(app.lang||'');
     var appInit=(app.name||'??').slice(0,2).toUpperCase();
     var ic=iconBg(app.lang||'');
     var disAttr=isBuilding?' disabled style="opacity:.4;cursor:not-allowed"':'';
-    return '<div class="app-card" id="appcard-'+escH(app.name)+'">'
-      +'<div class="app-card-top">'
+
+    // Domain area (top right)
+    var domainHtml='';
+    if(domain){
+      domainHtml='<div class="app-domain"><a class="domain-link" href="https://'+escH(domain.hostname||domain.domain)+'" target="_blank" rel="noopener">'+escH(domain.hostname||domain.domain)+' ↗</a>'
+        +'<div class="health-badges"><span class="hbadge hbadge-ok">DNS ✓</span><span class="hbadge hbadge-ok">Tunnel ✓</span><span class="hbadge hbadge-ok">HTTPS ✓</span></div></div>';
+    }else{
+      domainHtml='<div class="app-domain"><span class="no-domain" onclick="openDomainModal(&#39;'+escH(app.name)+'&#39;)">+ 도메인 연결</span></div>';
+    }
+
+    // Card header
+    var headHtml='<div class="card-head" style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
+      +'<div style="display:flex;gap:12px;align-items:flex-start">'
       +'<div class="app-icon" style="background:'+ic+'">'+appInit+'</div>'
-      +'<div class="app-meta">'
-      +'<div class="app-name">'+escH(app.name)+' '+statusBadge
-      +(app.lang?(' <span class="lang-chip '+lc+'">'+escH(app.lang)+'</span>'):'')
-      +(app.framework?(' <span style="font-size:11px;font-family:var(--mono);color:var(--txt3)">'+escH(app.framework)+'</span>'):'')
-      +'</div>'
-      +'<div class="app-info">'
-      +'<span class="app-info-item">🔌 :'+app.port+'</span>'
-      +'<span class="app-info-item" style="color:var(--txt3)">|</span>'
-      +'<span class="app-info-item">📦 '+escH(repoPath)+'</span>'
-      +'<span class="app-info-item" style="color:var(--txt3)">|</span>'
-      +'<span class="app-info-item" style="color:var(--txt3)">📝 '+escH(commitInfo)+'</span>'
-      +'<span class="app-info-item" style="color:var(--txt3)">· '+timeAgo(app.createdAt)+'</span>'
-      +'</div>'
-      +'<div class="app-domain">'+domainHtml+'</div>'
-      +'</div></div>'
-      +'<div class="app-actions">'
-      +'<button class="btn bg bxs" onclick="runBuild(&#39;'+escH(app.name)+'&#39;)"'+disAttr+'>🔨 Build</button>'
-      +'<button class="btn bt bxs" onclick="runDeploy(&#39;'+escH(app.name)+'&#39;)"'+disAttr+'>🚀 Deploy</button>'
+      +'<div><div class="app-name" style="font-size:14px;font-weight:700;margin-bottom:5px">'+escH(app.name)+'</div>'
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap">'+statusBadge
+      +(app.lang?' <span class="lang-chip '+lc+'">'+escH(app.lang)+'</span>':'')
+      +(app.framework?' <span class="lang-chip" style="background:var(--bg3);color:var(--txt2);border:1px solid var(--bdr)">'+escH(app.framework)+'</span>':'')
+      +'</div></div></div>'
+      +domainHtml+'</div>';
+
+    // Meta grid
+    var portLink=isRunning
+      ?'<a href="http://localhost:'+app.port+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">:'+app.port+'</a>'
+      :':'+app.port;
+    var branchName=git&&git.branch?git.branch:'main';
+    var metaHtml='<div class="meta-grid">'
+      +'<div class="meta-item"><span class="meta-key">Port</span><span class="meta-val">'+portLink+'</span></div>'
+      +'<div class="meta-item"><span class="meta-key">Uptime</span><span class="meta-val">'+(isRunning?timeAgo(app.createdAt):'—')+'</span></div>'
+      +'<div class="meta-item"><span class="meta-key">Branch</span><span class="meta-val">'+escH(branchName)+'</span></div>'
+      +'<div class="meta-item"><span class="meta-key">Last deploy</span><span class="meta-val">'+(commitInfo?timeAgo(commitInfo.date):'—')+'</span></div>'
+      +'</div>';
+
+    // Commit row
+    var commitHtml='';
+    if(commitInfo){
+      var commitLink=gitInternalPath?'/api/gitea/autologin?redirect='+encodeURIComponent(gitInternalPath+'/commit/'+commitInfo.hash):'#';
+      var giteaLinkHtml=gitInternalPath?'<a class="gitea-link" href="/api/gitea/autologin?redirect='+encodeURIComponent(gitInternalPath)+'" target="_blank" rel="noopener">Gitea ↗</a>':'';
+      commitHtml='<div class="commit-row"'+(isStopped?' style="opacity:.6"':'')+'>'
+        +'<a class="commit-hash" href="'+commitLink+'" target="_blank" rel="noopener">'+escH(commitInfo.shortHash)+'</a>'
+        +'<span class="commit-msg">'+escH(commitInfo.message.slice(0,40))+'</span>'
+        +'<span class="commit-time">'+timeAgo(commitInfo.date)+'</span>'
+        +giteaLinkHtml
+        +'</div>';
+    }
+
+    // Action row
+    var startStopBtn=isBuilding
+      ?''
+      :isRunning
+      ?'<button class="btn bg bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;stop&#39;)">■ Stop</button>'
+      :'<button class="btn bgrn bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;start&#39;)">▶ Start</button>';
+    var actionHtml='<div class="app-actions" style="display:flex;gap:7px;flex-wrap:wrap">'
       +startStopBtn
-      +'<div class="app-actions-r">'
-      +'<button class="btn bg bxs" onclick="openDomainModal(&#39;'+escH(app.name)+'&#39;)">🌐 도메인</button>'
-      +(isBuilding
-        ?('<button class="btn br bxs" disabled style="opacity:.4;cursor:not-allowed" title="빌드 중에는 삭제 불가">🗑 삭제</button>')
-        :('<button class="btn br bxs" onclick="openDeleteModal(&#39;'+escH(app.name)+'&#39;)">🗑 삭제</button>'))
-      +'</div></div></div>';
+      +(isBuilding?'':'<button class="btn bt bxs" onclick="runDeploy(&#39;'+escH(app.name)+'&#39;)"'+disAttr+'>🚀 Deploy</button>')
+      +'<button class="btn bg bxs" onclick="toggleDetailPanel(&#39;'+escH(app.name)+'&#39;);switchAccTab(&#39;'+escH(app.name)+'&#39;,&#39;logs&#39;)">📋 Logs</button>'
+      +(isBuilding?'<button class="btn br bxs" onclick="toggleApp(&#39;'+escH(app.name)+'&#39;,&#39;stop&#39;)">✕ Cancel</button>':'')
+      +(!isBuilding?'<button class="btn bg bxs" onclick="openDomainModal(&#39;'+escH(app.name)+'&#39;)">🌐 도메인</button>':'')
+      +(!isBuilding
+        ?(isBuilding
+          ?'<button class="btn br bxs" disabled style="opacity:.4;cursor:not-allowed" title="빌드 중에는 삭제 불가">🗑</button>'
+          :'<button class="btn br bxs" onclick="openDeleteModal(&#39;'+escH(app.name)+'&#39;)">🗑</button>')
+        :'')
+      +'</div>';
+
+    // Building: inline progress
+    var buildHtml='';
+    if(isBuilding){
+      buildHtml='<div class="build-progress" id="bp-'+escH(app.name)+'">'
+        +'<div class="build-progress-header"><span>Build Progress</span><span id="bp-pct-'+escH(app.name)+'">—</span></div>'
+        +'<div class="build-steps" id="bp-steps-'+escH(app.name)+'"><div class="build-step"><div class="build-step-name bsrun"><div class="build-spinner"></div> 빌드 진행 중...</div></div></div>'
+        +'<div class="progress-bar-wrap"><div class="progress-bar-fill" id="bp-bar-'+escH(app.name)+'" style="width:10%"></div></div>'
+        +'</div>';
+    }
+
+    // Stopped: compact meta
+    var stoppedHtml='';
+    if(isStopped){
+      stoppedHtml='<div class="stopped-meta">마지막 실행: '+timeAgo(app.createdAt)+' · Port :'+app.port+' · Branch: '+escH(branchName)+'</div>';
+    }
+
+    // Accordion detail panel (5 tabs: Overview | Git | Deploy | Logs | Domain)
+    var EN=escH(app.name);
+    var accHtml='<div class="acc-panel" id="acc-'+EN+'">'
+      +'<div class="acc-header"><span>'+EN+'</span>'
+      +'<button class="btn bg bxs" onclick="toggleDetailPanel(&#39;'+EN+'&#39;)" style="font-size:10px">Close ✕</button></div>'
+      +'<div class="acc-tabs">'
+      +'<span class="acc-tab active" onclick="switchAccTab(&#39;'+EN+'&#39;,&#39;ov&#39;)">Overview</span>'
+      +'<span class="acc-tab" onclick="switchAccTab(&#39;'+EN+'&#39;,&#39;git&#39;)">Git</span>'
+      +'<span class="acc-tab" onclick="switchAccTab(&#39;'+EN+'&#39;,&#39;deploy&#39;)">Deploy</span>'
+      +'<span class="acc-tab" onclick="switchAccTab(&#39;'+EN+'&#39;,&#39;logs&#39;)">Logs</span>'
+      +'<span class="acc-tab" onclick="switchAccTab(&#39;'+EN+'&#39;,&#39;domain&#39;)">Domain</span>'
+      +'</div>'
+      +'<div class="acc-body" id="accbody-'+EN+'">'
+      +'<div class="acc-tp active" id="accp-'+EN+'-ov"><div style="color:var(--txt3);font-size:12px">Loading...</div></div>'
+      +'<div class="acc-tp" id="accp-'+EN+'-git"><div style="color:var(--txt3);font-size:12px">Loading...</div></div>'
+      +'<div class="acc-tp" id="accp-'+EN+'-deploy"><div style="color:var(--txt3);font-size:12px">Loading...</div></div>'
+      +'<div class="acc-tp" id="accp-'+EN+'-logs"><div class="acc-log" id="acclog-'+EN+'"></div></div>'
+      +'<div class="acc-tp" id="accp-'+EN+'-domain"><div style="color:var(--txt3);font-size:12px">Loading...</div></div>'
+      +'</div></div>';
+
+    // Assemble card
+    var cardClass='app-card'+(isRunning?' card-running':isBuilding?' card-building':' card-stopped');
+    return '<div class="'+cardClass+'" id="appcard-'+escH(app.name)+'">'
+      +headHtml
+      +(isBuilding?buildHtml:(isStopped?stoppedHtml:metaHtml))
+      +commitHtml
+      +actionHtml
+      +accHtml
+      +'</div>';
   }).join('');
 }
 
@@ -669,12 +819,12 @@ function renderRepos(){
         +'<button class="btn bg bxs" onclick="cancelConnect(&#39;'+escH(r.name)+'&#39;)">취소</button>'
         +'</div>';
     }else if(connectedApp){
-      actionCell='<a href="/apps/'+encodeURIComponent(r.name)+'" class="btn bg bxs" style="text-decoration:none">앱 보기 →</a>';
+      actionCell='<button class="btn bg bxs" onclick="scrollToApp(&#39;'+escH(connectedApp.name)+'&#39;)">앱 보기 →</button>';
     }else{
       actionCell='<button class="btn bt bxs" onclick="showConnectInput(&#39;'+escH(r.name)+'&#39;)">+ 연결</button>';
     }
     var updated=r.updatedAt?timeAgo(r.updatedAt):'—';
-    var gitUrl=r.html_url||('http://localhost/git/admin/'+encodeURIComponent(r.name));
+    var gitAutoUrl='/api/gitea/autologin?redirect='+encodeURIComponent('/git/admin/'+r.name);
     return '<tr>'
       +'<td><div style="display:flex;align-items:center;gap:8px">'
       +'<span style="font-size:13px;font-weight:600;font-family:var(--mono)">'+escH(r.name)+'</span>'
@@ -683,7 +833,7 @@ function renderRepos(){
       +'</div></td>'
       +'<td>'+( r.language?('<span class="lang-chip '+lc+'">'+escH(r.language)+'</span>'):'—')+'</td>'
       +'<td>'+deployBadge+'</td>'
-      +'<td><a href="'+gitUrl+'" target="_blank" rel="noopener" style="font-size:11.5px;font-family:var(--mono);color:var(--teal);text-decoration:none">git.local/admin/'+escH(r.name)+' ↗</a></td>'
+      +'<td><a href="'+gitAutoUrl+'" target="_blank" rel="noopener" style="font-size:11.5px;font-family:var(--mono);color:var(--teal);text-decoration:none">git.local/admin/'+escH(r.name)+' ↗</a></td>'
       +'<td style="font-size:12px;color:var(--txt3);font-family:var(--mono)">'+updated+'</td>'
       +'<td>'+actionCell+'</td>'
       +'</tr>';
@@ -691,7 +841,7 @@ function renderRepos(){
 }
 
 /* ─── CONNECT REPO HELPERS ─── */
-function showConnectInput(repoName){connectInputShown[repoName]=true;renderRepos();}
+function showConnectInput(repoName){connectInputShown[repoName]=true;renderRepos();var inp=document.getElementById('ci-'+repoName);if(inp)inp.value=repoName;}
 function cancelConnect(repoName){delete connectInputShown[repoName];renderRepos();}
 async function doConnectRepo(repoName){
   var inp=document.getElementById('ci-'+repoName);
@@ -776,6 +926,11 @@ function startJobPoll(jobId,appName,maxSteps){
       document.getElementById('progress-close-btn').style.display='flex';
       if(r.status==='done'){
         showToast('\u2705 '+appName+' \uc644\ub8cc');
+        // Auto-enable deploy settings (autoDeploy: true, branch: main)
+        fetch('/api/apps/'+encodeURIComponent(appName)+'/deploy/settings',{
+          method:'PUT',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({autoDeploy:true,deployBranch:'main'})
+        }).catch(function(){});
       }else{
         showToast('\u274c '+appName+' \uc2e4\ud328: '+(r.error||''));
         document.getElementById('progress-log').style.display='block';
@@ -806,6 +961,141 @@ function closeProgressModal(){
   if(jobPollTimer){clearInterval(jobPollTimer);jobPollTimer=null;}
   if(sseSource){sseSource.close();sseSource=null;}
   closeModal('modal-progress');
+}
+
+/* ─── ACCORDION DETAIL PANEL (5 tabs) ─── */
+var accSseSources={};
+var accLoaded={};
+function toggleDetailPanel(appName){
+  var panel=document.getElementById('acc-'+appName);
+  if(!panel)return;
+  var isOpen=panel.classList.contains('open');
+  if(isOpen){
+    panel.classList.remove('open');
+    if(accSseSources[appName]){accSseSources[appName].close();delete accSseSources[appName];}
+  }else{
+    panel.classList.add('open');
+    if(!accLoaded[appName])loadAccOverview(appName);
+    accLoaded[appName]=true;
+  }
+}
+function switchAccTab(appName,tab){
+  var tabs=document.getElementById('acc-'+appName).querySelectorAll('.acc-tab');
+  tabs.forEach(function(t,i){t.className='acc-tab'+((['ov','git','deploy','logs','domain'][i]===tab)?' active':'');});
+  ['ov','git','deploy','logs','domain'].forEach(function(t){
+    var p=document.getElementById('accp-'+appName+'-'+t);
+    if(p)p.className='acc-tp'+(t===tab?' active':'');
+  });
+  if(tab==='ov')loadAccOverview(appName);
+  if(tab==='git')loadAccGit(appName);
+  if(tab==='deploy')loadAccDeploy(appName);
+  if(tab==='logs')startAccLogs(appName);
+  if(tab==='domain')loadAccDomain(appName);
+}
+function loadAccOverview(appName){
+  fetch('/api/apps/'+encodeURIComponent(appName)).then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.app)return;var a=d.app;
+    var el=document.getElementById('accp-'+appName+'-ov');
+    var lu=a.port?'http://localhost:'+a.port:'';
+    el.innerHTML='<div class="acc-section">'
+      +'<div class="acc-info-row"><span class="acc-info-key">Name</span><span class="acc-info-val">'+escH(a.name)+'</span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Mode</span><span class="acc-info-val">'+escH(a.mode||'—')+'</span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Stack</span><span class="acc-info-val">'+escH(a.stackId||a.sourceUrl||'—')+'</span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Port</span><span class="acc-info-val">'+(lu?'<a href="'+lu+'" target="_blank">'+lu+'</a>':a.port||'—')+'</span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Status</span><span class="acc-info-val">'+escH(a.status)+'</span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Created</span><span class="acc-info-val">'+escH((a.createdAt||'').replace('T',' ').slice(0,16))+'</span></div>'
+      +'</div>';
+  }).catch(function(){});
+}
+function loadAccGit(appName){
+  fetch('/api/apps/'+encodeURIComponent(appName)+'/git').then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.git)return;var g=d.git;
+    var el=document.getElementById('accp-'+appName+'-git');
+    var c=g.latestCommit;
+    el.innerHTML='<div class="acc-section"><div class="acc-section-title">Repository</div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Gitea</span><span class="acc-info-val"><a href="/api/gitea/autologin?redirect='+encodeURIComponent('/git/admin/'+appName)+'" target="_blank">'+escH(g.giteaUrl)+' ↗</a></span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Branch</span><span class="acc-info-val">'+escH(g.branch||'main')+'</span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Commit</span><span class="acc-info-val">'+(c?escH(c.shortHash+' — '+c.message):'(empty)')+'</span></div>'
+      +'</div>'
+      +'<div class="acc-section"><div class="acc-section-title">Clone</div>'
+      +'<div class="acc-code">'+escH(g.cloneUrlHttp)+'</div>'
+      +'<div class="acc-code">'+escH(g.cloneUrlSsh)+'</div>'
+      +'</div>';
+  }).catch(function(){});
+}
+function loadAccDeploy(appName){
+  var el=document.getElementById('accp-'+appName+'-deploy');
+  fetch('/api/apps/'+encodeURIComponent(appName)+'/deploy/settings').then(function(r){return r.json();}).then(function(s){
+    el.innerHTML='<div class="acc-section"><div class="acc-section-title">Deploy Settings</div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Auto Deploy</span><span class="acc-info-val"><label style="cursor:pointer"><input type="checkbox" id="acc-ad-'+appName+'" '+(s.autoDeploy?'checked':'')+' onchange="saveAccDeploy(&#39;'+appName+'&#39;)"> On push</label></span></div>'
+      +'<div class="acc-info-row"><span class="acc-info-key">Branch</span><span class="acc-info-val"><input id="acc-br-'+appName+'" value="'+escH(s.deployBranch||'main')+'" style="background:var(--bg0);border:1px solid var(--bdr);border-radius:4px;color:var(--txt2);padding:3px 8px;font-family:var(--mono);font-size:11px;width:100px" onchange="saveAccDeploy(&#39;'+appName+'&#39;)"></span></div>'
+      +'</div>'
+      +'<button class="btn bt bxs" onclick="triggerAccDeploy(&#39;'+appName+'&#39;)">🚀 Deploy Now</button>'
+      +' <span id="acc-dm-'+appName+'" style="font-size:11px;color:var(--txt3)"></span>'
+      +'<div id="acc-dh-'+appName+'" style="margin-top:12px"></div>';
+    loadAccHistory(appName);
+  }).catch(function(){});
+}
+function saveAccDeploy(appName){
+  var ad=document.getElementById('acc-ad-'+appName);
+  var br=document.getElementById('acc-br-'+appName);
+  fetch('/api/apps/'+encodeURIComponent(appName)+'/deploy/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoDeploy:ad?ad.checked:false,deployBranch:br?br.value:'main'})}).catch(function(){});
+}
+function triggerAccDeploy(appName){
+  var msg=document.getElementById('acc-dm-'+appName);
+  if(msg)msg.textContent='Deploying...';
+  fetch('/api/apps/'+encodeURIComponent(appName)+'/deploy',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if(d.error){if(msg)msg.textContent='Error: '+d.error;return;}
+    if(msg)msg.textContent='Job '+d.jobId;
+    openProgressModal('Deploy '+appName,appName,3);
+    startJobPoll(d.jobId,appName,3);
+  }).catch(function(e){if(msg)msg.textContent='Error';});
+}
+function loadAccHistory(appName){
+  fetch('/api/deploy/history?app='+encodeURIComponent(appName)).then(function(r){return r.json();}).then(function(d){
+    var el=document.getElementById('acc-dh-'+appName);if(!el)return;
+    var entries=(d.history||[]).slice().reverse().slice(0,5);
+    if(!entries.length){el.innerHTML='<div style="font-size:11px;color:var(--txt3)">No deployments yet.</div>';return;}
+    el.innerHTML='<div class="acc-section-title">History (last 5)</div>'+entries.map(function(e){
+      var icon=e.status==='success'?'<span style="color:var(--green)">✓</span>':'<span style="color:var(--red)">✗</span>';
+      return '<div style="font-size:11px;font-family:var(--mono);padding:3px 0;color:var(--txt2)">'+icon+' '+escH((e.commitHash||'').slice(0,7))+' '+escH(e.commitMessage||'')+' <span style="color:var(--txt3)">'+escH((e.deployedAt||'').replace('T',' ').slice(0,16))+'</span></div>';
+    }).join('');
+  }).catch(function(){});
+}
+function startAccLogs(appName){
+  if(accSseSources[appName])return;
+  var logEl=document.getElementById('acclog-'+appName);
+  if(!logEl)return;
+  logEl.innerHTML='<span style="color:var(--txt3)">Connecting...</span>';
+  var src=new EventSource('/api/apps/'+encodeURIComponent(appName)+'/logs');
+  src.onmessage=function(e){
+    if(logEl.querySelector('span'))logEl.innerHTML='';
+    var div=document.createElement('div');
+    var cls=new RegExp('error|fatal','i').test(e.data)?'log-err':new RegExp('warn','i').test(e.data)?'log-warn':'';
+    if(cls)div.className=cls;
+    div.textContent=e.data;logEl.appendChild(div);
+    if(logEl.children.length>300)logEl.removeChild(logEl.firstChild);
+    logEl.scrollTop=logEl.scrollHeight;
+  };
+  src.onerror=function(){
+    var d=document.createElement('div');d.textContent='[stream ended]';d.style.color='var(--txt3)';logEl.appendChild(d);
+    delete accSseSources[appName];
+  };
+  accSseSources[appName]=src;
+}
+function loadAccDomain(appName){
+  var el=document.getElementById('accp-'+appName+'-domain');
+  el.innerHTML='<div style="color:var(--txt3);font-size:12px">도메인 연결은 상단 🌐 도메인 버튼을 사용하세요.</div>'
+    +'<div style="margin-top:10px"><button class="btn bt bxs" onclick="openDomainModal(&#39;'+appName+'&#39;)">🌐 도메인 연결</button></div>';
+}
+function scrollToApp(appName){
+  var card=document.getElementById('appcard-'+appName);
+  if(!card)return;
+  card.scrollIntoView({behavior:'smooth',block:'center'});
+  card.style.boxShadow='0 0 0 2px var(--amber)';
+  setTimeout(function(){card.style.boxShadow='';},2000);
+  var panel=document.getElementById('acc-'+appName);
+  if(panel&&!panel.classList.contains('open'))toggleDetailPanel(appName);
 }
 
 /* ─── MODALS ─── */
@@ -1138,7 +1428,17 @@ export function generateAppDetailHtml(appName: string, opts?: { zoneName?: strin
 <link rel="icon" type="image/svg+xml" href="/icon.svg"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
+body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:0}
+.site-header{height:50px;background:#0c1525;border-bottom:1px solid #1a2d47;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.site-header .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:#c9d1d9}
+.site-header .logo-text{display:flex;flex-direction:column;line-height:1.25}
+.site-header .logo-name{font-size:16px;font-weight:800;color:#f5a623;font-family:'Courier New',monospace}
+.site-header .logo-tag{font-size:9.5px;color:#3a5070;font-weight:400}
+.site-header .hnav{display:flex;align-items:center;gap:10px}
+.site-header .hnav a{font-size:12px;color:#8b949e;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #30363d;font-family:inherit;transition:all .14s}
+.site-header .hnav a:hover{color:#c9d1d9;background:#21262d}
+.site-header .hnav a.active{color:#f5a623;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)}
+.page-body{padding:24px}
 h1{color:#f5a623;font-size:18px;display:flex;align-items:center;gap:10px;margin-bottom:2px}
 .subtitle{color:#8b949e;font-size:12px;margin-bottom:20px}
 .header-row{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
@@ -1178,6 +1478,17 @@ a.ext{color:#58a6ff;text-decoration:none}a.ext:hover{text-decoration:underline}
 </style>
 </head>
 <body>
+<div class="site-header">
+  <a href="/" class="logo">
+    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg>
+    <span class="logo-text"><span class="logo-name">Brewnet</span><span class="logo-tag">Your server on tap. Just brew it.</span></span>
+  </a>
+  <div class="hnav">
+    <a href="/">Dashboard</a>
+    <a href="/apps" class="active">Apps</a>
+  </div>
+</div>
+<div class="page-body">
 <div class="header-row">
   <div>
     <h1 id="app-name">${esc(appName)} <span id="app-badge" class="badge stopped">loading</span></h1>
@@ -1534,6 +1845,7 @@ function toggleCnameGuide(){
 
 loadApp();setInterval(loadApp,15000);
 </script>
+</div>
 </body>
 </html>`;
 }

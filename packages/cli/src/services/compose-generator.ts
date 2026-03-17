@@ -1290,6 +1290,102 @@ export function removeExternalLabels(
 }
 
 /**
+ * Add Traefik Quick Tunnel PathPrefix routing labels + brewnet network to a
+ * boilerplate / app docker-compose.yml so that the service is accessible
+ * externally via the Quick Tunnel URL at /apps/{appName}.
+ *
+ * - Injects `traefik.enable`, PathPrefix rule, strip-prefix middleware
+ * - Adds `brewnet` as an external network and attaches it to the target service
+ *
+ * @param composePath - Absolute path to docker-compose.yml
+ * @param appName     - Logical app name used as path segment (e.g. "node-nest")
+ * @param serviceName - Docker Compose service key to label (e.g. "backend", "app")
+ * @param port        - Container HTTP port
+ */
+export function addQuickTunnelAppLabels(
+  composePath: string,
+  appName: string,
+  serviceName: string,
+  port: number,
+): void {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const raw = fs.readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return;
+
+  const svc = services[serviceName];
+  if (!svc) return;
+
+  // --- Traefik labels ---
+  // Convert array-style labels (["key=val"]) to object format ({key: "val"})
+  // Boilerplate compose files use array-style; Traefik needs object-style.
+  const routerName = `app-${appName}`;
+  const pathPrefix = `/apps/${appName}`;
+  let labels: Record<string, string>;
+  const rawLabels = svc['labels'];
+  if (Array.isArray(rawLabels)) {
+    labels = {};
+    for (const l of rawLabels) {
+      const s = String(l);
+      const idx = s.indexOf('=');
+      if (idx > 0) labels[s.slice(0, idx)] = s.slice(idx + 1);
+    }
+  } else {
+    labels = (rawLabels ?? {}) as Record<string, string>;
+  }
+  labels['traefik.enable'] = 'true';
+  labels[`traefik.http.routers.${routerName}.rule`] = `PathPrefix(\`${pathPrefix}\`)`;
+  labels[`traefik.http.routers.${routerName}.entrypoints`] = 'web';
+  // Priority based on path length — longer paths get higher priority to avoid
+  // /apps/nodejs-nestjs matching /apps/nodejs-nestjs-ui before the -ui router
+  labels[`traefik.http.routers.${routerName}.priority`] = String(10 + pathPrefix.length);
+  labels[`traefik.http.routers.${routerName}.service`] = routerName;
+  labels[`traefik.http.services.${routerName}.loadbalancer.server.port`] = String(port);
+  // Trailing slash redirect — essential for Vite/React SPA frontends.
+  // Without trailing slash, relative asset paths (./assets/...) resolve to
+  // the parent directory, bypassing Traefik's PathPrefix route.
+  // Uses $$ to escape $ in Docker Compose (prevents variable interpolation).
+  labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.regex`] =
+    `^(.*${pathPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})$$`;
+  labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.replacement`] =
+    '$$' + '{1}/';
+  labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.permanent`] = 'false';
+  // Strip /apps/{appName} prefix before forwarding to the container
+  labels[`traefik.http.middlewares.${routerName}-strip.stripprefix.prefixes`] = pathPrefix;
+  labels[`traefik.http.routers.${routerName}.middlewares`] = `${routerName}-slash,${routerName}-strip`;
+  svc['labels'] = labels;
+
+  // --- brewnet external network ---
+  const svcNetworks = (svc['networks'] ?? []) as string[] | Record<string, unknown>;
+  if (Array.isArray(svcNetworks)) {
+    if (!svcNetworks.includes('brewnet')) svcNetworks.push('brewnet');
+    svc['networks'] = svcNetworks;
+  } else {
+    if (!svcNetworks['brewnet']) svcNetworks['brewnet'] = {};
+    svc['networks'] = svcNetworks;
+  }
+
+  // Top-level networks — FORCE brewnet to external: true
+  // Boilerplate compose files may declare brewnet as { driver: bridge } which creates
+  // a separate project-scoped network (e.g. nodejs-nestjs_brewnet) instead of using
+  // the pre-existing global 'brewnet' network that Traefik monitors.
+  const topNetworks = (doc['networks'] ?? {}) as Record<string, unknown>;
+  topNetworks['brewnet'] = { external: true };
+  doc['networks'] = topNetworks;
+
+  const output = yaml.dump(doc, {
+    indent: 2,
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+    quotingType: '"',
+    forceQuotes: false,
+  });
+  fs.writeFileSync(composePath, output, 'utf-8');
+}
+
+/**
  * Serialize a ComposeConfig to a YAML string suitable for writing to
  * docker-compose.yml.
  */

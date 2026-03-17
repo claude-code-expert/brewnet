@@ -899,6 +899,13 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             try { await execaFn('docker', ['compose', 'down'], { cwd: prev.appDir }); } catch { /* ignore */ }
           }
         }
+        // Inject Traefik labels for Quick Tunnel external access at /apps/{stackId}
+        if (state.domain.cloudflare.tunnelMode === 'quick') {
+          try {
+            const { injectTraefikForQuickTunnel } = await import('../../services/boilerplate-manager.js');
+            injectTraefikForQuickTunnel(appDir, stackId, backendPort);
+          } catch { /* non-critical: external access simply won't work */ }
+        }
         await boilerplateStartContainers(appDir);
 
         // Step 4: poll health endpoint until ready

@@ -932,11 +932,18 @@ for entry in "${STACKS[@]}"; do
     IMG_ICON="${RED}❌ no-port${NC}"; ALL_PASS=false
   fi
 
-  # ── d. External ──────────────────────────────────────────────────────────
-  # External check uses /api/hello (public API endpoint through Cloudflare tunnel)
-  # Boilerplate stacks are only accessible externally if Traefik routes them.
-  # Since they run on direct ports without Traefik routing, external check is N/A.
-  EXT_ICON="${DIM}— N/A${NC}"
+  # ── d. External (Quick Tunnel at /apps/{stackId}) ────────────────────────
+  if [ -n "$TUNNEL_URL" ]; then
+    EXT_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+      "${TUNNEL_URL}/apps/${STACK_ID}" 2>/dev/null || echo "ERR")
+    if [ "$EXT_CODE" = "200" ]; then
+      EXT_ICON="${GREEN}✅ ${EXT_CODE}${NC}"
+    else
+      EXT_ICON="${RED}❌ ${EXT_CODE}${NC}"
+    fi
+  else
+    EXT_ICON="${DIM}— N/A${NC}"
+  fi
 
   printf "  %-24s " "$STACK_ID"
   printf "${BE_ICON}  "
@@ -950,6 +957,261 @@ if [ "$ALL_PASS" = true ]; then
   ok "✅ [$(ts)] 전체 보일러플레이트 테스트 통과"
 else
   fail "일부 스택 검증 실패 — 위 표에서 ❌ 항목 확인"
+fi
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 7: Apps 페이지 UI + Quick Tunnel External 검증
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 7 "Apps 페이지 UI + External URL 검증"
+
+# 7.1 Apps 페이지 JS 문법 검사
+label "7.1 /apps 페이지 JS 문법 검사"
+APPS_SYNTAX=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null \
+  | sed -n '/<script>/,/<\/script>/p' \
+  | grep -v '</\?script>' \
+  | node --check /dev/stdin 2>&1 && echo "OK" || echo "FAIL")
+if [ "$APPS_SYNTAX" = "OK" ]; then
+  ok "/apps JS 문법 검사 통과"
+else
+  fail "/apps JS 문법 오류: ${APPS_SYNTAX}"
+  ALL_PASS=false
+fi
+
+# 7.2 새 카드 CSS 클래스 존재 확인
+label "7.2 카드 UX CSS 확인"
+CARD_CSS_CHECK=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null \
+  | grep -c 'card-running\|meta-grid\|commit-row\|build-progress\|health-badges')
+if [ "$CARD_CSS_CHECK" -ge 3 ]; then
+  ok "새 카드 CSS 클래스 ${CARD_CSS_CHECK}개 발견"
+else
+  fail "카드 CSS 누락 (${CARD_CSS_CHECK}개만 발견)"
+  ALL_PASS=false
+fi
+
+# 7.3 App 카드 렌더링 (API 데이터 기반)
+label "7.3 /api/apps 앱 카드 데이터"
+_APPS7=$(mktemp)
+curl -s -o "$_APPS7" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+APP7_COUNT=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_APPS7}','utf8'));
+  process.stdout.write(String(Array.isArray(d.apps)?d.apps.length:0));
+" 2>/dev/null || echo "0")
+ok "등록된 앱: ${APP7_COUNT}개"
+rm -f "$_APPS7"
+
+# 7.4 Gitea 자동 로그인 엔드포인트
+label "7.4 /api/gitea/autologin 엔드포인트"
+AUTOLOGIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+  "http://localhost:${ADMIN_PORT}/api/gitea/autologin?redirect=/git" 2>/dev/null || echo "000")
+if [ "$AUTOLOGIN_CODE" = "302" ]; then
+  ok "Gitea autologin → HTTP 302 (리다이렉트 정상)"
+elif [ "$AUTOLOGIN_CODE" = "200" ]; then
+  ok "Gitea autologin → HTTP 200 (로그인 페이지)"
+else
+  echo -e "${YELLOW}  ⚠ [$(ts)] Gitea autologin → HTTP ${AUTOLOGIN_CODE}${NC}"
+fi
+
+# 7.5 Quick Tunnel External URL 검증 (/apps/{stackId})
+label "7.5 Quick Tunnel /apps/{stackId} External 검증"
+if [ -n "$TUNNEL_URL" ]; then
+  for entry in "${STACKS[@]}"; do
+    STACK_ID="${entry%%:*}"
+    STACK_DIR="${MY_HS}/${STACK_ID}"
+    [ ! -d "$STACK_DIR" ] && continue
+    QT_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+      "${TUNNEL_URL}/apps/${STACK_ID}" 2>/dev/null || echo "ERR")
+    if [ "$QT_CODE" = "200" ]; then
+      ok "Quick Tunnel /apps/${STACK_ID} → HTTP ${QT_CODE}"
+    else
+      fail "Quick Tunnel /apps/${STACK_ID} → HTTP ${QT_CODE}"
+    fi
+  done
+else
+  info "터널 URL 없음 — Quick Tunnel 검증 건너뜀"
+fi
+
+# 7.6 로고 헤더 존재 확인
+label "7.6 로고 헤더 렌더링"
+LOGO_CHECK=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null | grep -c 'logo-name\|Brewnet')
+if [ "$LOGO_CHECK" -ge 2 ]; then
+  ok "로고 헤더 확인 (${LOGO_CHECK}개 매칭)"
+else
+  fail "로고 헤더 누락"
+fi
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 8: Apps 배포 E2E — 보일러플레이트별 External + Apps 연결 + Git 접근
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 8 "Apps 배포 E2E (External 비교 + Apps 연결 + Start/Stop + Gitea 접근)"
+
+TUNNEL_URL=$(docker logs brewnet-cloudflared 2>&1 \
+  | grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' \
+  | tail -1 || true)
+GITEA_TOKEN=$(cat "$HOME/.brewnet/gitea-token" 2>/dev/null | tr -d '[:space:]' || true)
+
+# 8.1 보일러플레이트별 Local vs External 비교
+label "8.1 Local vs External 페이지 비교"
+for entry in "${STACKS[@]}"; do
+  STACK_ID="${entry%%:*}"
+  IS_UNIFIED="${entry##*:}"
+  STACK_DIR="${MY_HS}/${STACK_ID}"
+  [ ! -d "$STACK_DIR" ] && continue
+
+  BE_CONTAINER="${STACK_ID}-backend-1"
+  BE_HOST_PORT=$(docker port "$BE_CONTAINER" 8080 2>/dev/null | head -1 | cut -d: -f2 || true)
+  [ "$IS_UNIFIED" = "1" ] && BE_HOST_PORT=$(docker port "$BE_CONTAINER" 3000 2>/dev/null | head -1 | cut -d: -f2 || true)
+  [ -z "$BE_HOST_PORT" ] && continue
+
+  # Local backend response
+  LOCAL_BODY=$(curl -s --max-time 5 "http://127.0.0.1:${BE_HOST_PORT}/health" 2>/dev/null || echo "ERR")
+
+  if [ -n "$TUNNEL_URL" ]; then
+    # External backend response
+    EXT_BODY=$(curl -sL --max-time 15 "${TUNNEL_URL}/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
+    if [ "$LOCAL_BODY" = "$EXT_BODY" ]; then
+      ok "${STACK_ID}: Local == External (health 일치)"
+    else
+      fail "${STACK_ID}: Local ≠ External"
+      sub "  Local:    $(echo "$LOCAL_BODY" | head -c 80)"
+      sub "  External: $(echo "$EXT_BODY" | head -c 80)"
+    fi
+  else
+    info "${STACK_ID}: 터널 없음 — Local만 확인 (${LOCAL_BODY:0:60})"
+  fi
+done
+
+# 8.2 Apps 페이지 — 앱 목록 확인 + 미등록 앱 자동 연결
+label "8.2 배포앱 목록 및 자동 연결"
+_APPS8=$(mktemp)
+curl -s -o "$_APPS8" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+APP8_LIST=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_APPS8}','utf8'));
+  (d.apps||[]).forEach(a=>console.log(a.name+'|'+a.status+'|'+(a.giteaRepoUrl||'—')));
+" 2>/dev/null || true)
+rm -f "$_APPS8"
+
+APP8_COUNT=$(echo "$APP8_LIST" | grep -c '|' || echo "0")
+ok "등록된 앱: ${APP8_COUNT}개"
+echo "$APP8_LIST" | while IFS='|' read -r name status repo; do
+  [ -z "$name" ] && continue
+  sub "  ${name}: status=${status} repo=${repo}"
+done
+
+# Gitea 레포 중 미연결 앱 자동 연결 시도
+if [ -n "$GITEA_TOKEN" ]; then
+  _REPOS8=$(mktemp)
+  curl -s -o "$_REPOS8" "http://localhost:${ADMIN_PORT}/api/git/repos" 2>/dev/null
+  UNLINKED=$(node -e "
+    const d=JSON.parse(require('fs').readFileSync('${_REPOS8}','utf8'));
+    (d.repos||[]).filter(r=>!r.appName).forEach(r=>console.log(r.name));
+  " 2>/dev/null || true)
+  rm -f "$_REPOS8"
+
+  if [ -n "$UNLINKED" ]; then
+    echo "$UNLINKED" | while read -r repo; do
+      [ -z "$repo" ] && continue
+      info "미연결 레포 '${repo}' → 자동 연결 시도..."
+      CONN_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"appName\":\"${repo}\"}" \
+        "http://localhost:${ADMIN_PORT}/api/git/repos/${repo}/connect" 2>/dev/null || echo "000")
+      if [ "$CONN_CODE" = "200" ]; then
+        ok "레포 '${repo}' → 앱 '${repo}' 연결 완료"
+      else
+        echo -e "${YELLOW}  ⚠ [$(ts)] 연결 실패: HTTP ${CONN_CODE}${NC}"
+      fi
+    done
+  fi
+fi
+
+# 8.3 Start / Stop / Deploy 동작 테스트 (첫 번째 running 앱)
+label "8.3 Start / Stop / Deploy 동작 테스트"
+_APPS8b=$(mktemp)
+curl -s -o "$_APPS8b" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+TEST_APP_NAME8=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_APPS8b}','utf8'));
+  const a=(d.apps||[]).find(x=>x.status==='running');
+  if(a)process.stdout.write(a.name);
+" 2>/dev/null || true)
+rm -f "$_APPS8b"
+
+if [ -n "$TEST_APP_NAME8" ]; then
+  # Stop
+  STOP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME8}/stop" 2>/dev/null || echo "000")
+  if [ "$STOP_CODE" = "200" ]; then
+    ok "${TEST_APP_NAME8}: Stop → HTTP 200"
+  else
+    fail "${TEST_APP_NAME8}: Stop → HTTP ${STOP_CODE}"
+  fi
+  sleep 2
+
+  # Start
+  START_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME8}/start" 2>/dev/null || echo "000")
+  if [ "$START_CODE" = "200" ]; then
+    ok "${TEST_APP_NAME8}: Start → HTTP 200"
+  else
+    fail "${TEST_APP_NAME8}: Start → HTTP ${START_CODE}"
+  fi
+  sleep 3
+
+  # Deploy
+  DEPLOY_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:${ADMIN_PORT}/api/apps/${TEST_APP_NAME8}/deploy" 2>/dev/null || echo "000")
+  if [ "$DEPLOY_CODE" = "202" ]; then
+    ok "${TEST_APP_NAME8}: Deploy → HTTP 202 (job started)"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${TEST_APP_NAME8}: Deploy → HTTP ${DEPLOY_CODE}${NC}"
+  fi
+else
+  info "running 상태 앱 없음 — Start/Stop/Deploy 테스트 건너뜀"
+fi
+
+# 8.4 Gitea 레포 접근 확인 (autologin 경유 + API 직접)
+label "8.4 Gitea 레포 접근 검증"
+if [ -n "$GITEA_TOKEN" ]; then
+  _REPOS8b=$(mktemp)
+  curl -s -H "Authorization: token ${GITEA_TOKEN}" \
+    "http://localhost/git/api/v1/user/repos" -o "$_REPOS8b" 2>/dev/null
+  REPO_NAMES=$(node -e "
+    const d=JSON.parse(require('fs').readFileSync('${_REPOS8b}','utf8'));
+    d.forEach(r=>console.log(r.name));
+  " 2>/dev/null || true)
+  rm -f "$_REPOS8b"
+
+  echo "$REPO_NAMES" | while read -r rname; do
+    [ -z "$rname" ] && continue
+    # API access
+    API_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+      -H "Authorization: token ${GITEA_TOKEN}" \
+      "http://localhost/git/api/v1/repos/admin/${rname}" 2>/dev/null || echo "000")
+    # Autologin redirect
+    AUTO_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+      "http://localhost:${ADMIN_PORT}/api/gitea/autologin?redirect=/git/admin/${rname}" 2>/dev/null || echo "000")
+    if [ "$API_CODE" = "200" ] && [ "$AUTO_CODE" = "302" ]; then
+      ok "Gitea/${rname}: API=200 Autologin=302"
+    else
+      fail "Gitea/${rname}: API=${API_CODE} Autologin=${AUTO_CODE}"
+    fi
+  done
+else
+  echo -e "${YELLOW}  ⚠ [$(ts)] Gitea 토큰 없음 — 레포 접근 검증 건너뜀${NC}"
+fi
+
+# 8.5 Gitea Web UI 접근 (Traefik 경유)
+label "8.5 Gitea Web UI (/git/) 접근"
+GIT_HOME_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost/git/" 2>/dev/null || echo "000")
+GIT_LOGIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost/git/user/login" 2>/dev/null || echo "000")
+GIT_EXPLORE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost/git/explore/repos" 2>/dev/null || echo "000")
+if [ "$GIT_HOME_CODE" = "200" ] && [ "$GIT_LOGIN_CODE" = "200" ] && [ "$GIT_EXPLORE_CODE" = "200" ]; then
+  ok "Gitea Web UI: home=200 login=200 explore=200"
+else
+  fail "Gitea Web UI: home=${GIT_HOME_CODE} login=${GIT_LOGIN_CODE} explore=${GIT_EXPLORE_CODE}"
 fi
 
 step_done

@@ -271,6 +271,101 @@ export function generateEnv(
 }
 
 // ---------------------------------------------------------------------------
+// T006b — injectTraefikForQuickTunnel
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the container-internal port from a docker-compose ports entry.
+ * e.g. "${BACKEND_PORT:-8080}:8080" → 8080
+ *      "3000:80" → 80
+ *      "${PORT}:3000" → 3000
+ */
+function parseContainerPort(portSpec: string): number | null {
+  const str = String(portSpec);
+  // "host:container" or "${VAR:-default}:container"
+  const colonIdx = str.lastIndexOf(':');
+  if (colonIdx >= 0) {
+    const containerPart = str.slice(colonIdx + 1).replace(/\/.*$/, ''); // strip /tcp, /udp
+    const n = parseInt(containerPart, 10);
+    return isNaN(n) ? null : n;
+  }
+  const n = parseInt(str, 10);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Inject Traefik PathPrefix labels and brewnet external network into a
+ * boilerplate's docker-compose.yml so that HTTP services are routable
+ * through Quick Tunnel at /apps/{appName} (backend) and /apps/{appName}-ui (frontend).
+ *
+ * Reads the compose file to:
+ * 1. Detect backend service (backend, app, web, api, server) and its internal port
+ * 2. Detect frontend service (frontend, ui) and its internal port
+ * 3. Inject Traefik labels + force brewnet to external: true
+ *
+ * @param projectDir  - Absolute path to the boilerplate project
+ * @param appName     - Logical name used as path segment (e.g. "nodejs-nestjs")
+ * @param _backendPort - Host port (unused — we detect internal port from compose)
+ */
+export function injectTraefikForQuickTunnel(
+  projectDir: string,
+  appName: string,
+  _backendPort: number,
+): void {
+  const composePath = join(projectDir, 'docker-compose.yml');
+  const { existsSync } = require('node:fs') as typeof import('node:fs');
+  if (!existsSync(composePath)) return;
+
+  const yaml = require('js-yaml') as typeof import('js-yaml');
+  const raw = readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return;
+
+  const { addQuickTunnelAppLabels } = require('./compose-generator.js') as typeof import('./compose-generator.js');
+
+  // Non-HTTP services to skip
+  const skipServices = new Set(['postgres', 'postgresql', 'mysql', 'mariadb', 'redis', 'db']);
+
+  // Backend: common names
+  const backendNames = ['backend', 'app', 'web', 'api', 'server'];
+  const backendKey = backendNames.find((n) => services[n] && !skipServices.has(n));
+
+  // Frontend: common names
+  const frontendNames = ['frontend', 'ui'];
+  const frontendKey = frontendNames.find((n) => services[n]);
+
+  // Single-service stacks: just use the first HTTP service
+  const allSvcKeys = Object.keys(services).filter((k) => !skipServices.has(k));
+  const singleService = allSvcKeys.length === 1 ? allSvcKeys[0]! : null;
+
+  if (singleService && !backendKey && !frontendKey) {
+    // Unified single-service stack
+    const svc = services[singleService]!;
+    const ports = (svc['ports'] ?? []) as string[];
+    const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 8080 : 8080;
+    addQuickTunnelAppLabels(composePath, appName, singleService, containerPort);
+    return;
+  }
+
+  // Multi-service: inject labels for both backend and frontend
+  if (backendKey) {
+    const svc = services[backendKey]!;
+    const ports = (svc['ports'] ?? []) as string[];
+    const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 8080 : 8080;
+    addQuickTunnelAppLabels(composePath, appName, backendKey, containerPort);
+  }
+
+  if (frontendKey) {
+    const svc = services[frontendKey]!;
+    const ports = (svc['ports'] ?? []) as string[];
+    const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 80 : 80;
+    // Re-read the compose file since addQuickTunnelAppLabels writes it
+    addQuickTunnelAppLabels(composePath, `${appName}-ui`, frontendKey, containerPort);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // T007 — startContainers
 // ---------------------------------------------------------------------------
 

@@ -46,6 +46,7 @@ export interface ServiceStatus {
   uptime: string;
   port: number | null;
   url: string | null;
+  externalUrl: string | null;
   removable: boolean;
 }
 
@@ -335,8 +336,36 @@ var DOMAIN_CONNECTIONS = ${config.domainConnectionsJson};
 var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
 function getExternalUrl(id){
   var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
-  var e=EXT_PATHS[id];if(!e){var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});return conn?'https://'+conn.hostname:null;}
-  if(c.quickTunnelUrl){var base=c.quickTunnelUrl.replace(/\\/$/,'');return base+e.path;}
+  var e=EXT_PATHS[id];
+  if(!e){
+    var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});
+    if(conn)return 'https://'+conn.hostname;
+    if(c.quickTunnelUrl){
+      var NO_QT={"postgresql":1,"mysql":1,"mariadb":1,"redis":1,"valkey":1,"keydb":1,"openssh-server":1,"docker-mailserver":1,"traefik":1,"postgres":1,"db":1};
+      if(NO_QT[id])return null;
+      var base=c.quickTunnelUrl.replace(new RegExp('/$'),'');
+      // Map compose service name to Traefik path via BOILERPLATE_STACKS
+      // backend → stackId (e.g. "nodejs-nestjs"), frontend → stackId + "-ui"
+      var bpStacks=typeof BOILERPLATE_STACKS!=='undefined'?BOILERPLATE_STACKS:[];
+      for(var i=0;i<bpStacks.length;i++){
+        var bp=bpStacks[i];if(!bp.stackId||!bp.appDir)continue;
+        // appDir ends with /{stackId}, extract stackId from path
+        var parts=bp.appDir.replace(new RegExp('/$'),'').split('/');
+        var dirName=parts[parts.length-1]||'';
+        // "backend" service in a stack → /apps/{stackId}
+        if(id==='backend'||id==='app'||id==='web'||id==='api'||id==='server'){
+          return base+'/apps/'+dirName;
+        }
+        if(id==='frontend'||id==='ui'){
+          return base+'/apps/'+dirName+'-ui';
+        }
+      }
+      // Fallback: use service id as path
+      return base+'/apps/'+id;
+    }
+    return null;
+  }
+  if(c.quickTunnelUrl){return c.quickTunnelUrl.replace(new RegExp('/$'),'')+e.path;}
   if(c.zoneName){return e.sub?'https://'+e.sub+'.'+c.zoneName:'https://'+c.zoneName;}
   return null;
 }
@@ -439,7 +468,7 @@ async function loadServices(manual){
   const tbody=document.getElementById('svc-body');
   if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
   tbody.innerHTML=r.services.map(s=>{
-    var ext=getExternalUrl(s.id);
+    var ext=s.externalUrl||getExternalUrl(s.id);
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
@@ -460,7 +489,7 @@ async function loadServices(manual){
   document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
   if(manual&&r.services){
     r.services.forEach(function(s){
-      var ext=getExternalUrl(s.id);
+      var ext=s.externalUrl||getExternalUrl(s.id);
       var lv=s.status==='running'?'ok':s.status==='error'?'error':'dim';
       var detail='['+s.id+'] '+s.status+(s.port?' port='+s.port:'')+(s.url?' — '+s.url:'')+(ext?' | ext: '+ext:'');
       log(detail,lv);
@@ -687,6 +716,7 @@ async function handleGetServices(
   _body: string,
   _projectPath: string,
   urlMap: Record<string, string> = TRAEFIK_PATH_SERVICES,
+  quickTunnelUrl = '',
 ): Promise<void> {
   try {
     const allContainers = await docker.listContainers({ all: true });
@@ -701,6 +731,31 @@ async function handleGetServices(
       const s = c.State as string;
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
       const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
+
+      // Compute external URL from Traefik PathPrefix labels on the container
+      let externalUrl: string | null = null;
+      const qtUrl = quickTunnelUrl;
+      if (qtUrl) {
+        const labels = c.Labels ?? {};
+        // Find PathPrefix rule in Traefik router labels (e.g. "PathPrefix(`/apps/spring-app`)")
+        const routerRule = Object.entries(labels).find(
+          ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && String(v).includes('PathPrefix'),
+        );
+        if (routerRule) {
+          const pathMatch = String(routerRule[1]).match(/PathPrefix\(`([^`]+)`\)/);
+          if (pathMatch) externalUrl = qtUrl.replace(/\/$/, '') + pathMatch[1];
+        }
+        // Fallback for known homeserver services (EXT_PATHS)
+        if (!externalUrl) {
+          const EXT_PATH_MAP: Record<string, string> = {
+            traefik: '', gitea: '/git', nextcloud: '/cloud', pgadmin: '/pgadmin',
+            jellyfin: '/jellyfin', filebrowser: '/files', minio: '/minio',
+          };
+          if (EXT_PATH_MAP[composeService] !== undefined) {
+            externalUrl = qtUrl.replace(/\/$/, '') + EXT_PATH_MAP[composeService];
+          }
+        }
+      }
 
       services.push({
         id: composeService,
@@ -717,6 +772,7 @@ async function handleGetServices(
         url: port && !NO_HTTP_SERVICES.has(composeService)
           ? urlMap[composeService] ?? `http://localhost:${port}`
           : null,
+        externalUrl,
         removable: !REQUIRED_SERVICES.has(composeService),
       });
     }
@@ -1181,7 +1237,7 @@ ${rows}
 
         if (parts[1] === 'services') {
           if (req.method === 'GET' && parts.length === 2) {
-            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap);
+            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl);
             return;
           }
           if (req.method === 'POST' && parts[2] === 'install') {
@@ -1392,6 +1448,80 @@ ${rows}
           }
         }
 
+        // ── Gitea auto-login proxy ──────────────────────────────────
+        // GET /api/gitea/autologin?redirect=<gitea-internal-path>
+        // Server-side: log into Gitea with admin creds, forward session cookie,
+        // redirect browser to the target Gitea page — no plaintext creds in client.
+        if (parts[1] === 'gitea' && parts[2] === 'autologin' && req.method === 'GET') {
+          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
+          const redirectPath = reqUrl.searchParams.get('redirect') ?? '/git';
+          const giteaBase = 'http://localhost/git';
+          const targetUrl = `http://localhost${redirectPath.startsWith('/') ? redirectPath : '/' + redirectPath}`;
+          try {
+            // Step 1: GET login page to obtain CSRF cookie + form token
+            const loginPageRes = await fetch(`${giteaBase}/user/login`, {
+              redirect: 'manual',
+              headers: { 'User-Agent': 'brewnet-admin' },
+              signal: AbortSignal.timeout(5000),
+            });
+            const rawSetCookies: string[] = [];
+            loginPageRes.headers.forEach((val, key) => {
+              if (key.toLowerCase() === 'set-cookie') rawSetCookies.push(val);
+            });
+            const csrfCookieFull = rawSetCookies.find((c) => c.startsWith('_csrf=')) ?? '';
+            const csrfCookieVal = csrfCookieFull.split(';')[0] ?? '';
+            const pageHtml = await loginPageRes.text();
+            const csrfField = pageHtml.match(/name="_csrf"\s+value="([^"]+)"/)?.[1]
+              ?? pageHtml.match(/value="([^"]+)"\s+name="_csrf"/)?.[1]
+              ?? csrfCookieVal.replace('_csrf=', '');
+            if (!csrfField) {
+              // CSRF unavailable — redirect without login (Gitea will show login page)
+              res.writeHead(302, { Location: targetUrl });
+              res.end();
+              return;
+            }
+            // Step 2: POST login form with admin credentials
+            const formBody = new URLSearchParams({
+              _csrf: csrfField,
+              user_name: username,
+              password: password,
+              remember: 'on',
+            });
+            const loginRes = await fetch(`${giteaBase}/user/login`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Cookie': csrfCookieVal,
+                'User-Agent': 'brewnet-admin',
+              },
+              body: formBody.toString(),
+              redirect: 'manual',
+              signal: AbortSignal.timeout(5000),
+            });
+            // Step 3: Extract Gitea session cookie from response
+            const respCookies: string[] = [];
+            loginRes.headers.forEach((val, key) => {
+              if (key.toLowerCase() === 'set-cookie') respCookies.push(val);
+            });
+            const sessionCookieFull = respCookies.find((c) => c.startsWith('i_like_gitea='));
+            const sessionVal = sessionCookieFull?.split(';')[0];
+            const responseHeaders: Record<string, string | string[]> = { Location: targetUrl };
+            if (sessionVal) {
+              // Forward as host-only cookie (no Domain=) so it's valid on localhost regardless of port
+              responseHeaders['Set-Cookie'] = `${sessionVal}; Path=/; SameSite=Lax`;
+            } else {
+              logger.warn('admin-server', '[gitea/autologin] login POST did not return session cookie');
+            }
+            res.writeHead(302, responseHeaders);
+            res.end();
+          } catch (err) {
+            logger.warn('admin-server', `[gitea/autologin] failed: ${String(err)}`);
+            res.writeHead(302, { Location: targetUrl });
+            res.end();
+          }
+          return;
+        }
+
         // ── Deploy history, Git repos & Webhook ────────────────────
         if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
           const reqUrl = new URL(req.url ?? '/', 'http://localhost');
@@ -1438,17 +1568,44 @@ ${rows}
           if (!appName) { json(res, 400, { error: 'appName required' }); return; }
           try {
             const appsPath = join(homedir(), '.brewnet', 'apps.json');
-            const existing = existsSync(appsPath) ? JSON.parse(readFileSync(appsPath, 'utf-8')) : [];
-            const app = Array.isArray(existing) ? existing.find((a: { name: string }) => a.name === appName) : null;
-            if (!app) { json(res, 404, { error: `App '${appName}' not found` }); return; }
+            let existing = existsSync(appsPath) ? JSON.parse(readFileSync(appsPath, 'utf-8')) : [];
             const repos = await listGiteaRepos();
             const repo = repos.find(r => r.name === repoName);
             if (!repo) { json(res, 404, { error: `Repo '${repoName}' not found in Gitea` }); return; }
+            const repoUrl = repo.clone_url.replace(/\.git$/, '');
             // Check not already connected to a different app
             const conflict = Array.isArray(existing) ? existing.find((a: { name: string; giteaRepoUrl?: string }) =>
               a.name !== appName && a.giteaRepoUrl && (a.giteaRepoUrl.endsWith('/' + repoName) || a.giteaRepoUrl.includes('/' + repoName + '.'))) : null;
             if (conflict) { json(res, 409, { error: `Repo already connected to app '${conflict.name}'` }); return; }
-            app.giteaRepoUrl = repo.clone_url.replace(/\.git$/, '');
+            let app = Array.isArray(existing) ? existing.find((a: { name: string }) => a.name === appName) : null;
+            if (!app) {
+              // Auto-create app entry for orphaned containers (e.g. wizard boilerplate
+              // where health check failed but Gitea repo + Docker containers exist)
+              const docker = new (await import('dockerode')).default();
+              const containers = await docker.listContainers({ all: true });
+              const matchedContainer = containers.find((c) => {
+                const svc = c.Labels?.['com.docker.compose.service'] ?? '';
+                const proj = c.Labels?.['com.docker.compose.project'] ?? '';
+                return proj.includes(repoName) || proj.includes(appName) || svc === appName;
+              });
+              const port = matchedContainer
+                ? parseInt(String(matchedContainer.Ports?.[0]?.PublicPort ?? 0), 10) || 8080
+                : 8080;
+              const lang = (repo as unknown as Record<string, unknown>)['language'] as string || '';
+              app = {
+                name: appName,
+                mode: 'boilerplate' as const,
+                appDir: join(projectPath, repoName),
+                lang,
+                port,
+                giteaRepoUrl: repoUrl,
+                status: matchedContainer?.State === 'running' ? 'running' : 'stopped',
+                createdAt: new Date().toISOString(),
+              };
+              if (Array.isArray(existing)) { existing.push(app); } else { existing = [app]; }
+            } else {
+              app.giteaRepoUrl = repoUrl;
+            }
             writeFileSync(appsPath, JSON.stringify(existing, null, 2));
             json(res, 200, { ok: true });
           } catch (err) {
