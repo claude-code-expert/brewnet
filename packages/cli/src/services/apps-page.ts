@@ -1245,7 +1245,9 @@ async function submitNewApp(){
     port=document.getElementById('clone-port').value;
     var gitUrl=document.getElementById('clone-url').value;
     if(!gitUrl||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
+    var branch=document.getElementById('clone-branch').value.trim();
     body={mode:'git-url',appName:name,port:parseInt(port),gitUrl:gitUrl};
+    if(branch)body.branch=branch;
   }else{
     name=document.getElementById('proj-name').value;
     port=document.getElementById('proj-port').value;

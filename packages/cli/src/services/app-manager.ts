@@ -480,7 +480,27 @@ async function _createModeB(
   // Step 2: Clone external repo + create Gitea repo
   setStep(job, 2, 'running', 'Cloning external repository...');
   const { reinitGit: reinitGitB } = await import('./boilerplate-manager.js');
-  await execa('git', ['clone', '--depth', '1', opts.gitUrl!, appDir]);
+  const cloneArgs = ['clone', '--depth', '1'];
+  if (opts.branch) cloneArgs.push('-b', opts.branch);
+  cloneArgs.push(opts.gitUrl!, appDir);
+  await execa('git', cloneArgs);
+  // Inject user-specified ports into .env so docker-compose picks them up
+  // (prevents "port already allocated" when default 8080/3000 are in use)
+  const { existsSync: envExists, readFileSync: envRead, writeFileSync: envWrite } = await import('node:fs');
+  const envExPath = join(appDir, '.env.example');
+  const envPath = join(appDir, '.env');
+  if (envExists(envExPath)) {
+    const { findFreePort: findFreePortB } = await import('./boilerplate-manager.js');
+    let envContent = envRead(envExPath, 'utf-8');
+    envContent = envContent.replace(/^BACKEND_PORT=.*/m, `BACKEND_PORT=${port}`);
+    const fePort = await findFreePortB(3000);
+    envContent = envContent.replace(/^FRONTEND_PORT=.*/m, `FRONTEND_PORT=${fePort}`);
+    envWrite(envPath, envContent, 'utf-8');
+  } else if (envExists(join(appDir, '.env'))) {
+    let envContent = envRead(join(appDir, '.env'), 'utf-8');
+    envContent = envContent.replace(/^BACKEND_PORT=.*/m, `BACKEND_PORT=${port}`);
+    envWrite(join(appDir, '.env'), envContent, 'utf-8');
+  }
   await reinitGitB(appDir);
   const alreadyExists = await gitea.repoExists(opts.appName);
   const cloneUrl = alreadyExists

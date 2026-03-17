@@ -54,6 +54,7 @@ export interface CreateAppOptions {
   stackId?: string;
   // Mode B
   gitUrl?: string;
+  branch?: string;
   // Mode C
   language?: string;
   frameworkId?: string;
