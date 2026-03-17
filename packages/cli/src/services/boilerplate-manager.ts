@@ -74,19 +74,26 @@ export async function cloneStack(stackId: string, projectDir: string): Promise<v
     BOILERPLATE_REPO_URL,
     projectDir,
   ]);
-  patchImagePaths(projectDir);
+  // Next.js stacks need absolute paths for <Image> component.
+  // All other stacks keep relative paths (./...) so they work under
+  // Traefik sub-path routing (/apps/{name}/) via Quick Tunnel.
+  if (stackId.startsWith('nodejs-nextjs')) {
+    patchImagePaths(projectDir, '/brewnet-site-banner.png');
+  }
+  // Non-Next.js stacks: boilerplate already uses "./brewnet-site-banner.png" — no patch needed.
 }
 
 /**
  * Patch image paths in cloned boilerplate source files.
  *
- * The boilerplate uses `src="./brewnet-site-banner.png"` (relative path).
- * This works in plain <img> tags but breaks Next.js <Image> component which
- * requires an absolute path (`/brewnet-site-banner.png`).
- * Normalise to absolute paths across all stacks for consistency and
- * to satisfy Next.js image optimisation requirements.
+ * Next.js <Image> component requires absolute paths (`/brewnet-site-banner.png`).
+ * Other stacks (Vite/React) must keep relative paths (`./brewnet-site-banner.png`)
+ * because under Quick Tunnel sub-path routing (/apps/{name}/), an absolute root
+ * path `/image.png` resolves to the tunnel root (Traefik catch-all landing page).
+ * Relative `./image.png` resolves correctly to `/apps/{name}/image.png` when the
+ * trailing-slash redirect middleware ensures the browser URL has a trailing slash.
  */
-function patchImagePaths(dir: string): void {
+function patchImagePaths(dir: string, replacement: string): void {
   const jsxExts = new Set(['.tsx', '.ts', '.jsx', '.js']);
   const walk = (d: string) => {
     for (const entry of readdirSync(d)) {
@@ -97,7 +104,7 @@ function patchImagePaths(dir: string): void {
       const original = readFileSync(full, 'utf-8');
       const patched = original.replaceAll(
         'src="./brewnet-site-banner.png"',
-        'src="/brewnet-site-banner.png"',
+        `src="${replacement}"`,
       );
       if (patched !== original) writeFileSync(full, patched, 'utf-8');
     }
