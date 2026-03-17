@@ -717,6 +717,7 @@ async function handleGetServices(
   _projectPath: string,
   urlMap: Record<string, string> = TRAEFIK_PATH_SERVICES,
   quickTunnelUrl = '',
+  allowedDirs?: Set<string>,
 ): Promise<void> {
   try {
     const allContainers = await docker.listContainers({ all: true });
@@ -726,6 +727,16 @@ async function handleGetServices(
       const composeService = c.Labels?.['com.docker.compose.service'];
       if (!composeService) continue;
       if (INTERNAL_SERVICES.has(composeService)) continue;
+
+      // Skip containers from unselected boilerplate stacks.
+      // A container whose working_dir is under projectPath but NOT in allowedDirs
+      // is an unselected boilerplate stack that shouldn't appear in the dashboard.
+      if (allowedDirs && allowedDirs.size > 0) {
+        const workingDir = c.Labels?.['com.docker.compose.project.working_dir'] ?? '';
+        if (workingDir && workingDir.startsWith(_projectPath) && !allowedDirs.has(workingDir)) {
+          continue;
+        }
+      }
 
       const def = getServiceDefinition(composeService);
       const s = c.State as string;
@@ -1069,6 +1080,31 @@ ${rows}
     }
   } catch { /* non-fatal */ }
 
+  // Build set of allowed compose working dirs for service filtering.
+  // Only containers from these directories are shown in the Services table.
+  // This excludes unselected boilerplate stacks (e.g. test deployments of all 16 stacks).
+  const allowedWorkingDirs = new Set<string>();
+  allowedWorkingDirs.add(projectPath); // homeserver services (traefik, gitea, etc.)
+  try {
+    // Selected boilerplate stacks from wizard
+    const bpMetaPath2 = join(projectPath, '.brewnet-boilerplate.json');
+    if (existsSync(bpMetaPath2)) {
+      const raw2 = JSON.parse(readFileSync(bpMetaPath2, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+      const stacks2: BoilerplateMeta[] = Array.isArray(raw2) ? raw2 : (raw2.stackId ? [raw2] : []);
+      for (const s of stacks2) {
+        if (s.appDir) allowedWorkingDirs.add(s.appDir);
+      }
+    }
+    // Apps registered via `brewnet deploy` (app-manager) — ~/.brewnet/apps.json
+    const appsJsonPath = join(homedir(), '.brewnet', 'apps.json');
+    if (existsSync(appsJsonPath)) {
+      const apps = JSON.parse(readFileSync(appsJsonPath, 'utf-8')) as Array<{ appDir?: string }>;
+      for (const app of apps) {
+        if (app.appDir) allowedWorkingDirs.add(app.appDir);
+      }
+    }
+  } catch { /* non-fatal */ }
+
   const dashConfig: DashboardConfig = {
     adminUsername: username ? maskUser(username) : '**',
     passwordHint: password ? maskPass(password) : '********',
@@ -1175,6 +1211,10 @@ ${rows}
       dashConfig.boilerplateHtml = buildBoilerplateSectionHtml(stacks);
       boilerplateLoaded = true;
       dashboardHtml = generateDashboardHtml(dashConfig);
+      // Update allowed working dirs with newly loaded boilerplate stacks
+      for (const s of stacks) {
+        if (s.appDir) allowedWorkingDirs.add(s.appDir);
+      }
     } catch {
       // Non-critical — keep empty array
     }
@@ -1254,7 +1294,7 @@ ${rows}
 
         if (parts[1] === 'services') {
           if (req.method === 'GET' && parts.length === 2) {
-            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl);
+            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl, allowedWorkingDirs);
             return;
           }
           if (req.method === 'POST' && parts[2] === 'install') {
