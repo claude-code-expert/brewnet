@@ -552,13 +552,13 @@ var BOILERPLATES = [
   {id:'nodejs-nextjs-full',lang:'React',  fw:'Next.js',      desc:'Full-stack App Router',  emoji:'⚛️', port:3000},
 ];
 var LANG_DATA = {
-  'Go':     {emoji:'🐹', fw:['Gin','Echo v4','Fiber v3','Chi']},
-  'Python': {emoji:'🐍', fw:['FastAPI','Django','Flask','Starlette']},
-  'Node.js':{emoji:'🟨', fw:['Express','NestJS','Fastify','Hono']},
-  'Rust':   {emoji:'🦀', fw:['Actix-web','Axum','Rocket','Warp']},
-  'Java':   {emoji:'☕', fw:['Spring Boot','Spring Framework','Quarkus']},
+  'Go':     {emoji:'🐹', fw:['Gin','Echo v4','Fiber v3']},
+  'Python': {emoji:'🐍', fw:['FastAPI','Django','Flask']},
+  'Node.js':{emoji:'🟨', fw:['Express','NestJS']},
+  'Rust':   {emoji:'🦀', fw:['Actix-web','Axum']},
+  'Java':   {emoji:'☕', fw:['Spring Boot','Spring Framework']},
   'Kotlin': {emoji:'🟣', fw:['Ktor','Spring Boot (Kotlin)']},
-  'React':  {emoji:'⚛️', fw:['Next.js','Vite + React','Remix']},
+  'React':  {emoji:'⚛️', fw:['Next.js']},
 };
 var LANG_COLOR = {
   'Go':'lc-go','Python':'lc-python','Node.js':'lc-node','JavaScript':'lc-node',
@@ -1251,7 +1251,7 @@ async function submitNewApp(){
     port=document.getElementById('proj-port').value;
     if(!selectedLang||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
     var LANG_CODE_MAP={'Go':'go','Python':'python','Node.js':'nodejs','Rust':'rust','Java':'java','Kotlin':'kotlin','React':'nodejs'};
-    var FW_CODE_MAP={'Gin':'gin','Echo v4':'echo','Fiber v3':'fiber','FastAPI':'fastapi','Django':'django','Flask':'flask','Express':'express','NestJS':'nestjs','Fastify':'fastify','Hono':'hono','Actix-web':'actix-web','Axum':'axum','Rocket':'rocket','Warp':'warp','Spring Boot':'springboot','Spring Framework':'spring','Quarkus':'quarkus','Ktor':'ktor','Spring Boot (Kotlin)':'springboot-kt','Next.js':'nextjs','Vite + React':'vite-react','Remix':'remix'};
+    var FW_CODE_MAP={'Gin':'gin','Echo v4':'echo','Fiber v3':'fiber','FastAPI':'fastapi','Django':'django','Flask':'flask','Express':'express','NestJS':'nestjs','Actix-web':'actix-web','Axum':'axum','Spring Boot':'springboot','Spring Framework':'spring','Ktor':'ktor','Spring Boot (Kotlin)':'springboot-kt','Next.js':'nextjs'};
     body={mode:'new-project',appName:name,port:parseInt(port),language:LANG_CODE_MAP[selectedLang]||selectedLang.toLowerCase()};
     if(selectedFw)body.frameworkId=FW_CODE_MAP[selectedFw]||selectedFw.toLowerCase().replace(/[^a-z0-9-]/g,'-');
   }
