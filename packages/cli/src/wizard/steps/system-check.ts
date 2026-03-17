@@ -369,7 +369,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     // -----------------------------------------------------------------------
     const table = new Table({
       head: [chalk.bold(''), chalk.bold('Check'), chalk.bold('Result'), chalk.bold('Details')],
-      colWidths: [4, 14, 52, 30],
+      colWidths: [4, 30, 40, 26],
       style: { head: [], border: ['dim'] },
       wordWrap: true,
     });
