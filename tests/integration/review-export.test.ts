@@ -491,7 +491,6 @@ describe('T064 — Review & Export', () => {
       expect(labels).toContain('Git Server');
       expect(labels).toContain('File Server');
       expect(labels).toContain('Database');
-      expect(labels).toContain('Cache');
       expect(labels).toContain('DB Admin UI');
       expect(labels).toContain('Media');
       expect(labels).toContain('SSH Server');
@@ -721,7 +720,7 @@ describe('T064 — Review & Export', () => {
       expect(parsed.servers.gitServer.service).toBe('gitea');
       expect(parsed.servers.fileServer.service).toBe('nextcloud');
       expect(parsed.servers.dbServer.primary).toBe('postgresql');
-      expect(parsed.servers.dbServer.cache).toBe('redis');
+      expect(parsed.servers.dbServer.cache).toBe('');
       expect(parsed.devStack.languages).toEqual(['nodejs', 'python']);
       expect(parsed.devStack.frameworks).toEqual({ nodejs: 'nextjs', python: 'fastapi' });
       expect(parsed.devStack.frontend).toBe('react');

@@ -746,7 +746,7 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
             dbUser: 'brewnet',
             dbPassword: 'dbpass',
             adminUI: false,
-            cache: 'redis',
+            cache: '',
           },
           media: { enabled: false, services: [] },
           sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
@@ -779,7 +779,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       expect(yamlStr).toContain('traefik:');
       expect(yamlStr).toContain('gitea:');
       expect(yamlStr).toContain('postgresql:');
-      expect(yamlStr).toContain('redis:');
       expect(yamlStr).toContain('openssh-server:');
       expect(yamlStr).toContain('docker-mailserver:');
       expect(yamlStr).toContain('cloudflared:');

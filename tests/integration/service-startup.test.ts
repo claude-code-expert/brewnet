@@ -419,7 +419,6 @@ describe('T065 — Service Startup Flow', () => {
       expect(getImageName('traefik')).toBe('traefik:v3.0');
       expect(getImageName('gitea')).toBe('gitea/gitea:latest');
       expect(getImageName('postgresql')).toBe('postgres:17-alpine');
-      expect(getImageName('redis')).toBe('redis:7-alpine');
       expect(getImageName('nextcloud')).toBe('nextcloud:29-apache');
       expect(getImageName('jellyfin')).toBe('jellyfin/jellyfin:latest');
     });

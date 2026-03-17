@@ -46,7 +46,7 @@ export function createDefaultWizardState(): WizardState {
         dbPassword: '',
         adminUI: true,
         pgadminEmail: '',
-        cache: 'redis',
+        cache: '',
       },
       media: { enabled: false, services: [] },
       sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
@@ -127,7 +127,7 @@ export function applyFullInstallDefaults(state: WizardState): WizardState {
         dbUser: 'brewnet',
         adminUI: true,
         pgadminEmail: '',
-        cache: 'redis',
+        cache: '',
       },
     },
   };

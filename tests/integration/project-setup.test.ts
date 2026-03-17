@@ -106,11 +106,11 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
       expect(result.servers.dbServer.primaryVersion).toBe('17');
     });
 
-    it('should enable redis cache', () => {
+    it('should have empty cache', () => {
       const state = createDefaultWizardState();
       const result = applyFullInstallDefaults(state);
 
-      expect(result.servers.dbServer.cache).toBe('redis');
+      expect(result.servers.dbServer.cache).toBe('');
     });
 
     it('should enable adminUI for database', () => {

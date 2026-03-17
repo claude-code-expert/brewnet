@@ -25,9 +25,6 @@ const EXPECTED_SERVICE_IDS: string[] = [
   'jellyfin',
   'postgresql',
   'mysql',
-  'redis',
-  'valkey',
-  'keydb',
   'pgadmin',
   'openssh-server',
   'docker-mailserver',
@@ -164,19 +161,6 @@ describe('Specific service definitions', () => {
 
     it('requires MYSQL_ROOT_PASSWORD', () => {
       expect(mysql.requiredEnvVars).toContain('MYSQL_ROOT_PASSWORD');
-    });
-  });
-
-  // -- Redis ------------------------------------------------------------------
-  describe('redis', () => {
-    const redis = getServiceDefinition('redis')!;
-
-    it('exposes port 6379', () => {
-      expect(redis.ports).toEqual([6379]);
-    });
-
-    it('has no required environment variables', () => {
-      expect(redis.requiredEnvVars).toHaveLength(0);
     });
   });
 

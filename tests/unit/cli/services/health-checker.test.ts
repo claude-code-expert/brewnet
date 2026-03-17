@@ -83,18 +83,6 @@ describe('categorizeService', () => {
     expect(categorizeService('mysql')).toBe('database');
   });
 
-  it('redis → cache', () => {
-    expect(categorizeService('redis')).toBe('cache');
-  });
-
-  it('valkey → cache', () => {
-    expect(categorizeService('valkey')).toBe('cache');
-  });
-
-  it('keydb → cache', () => {
-    expect(categorizeService('keydb')).toBe('cache');
-  });
-
   it('pgadmin → utility', () => {
     expect(categorizeService('pgadmin')).toBe('utility');
   });
@@ -134,35 +122,19 @@ describe('sortByDependency', () => {
     expect(sorted.indexOf('traefik')).toBeLessThan(sorted.indexOf('postgresql'));
   });
 
-  it('sorts database before cache', () => {
-    const sorted = sortByDependency(['redis', 'postgresql']);
-    expect(sorted.indexOf('postgresql')).toBeLessThan(sorted.indexOf('redis'));
-  });
-
-  it('sorts cache before application', () => {
-    const sorted = sortByDependency(['gitea', 'redis']);
-    expect(sorted.indexOf('redis')).toBeLessThan(sorted.indexOf('gitea'));
-  });
-
   it('sorts application before utility', () => {
     const sorted = sortByDependency(['pgadmin', 'nextcloud']);
     expect(sorted.indexOf('nextcloud')).toBeLessThan(sorted.indexOf('pgadmin'));
   });
 
-  it('full order: infrastructure → db → cache → app → utility', () => {
-    const input = ['pgadmin', 'redis', 'gitea', 'postgresql', 'traefik'];
+  it('full order: infrastructure → db → app → utility', () => {
+    const input = ['pgadmin', 'gitea', 'postgresql', 'traefik'];
     const sorted = sortByDependency(input);
     const idx = (s: string) => sorted.indexOf(s);
 
     expect(idx('traefik')).toBeLessThan(idx('postgresql'));
-    expect(idx('postgresql')).toBeLessThan(idx('redis'));
-    expect(idx('redis')).toBeLessThan(idx('gitea'));
+    expect(idx('postgresql')).toBeLessThan(idx('gitea'));
     expect(idx('gitea')).toBeLessThan(idx('pgadmin'));
-  });
-
-  it('preserves order for services in the same category', () => {
-    const sorted = sortByDependency(['redis', 'valkey', 'keydb']);
-    expect(sorted).toEqual(['redis', 'valkey', 'keydb']);
   });
 
   it('does not mutate the original array', () => {

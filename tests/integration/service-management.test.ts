@@ -417,7 +417,7 @@ describe('T091 — Add/Remove Service Flow', () => {
     });
 
     it('valid service ID is found in SERVICE_REGISTRY', () => {
-      const validIds = ['jellyfin', 'nextcloud', 'minio', 'redis', 'postgresql', 'mysql'];
+      const validIds = ['jellyfin', 'nextcloud', 'minio', 'postgresql', 'mysql'];
 
       for (const id of validIds) {
         const def = getServiceDefinition(id);
@@ -598,7 +598,6 @@ describe('T091 — Add/Remove Service Flow', () => {
       createBaseComposeFile(tempDir);
 
       await addService('jellyfin', tempDir);
-      await addService('redis', tempDir);
       await addService('nextcloud', tempDir);
 
       const composePath = join(tempDir, DOCKER_COMPOSE_FILENAME);
@@ -607,25 +606,24 @@ describe('T091 — Add/Remove Service Flow', () => {
       expect(compose.services).toHaveProperty('traefik');
       expect(compose.services).toHaveProperty('gitea');
       expect(compose.services).toHaveProperty('jellyfin');
-      expect(compose.services).toHaveProperty('redis');
       expect(compose.services).toHaveProperty('nextcloud');
     });
 
     it('adding a service without a subdomain does not include Traefik labels', async () => {
       createBaseComposeFile(tempDir);
 
-      // Redis has no subdomain (empty string)
-      await addService('redis', tempDir);
+      // PostgreSQL has no subdomain (empty string)
+      await addService('postgresql', tempDir);
 
       const composePath = join(tempDir, DOCKER_COMPOSE_FILENAME);
       const compose = parseComposeFile(composePath);
 
-      const redisDef = getServiceDefinition('redis');
-      expect(redisDef).toBeDefined();
-      expect(redisDef!.subdomain).toBe('');
+      const pgDef = getServiceDefinition('postgresql');
+      expect(pgDef).toBeDefined();
+      expect(pgDef!.subdomain).toBe('');
 
-      // Redis should not have Traefik routing labels
-      const labels = compose.services['redis'].labels;
+      // PostgreSQL should not have Traefik routing labels
+      const labels = compose.services['postgresql'].labels;
       if (labels) {
         expect(labels['traefik.enable']).toBeUndefined();
       }

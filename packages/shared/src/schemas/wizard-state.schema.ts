@@ -20,7 +20,7 @@ export const fileServerServiceSchema = z.enum(['nextcloud', 'minio', '']);
 
 export const dbPrimarySchema = z.enum(['postgresql', 'mysql', 'sqlite', '']);
 
-export const cacheServiceSchema = z.enum(['redis', 'valkey', 'keydb', '']);
+export const cacheServiceSchema = z.enum(['']);
 
 export const domainProviderSchema = z.enum(['local', 'tunnel', 'quick-tunnel']);
 

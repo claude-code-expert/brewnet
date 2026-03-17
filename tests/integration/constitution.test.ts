@@ -174,7 +174,7 @@ describe('TC-C-04: Reversible — backup before modification', () => {
       // No backup files initially
       expect(countBackupFiles(tempDir)).toBe(0);
 
-      const result = await addService('redis', tempDir);
+      const result = await addService('jellyfin', tempDir);
       expect(result.success).toBe(true);
 
       // A backup file should now exist
@@ -184,7 +184,7 @@ describe('TC-C-04: Reversible — backup before modification', () => {
     it('should return the backup path in the result', async () => {
       writeMinimalCompose(tempDir);
 
-      const result = await addService('redis', tempDir);
+      const result = await addService('jellyfin', tempDir);
       expect(result.success).toBe(true);
       expect(result.backupPath).toBeDefined();
       expect(result.backupPath).toContain('.bak.');
@@ -195,7 +195,7 @@ describe('TC-C-04: Reversible — backup before modification', () => {
       const composePath = writeMinimalCompose(tempDir);
       const originalContent = readFileSync(composePath, 'utf-8');
 
-      const result = await addService('redis', tempDir);
+      const result = await addService('jellyfin', tempDir);
       expect(result.success).toBe(true);
 
       // The backup should contain the original content
@@ -206,10 +206,10 @@ describe('TC-C-04: Reversible — backup before modification', () => {
     it('should create a new backup for each addService call', async () => {
       writeMinimalCompose(tempDir);
 
-      const result1 = await addService('redis', tempDir);
+      const result1 = await addService('jellyfin', tempDir);
       expect(result1.success).toBe(true);
 
-      const result2 = await addService('jellyfin', tempDir);
+      const result2 = await addService('nextcloud', tempDir);
       expect(result2.success).toBe(true);
 
       // Two distinct backup files
@@ -232,12 +232,12 @@ describe('TC-C-04: Reversible — backup before modification', () => {
             security_opt: ['no-new-privileges:true'],
             networks: ['brewnet'],
           },
-          redis: {
-            image: 'redis:7-alpine',
-            container_name: 'brewnet-redis',
+          jellyfin: {
+            image: 'jellyfin/jellyfin:latest',
+            container_name: 'brewnet-jellyfin',
             restart: 'unless-stopped',
             security_opt: ['no-new-privileges:true'],
-            networks: ['brewnet-internal'],
+            networks: ['brewnet'],
           },
         },
         networks: {
@@ -249,7 +249,7 @@ describe('TC-C-04: Reversible — backup before modification', () => {
 
       expect(countBackupFiles(tempDir)).toBe(0);
 
-      const result = await removeService('redis', tempDir);
+      const result = await removeService('jellyfin', tempDir);
       expect(result.success).toBe(true);
 
       // A backup file should exist
@@ -268,19 +268,19 @@ describe('TC-C-04: Reversible — backup before modification', () => {
             security_opt: ['no-new-privileges:true'],
             networks: ['brewnet'],
           },
-          redis: {
-            image: 'redis:7-alpine',
-            container_name: 'brewnet-redis',
+          jellyfin: {
+            image: 'jellyfin/jellyfin:latest',
+            container_name: 'brewnet-jellyfin',
             restart: 'unless-stopped',
             security_opt: ['no-new-privileges:true'],
-            networks: ['brewnet-internal'],
+            networks: ['brewnet'],
           },
         },
         networks: {},
       };
       writeFileSync(composePath, yaml.dump(compose), 'utf-8');
 
-      const result = await removeService('redis', tempDir);
+      const result = await removeService('jellyfin', tempDir);
       expect(result.success).toBe(true);
       expect(result.backupPath).toBeDefined();
       expect(existsSync(result.backupPath!)).toBe(true);
@@ -298,12 +298,12 @@ describe('TC-C-04: Reversible — backup before modification', () => {
             security_opt: ['no-new-privileges:true'],
             networks: ['brewnet'],
           },
-          redis: {
-            image: 'redis:7-alpine',
-            container_name: 'brewnet-redis',
+          jellyfin: {
+            image: 'jellyfin/jellyfin:latest',
+            container_name: 'brewnet-jellyfin',
             restart: 'unless-stopped',
             security_opt: ['no-new-privileges:true'],
-            networks: ['brewnet-internal'],
+            networks: ['brewnet'],
           },
         },
         networks: {},
@@ -311,13 +311,13 @@ describe('TC-C-04: Reversible — backup before modification', () => {
       writeFileSync(composePath, yaml.dump(compose), 'utf-8');
       const originalContent = readFileSync(composePath, 'utf-8');
 
-      const result = await removeService('redis', tempDir);
+      const result = await removeService('jellyfin', tempDir);
       const backupContent = readFileSync(result.backupPath!, 'utf-8');
       expect(backupContent).toBe(originalContent);
 
       // The main compose should no longer have redis
       const updatedCompose = readCompose(tempDir);
-      expect(updatedCompose.services['redis']).toBeUndefined();
+      expect(updatedCompose.services['jellyfin']).toBeUndefined();
     });
   });
 
@@ -328,19 +328,19 @@ describe('TC-C-04: Reversible — backup before modification', () => {
       const compose: ComposeFile = {
         version: '3.8',
         services: {
-          redis: {
-            image: 'redis:7-alpine',
-            container_name: 'brewnet-redis',
+          jellyfin: {
+            image: 'jellyfin/jellyfin:latest',
+            container_name: 'brewnet-jellyfin',
             restart: 'unless-stopped',
             security_opt: ['no-new-privileges:true'],
-            networks: ['brewnet-internal'],
+            networks: ['brewnet'],
           },
         },
         networks: {},
       };
       writeFileSync(composePath, yaml.dump(compose), 'utf-8');
 
-      const result = await addService('redis', tempDir);
+      const result = await addService('jellyfin', tempDir);
       expect(result.success).toBe(false);
       expect(countBackupFiles(tempDir)).toBe(0);
     });

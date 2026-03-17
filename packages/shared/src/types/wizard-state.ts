@@ -13,7 +13,7 @@ export type FileServerService = 'nextcloud' | 'minio' | '';
 
 export type DbPrimary = 'postgresql' | 'mysql' | 'sqlite' | '';
 
-export type CacheService = 'redis' | 'valkey' | 'keydb' | '';
+export type CacheService = '';
 
 export type DomainProvider = 'local' | 'tunnel' | 'quick-tunnel';
 

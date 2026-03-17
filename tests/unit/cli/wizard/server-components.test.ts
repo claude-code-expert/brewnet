@@ -39,7 +39,6 @@ const {
   isMailServerAvailable,
   shouldAutoSuggestSftp,
   applyDevStackAutoEnables,
-  isCacheSelectionAvailable,
 } = await import(
   '../../../../packages/cli/src/wizard/steps/server-components.js'
 );
@@ -296,87 +295,6 @@ describe('TC-04-10: Non-local domain → Mail Server available', () => {
 
     const result = applyComponentRules(state);
     expect(result.servers.mailServer.enabled).toBe(false);
-  });
-});
-
-// ── TC-04-11: DB Server enabled → cache layer available ────────────────────
-
-describe('TC-04-11: DB Server enabled → cache selection available', () => {
-  it('isCacheSelectionAvailable returns true when dbServer is enabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'existing',
-          adminUI: true,
-          cache: 'redis',
-        },
-      },
-    });
-    expect(isCacheSelectionAvailable(state)).toBe(true);
-  });
-
-  it('isCacheSelectionAvailable returns false when dbServer is disabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: false,
-          primary: '',
-          primaryVersion: '',
-          dbName: '',
-          dbUser: '',
-          dbPassword: '',
-          adminUI: false,
-          cache: '',
-        },
-      },
-    });
-    expect(isCacheSelectionAvailable(state)).toBe(false);
-  });
-
-  it('preserves cache selection (redis) when DB is enabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'existing',
-          adminUI: true,
-          cache: 'redis',
-        },
-      },
-    });
-    const result = applyComponentRules(state);
-    expect(result.servers.dbServer.cache).toBe('redis');
-  });
-
-  it('allows different cache options (valkey, keydb)', () => {
-    for (const cache of ['valkey', 'keydb'] as const) {
-      const state = buildState({
-        servers: {
-          dbServer: {
-            enabled: true,
-            primary: 'mysql',
-            primaryVersion: '8.0',
-            dbName: 'brewnet_db',
-            dbUser: 'brewnet',
-            dbPassword: 'existing',
-            adminUI: false,
-            cache,
-          },
-        },
-      });
-      expect(isCacheSelectionAvailable(state)).toBe(true);
-      const result = applyComponentRules(state);
-      expect(result.servers.dbServer.cache).toBe(cache);
-    }
   });
 });
 
@@ -741,10 +659,6 @@ describe('Combined rule application', () => {
 
     // Mail server available (custom domain)
     expect(isMailServerAvailable(finalState)).toBe(true);
-
-    // Cache available (DB enabled)
-    expect(isCacheSelectionAvailable(finalState)).toBe(true);
-    expect(finalState.servers.dbServer.cache).toBe('valkey');
   });
 
   it('minimal state: all defaults, no devStack, local domain', () => {
@@ -808,8 +722,6 @@ describe('Combined rule application', () => {
     expect(result.servers.dbServer.dbPassword).toBe('');
     expect(generatePassword).not.toHaveBeenCalled();
 
-    // Cache not available (DB disabled)
-    expect(isCacheSelectionAvailable(result)).toBe(false);
   });
 });
 

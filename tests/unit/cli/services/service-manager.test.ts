@@ -117,24 +117,6 @@ describe('addService', () => {
     expect(result.success).toBe(true);
   });
 
-  it('returns success when adding redis to existing compose', async () => {
-    setCompose(COMPOSE_PATH, makeComposeYaml());
-    const result = await addService('redis', '/tmp/project');
-    expect(result.success).toBe(true);
-  });
-
-  it('returns success when adding valkey to existing compose', async () => {
-    setCompose(COMPOSE_PATH, makeComposeYaml());
-    const result = await addService('valkey', '/tmp/project');
-    expect(result.success).toBe(true);
-  });
-
-  it('returns success when adding keydb to existing compose', async () => {
-    setCompose(COMPOSE_PATH, makeComposeYaml());
-    const result = await addService('keydb', '/tmp/project');
-    expect(result.success).toBe(true);
-  });
-
   it('returns success when adding nextcloud to existing compose', async () => {
     setCompose(COMPOSE_PATH, makeComposeYaml());
     const result = await addService('nextcloud', '/tmp/project');
@@ -186,7 +168,7 @@ describe('addService', () => {
   it('handles compose with no services section (creates services)', async () => {
     // Minimal compose with no services key
     setCompose(COMPOSE_PATH, 'version: "3"\n');
-    const result = await addService('redis', '/tmp/project');
+    const result = await addService('jellyfin', '/tmp/project');
     expect(result.success).toBe(true);
   });
 
@@ -198,7 +180,7 @@ describe('addService', () => {
   });
 
   it('returns success when adding traefik (covers traefik volume case)', async () => {
-    setCompose(COMPOSE_PATH, 'version: "3"\nservices:\n  redis:\n    image: redis:7\n');
+    setCompose(COMPOSE_PATH, 'version: "3"\nservices:\n  gitea:\n    image: gitea/gitea:latest\n');
     const result = await addService('traefik', '/tmp/project');
     expect(result.success).toBe(true);
   });

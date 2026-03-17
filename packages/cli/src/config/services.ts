@@ -288,68 +288,6 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
     },
   ],
 
-  // -- Caches ---------------------------------------------------------------
-  [
-    'redis',
-    {
-      id: 'redis',
-      name: 'Redis',
-      image: 'redis:7-alpine',
-      ports: [6379],
-      subdomain: '',
-      ramMB: 12,
-      diskGB: 0.1,
-      networks: ['brewnet', 'brewnet-internal'],
-      healthCheck: {
-        endpoint: '',
-        interval: 10,
-        timeout: 3,
-        retries: 3,
-      },
-      requiredEnvVars: [],
-    },
-  ],
-  [
-    'valkey',
-    {
-      id: 'valkey',
-      name: 'Valkey',
-      image: 'valkey/valkey:7-alpine',
-      ports: [6379],
-      subdomain: '',
-      ramMB: 12,
-      diskGB: 0.1,
-      networks: ['brewnet', 'brewnet-internal'],
-      healthCheck: {
-        endpoint: '',
-        interval: 10,
-        timeout: 3,
-        retries: 3,
-      },
-      requiredEnvVars: [],
-    },
-  ],
-  [
-    'keydb',
-    {
-      id: 'keydb',
-      name: 'KeyDB',
-      image: 'eqalpha/keydb:latest',
-      ports: [6379],
-      subdomain: '',
-      ramMB: 16,
-      diskGB: 0.1,
-      networks: ['brewnet', 'brewnet-internal'],
-      healthCheck: {
-        endpoint: '',
-        interval: 10,
-        timeout: 3,
-        retries: 3,
-      },
-      requiredEnvVars: [],
-    },
-  ],
-
   // -- Admin UI -------------------------------------------------------------
   [
     'pgadmin',

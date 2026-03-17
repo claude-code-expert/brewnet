@@ -38,11 +38,6 @@ export const SERVICE_RAM_MAP: Readonly<Record<string, number>> = {
   mysql: 256,
   sqlite: 0,
 
-  // Cache
-  redis: 12,
-  valkey: 12,
-  keydb: 16,
-
   // DB Admin
   pgadmin: 128,
 
@@ -86,11 +81,6 @@ export const SERVICE_DISK_MAP: Readonly<Record<string, number>> = {
   mysql: 0.5,
   sqlite: 0.01,
 
-  // Cache
-  redis: 0.1,
-  valkey: 0.1,
-  keydb: 0.1,
-
   // DB Admin
   pgadmin: 0.2,
 
@@ -125,9 +115,6 @@ const DOCKER_IMAGE_MAP: Readonly<Record<string, string>> = {
   jellyfin: 'jellyfin/jellyfin:latest',
   postgresql: 'postgres:17-alpine',
   mysql: 'mysql:8.4',
-  redis: 'redis:7-alpine',
-  valkey: 'valkey/valkey:7-alpine',
-  keydb: 'eqalpha/keydb:latest',
   pgadmin: 'dpage/pgadmin4:latest',
   'openssh-server': 'linuxserver/openssh-server:latest',
   'docker-mailserver': 'ghcr.io/docker-mailserver/docker-mailserver:latest',
@@ -197,9 +184,6 @@ export function countSelectedServices(state: WizardState): number {
     if (s.dbServer.adminUI) count++;
   }
 
-  // Cache
-  if (s.dbServer.enabled && s.dbServer.cache) count++;
-
   // Media
   if (s.media.enabled) count += (s.media.services ?? []).length;
 
@@ -267,12 +251,6 @@ export function estimateResources(state: WizardState): ResourceEstimate {
       }
     }
 
-    // Cache
-    if (s.dbServer.cache) {
-      ram += ramFor(s.dbServer.cache) || 12;
-      disk += 0.1;
-      containers++;
-    }
   }
 
   // App Server
@@ -351,11 +329,6 @@ export function collectAllServices(state: WizardState): string[] {
     if (s.dbServer.adminUI) {
       ids.push('pgadmin');
     }
-  }
-
-  // Cache
-  if (s.dbServer.enabled && s.dbServer.cache) {
-    ids.push(s.dbServer.cache);
   }
 
   // SSH Server

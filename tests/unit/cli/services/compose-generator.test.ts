@@ -113,7 +113,7 @@ function buildFullState(): WizardState {
         dbUser: 'brewnet',
         dbPassword: 'DbPass123!',
         adminUI: true,
-        cache: 'redis',
+        cache: '',
       },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
@@ -243,27 +243,6 @@ describe('ComposeGenerator — Web + DB (TC-08-01)', () => {
     expect(config.services).not.toHaveProperty('keydb');
   });
 
-  it('should include cache service when cache is set', () => {
-    const stateWithCache = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass123!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const configWithCache = generateComposeConfig(stateWithCache);
-
-    expect(configWithCache.services).toHaveProperty('redis');
-    expect(configWithCache.services['redis']!.image).toMatch(/^redis:\d+-alpine/);
-  });
-
   it('should include pgadmin when adminUI is true and primary is postgresql', () => {
     const stateWithAdmin = buildState({
       servers: {
@@ -312,10 +291,6 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('postgresql');
   });
 
-  it('should include redis (cache)', () => {
-    expect(config.services).toHaveProperty('redis');
-  });
-
   it('should include pgadmin (admin UI for postgresql)', () => {
     expect(config.services).toHaveProperty('pgadmin');
   });
@@ -340,10 +315,10 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('filebrowser');
   });
 
-  it('should have at least 11 service definitions', () => {
-    // traefik, gitea, nextcloud, postgresql, redis, pgadmin,
+  it('should have at least 10 service definitions', () => {
+    // traefik, gitea, nextcloud, postgresql, pgadmin,
     // jellyfin, openssh-server, docker-mailserver, cloudflared, filebrowser
-    expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(11);
+    expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(10);
   });
 });
 
@@ -367,7 +342,7 @@ describe('ComposeGenerator — Traefik labels (TC-08-05)', () => {
           dbUser: 'brewnet',
           dbPassword: 'DbPass!',
           adminUI: true,
-          cache: 'redis',
+          cache: '',
         },
         media: { enabled: true, services: ['jellyfin'] },
       },
@@ -491,13 +466,6 @@ describe('ComposeGenerator — Traefik labels (TC-08-05)', () => {
     expect(hasTraefikEnable).toBe(false);
   });
 
-  it('should NOT have traefik labels on cache services', () => {
-    const redisLabels = config.services['redis']!.labels ?? {};
-    const hasTraefikEnable = Object.keys(redisLabels).some((k: string) =>
-      k.startsWith('traefik.'),
-    );
-    expect(hasTraefikEnable).toBe(false);
-  });
 });
 
 // =========================================================================
@@ -730,32 +698,6 @@ describe('ComposeGenerator — depends_on ordering', () => {
     }
   });
 
-  it('should make gitea depend on cache when cache is enabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const giteaDeps = config.services['gitea']!.depends_on;
-
-    expect(giteaDeps).toBeDefined();
-    if (Array.isArray(giteaDeps)) {
-      expect(giteaDeps).toContain('redis');
-    } else {
-      expect(giteaDeps).toHaveProperty('redis');
-    }
-  });
-
   it('should NOT include depends_on for traefik (first to start)', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
@@ -839,28 +781,6 @@ describe('ComposeGenerator — Volume mounts', () => {
 
     expect(jfVolumes).toBeDefined();
     expect(jfVolumes!.length).toBeGreaterThan(0);
-  });
-
-  it('should define volumes for redis data persistence', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const redisVolumes = config.services['redis']!.volumes;
-
-    expect(redisVolumes).toBeDefined();
-    expect(redisVolumes!.length).toBeGreaterThan(0);
   });
 
   it('should define volumes for traefik configuration', () => {
@@ -1008,26 +928,6 @@ describe('ComposeGenerator — Network assignments', () => {
     expect(nets).toContain('brewnet-internal');
   });
 
-  it('should place cache on brewnet-internal network', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const nets = config.services['redis']!.networks ?? [];
-
-    expect(nets).toContain('brewnet-internal');
-  });
 });
 
 // =========================================================================
@@ -1111,56 +1011,6 @@ describe('ComposeGenerator — Alternative web servers', () => {
 });
 
 // =========================================================================
-// Alternative cache engines
-// =========================================================================
-
-describe('ComposeGenerator — Alternative cache engines', () => {
-  it('should include valkey when cache is valkey', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'valkey',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-
-    expect(config.services).toHaveProperty('valkey');
-    expect(config.services).not.toHaveProperty('redis');
-    expect(config.services['valkey']!.image).toContain('valkey');
-  });
-
-  it('should include keydb when cache is keydb', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'keydb',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-
-    expect(config.services).toHaveProperty('keydb');
-    expect(config.services).not.toHaveProperty('redis');
-    expect(config.services['keydb']!.image).toContain('keydb');
-  });
-});
-
-// =========================================================================
 // MinIO file server variant
 // =========================================================================
 
@@ -1196,9 +1046,8 @@ describe('ComposeGenerator — Compose config structure', () => {
     const config = generateComposeConfig(state);
 
     expect(config.volumes).toBeDefined();
-    // postgresql, redis, gitea are enabled in buildState() — all use named volumes
+    // postgresql, gitea are enabled in buildState() — all use named volumes
     expect(Object.keys(config.volumes!)).toContain('brewnet_postgres_data');
-    expect(Object.keys(config.volumes!)).toContain('brewnet_redis_data');
     expect(Object.keys(config.volumes!)).toContain('brewnet_gitea_data');
     // All volume values should be null (Docker default config)
     for (const v of Object.values(config.volumes!)) {
@@ -1422,27 +1271,6 @@ describe('ComposeGenerator — Health checks', () => {
     expect(hc).toBeDefined();
   });
 
-  it('should include healthcheck for redis', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const hc = config.services['redis']!.healthcheck;
-
-    expect(hc).toBeDefined();
-  });
-
   it('should include healthcheck for gitea', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
@@ -1544,7 +1372,6 @@ describe('ComposeGenerator — Minimal default state', () => {
     const names = serviceNames(config);
 
     expect(names).toContain('postgresql');
-    expect(names).toContain('redis');
   });
 });
 

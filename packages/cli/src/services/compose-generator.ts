@@ -97,12 +97,6 @@ function getServiceVolumes(serviceId: string): string[] {
       return [`${BREWNET_PREFIX}_postgres_data:/var/lib/postgresql/data`];
     case 'mysql':
       return [`${BREWNET_PREFIX}_mysql_data:/var/lib/mysql`];
-    case 'redis':
-      return [`${BREWNET_PREFIX}_redis_data:/data`];
-    case 'valkey':
-      return [`${BREWNET_PREFIX}_valkey_data:/data`];
-    case 'keydb':
-      return [`${BREWNET_PREFIX}_keydb_data:/data`];
     case 'nextcloud':
       return [
         `${BREWNET_PREFIX}_nextcloud_data:/var/www/html`,
@@ -156,15 +150,6 @@ function getHealthcheck(serviceId: string, state: WizardState): ComposeHealthche
         interval: '10s',
         timeout: '5s',
         retries: 5,
-      };
-    case 'redis':
-    case 'valkey':
-    case 'keydb':
-      return {
-        test: ['CMD', 'redis-cli', 'ping'],
-        interval: '10s',
-        timeout: '3s',
-        retries: 3,
       };
     case 'gitea':
       return {
@@ -268,22 +253,6 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
     env['GITEA__database__NAME'] = 'gitea_db';
     env['GITEA__database__USER'] = state.servers.dbServer.dbUser || 'brewnet';
     env['GITEA__database__PASSWD'] = state.servers.dbServer.dbPassword || '${DB_PASSWORD}';
-  }
-
-  if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
-    const cacheId = state.servers.dbServer.cache;
-    // Cache password env var name differs by adapter (REDIS_PASSWORD / VALKEY_PASSWORD / KEYDB_PASSWORD).
-    // Docker Compose interpolates ${VAR} from .env at runtime, keeping the password out of the image.
-    const cachePwVar =
-      cacheId === 'valkey' ? 'VALKEY_PASSWORD'
-      : cacheId === 'keydb' ? 'KEYDB_PASSWORD'
-      : 'REDIS_PASSWORD';
-    const cacheUrl = `redis://:\${${cachePwVar}}@${cacheId}:6379/0`;
-    env['GITEA__cache__ADAPTER'] = 'redis';
-    env['GITEA__cache__HOST'] = cacheUrl;
-    // Gitea also uses Redis for async task queue — use the same authenticated URL.
-    env['GITEA__queue__TYPE'] = 'redis';
-    env['GITEA__queue__CONN_STR'] = cacheUrl;
   }
 
   return env;
@@ -588,12 +557,9 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
       return [`${remap(5050)}:80`];
     case 'cloudflared':
       return [];
-    // DB/cache ports are NOT exposed externally
+    // DB ports are NOT exposed externally
     case 'postgresql':
     case 'mysql':
-    case 'redis':
-    case 'valkey':
-    case 'keydb':
       return [];
     default:
       return [];
@@ -608,18 +574,14 @@ function getDependsOn(serviceId: string, state: WizardState): string[] {
   const deps: string[] = [];
 
   const dbEnabled = state.servers.dbServer.enabled && state.servers.dbServer.primary;
-  const cacheEnabled = state.servers.dbServer.enabled && state.servers.dbServer.cache;
   const primaryId = state.servers.dbServer.primary; // 'postgresql' | 'mysql' | ...
-  const cacheId = state.servers.dbServer.cache;      // 'redis' | 'valkey' | 'keydb'
 
   switch (serviceId) {
     case 'gitea':
       if (dbEnabled) deps.push(primaryId);
-      if (cacheEnabled) deps.push(cacheId);
       break;
     case 'nextcloud':
       if (dbEnabled) deps.push(primaryId);
-      if (cacheEnabled) deps.push(cacheId);
       break;
     case 'pgadmin':
       deps.push('postgresql');
@@ -853,7 +815,7 @@ function buildComposeService(
 function applySecretsMigration(
   serviceId: string,
   svc: ComposeService,
-  state: WizardState,
+  _state: WizardState,
 ): void {
   const env = svc.environment ?? {};
   const secrets: string[] = [];
@@ -910,13 +872,6 @@ function applySecretsMigration(
         env['MYSQL_PASSWORD_FILE'] = '/run/secrets/db_password';
         secrets.push('db_password');
       }
-
-      // Redis password integration (if cache is enabled)
-      if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
-        env['REDIS_HOST'] = state.servers.dbServer.cache; // container name
-        env['REDIS_HOST_PASSWORD_FILE'] = '/run/secrets/cache_password';
-        secrets.push('cache_password');
-      }
       break;
     }
 
@@ -925,19 +880,6 @@ function applySecretsMigration(
       delete env['PGADMIN_DEFAULT_PASSWORD'];
       env['PGADMIN_DEFAULT_PASSWORD_FILE'] = '/run/secrets/admin_password';
       secrets.push('admin_password');
-      break;
-    }
-
-    // --- Redis/Valkey/KeyDB: no _FILE support → command workaround ---
-    case 'redis':
-    case 'valkey':
-    case 'keydb': {
-      secrets.push('cache_password');
-      // Override command to read password from secret file
-      svc.command = [
-        'sh', '-c',
-        'redis-server --requirepass "$(cat /run/secrets/cache_password)"',
-      ];
       break;
     }
 
@@ -1094,15 +1036,6 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     const dbDef = SERVICE_REGISTRY.get(dbId);
     if (dbDef) {
       services[dbId] = buildComposeService(dbDef, state);
-    }
-
-    // Cache (optional, part of dbServer)
-    if (state.servers.dbServer.cache) {
-      const cacheId = state.servers.dbServer.cache; // 'redis' | 'valkey' | 'keydb'
-      const cacheDef = SERVICE_REGISTRY.get(cacheId);
-      if (cacheDef) {
-        services[cacheId] = buildComposeService(cacheDef, state);
-      }
     }
 
     // Admin UI (pgadmin only for postgresql)

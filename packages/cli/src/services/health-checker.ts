@@ -6,7 +6,7 @@
  * access verification utilities for the Step 6 (Generate & Start) flow.
  *
  * Service startup order:
- *   infrastructure → database → cache → application → utility
+ *   infrastructure → database → application → utility
  *
  * @module services/health-checker
  */
@@ -35,7 +35,6 @@ export const HEALTH_CHECK_INTERVAL = HEALTH_CHECK_INTERVAL_MS;
 export type ServiceCategory =
   | 'infrastructure'
   | 'database'
-  | 'cache'
   | 'application'
   | 'utility';
 
@@ -58,7 +57,6 @@ export interface EndpointInfo {
 
 const INFRA_SERVICES = ['traefik', 'nginx', 'caddy', 'cloudflared'];
 const DB_SERVICES = ['postgresql', 'mysql'];
-const CACHE_SERVICES = ['redis', 'valkey', 'keydb'];
 const UTILITY_SERVICES = [
   'pgadmin',
   'filebrowser',
@@ -69,12 +67,11 @@ const UTILITY_SERVICES = [
 /**
  * Categorize a service ID for dependency ordering.
  *
- * Infrastructure (web server, tunnel) → Database → Cache → Application → Utility
+ * Infrastructure (web server, tunnel) → Database → Application → Utility
  */
 export function categorizeService(serviceId: string): ServiceCategory {
   if (INFRA_SERVICES.includes(serviceId)) return 'infrastructure';
   if (DB_SERVICES.includes(serviceId)) return 'database';
-  if (CACHE_SERVICES.includes(serviceId)) return 'cache';
   if (UTILITY_SERVICES.includes(serviceId)) return 'utility';
   return 'application';
 }
@@ -86,14 +83,13 @@ export function categorizeService(serviceId: string): ServiceCategory {
 const CATEGORY_ORDER: Record<ServiceCategory, number> = {
   infrastructure: 0,
   database: 1,
-  cache: 2,
-  application: 3,
-  utility: 4,
+  application: 2,
+  utility: 3,
 };
 
 /**
  * Sort services into dependency order for startup.
- * Order: infrastructure → database → cache → application → utility.
+ * Order: infrastructure → database → application → utility.
  *
  * Stable sort: services within the same category preserve their original order.
  */

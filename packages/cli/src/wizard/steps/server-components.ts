@@ -10,7 +10,6 @@
  *   - Git Server is always enabled (required)
  *   - File Server or Media Server enabled → SFTP auto-suggested
  *   - Domain = 'local' → Mail Server hidden / not available
- *   - DB Server enabled → cache selection available
  *   - DB Server enabled + empty dbPassword → auto-generate password
  *   - SSH Server default → passwordAuth = false (key-only)
  *   - Language/frontend selected → App Server auto-enabled
@@ -26,7 +25,6 @@ import type {
   WebServerService,
   FileServerService,
   DbPrimary,
-  CacheService,
 } from '@brewnet/shared';
 import { DB_VERSIONS } from '@brewnet/shared';
 import { generatePassword } from '../../utils/password.js';
@@ -125,16 +123,6 @@ export function applyDevStackAutoEnables(state: WizardState): WizardState {
   return next;
 }
 
-/**
- * Check if cache layer selection is available.
- * Cache is only configurable when DB Server is enabled.
- *
- * @param state - Current wizard state
- * @returns true if cache selection should be shown
- */
-export function isCacheSelectionAvailable(state: WizardState): boolean {
-  return state.servers.dbServer.enabled;
-}
 
 // ---------------------------------------------------------------------------
 // Interactive Step Function (T052-T058)
@@ -153,7 +141,7 @@ export function isCacheSelectionAvailable(state: WizardState): boolean {
  *   3. Web Server (always ON, select service)
  *   4. File Server (toggle, select service)
  *   5. Git Server (always ON, show info)
- *   6. DB Server (toggle, primary, version, cache, password)
+ *   6. DB Server (toggle, primary, version, password)
  *   7. Media (toggle jellyfin)
  *   8. SSH Server (toggle, port, passwordAuth, SFTP auto-suggest)
  *   9. Apply component rules
@@ -247,7 +235,7 @@ export async function runServerComponentsStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 6. DB Server (toggle + primary + version + cache + password)
+  // 6. DB Server (toggle + primary + version + password)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Database Server'));
   console.log(chalk.dim('  앱 데이터를 영구 저장하는 관계형 DB. 대부분의 서비스에 필수'));
@@ -327,18 +315,7 @@ export async function runServerComponentsStep(
       );
     }
 
-    // Cache layer
-    const cacheChoice = await select<CacheService>({
-      message: 'Cache layer',
-      choices: [
-        { name: 'Redis (recommended)', value: 'redis', description: '인메모리 캐시 + 세션·큐 저장소. 응답 속도를 획기적으로 향상' },
-        { name: 'Valkey', value: 'valkey', description: 'Redis 호환 오픈소스 포크. Redis 7과 API 동일, 완전 무료 라이선스' },
-        { name: 'KeyDB', value: 'keydb', description: '멀티스레드 Redis 호환. 단일 인스턴스에서 더 높은 처리량 제공' },
-        { name: 'None', value: '', description: '캐시 레이어 없이 DB 직접 접근. 소규모·저트래픽 서비스에 적합' },
-      ],
-      default: next.servers.dbServer.cache || 'redis',
-    });
-    next.servers.dbServer.cache = cacheChoice;
+    // Cache layer — removed (no longer offered)
   } else {
     // Reset DB fields when disabled
     next.servers.dbServer.primary = '';

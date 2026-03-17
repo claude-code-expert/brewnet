@@ -268,11 +268,6 @@ describe('TC-C-03: Transparent — all services have security_opt and restart', 
         stateOverride: {},
         expectedServiceId: 'postgresql',
       },
-      {
-        name: 'Redis (cache)',
-        stateOverride: {},
-        expectedServiceId: 'redis',
-      },
     ];
 
     it.each(serviceScenarios)(

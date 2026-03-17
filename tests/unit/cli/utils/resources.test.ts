@@ -221,25 +221,6 @@ describe('countSelectedServices', () => {
     expect(countSelectedServices(state)).toBe(2);
   });
 
-  test('cache adds 1 when set', () => {
-    const state = createBaseState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'app',
-          dbUser: 'admin',
-          dbPassword: 'pw',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    // web(1) + gitea(1) + postgresql(1) + redis(1) = 4
-    expect(countSelectedServices(state)).toBe(4);
-  });
-
   test('media adds count equal to the number of media services', () => {
     const state = createBaseState({
       servers: { media: { enabled: true, services: ['jellyfin'] } },
@@ -287,7 +268,7 @@ describe('countSelectedServices', () => {
           dbUser: 'admin',
           dbPassword: 'pw',
           adminUI: true,
-          cache: 'redis',
+          cache: '',
         },
         media: { enabled: true, services: ['jellyfin'] },
         sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
@@ -296,9 +277,9 @@ describe('countSelectedServices', () => {
       },
       devStack: { languages: ['nodejs'] },
     });
-    // web(1) + gitea(1) + fileServer(1) + appServer(1) + pg(1) + pgadmin(1) + redis(1)
-    //   + jellyfin(1) + ssh(1) + mail(1) + fileBrowser(1) = 11
-    expect(countSelectedServices(state)).toBe(11);
+    // web(1) + gitea(1) + fileServer(1) + appServer(1) + pg(1) + pgadmin(1)
+    //   + jellyfin(1) + ssh(1) + mail(1) + fileBrowser(1) = 10
+    expect(countSelectedServices(state)).toBe(10);
   });
 });
 
@@ -361,7 +342,7 @@ describe('estimateResources', () => {
     );
   });
 
-  test('database postgresql with adminUI and redis cache', () => {
+  test('database postgresql with adminUI', () => {
     const state = createBaseState({
       servers: {
         dbServer: {
@@ -372,19 +353,18 @@ describe('estimateResources', () => {
           dbUser: 'admin',
           dbPassword: 'pw',
           adminUI: true,
-          cache: 'redis',
+          cache: '',
         },
       },
     });
     const result = estimateResources(state);
-    // web + gitea + postgresql + pgadmin + redis = 5 containers
-    expect(result.containers).toBe(5);
+    // web + gitea + postgresql + pgadmin = 4 containers
+    expect(result.containers).toBe(4);
     const expectedRam =
       SERVICE_RAM_MAP['traefik']! +
       SERVICE_RAM_MAP['gitea']! +
       SERVICE_RAM_MAP['postgresql']! +
-      SERVICE_RAM_MAP['pgadmin']! +
-      SERVICE_RAM_MAP['redis']!;
+      SERVICE_RAM_MAP['pgadmin']!;
     expect(result.ramMB).toBe(expectedRam);
   });
 
@@ -406,29 +386,6 @@ describe('estimateResources', () => {
     const result = estimateResources(state);
     // Only web + gitea
     expect(result.containers).toBe(2);
-  });
-
-  test('sqlite with cache still adds cache container', () => {
-    const state = createBaseState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'sqlite',
-          primaryVersion: '',
-          dbName: '',
-          dbUser: '',
-          dbPassword: '',
-          adminUI: false,
-          cache: 'valkey',
-        },
-      },
-    });
-    const result = estimateResources(state);
-    // web + gitea + valkey = 3
-    expect(result.containers).toBe(3);
-    expect(result.ramMB).toBe(
-      SERVICE_RAM_MAP['traefik']! + SERVICE_RAM_MAP['gitea']! + SERVICE_RAM_MAP['valkey']!,
-    );
   });
 
   test('app server only counted when devStack has languages', () => {
@@ -539,7 +496,7 @@ describe('estimateResources', () => {
           dbUser: 'admin',
           dbPassword: 'pw',
           adminUI: true,
-          cache: 'keydb',
+          cache: '',
         },
         media: { enabled: true, services: ['jellyfin'] },
         sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
@@ -556,9 +513,9 @@ describe('estimateResources', () => {
     });
 
     const result = estimateResources(state);
-    // nginx + gitea + minio + jellyfin + mysql + pgadmin + keydb + app + filebrowser
-    //   + openssh-server + docker-mailserver + cloudflared = 12 containers
-    expect(result.containers).toBe(12);
+    // nginx + gitea + minio + jellyfin + mysql + pgadmin + app + filebrowser
+    //   + openssh-server + docker-mailserver + cloudflared = 11 containers
+    expect(result.containers).toBe(11);
 
     const expectedRam =
       SERVICE_RAM_MAP['nginx']! +
@@ -567,7 +524,6 @@ describe('estimateResources', () => {
       SERVICE_RAM_MAP['jellyfin']! +
       SERVICE_RAM_MAP['mysql']! +
       SERVICE_RAM_MAP['pgadmin']! +
-      SERVICE_RAM_MAP['keydb']! +
       SERVICE_RAM_MAP['app']! +
       SERVICE_RAM_MAP['filebrowser']! +
       SERVICE_RAM_MAP['openssh-server']! +
@@ -647,24 +603,6 @@ describe('collectAllServices', () => {
     expect(ids).not.toContain('sqlite');
   });
 
-  test('includes cache when set', () => {
-    const state = createBaseState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'app',
-          dbUser: 'admin',
-          dbPassword: 'pw',
-          adminUI: false,
-          cache: 'valkey',
-        },
-      },
-    });
-    expect(collectAllServices(state)).toContain('valkey');
-  });
-
   test('includes openssh-server when SSH enabled', () => {
     const state = createBaseState({
       servers: { sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: false } },
@@ -715,7 +653,7 @@ describe('collectAllServices', () => {
     expect(collectAllServices(state)).not.toContain('cloudflared');
   });
 
-  test('order is deterministic: web, gitea, file, media, db, adminUI, cache, ssh, mail, filebrowser, cloudflared', () => {
+  test('order is deterministic: web, gitea, file, media, db, adminUI, ssh, mail, filebrowser, cloudflared', () => {
     const state = createBaseState({
       servers: {
         webServer: { enabled: true, service: 'nginx' },
@@ -728,7 +666,7 @@ describe('collectAllServices', () => {
           dbUser: 'admin',
           dbPassword: 'pw',
           adminUI: true,
-          cache: 'redis',
+          cache: '',
         },
         media: { enabled: true, services: ['jellyfin'] },
         sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: false },
@@ -749,7 +687,6 @@ describe('collectAllServices', () => {
       'jellyfin',
       'postgresql',
       'pgadmin',
-      'redis',
       'openssh-server',
       'docker-mailserver',
       'filebrowser',
@@ -931,9 +868,6 @@ describe('getImageName', () => {
     expect(getImageName('jellyfin')).toBe('jellyfin/jellyfin:latest');
     expect(getImageName('postgresql')).toBe('postgres:17-alpine');
     expect(getImageName('mysql')).toBe('mysql:8.4');
-    expect(getImageName('redis')).toBe('redis:7-alpine');
-    expect(getImageName('valkey')).toBe('valkey/valkey:7-alpine');
-    expect(getImageName('keydb')).toBe('eqalpha/keydb:latest');
     expect(getImageName('pgadmin')).toBe('dpage/pgadmin4:latest');
     expect(getImageName('openssh-server')).toBe('linuxserver/openssh-server:latest');
     expect(getImageName('docker-mailserver')).toBe(

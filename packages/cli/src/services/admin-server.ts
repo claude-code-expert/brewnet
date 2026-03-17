@@ -135,8 +135,6 @@ const NAME_ALIASES: Record<string, string> = {
   'Docker Mailserver': 'Mail Server',
   'Cloudflare Tunnel': 'Cloudflared',
   'MinIO': 'MinIO Console',
-  'valkey': 'Valkey',
-  'keydb': 'KeyDB',
 };
 
 function generateDashboardHtml(config: DashboardConfig): string {
@@ -341,7 +339,7 @@ function getExternalUrl(id){
     var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});
     if(conn)return 'https://'+conn.hostname;
     if(c.quickTunnelUrl){
-      var NO_QT={"postgresql":1,"mysql":1,"mariadb":1,"redis":1,"valkey":1,"keydb":1,"openssh-server":1,"docker-mailserver":1,"traefik":1,"postgres":1,"db":1};
+      var NO_QT={"postgresql":1,"mysql":1,"mariadb":1,"openssh-server":1,"docker-mailserver":1,"traefik":1,"postgres":1,"db":1};
       if(NO_QT[id])return null;
       var base=c.quickTunnelUrl.replace(new RegExp('/$'),'');
       // Map compose service name to Traefik path via BOILERPLATE_STACKS
@@ -668,7 +666,7 @@ const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudf
 // Non-HTTP services that should never show a clickable local URL.
 // All other services with a public TCP port get http://localhost:<port>.
 const NO_HTTP_SERVICES = new Set([
-  'postgresql', 'mysql', 'mariadb', 'redis', 'valkey', 'keydb',
+  'postgresql', 'mysql', 'mariadb',
   'openssh-server', 'docker-mailserver',
 ]);
 
@@ -817,7 +815,7 @@ async function handleGetServices(
 
 function inferType(id: string): string {
   if (['traefik', 'nginx', 'caddy'].includes(id)) return 'web';
-  if (['postgresql', 'mysql', 'redis', 'valkey', 'keydb'].includes(id)) return 'db';
+  if (['postgresql', 'mysql'].includes(id)) return 'db';
   if (['nextcloud', 'minio', 'filebrowser'].includes(id)) return 'file';
   if (['jellyfin'].includes(id)) return 'media';
   if (['gitea'].includes(id)) return 'git';
