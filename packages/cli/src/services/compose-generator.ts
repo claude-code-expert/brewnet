@@ -1306,6 +1306,7 @@ export function addQuickTunnelAppLabels(
   appName: string,
   serviceName: string,
   port: number,
+  noStrip?: boolean,
 ): void {
   const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
@@ -1349,9 +1350,16 @@ export function addQuickTunnelAppLabels(
   labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.replacement`] =
     '$$' + '{1}/';
   labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.permanent`] = 'false';
-  // Strip /apps/{appName} prefix before forwarding to the container
-  labels[`traefik.http.middlewares.${routerName}-strip.stripprefix.prefixes`] = pathPrefix;
-  labels[`traefik.http.routers.${routerName}.middlewares`] = `${routerName}-slash,${routerName}-strip`;
+  if (noStrip) {
+    // Next.js with basePath handles sub-path routing internally.
+    // No strip-prefix needed (basePath handles the prefix).
+    // No trailing-slash redirect needed (conflicts with Next.js default trailingSlash:false,
+    // causing a redirect loop: Traefik adds slash → Next.js removes slash → loop).
+  } else {
+    // Strip /apps/{appName} prefix before forwarding to the container
+    labels[`traefik.http.middlewares.${routerName}-strip.stripprefix.prefixes`] = pathPrefix;
+    labels[`traefik.http.routers.${routerName}.middlewares`] = `${routerName}-slash,${routerName}-strip`;
+  }
   svc['labels'] = labels;
 
   // --- brewnet external network ---

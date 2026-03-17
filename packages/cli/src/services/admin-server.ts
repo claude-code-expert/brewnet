@@ -482,7 +482,7 @@ async function loadServices(manual){
     <td>\${badge(s.status)}</td>
     <td>\${s.port??'—'}</td>
     <td>\${localCell}</td>
-    <td>\${ext?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
+    <td>\${ext?(isUnifiedSvc&&ext.indexOf('/api/')===-1?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a><br><a href="\${ext}/api/hello" target="_blank" style="color:#8b949e;font-size:11px">/api/hello ↗</a>\`:\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`):'<span style="color:#8b949e">—</span>'}</td>
     <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
   </tr>\`;}).join('');
   const sum=r.summary;

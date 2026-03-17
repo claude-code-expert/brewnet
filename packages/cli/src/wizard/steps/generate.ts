@@ -900,17 +900,24 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
           }
         }
         // Inject Traefik labels for Quick Tunnel external access at /apps/{stackId}
+        // For Next.js stacks, this also patches next.config with basePath and
+        // updates the compose healthcheck path to include the basePath prefix.
+        let isNextjsBasePath = false;
         if (state.domain.cloudflare.tunnelMode === 'quick') {
           try {
             const { injectTraefikForQuickTunnel } = await import('../../services/boilerplate-manager.js');
             injectTraefikForQuickTunnel(appDir, stackId, backendPort);
+            // Next.js with basePath: all routes shift under /apps/{stackId}/
+            if (stackId.startsWith('nodejs-nextjs')) isNextjsBasePath = true;
           } catch { /* non-critical: external access simply won't work */ }
         }
         await boilerplateStartContainers(appDir);
 
         // Step 4: poll health endpoint until ready
+        // Next.js basePath shifts /health → /apps/{stackId}/health on direct port access
+        const healthBaseUrl = isNextjsBasePath ? `${baseUrl}/apps/${stackId}` : baseUrl;
         bpSpinner.text = `  [${stackId}] 헬스체크 대기 중... (timeout: ${Math.round(healthTimeoutMs / 1000)}s)`;
-        const health = await boilerplatePollHealth(baseUrl, healthTimeoutMs);
+        const health = await boilerplatePollHealth(healthBaseUrl, healthTimeoutMs);
 
         if (!health.healthy) {
           bpSpinner.warn(`  [${stackId}] 헬스체크 타임아웃 (${Math.round(healthTimeoutMs / 1000)}s 초과)`);
@@ -918,7 +925,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
           stackStatus = 'timeout';
         } else {
           // Step 5: verify API endpoints (/api/hello, /api/echo)
-          await boilerplateVerifyEndpoints(baseUrl);
+          await boilerplateVerifyEndpoints(healthBaseUrl);
           bpSpinner.succeed(`  [${stackId}] 완료 — 백엔드: ${chalk.cyan(baseUrl)}`);
           if (!isUnified && frontendPort !== undefined) {
             console.log(chalk.dim(`    프론트엔드: http://127.0.0.1:${frontendPort}`));

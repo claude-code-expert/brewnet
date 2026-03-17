@@ -23,6 +23,8 @@ A self-hosted home server management platform that provides an interactive CLI t
 - **External URL을 클라이언트에서 추측하지 말 것** — compose 서비스명과 앱 이름이 다를 수 있음. 반드시 서버사이드에서 컨테이너 Traefik 라벨 기반으로 계산.
 - **Traefik PathPrefix로 SPA를 서빙할 때 trailing slash redirect 미들웨어 필수** — 없으면 `./assets/...` 상대경로가 잘못된 디렉토리로 해석되어 빈 화면.
 - **자동 테스트에서 "통과" 보고 전 실제 사용자 경험 경로 검증 필수** — 직접 포트 curl과 admin 대시보드 External URL 링크 클릭은 완전히 다른 경로. 브라우저가 보는 것과 동일한 URL을 테스트할 것.
+- **Next.js 스택에 Traefik strip-prefix / trailing-slash redirect 절대 사용 금지** — Next.js는 `basePath`로 sub-path를 자체 처리함. strip-prefix는 경로 이중 제거, trailing-slash는 `trailingSlash:false` 기본값과 충돌하여 무한 리다이렉트 발생. `addQuickTunnelAppLabels()`에 `noStrip: true` 사용.
+- **Next.js basePath 설정 시 반드시 (1) Docker 이미지 `--no-cache` 재빌드, (2) healthcheck 경로 `/apps/{name}/health`로 업데이트, (3) `pollHealth`/`verifyEndpoints`의 baseUrl에 basePath 반영** — basePath는 빌드 시 bake-in되므로 재빌드 필수. healthcheck/pollHealth 미변경 시 unhealthy 무한 대기.
 
 ## 🔁 Process Decision Rules
 

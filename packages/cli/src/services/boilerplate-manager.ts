@@ -280,6 +280,62 @@ export function generateEnv(
 }
 
 // ---------------------------------------------------------------------------
+// T006b-pre — patchNextConfig (basePath injection)
+// ---------------------------------------------------------------------------
+
+/**
+ * Inject `basePath: '/apps/{appName}'` into next.config.{ts,mjs,js} so that
+ * Next.js generates all asset/image paths under the sub-path prefix.
+ *
+ * Without basePath, Next.js emits `/_next/static/...` absolute root paths.
+ * Under Quick Tunnel sub-path routing (/apps/{appName}/), the browser requests
+ * `https://tunnel/_next/static/...` which misses Traefik's PathPrefix rule and
+ * returns the landing-page HTML instead of CSS/JS assets.
+ *
+ * With basePath set, Next.js emits `/apps/{appName}/_next/static/...` which
+ * correctly matches Traefik's PathPrefix route.
+ *
+ * @param projectDir - Absolute path to the Next.js project
+ * @param appName    - Logical app name used as path segment (e.g. "nextjs-full")
+ */
+export function patchNextConfig(projectDir: string, appName: string): void {
+  const candidates = ['next.config.ts', 'next.config.mjs', 'next.config.js'];
+  let configPath: string | null = null;
+  for (const c of candidates) {
+    const p = join(projectDir, c);
+    if (existsSync(p)) { configPath = p; break; }
+  }
+  if (!configPath) return;
+
+  let content = readFileSync(configPath, 'utf-8');
+  const basePath = `/apps/${appName}`;
+
+  // Already patched — skip
+  if (content.includes('basePath')) return;
+
+  // Insert basePath after output: 'standalone'
+  content = content.replace(
+    /output:\s*['"]standalone['"]/,
+    `output: 'standalone',\n    basePath: '${basePath}'`,
+  );
+
+  writeFileSync(configPath, content, 'utf-8');
+
+  // Also patch docker-compose.yml healthcheck: /health → /apps/{appName}/health
+  // With basePath set, Next.js serves all routes (including /health) under the prefix.
+  const composePath = join(projectDir, 'docker-compose.yml');
+  if (existsSync(composePath)) {
+    let compose = readFileSync(composePath, 'utf-8');
+    const oldHealthPath = 'http://127.0.0.1:3000/health';
+    const newHealthPath = `http://127.0.0.1:3000${basePath}/health`;
+    if (compose.includes(oldHealthPath) && !compose.includes(newHealthPath)) {
+      compose = compose.replaceAll(oldHealthPath, newHealthPath);
+      writeFileSync(composePath, compose, 'utf-8');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // T006b — injectTraefikForQuickTunnel
 // ---------------------------------------------------------------------------
 
@@ -329,6 +385,14 @@ export function injectTraefikForQuickTunnel(
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
 
+  // Detect Next.js projects: basePath handles sub-path routing internally,
+  // so Traefik must NOT strip the prefix (noStrip: true).
+  const isNextjs = ['next.config.ts', 'next.config.mjs', 'next.config.js']
+    .some((f) => existsSync(join(projectDir, f)));
+  if (isNextjs) {
+    patchNextConfig(projectDir, appName);
+  }
+
   // addQuickTunnelAppLabels imported at top level (static import for ESM compatibility)
 
   // Non-HTTP services to skip
@@ -351,7 +415,7 @@ export function injectTraefikForQuickTunnel(
     const svc = services[singleService]!;
     const ports = (svc['ports'] ?? []) as string[];
     const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 8080 : 8080;
-    addQuickTunnelAppLabels(composePath, appName, singleService, containerPort);
+    addQuickTunnelAppLabels(composePath, appName, singleService, containerPort, isNextjs);
     return;
   }
 
@@ -360,7 +424,7 @@ export function injectTraefikForQuickTunnel(
     const svc = services[backendKey]!;
     const ports = (svc['ports'] ?? []) as string[];
     const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 8080 : 8080;
-    addQuickTunnelAppLabels(composePath, appName, backendKey, containerPort);
+    addQuickTunnelAppLabels(composePath, appName, backendKey, containerPort, isNextjs);
   }
 
   if (frontendKey) {
