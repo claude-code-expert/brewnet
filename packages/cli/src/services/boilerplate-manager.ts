@@ -15,11 +15,13 @@
  * @module services/boilerplate-manager
  */
 
-import { readFileSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { execa } from 'execa';
+import yaml from 'js-yaml';
+import { addQuickTunnelAppLabels } from './compose-generator.js';
 import { BOILERPLATE_REPO_URL } from '@brewnet/shared';
 import type { StackHealthResult } from '@brewnet/shared';
 
@@ -320,16 +322,14 @@ export function injectTraefikForQuickTunnel(
   _backendPort: number,
 ): void {
   const composePath = join(projectDir, 'docker-compose.yml');
-  const { existsSync } = require('node:fs') as typeof import('node:fs');
   if (!existsSync(composePath)) return;
 
-  const yaml = require('js-yaml') as typeof import('js-yaml');
   const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
 
-  const { addQuickTunnelAppLabels } = require('./compose-generator.js') as typeof import('./compose-generator.js');
+  // addQuickTunnelAppLabels imported at top level (static import for ESM compatibility)
 
   // Non-HTTP services to skip
   const skipServices = new Set(['postgres', 'postgresql', 'mysql', 'mariadb', 'redis', 'db']);

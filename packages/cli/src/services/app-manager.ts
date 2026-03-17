@@ -278,7 +278,10 @@ function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: numbe
     if (state?.domain?.cloudflare?.tunnelMode !== 'quick') return;
     const { injectTraefikForQuickTunnel } = require('./boilerplate-manager.js') as typeof import('./boilerplate-manager.js');
     injectTraefikForQuickTunnel(appDir, appName, port);
-  } catch { /* non-critical */ }
+  } catch (err) {
+    // Log but don't fail — external access simply won't work
+    console.error(`[Quick Tunnel] Failed to inject Traefik labels for ${appName}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@
  * @module services/compose-generator
  */
 
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import yaml from 'js-yaml';
 import type { WizardState } from '@brewnet/shared';
 import { DOCKER_LOG_MAX_SIZE, DOCKER_LOG_MAX_FILES } from '@brewnet/shared';
@@ -1201,8 +1202,7 @@ export function addExternalLabels(
   hostname: string,
   port: number,
 ): void {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const raw = fs.readFileSync(composePath, 'utf-8');
+  const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
@@ -1239,7 +1239,7 @@ export function addExternalLabels(
     quotingType: '"',
     forceQuotes: false,
   });
-  fs.writeFileSync(composePath, output, 'utf-8');
+  writeFileSync(composePath, output, 'utf-8');
 }
 
 /**
@@ -1249,8 +1249,7 @@ export function removeExternalLabels(
   composePath: string,
   appName: string,
 ): void {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const raw = fs.readFileSync(composePath, 'utf-8');
+  const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
@@ -1286,7 +1285,7 @@ export function removeExternalLabels(
     quotingType: '"',
     forceQuotes: false,
   });
-  fs.writeFileSync(composePath, output, 'utf-8');
+  writeFileSync(composePath, output, 'utf-8');
 }
 
 /**
@@ -1308,8 +1307,7 @@ export function addQuickTunnelAppLabels(
   serviceName: string,
   port: number,
 ): void {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const raw = fs.readFileSync(composePath, 'utf-8');
+  const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
@@ -1382,7 +1380,7 @@ export function addQuickTunnelAppLabels(
     quotingType: '"',
     forceQuotes: false,
   });
-  fs.writeFileSync(composePath, output, 'utf-8');
+  writeFileSync(composePath, output, 'utf-8');
 }
 
 /**
