@@ -635,8 +635,12 @@ async function loadApps(){
   apps=Array.isArray(r.data)?r.data:(r.data.apps||[]);
 }
 async function loadRepos(){
-  var r=await apiFetch('/api/git/repos');
-  repos=Array.isArray(r.data)?r.data:(r.data.repos||[]);
+  try{
+    var r=await fetch('/api/git/repos');
+    if(!r.ok){repos=[];return;}
+    var d=await r.json();
+    repos=Array.isArray(d)?d:(d.repos||[]);
+  }catch(e){repos=[];}
 }
 async function loadInstalledBp(){
   var r=await apiFetch('/api/apps/boilerplates');
