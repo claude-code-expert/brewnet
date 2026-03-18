@@ -147,8 +147,17 @@ function generateDashboardHtml(config: DashboardConfig): string {
 <link rel="alternate icon" href="/favicon.ico"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
-h1{color:#f5a623;margin-bottom:4px;font-size:20px;display:flex;align-items:center;gap:10px}
+body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:0}
+#header{height:50px;background:#0c1525;border-bottom:1px solid #1a2d47;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+#header .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:#c9d1d9}
+#header .logo-text{display:flex;flex-direction:column;line-height:1.25}
+#header .logo-name{font-size:16px;font-weight:800;color:#f5a623}
+#header .logo-tag{font-size:9.5px;color:#3a5070;font-weight:400}
+#header .nav-links{display:flex;align-items:center;gap:10px}
+#header .nav-link{font-size:12px;color:#8b949e;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #30363d;font-family:inherit;transition:all .14s}
+#header .nav-link:hover{color:#c9d1d9;background:#21262d}
+#header .nav-link.active{color:#f5a623;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)}
+.page-body{padding:24px}
 .sub{color:#8b949e;margin-bottom:24px;font-size:12px}
 table{width:100%;border-collapse:collapse;margin-bottom:24px}
 th{text-align:left;padding:8px 12px;background:#161b22;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d}
@@ -215,16 +224,18 @@ tr:hover td{background:#161b22}
 </style>
 </head>
 <body>
-<div class="header">
-  <div>
-    <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
-    <div class="sub" id="subtitle">Loading...</div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/apps" style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:5px 14px;color:#58a6ff;text-decoration:none;font-size:12px;font-weight:500">&#128640; App Deploy</a>
-    <span class="refresh" onclick="loadServices(true)">&#8635; Refresh</span>
+<div id="header">
+  <a href="/" class="logo">
+    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg>
+    <span class="logo-text"><span class="logo-name">Brewnet</span><span class="logo-tag">Your server on tap. Just brew it.</span></span>
+  </a>
+  <div class="nav-links">
+    <a href="/" class="nav-link active">Dashboard</a>
+    <a href="/apps" class="nav-link">Apps</a>
   </div>
 </div>
+<div class="page-body">
+<div class="sub" id="subtitle" style="margin-bottom:12px">Loading...</div>
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('services')">Services</button>
   <button class="tab-btn" onclick="switchTab('logs')">Logs</button>
@@ -648,6 +659,7 @@ startLogsAutoRefresh();
 // Auto-load domains and settings status
 setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
 </script>
+</div><!-- /page-body -->
 </body>
 </html>`;
 }
