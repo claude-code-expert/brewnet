@@ -1269,6 +1269,7 @@ async function submitNewApp(){
   closeModal('modal-new-app');
   openProgressModal('\uc571 \uc0dd\uc131 \uc911...',name,6);
   startJobPoll(jobId,name,6);
+  startSseLogs(name);
   showToast('\ud83d\ude80 '+name+' \uc0dd\uc131 \uc2dc\uc791\ub428 (Job: '+jobId+')');
 }
 

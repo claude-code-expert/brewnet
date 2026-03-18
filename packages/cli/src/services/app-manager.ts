@@ -163,8 +163,8 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     setStep(job, 1, 'done');
 
     setStep(job, 2, 'running');
-    const healthPortDeploy = _resolveBackendPort(app.appDir, app.port);
-    await _pollHealth(`http://127.0.0.1:${healthPortDeploy}/health`);
+    const healthUrlDeploy = _buildHealthUrl(app.appDir, app.port, app.port);
+    await _pollHealth(healthUrlDeploy);
     setStep(job, 2, 'done');
 
     updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
@@ -318,6 +318,32 @@ function _resolveBackendPort(appDir: string, fallbackPort: number): number {
   return isNaN(parsed) ? fallbackPort : parsed;
 }
 
+/**
+ * Detect Next.js basePath from next.config.ts/mjs/js in the app directory.
+ * Returns the basePath string (e.g. '/apps/my-app') or '' if not set.
+ * Next.js bakes basePath at build time — /health becomes /apps/my-app/health.
+ */
+function _detectBasePath(appDir: string): string {
+  for (const name of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
+    const p = join(appDir, name);
+    if (existsSync(p)) {
+      const content = readFileSync(p, 'utf-8');
+      const match = content.match(/basePath\s*:\s*['"`]([^'"`]+)['"`]/);
+      if (match) return match[1]!;
+    }
+  }
+  return '';
+}
+
+/**
+ * Build the health check URL for an app, accounting for Next.js basePath.
+ */
+function _buildHealthUrl(appDir: string, port: number, fallbackPort: number): string {
+  const healthPort = _resolveBackendPort(appDir, fallbackPort);
+  const basePath = _detectBasePath(appDir);
+  return `http://127.0.0.1:${healthPort}${basePath}/health`;
+}
+
 async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
@@ -437,16 +463,17 @@ async function _createModeA(
   setStep(job, 3, 'done');
 
   // Step 4: Docker up
-  setStep(job, 4, 'running');
+  setStep(job, 4, 'running', 'docker compose up --build');
   assertComposeFile(meta.appDir);
   _injectQuickTunnelIfNeeded(meta.appDir, opts.appName, port);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
-  setStep(job, 4, 'done');
+  setStep(job, 4, 'done', 'containers started');
 
-  // Step 5: Health check — always target backend port (not frontend nginx)
+  // Step 5: Health check — accounts for Next.js basePath
   setStep(job, 5, 'running');
-  const healthPortA = _resolveBackendPort(meta.appDir, port);
-  await _pollHealth(`http://127.0.0.1:${healthPortA}/health`);
+  const healthUrlA = _buildHealthUrl(meta.appDir, port, port);
+  setStep(job, 5, 'running', `polling ${healthUrlA}`);
+  await _pollHealth(healthUrlA);
   setStep(job, 5, 'done');
 
   // Register
@@ -514,15 +541,16 @@ async function _createModeB(
   await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
-  setStep(job, 4, 'running');
+  setStep(job, 4, 'running', 'docker compose up --build');
   assertComposeFile(appDir);
   _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
-  setStep(job, 4, 'done');
+  setStep(job, 4, 'done', 'containers started');
 
   setStep(job, 5, 'running');
-  const healthPortB = _resolveBackendPort(appDir, port);
-  await _pollHealth(`http://127.0.0.1:${healthPortB}/health`);
+  const healthUrlB = _buildHealthUrl(appDir, port, port);
+  setStep(job, 5, 'running', `polling ${healthUrlB}`);
+  await _pollHealth(healthUrlB);
   setStep(job, 5, 'done');
 
   addApp(appsJson, {
@@ -572,15 +600,16 @@ async function _createModeC(
   await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
-  setStep(job, 4, 'running');
+  setStep(job, 4, 'running', 'docker compose up --build');
   assertComposeFile(appDir);
   _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
   await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
-  setStep(job, 4, 'done');
+  setStep(job, 4, 'done', 'containers started');
 
   setStep(job, 5, 'running');
-  const healthPortC = _resolveBackendPort(appDir, port);
-  await _pollHealth(`http://127.0.0.1:${healthPortC}/health`, 120_000);
+  const healthUrlC = _buildHealthUrl(appDir, port, port);
+  setStep(job, 5, 'running', `polling ${healthUrlC}`);
+  await _pollHealth(healthUrlC, 120_000);
   setStep(job, 5, 'done');
 
   addApp(appsJson, {
