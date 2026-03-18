@@ -689,8 +689,8 @@ function renderApps(){
       +'</div></div></div>'
       +domainHtml+'</div>';
 
-    // Meta grid
-    var fullUrl='http://localhost:'+app.port;
+    // Meta grid — use localUrl from server (includes basePath for Next.js)
+    var fullUrl=app.localUrl||('http://localhost:'+app.port);
     var portLink=isRunning
       ?'<a href="'+fullUrl+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">'+fullUrl+'</a>'
       :'<span style="color:var(--txt3)">'+fullUrl+'</span>';
