@@ -1,5 +1,5 @@
 // packages/cli/src/services/app-manager.ts
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -297,20 +297,175 @@ function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: numbe
 // ---------------------------------------------------------------------------
 
 /**
- * Assert that a docker-compose.yml (or compose.yml) exists in `dir`.
- *
- * Docker Compose v2 traverses parent directories when no compose file is found
- * in the working directory. Without this guard, a missing compose file would
- * silently run the parent project's compose (e.g. my-homeserver), report
- * Docker up as "done", and leave the app's health check permanently failing.
+ * Detect project type from files in the directory.
  */
-function assertComposeFile(dir: string): void {
-  if (!existsSync(join(dir, 'docker-compose.yml')) && !existsSync(join(dir, 'compose.yml'))) {
-    throw new Error(
-      `No docker-compose.yml found in ${dir}. ` +
-        'The cloned repository must contain a Docker Compose configuration at its root.',
-    );
+function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' | 'rust' | 'java' | null {
+  try {
+    if (existsSync(join(dir, 'next.config.ts')) || existsSync(join(dir, 'next.config.mjs')) || existsSync(join(dir, 'next.config.js'))) return 'nextjs';
+    if (existsSync(join(dir, 'package.json'))) return 'nodejs';
+    if (existsSync(join(dir, 'requirements.txt')) || existsSync(join(dir, 'pyproject.toml'))) return 'python';
+    if (existsSync(join(dir, 'go.mod'))) return 'go';
+    if (existsSync(join(dir, 'Cargo.toml'))) return 'rust';
+    if (existsSync(join(dir, 'pom.xml')) || existsSync(join(dir, 'build.gradle')) || existsSync(join(dir, 'build.gradle.kts'))) return 'java';
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Generate Dockerfile + docker-compose.yml for projects that don't have them.
+ */
+function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?: AppJob): void {
+  const type = _detectProjectType(dir);
+  if (!type) throw new Error(`Cannot auto-detect project type in ${dir}. Add a Dockerfile and docker-compose.yml manually.`);
+
+  if (job) appendLog(job, `[scaffold] Detected ${type} project — generating Docker config`);
+
+  let dockerfile = '';
+  let startCmd = '';
+
+  switch (type) {
+    case 'nextjs':
+      dockerfile = [
+        'FROM node:22-alpine AS builder',
+        'WORKDIR /app',
+        'COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./',
+        'RUN npm install --legacy-peer-deps || yarn install --frozen-lockfile || true',
+        'COPY . .',
+        'RUN npm run build',
+        '',
+        'FROM node:22-alpine',
+        'WORKDIR /app',
+        'COPY --from=builder /app/.next/standalone ./.',
+        'COPY --from=builder /app/.next/static ./.next/static',
+        'COPY --from=builder /app/public ./public',
+        'ENV PORT=3000 HOSTNAME=0.0.0.0',
+        'EXPOSE 3000',
+        'CMD ["node", "server.js"]',
+      ].join('\n');
+      startCmd = 'node server.js';
+      // Ensure next.config has output: 'standalone'
+      for (const cfg of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
+        const cfgPath = join(dir, cfg);
+        if (existsSync(cfgPath)) {
+          let content = readFileSync(cfgPath, 'utf-8');
+          if (!content.includes("output")) {
+            content = content.replace(
+              /const\s+nextConfig\s*[:=]\s*\{/,
+              'const nextConfig = {\n    output: \'standalone\',',
+            );
+            writeFileSync(cfgPath, content, 'utf-8');
+            if (job) appendLog(job, `[scaffold] Added output:'standalone' to ${cfg}`);
+          }
+          break;
+        }
+      }
+      break;
+    case 'nodejs':
+      dockerfile = [
+        'FROM node:22-alpine',
+        'WORKDIR /app',
+        'COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./',
+        'RUN npm install --legacy-peer-deps || true',
+        'COPY . .',
+        'RUN npm run build 2>/dev/null || true',
+        'EXPOSE ' + port,
+        'CMD ["npm", "start"]',
+      ].join('\n');
+      startCmd = 'npm start';
+      break;
+    case 'python':
+      dockerfile = [
+        'FROM python:3.13-slim',
+        'WORKDIR /app',
+        'COPY requirements.txt* pyproject.toml* ./',
+        'RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || pip install --no-cache-dir . 2>/dev/null || true',
+        'COPY . .',
+        'EXPOSE ' + port,
+        'CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "' + port + '"]',
+      ].join('\n');
+      break;
+    case 'go':
+      dockerfile = [
+        'FROM golang:1.22-alpine AS builder',
+        'WORKDIR /app',
+        'COPY go.mod go.sum* ./',
+        'RUN go mod download',
+        'COPY . .',
+        'RUN CGO_ENABLED=0 go build -o server .',
+        '',
+        'FROM alpine',
+        'WORKDIR /app',
+        'COPY --from=builder /app/server .',
+        'EXPOSE ' + port,
+        'CMD ["./server"]',
+      ].join('\n');
+      break;
+    case 'rust':
+      dockerfile = [
+        'FROM rust:1.88 AS builder',
+        'WORKDIR /app',
+        'COPY . .',
+        'RUN cargo build --release',
+        '',
+        'FROM debian:bookworm-slim',
+        'WORKDIR /app',
+        'COPY --from=builder /app/target/release/* /app/ 2>/dev/null || true',
+        'EXPOSE ' + port,
+        'CMD ["./app"]',
+      ].join('\n');
+      break;
+    case 'java':
+      dockerfile = [
+        'FROM gradle:8.12-jdk21 AS builder',
+        'WORKDIR /app',
+        'COPY . .',
+        'RUN gradle build -x test 2>/dev/null || ./gradlew build -x test 2>/dev/null || mvn package -DskipTests 2>/dev/null || true',
+        '',
+        'FROM eclipse-temurin:21-jre-alpine',
+        'WORKDIR /app',
+        'COPY --from=builder /app/build/libs/*.jar app.jar 2>/dev/null || true',
+        'COPY --from=builder /app/target/*.jar app.jar 2>/dev/null || true',
+        'EXPOSE ' + port,
+        'CMD ["java", "-jar", "app.jar"]',
+      ].join('\n');
+      break;
   }
+
+  const internalPort = type === 'nextjs' ? 3000 : port;
+  const compose = [
+    'services:',
+    '  backend:',
+    '    build: .',
+    '    ports:',
+    `      - "${port}:${internalPort}"`,
+    '    restart: unless-stopped',
+    '    healthcheck:',
+    `      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${internalPort}/"]`,
+    '      interval: 10s',
+    '      timeout: 5s',
+    '      retries: 5',
+  ].join('\n');
+
+  if (!existsSync(join(dir, 'Dockerfile'))) {
+    writeFileSync(join(dir, 'Dockerfile'), dockerfile, 'utf-8');
+    if (job) appendLog(job, '[scaffold] Generated Dockerfile');
+  }
+  writeFileSync(join(dir, 'docker-compose.yml'), compose, 'utf-8');
+  if (job) appendLog(job, '[scaffold] Generated docker-compose.yml');
+
+  // .dockerignore
+  if (!existsSync(join(dir, '.dockerignore'))) {
+    writeFileSync(join(dir, '.dockerignore'), 'node_modules\n.next\n.git\n*.md\n', 'utf-8');
+  }
+}
+
+/**
+ * Ensure a docker-compose.yml exists in `dir`.
+ * If missing, auto-detect project type and scaffold Dockerfile + compose.
+ */
+function ensureComposeFile(dir: string, appName: string, port: number, job?: AppJob): void {
+  if (existsSync(join(dir, 'docker-compose.yml')) || existsSync(join(dir, 'compose.yml'))) return;
+  _scaffoldDockerConfig(dir, appName, port, job);
 }
 
 /**
@@ -506,7 +661,7 @@ async function _createModeA(
 
   // Step 4: Docker up
   setStep(job, 4, 'running', 'docker compose up --build');
-  assertComposeFile(meta.appDir);
+  ensureComposeFile(meta.appDir, opts.appName, port, job);
   _injectQuickTunnelIfNeeded(meta.appDir, opts.appName, port);
   await _dockerComposeUp(meta.appDir, job);
   setStep(job, 4, 'done', 'containers started');
@@ -584,7 +739,7 @@ async function _createModeB(
   setStep(job, 3, 'done');
 
   setStep(job, 4, 'running', 'docker compose up --build');
-  assertComposeFile(appDir);
+  ensureComposeFile(appDir, opts.appName, port, job);
   _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
   await _dockerComposeUp(appDir, job);
   setStep(job, 4, 'done', 'containers started');
@@ -643,7 +798,7 @@ async function _createModeC(
   setStep(job, 3, 'done');
 
   setStep(job, 4, 'running', 'docker compose up --build');
-  assertComposeFile(appDir);
+  ensureComposeFile(appDir, opts.appName, port, job);
   _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
   await _dockerComposeUp(appDir, job);
   setStep(job, 4, 'done', 'containers started');
