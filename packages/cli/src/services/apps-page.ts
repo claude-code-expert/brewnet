@@ -921,10 +921,20 @@ function startJobPoll(jobId,appName,maxSteps){
     var r=await fetch('/api/apps/jobs/'+encodeURIComponent(jobId)).then(function(x){return x.json();}).catch(function(){return null;});
     if(!r)return;
     if(r.steps)renderProgressSteps(r.steps,maxSteps);
-    // Render job logs (docker compose output + health check progress)
+    // Render job logs (docker build + health check) merged with SSE container logs
+    var logEl=document.getElementById('log-content');
     if(r.logs&&r.logs.length>0){
-      var logEl=document.getElementById('log-content');
-      logEl.textContent=r.logs.join('\\n');
+      // Merge: keep existing SSE lines, append new job log lines
+      var existingLines=logEl.textContent.split('\\n').filter(function(l){return l.trim();});
+      var jobLines=r.logs;
+      // Deduplicate: only add job lines not already shown
+      var merged=existingLines.slice();
+      jobLines.forEach(function(jl){
+        if(merged.indexOf(jl)<0)merged.push(jl);
+      });
+      // Cap at 300 lines
+      if(merged.length>300)merged=merged.slice(merged.length-300);
+      logEl.textContent=merged.join('\\n');
       logEl.scrollTop=logEl.scrollHeight;
       document.getElementById('progress-log').style.display='block';
     }
@@ -936,19 +946,22 @@ function startJobPoll(jobId,appName,maxSteps){
       if(sseSource){sseSource.close();sseSource=null;}
       document.getElementById('progress-close-btn').style.display='flex';
       if(r.status==='done'){
-        showToast('\u2705 '+appName+' \uc644\ub8cc');
+        showToast('\u2705 '+appName+' \uc0dd\uc131 \uc644\ub8cc! Deploy \ubc84\ud2bc\uc744 \ub20c\ub7ec \ubc30\ud3ec\ud558\uc138\uc694.');
         // Auto-enable deploy settings (autoDeploy: true, branch: main)
         fetch('/api/apps/'+encodeURIComponent(appName)+'/deploy/settings',{
           method:'PUT',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({autoDeploy:true,deployBranch:'main'})
         }).catch(function(){});
+        // Append success guide to log
+        logEl.textContent+='\\n\\n\u2705 '+appName+' \uc0dd\uc131 \uc644\ub8cc!\\n\u2192 \uc571 \uce74\ub4dc\uc758 Deploy \ubc84\ud2bc\uc744 \ub20c\ub7ec \ubc30\ud3ec\ub97c \uc9c4\ud589\ud558\uc138\uc694.\\n\u2192 \ub610\ub294 Gitea\uc5d0\uc11c \ucf54\ub4dc\ub97c \uc218\uc815\ud55c \ud6c4 git push\ud558\uba74 \uc790\ub3d9 \ubc30\ud3ec\ub429\ub2c8\ub2e4.';
+        logEl.scrollTop=logEl.scrollHeight;
       }else{
         showToast('\u274c '+appName+' \uc2e4\ud328: '+(r.error||''));
         document.getElementById('progress-log').style.display='block';
-        var logEl=document.getElementById('log-content');
-        logEl.textContent='\u274c Error: '+(r.error||'Unknown error');
+        logEl.textContent+='\\n\\n\u274c Error: '+(r.error||'Unknown error');
         var failedStep=r.steps?r.steps.find(function(s){return s.status==='failed';}):null;
         if(failedStep){logEl.textContent+='\\nFailed at: '+failedStep.label+(failedStep.message?' ('+failedStep.message+')':'');}
+        logEl.scrollTop=logEl.scrollHeight;
       }
       await loadApps();await loadRepos();renderApps();renderRepos();
     }
