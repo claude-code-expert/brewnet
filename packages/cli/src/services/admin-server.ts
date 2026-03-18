@@ -1366,8 +1366,15 @@ ${rows}
         if (parts[1] === 'apps') {
           if (req.method === 'GET' && parts.length === 2) {
             const apps = await listApps();
+            // Enrich with lastDeployedAt from deploy history
+            const history = getDeployHistory();
+            const enrichedApps = apps.map((a) => {
+              const deploys = history.filter((h) => h.appName === a.name && h.status === 'success');
+              const lastDeploy = deploys.length > 0 ? deploys[deploys.length - 1] : null;
+              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null };
+            });
             logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
-            json(res, 200, { apps });
+            json(res, 200, { apps: enrichedApps });
             return;
           }
           if (req.method === 'GET' && parts[2] === 'boilerplates') {

@@ -713,15 +713,18 @@ function renderApps(){
       +domainHtml+'</div>';
 
     // Meta grid
+    var fullUrl='http://localhost:'+app.port;
     var portLink=isRunning
-      ?'<a href="http://localhost:'+app.port+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">:'+app.port+'</a>'
-      :':'+app.port;
+      ?'<a href="'+fullUrl+'" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">'+fullUrl+'</a>'
+      :'<span style="color:var(--txt3)">'+fullUrl+'</span>';
     var branchName=git&&git.branch?git.branch:'main';
+    // Last deploy: check deploy history for this app
+    var lastDeployTime=app.lastDeployedAt||null;
     var metaHtml='<div class="meta-grid">'
-      +'<div class="meta-item"><span class="meta-key">Port</span><span class="meta-val">'+portLink+'</span></div>'
+      +'<div class="meta-item"><span class="meta-key">URL</span><span class="meta-val">'+portLink+'</span></div>'
       +'<div class="meta-item"><span class="meta-key">Uptime</span><span class="meta-val">'+(isRunning?timeAgo(app.createdAt):'—')+'</span></div>'
       +'<div class="meta-item"><span class="meta-key">Branch</span><span class="meta-val">'+escH(branchName)+'</span></div>'
-      +'<div class="meta-item"><span class="meta-key">Last deploy</span><span class="meta-val">'+(commitInfo?timeAgo(commitInfo.date):'—')+'</span></div>'
+      +'<div class="meta-item"><span class="meta-key">Last deploy</span><span class="meta-val">'+(lastDeployTime?timeAgo(lastDeployTime):(commitInfo?timeAgo(commitInfo.date):'—'))+'</span></div>'
       +'</div>';
 
     // Commit row
