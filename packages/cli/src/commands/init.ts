@@ -20,6 +20,8 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { runAdminSetupStep } from '../wizard/steps/admin-setup.js';
@@ -44,6 +46,23 @@ import {
 } from '../wizard/state.js';
 import type { WizardState } from '@brewnet/shared';
 import { generatePassword } from '../utils/password.js';
+
+// Read package.json at runtime from multiple candidate paths (handles both
+// source tree `src/commands/` and bundled `dist/` locations).
+const PKG_CANDIDATES = [
+  new URL('../../package.json', import.meta.url),       // src/commands/ → packages/cli/
+  new URL('../package.json', import.meta.url),           // dist/ → packages/cli/
+  new URL('../../../package.json', import.meta.url),     // fallback
+];
+let PKG_VERSION = '0.0.1';
+let PKG_LICENSE = 'Apache-2.0';
+for (const candidate of PKG_CANDIDATES) {
+  try {
+    const _require = createRequire(import.meta.url);
+    const pkg = _require(fileURLToPath(candidate)) as { version?: string; license?: string };
+    if (pkg.version) { PKG_VERSION = pkg.version; PKG_LICENSE = pkg.license ?? PKG_LICENSE; break; }
+  } catch { /* try next */ }
+}
 
 // ---------------------------------------------------------------------------
 // Command Registration
@@ -84,15 +103,16 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
   // -----------------------------------------------------------------------
   console.log();
   console.log(chalk.cyan([
-    '   ____                                _   ',
-    '  | __ ) _ __ _____      ___ __   ___| |_ ',
-    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|',
-    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_ ',
-    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|',
+    '   ____                                _        ) ) )    ',
+    '  | __ ) _ __ _____      ___ __   ___| |_     ( ( (     ',
+    '  |  _ \\| \'__/ _ \\ \\ /\\ / / \'_ \\ / _ \\ __|  __________',
+    '  | |_) | | |  __/\\ V  V /| | | |  __/ |_  |          |]',
+    '  |____/|_|  \\___| \\_/\\_/ |_| |_|\\___|\\__|  \\________/ ',
   ].join('\n')));
   console.log();
+  console.log(chalk.hex('#c8a96e').bold('  ☕ Set up your entire home server in the time it takes to brew a coffee.'));
   console.log(chalk.bold('  Brewnet') + chalk.dim(' — One command. Your entire server stack, on tap. Just brew it!'));
-  console.log(chalk.dim('  v1.0.1  •  MIT License'));
+  console.log(chalk.dim(`  v${PKG_VERSION}  •  ${PKG_LICENSE} License`));
   console.log(chalk.dim('  https://brewnet.dev  •  https://github.com/claude-code-expert/brewnet'));
   console.log(chalk.dim('  brewnet.dev@gmail.com'));
   console.log();
