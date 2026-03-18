@@ -1,6 +1,6 @@
 # Brewnet Admin Panel & Apps — 구현 기능 체크리스트
 
-> 마지막 업데이트: 2026-03-17
+> 마지막 업데이트: 2026-03-18
 > 대상 파일: `packages/cli/src/services/admin-server.ts`, `apps-page.ts`, `app-manager.ts`, `app-registry.ts`, `gitea-client.ts`, `domain-manager.ts`
 
 ---
@@ -97,11 +97,9 @@
 
 ### 2.1 대시보드 (`/`)
 
-**상단바**
-- Brewnet 로고 + 프로젝트명
-- Admin 계정명 (마스킹)
-- Quick Tunnel URL (감지 시 표시)
-- Apps 바로가기 버튼
+**헤더** (Apps 페이지와 통일된 디자인)
+- Brewnet 로고 + "Your server on tap. Just brew it." 태그라인
+- 네비게이션: Dashboard (active) | Apps 탭 링크
 
 **서비스 카드 섹션**
 - 카드별: 이름, 상태 배지 (running/stopped/error), CPU, Memory, Uptime, Port, URL
@@ -130,8 +128,9 @@
 
 ### 2.2 앱 페이지 (`/apps`)
 
-**상단바**
-- 브레드크럼: Home / Apps
+**헤더** (Dashboard와 통일된 디자인)
+- Brewnet 로고 + 태그라인
+- 네비게이션: Dashboard | Apps (active) 탭 링크
 - 통계 배지: `총 N개` | `실행 중 N` | `중지됨 N` | `빌드 중 N`
 - New App 버튼 + Refresh 버튼
 
@@ -160,9 +159,13 @@
 | 액션 | 앱 보기 / 앱 이름 입력+연결 / 취소 |
 
 **New App 모달** (3 탭)
-- **Boilerplate** — 설치된 boilerplate 그리드 → 선택 → 앱 이름 입력
-- **Git Clone** — Git URL 입력 → 레포명 자동 추출 + 앱 이름 입력
-- **New Project** — 언어 선택 → 프레임워크 선택 → 앱 이름 + 포트 입력
+- **Boilerplate** — 설치된 보일러플레이트 16종 그리드 → 선택 → 앱 이름 + 포트 입력
+- **Git Clone** — Git URL + 브랜치(선택) 입력 → 레포명 자동 추출 + 앱 이름 입력
+  - docker-compose.yml 있는 레포: clone → Gitea push → Docker up → Health check (자동)
+  - docker-compose.yml 없는 레포: clone → Gitea push → 앱 등록 (stopped) → 완료
+  - 어떤 git repo든 에러 없이 클론 가능 — Deploy는 사용자가 별도 진행
+- **New Project** — 언어 7종 × 프레임워크 15종 선택 (CONNECT_BOILERPLATE.md 기준 지원 스택만)
+  - Next.js(unified) 선택 시 Frontend 프롬프트 자동 스킵
 - 공통: 포트 실시간 충돌 검사 (debounce 600ms), 포트 미리보기
 
 **Domain Modal**
@@ -174,11 +177,12 @@
 - 앱 이름 재입력 확인
 - 앱 메타 (mode, port, status) 표시
 
-**Progress Modal** (Build/Deploy 시)
-- Job 타이틀 (이미지 빌드 중 / 전체 배포 중)
-- Step별 진행률 (pending → running → done/failed)
-- 실시간 SSE 로그 스트림
-- 실패 시 실패 스텝 강조 표시
+**Progress Modal** (Build/Deploy/Create 시)
+- Job 타이틀 (이미지 빌드 중 / 전체 배포 중 / 앱 생성 중)
+- Step별 진행률 (pending → running → done/failed) + step message
+- 로그 패널: docker compose stdout/stderr + health check 폴링 진행 + SSE 컨테이너 로그 병합
+- 성공 시: 토스트 "앱이름 생성 완료! Deploy 버튼을 눌러 배포하세요." + 로그에 다음 단계 안내
+- 실패 시: 에러 상세 + 실패 스텝 강조
 
 ### 2.3 앱 상세 페이지 (`/apps/:name`)
 
@@ -267,12 +271,13 @@ interface AppGitInfo {
 7. `apps.json` 등록 + Gitea webhook 자동 설정
 
 **Mode B — Git Clone**
-1. 외부 Git URL shallow clone
-2. Gitea 레포 생성
-3. Git remote 추가 → push
-4. `docker compose up`
-5. Health check
-6. `apps.json` 등록
+1. 외부 Git URL shallow clone (`--depth=1`, `--branch` 옵션 지원)
+2. `.env.example` 있으면 포트 주입 (BACKEND_PORT / FRONTEND_PORT)
+3. Gitea 레포 생성 (orphan repo files 자동 복구)
+4. Git remote 추가 → push
+5. **docker-compose.yml 존재 시**: Docker up → Health check → status=`running`
+6. **docker-compose.yml 없음**: Docker 단계 스킵 → status=`stopped` (사용자가 Deploy로 별도 진행)
+7. `apps.json` 등록
 
 **Mode C — New Project**
 1. Stack catalog에서 stackId 선택
@@ -324,10 +329,13 @@ interface AppGitInfo {
 ### 4.4 Gitea 자동 로그인 흐름 (`/api/gitea/autologin`)
 1. `GET /git/user/login` → `_csrf` 쿠키 + form 토큰 추출
 2. `POST /git/user/login` — CSRF + admin 자격증명 전송
-3. 응답에서 `i_like_gitea` 세션 쿠키 추출
-4. `Set-Cookie: i_like_gitea=...; Path=/; SameSite=Lax` 브라우저에 전달
+3. 응답에서 모든 Set-Cookie 헤더 추출 (`i_like_gitea`, `gitea_incredible`, `_csrf`, `lang`)
+4. 원본 쿠키를 그대로 브라우저에 전달 (`Path=/git` 보존 — Gitea ROOT_URL 매칭 필수)
 5. 302 → 목표 Gitea URL 리다이렉트
 6. 실패 시: 로그인 없이 fallback 리다이렉트
+
+> **주의**: `Path=/`로 덮어쓰면 Gitea가 세션을 인식하지 못해 private repo가 404됨.
+> Gitea ROOT_URL이 `/git/`이면 쿠키 Path도 `/git`이어야 함.
 
 ---
 
@@ -335,13 +343,15 @@ interface AppGitInfo {
 
 | 항목 | 값 |
 |------|-----|
-| 엔드포인트 | `http://127.0.0.1:{port}/health` |
+| 엔드포인트 | `http://127.0.0.1:{port}{basePath}/health` |
+| basePath 감지 | Next.js: `next.config.ts/mjs/js`에서 `basePath` 읽어서 URL에 자동 반영 |
 | 폴링 간격 | 3초 |
 | 기본 타임아웃 | 120초 |
 | Rust 스택 타임아웃 | 600초 (`buildSlow=true`) |
 | Java/Kotlin 타임아웃 | 300초 |
 | 성공 조건 | HTTP 2xx / 3xx |
 | IPv6 이슈 | `127.0.0.1` 고정 사용 (Alpine `localhost` IPv6 해석 문제 대응) |
+| 로그 | 폴링 진행을 `job.logs[]`에 기록 (attempt 번호, 응답 코드, 성공/타임아웃) |
 
 ---
 
@@ -356,7 +366,7 @@ interface AppGitInfo {
 ### 6.2 레포 조작
 | 기능 | 설명 |
 |------|------|
-| `createRepo` | private 레포 생성 (auto_init: false) |
+| `createRepo` | private 레포 생성 (auto_init: false). 500 "files already exist" 시 orphan 파일 자동 삭제 후 재시도 |
 | `repoExists` | 레포 존재 여부 확인 |
 | `deleteRepo` | 레포 삭제 |
 | `listRepos` | 사용자 레포 목록 |
@@ -392,12 +402,64 @@ interface AppGitInfo {
 | Jellyfin 초기화 URL | 반드시 `#/wizard/start` (절대 `#/home` 사용 금지) |
 | 앱 삭제 | `docker compose down --volumes` (데이터 완전 삭제) |
 | Boilerplate 형식 | `.brewnet-boilerplate.json` — 항상 배열 (legacy 단일 객체 자동 변환) |
-| Unified 스택 | port 3000만 사용 (별도 frontend container 없음) |
+| Boilerplate 16종 | CONNECT_BOILERPLATE.md 기준 전체 등록 (BOILERPLATES 정적 배열) |
+| Unified 스택 | port 3000만 사용 (별도 frontend container 없음, Frontend 프롬프트 스킵) |
 | Silent catch 금지 | `.catch(() => {})` 절대 사용 금지 — 최소 warn 로그 필수 |
+| Admin daemon | `brewnet admin` → detached child process (터미널 닫아도 유지) |
+| Admin 종료 | `brewnet shutdown [--port]` → lsof로 PID 찾아 SIGTERM |
+| Admin foreground | `brewnet admin --foreground` (디버그/test-cycle.sh 용) |
+| FileBrowser external URL | primaryRouterKey로 메인 라우터 우선 매칭 (보조 `/static` 라우터 제외) |
+| Git Clone 동작 | docker-compose.yml 없으면 clone+Gitea push만, Docker 단계 스킵 |
+| 앱 카드 URL 필드 | `http://localhost:{port}` 전체 URL 표시 |
+| Last deploy | deploy-history.json에서 실제 배포 시간 표시 (커밋 시간 fallback) |
+| Job 로그 | `AppJob.logs[]` — docker compose stdout/stderr + health poll 실시간 기록 |
 
 ---
 
-## 9. 미구현 / 향후 과제
+## 9. 앱 생성 모드별 Docker 처리 규칙
+
+| 모드 | docker-compose.yml 필요 | Docker up 자동 실행 | 초기 status |
+|------|------------------------|--------------------|-----------|
+| **Mode A (Boilerplate)** | 항상 있음 (보일러플레이트에 포함) | ✅ 자동 | `running` |
+| **Mode B (Git Clone)** — compose 있음 | ✅ | ✅ 자동 | `running` |
+| **Mode B (Git Clone)** — compose 없음 | ❌ | ⏭ 스킵 | `stopped` |
+| **Mode C (New Project)** | 항상 있음 (보일러플레이트에 포함) | ✅ 자동 | `running` |
+
+### Git Clone 모드 상세 동작
+1. 어떤 git repo든 에러 없이 클론 가능
+2. docker-compose.yml이 있으면 brewnet 보일러플레이트로 판단 → 자동 Docker up + Health check
+3. docker-compose.yml이 없으면 일반 소스 코드로 판단 → clone + Gitea push만 수행
+4. 사용자가 Dockerfile/docker-compose.yml 추가 후 Deploy 버튼으로 별도 배포
+5. 로그 패널에 안내 메시지: "Deploy 버튼을 눌러 배포하거나, Dockerfile을 추가한 후 배포하세요."
+
+---
+
+## 10. CLI 명령어
+
+| 명령어 | 설명 |
+|--------|------|
+| `brewnet admin` | Admin daemon 시작 (백그라운드, 터미널 닫아도 유지) |
+| `brewnet admin --foreground` | Admin 서버 foreground 실행 (디버그용) |
+| `brewnet admin --port 9090` | 커스텀 포트로 시작 |
+| `brewnet shutdown` | Admin daemon 종료 |
+| `brewnet shutdown --port 9090` | 커스텀 포트 daemon 종료 |
+
+---
+
+## 11. Playwright E2E 테스트 (`tests/e2e/apps-page-e2e.mjs`)
+
+37개 검증 항목:
+- Dashboard: 페이지 로드, 서비스 렌더링, 탭 전환, Refresh, 로그 패널
+- Apps: 네비게이션, Stats, New App 모달 (3탭), 언어 7종 × 프레임워크 15종
+- 프레임워크 검증: 미지원 9개 제거 확인 (Chi, Starlette, Fastify, Hono, Rocket, Warp, Quarkus, Vite+React, Remix)
+- API: /services, /apps, /git/repos, /boilerplates, /health
+- FileBrowser external URL (/files, not /static)
+
+실행: `node tests/e2e/apps-page-e2e.mjs`
+
+---
+
+## 12. 미구현 / 향후 과제
 
 - [ ] 앱 카드 — backend / frontend URL이 분리된 경우 두 링크 별도 노출 (현재 port 1개만)
 - [ ] 앱 상세 — Domain 탭 read-only 상태 확인 (connect는 앱 카드에서)
