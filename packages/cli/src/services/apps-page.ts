@@ -880,14 +880,14 @@ async function runBuild(name){
   if(!r.ok)return;
   var jobId=r.data.jobId;
   openProgressModal('\uc774\ubbf8\uc9c0 \ube4c\ub4dc \uc911...',name,4);
-  startJobPoll(jobId,name,4);
+  startJobPoll(jobId,name,4,'deploy');
 }
 async function runDeploy(name){
   var r=await apiFetch('/api/apps/'+encodeURIComponent(name)+'/deploy',{method:'POST'});
   if(!r.ok)return;
   var jobId=r.data.jobId;
   openProgressModal('\uc804\uccb4 \ubc30\ud3ec \uc911...',name,6);
-  startJobPoll(jobId,name,6);
+  startJobPoll(jobId,name,6,'deploy');
   startSseLogs(name);
 }
 
@@ -916,7 +916,7 @@ function renderProgressSteps(steps,maxSteps){
   }).join('');
 }
 
-function startJobPoll(jobId,appName,maxSteps){
+function startJobPoll(jobId,appName,maxSteps,jobMode){
   if(jobPollTimer)clearInterval(jobPollTimer);
   activeJobId=jobId;
   jobPollTimer=setInterval(async function(){
@@ -948,7 +948,10 @@ function startJobPoll(jobId,appName,maxSteps){
       if(sseSource){sseSource.close();sseSource=null;}
       document.getElementById('progress-close-btn').style.display='flex';
       if(r.status==='done'){
-        showToast('\u2705 '+appName+' \uc0dd\uc131 \uc644\ub8cc! Deploy \ubc84\ud2bc\uc744 \ub20c\ub7ec \ubc30\ud3ec\ud558\uc138\uc694.');
+        var doneMsg=jobMode==='deploy'
+          ?'\u2705 '+appName+' \ubc30\ud3ec\uac00 \uc131\uacf5\uc801\uc73c\ub85c \ucc98\ub9ac\ub418\uc5c8\uc2b5\ub2c8\ub2e4.'
+          :'\u2705 '+appName+' \uc0dd\uc131 \uc644\ub8cc! Deploy \ubc84\ud2bc\uc744 \ub20c\ub7ec \ubc30\ud3ec\ud558\uc138\uc694.';
+        showToast(doneMsg);
         // Auto-enable deploy settings (autoDeploy: true, branch: main)
         fetch('/api/apps/'+encodeURIComponent(appName)+'/deploy/settings',{
           method:'PUT',headers:{'Content-Type':'application/json'},
@@ -1068,7 +1071,7 @@ function triggerAccDeploy(appName){
     if(d.error){if(msg)msg.textContent='Error: '+d.error;return;}
     if(msg)msg.textContent='Job '+d.jobId;
     openProgressModal('Deploy '+appName,appName,3);
-    startJobPoll(d.jobId,appName,3);
+    startJobPoll(d.jobId,appName,3,'deploy');
   }).catch(function(e){if(msg)msg.textContent='Error';});
 }
 function loadAccHistory(appName){
@@ -1284,7 +1287,7 @@ async function submitNewApp(){
   var jobId=r.data.jobId;
   closeModal('modal-new-app');
   openProgressModal('\uc571 \uc0dd\uc131 \uc911...',name,6);
-  startJobPoll(jobId,name,6);
+  startJobPoll(jobId,name,6,'create');
   startSseLogs(name);
   showToast('\ud83d\ude80 '+name+' \uc0dd\uc131 \uc2dc\uc791\ub428 (Job: '+jobId+')');
 }
@@ -1426,7 +1429,7 @@ window.addEventListener('load',function(){
   var pending=JSON.parse(localStorage.getItem('bn_pending_jobs')||'{}');
   Object.keys(pending).forEach(function(jobId){
     var appName=pending[jobId];
-    startJobPoll(jobId,appName,6);
+    startJobPoll(jobId,appName,6,'create');
   });
   refreshAll();
 });
