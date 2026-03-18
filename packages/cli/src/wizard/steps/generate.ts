@@ -674,7 +674,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
               // Quick Tunnel URL changes on every cloudflared restart; this prevents
               // the "untrusted domain" error without needing another occ run each time.
               await occQuick(['config:system:set', 'trusted_domains', '4',
-                '--value=/.*\\.trycloudflare\\.com/',
+                '--value=*.trycloudflare.com',
               ]);
               // Trust Traefik's bridge range so Nextcloud reads X-Forwarded-Proto.
               await occQuick(['config:system:set', 'trusted_proxies', '0', '--value=172.16.0.0/12']);
@@ -688,7 +688,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             console.log(chalk.yellow('\n  ⚠ Nextcloud: occ 설정 실패 (90s 대기 초과). 수동으로 실행하세요:'));
             const d = state.domain.name || '<tunnel-url>';
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 0 --value=localhost`));
-            console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 4 --value='/.*.trycloudflare.com/'`));
+            console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 4 --value='*.trycloudflare.com'`));
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 5 --value=${d}`));
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_proxies 0 --value=172.16.0.0/12`));
           }

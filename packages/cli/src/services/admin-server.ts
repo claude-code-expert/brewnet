@@ -1164,9 +1164,9 @@ ${rows}
       const container = docker.getContainer(cf.Id);
       const logBuf = await container.logs({ stdout: true, stderr: true, tail: 50 });
       const logStr = logBuf.toString('utf-8');
-      const match = logStr.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      const match = logStr.match(/https?:\/\/([\w]+-[\w][\w-]*\.trycloudflare\.com)/i);
       if (match) {
-        dashConfig.quickTunnelUrl = match[0];
+        dashConfig.quickTunnelUrl = `https://${match[1]}`;
         dashConfig.domainProvider = 'quick-tunnel';
         dashboardHtml = generateDashboardHtml(dashConfig);
       }

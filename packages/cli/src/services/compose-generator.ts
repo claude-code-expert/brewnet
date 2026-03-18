@@ -279,7 +279,7 @@ function getNextcloudEnv(state: WizardState): Record<string, string> {
     // added post-install via `occ` once the Quick Tunnel URL is known.
     const portMap = state.portRemapping ?? {};
     const ncPort = portMap[8443] ?? 8443;
-    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${ncDomain} localhost localhost:${ncPort}`;
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${ncDomain} localhost localhost:${ncPort} *.trycloudflare.com`;
   } else if (ncDomain) {
     // Named Tunnel or local — subdomain routing, direct port access enabled.
     env['OVERWRITEHOST'] = `cloud.${ncDomain}`;

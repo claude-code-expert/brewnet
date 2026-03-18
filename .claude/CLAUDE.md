@@ -25,6 +25,9 @@ A self-hosted home server management platform that provides an interactive CLI t
 - **자동 테스트에서 "통과" 보고 전 실제 사용자 경험 경로 검증 필수** — 직접 포트 curl과 admin 대시보드 External URL 링크 클릭은 완전히 다른 경로. 브라우저가 보는 것과 동일한 URL을 테스트할 것.
 - **Next.js 스택에 Traefik strip-prefix / trailing-slash redirect 절대 사용 금지** — Next.js는 `basePath`로 sub-path를 자체 처리함. strip-prefix는 경로 이중 제거, trailing-slash는 `trailingSlash:false` 기본값과 충돌하여 무한 리다이렉트 발생. `addQuickTunnelAppLabels()`에 `noStrip: true` 사용.
 - **Next.js basePath 설정 시 반드시 (1) Docker 이미지 `--no-cache` 재빌드, (2) healthcheck 경로 `/apps/{name}/health`로 업데이트, (3) `pollHealth`/`verifyEndpoints`의 baseUrl에 basePath 반영** — basePath는 빌드 시 bake-in되므로 재빌드 필수. healthcheck/pollHealth 미변경 시 unhealthy 무한 대기.
+- **Quick Tunnel URL 감지 정규식은 반드시 하이픈 포함 서브도메인만 매칭해야 함** — cloudflared 로그에 실제 URL 이전에 `"Post https://api.trycloudflare.com/tunnel": context deadline exceeded"` 에러가 먼저 찍힘. `/[a-z0-9-]+\.trycloudflare\.com/` 패턴은 `api.trycloudflare.com` 오매칭. 반드시 `quick-tunnel.ts`와 동일한 `/[\w]+-[\w][\w-]*\.trycloudflare\.com/` 패턴 사용.
+- **Nextcloud Quick Tunnel 모드에서 `NEXTCLOUD_TRUSTED_DOMAINS` env var에 반드시 `*.trycloudflare.com` 포함** — Nextcloud 29는 regex 미지원, `*` 와일드카드만 동작. regex(`/.*\.trycloudflare\.com/`) 넣으면 literal 문자열로 처리되어 아무것도 안 매칭됨. 컨테이너 재생성 시 env var 기준 재초기화되므로 occ 단독으로는 부족. `compose-generator.ts`의 `getNextcloudEnv()`와 `generate.ts`의 occ 호출 모두 `*.trycloudflare.com` 사용.
+- **Admin 대시보드(admin-server.ts)는 완성본 — UI 수정 외 로직 변경 금지** — 기능 완성 상태이며 구조/로직 변경은 사전 명시적 요청 없이 진행하지 말 것.
 
 ## 🔁 Process Decision Rules
 
