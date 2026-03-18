@@ -1559,19 +1559,20 @@ ${rows}
               redirect: 'manual',
               signal: AbortSignal.timeout(5000),
             });
-            // Step 3: Extract Gitea session cookie from response
+            // Step 3: Extract ALL Gitea cookies from login response and forward them.
+            // Gitea sets cookies with Path=/git (matching its ROOT_URL sub-path).
+            // We must preserve the original Path so the browser sends them to Gitea.
             const respCookies: string[] = [];
             loginRes.headers.forEach((val, key) => {
               if (key.toLowerCase() === 'set-cookie') respCookies.push(val);
             });
-            const sessionCookieFull = respCookies.find((c) => c.startsWith('i_like_gitea='));
-            const sessionVal = sessionCookieFull?.split(';')[0];
+            // Forward all non-empty, non-delete cookies (skip Max-Age=0 deletion entries)
+            const forwardCookies = respCookies.filter((c) => !c.includes('Max-Age=0') && !c.match(/=;\s/));
             const responseHeaders: Record<string, string | string[]> = { Location: targetUrl };
-            if (sessionVal) {
-              // Forward as host-only cookie (no Domain=) so it's valid on localhost regardless of port
-              responseHeaders['Set-Cookie'] = `${sessionVal}; Path=/; SameSite=Lax`;
+            if (forwardCookies.length > 0) {
+              responseHeaders['Set-Cookie'] = forwardCookies;
             } else {
-              logger.warn('admin-server', '[gitea/autologin] login POST did not return session cookie');
+              logger.warn('admin-server', '[gitea/autologin] login POST did not return session cookies');
             }
             res.writeHead(302, responseHeaders);
             res.end();
