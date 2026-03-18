@@ -214,6 +214,15 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
 .acc-cpb:hover{color:var(--txt);background:var(--bdr2)}
 .acc-section{margin-bottom:14px}
 .acc-section-title{font-size:10px;color:var(--txt3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+/* Page tabs */
+.page-tabs{display:flex;gap:2px;border-bottom:1px solid var(--bdr);margin-bottom:20px}
+.page-tab{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;color:var(--txt2);border:none;background:transparent;border-bottom:2px solid transparent;transition:all .14s;margin-bottom:-1px;font-family:var(--sans)}
+.page-tab:hover{color:var(--txt)}.page-tab.active{color:var(--amber);border-bottom-color:var(--amber)}
+.page-panel{display:none}.page-panel.active{display:block}
+/* Settings panel */
+.settings-section{background:var(--bg2);border:1px solid var(--bdr);border-radius:var(--r2);padding:22px 24px;max-width:520px}
+.settings-section h3{font-size:14px;font-weight:700;color:var(--txt);margin-bottom:16px}
+.cf-status-bar{padding:8px 12px;border-radius:var(--r);font-size:12.5px;margin-bottom:16px;background:rgba(122,147,190,.07);border:1px solid var(--bdr);color:var(--txt2)}
 </style>
 </head>
 <body>
@@ -242,6 +251,14 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
   </div>
 
   <div id="content">
+    <!-- Page Tab Nav -->
+    <div class="page-tabs">
+      <button class="page-tab active" id="ptab-apps" onclick="switchPageTab('apps')">📦 Apps</button>
+      <button class="page-tab" id="ptab-settings" onclick="switchPageTab('settings')">⚙ Settings</button>
+    </div>
+
+    <!-- Apps Tab Panel -->
+    <div id="page-apps" class="page-panel active">
     <div class="ebox">
       <div class="ebox-title">🚀 App Deploy</div>
       <div class="ebox-desc">Gitea에 연결된 앱을 빌드하고 배포합니다. <strong>Build</strong>는 Docker 이미지 빌드만 수행하며, <strong>Deploy</strong>는 Traefik 라우팅 등록을 포함한 전체 배포를 실행합니다.</div>
@@ -288,6 +305,36 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
         </table>
       </div>
     </div>
+    </div><!-- /#page-apps -->
+
+    <!-- Settings Tab Panel -->
+    <div id="page-settings" class="page-panel">
+      <div class="settings-section">
+        <h3>☁ Cloudflare 자격증명</h3>
+        <div id="cf-status" class="cf-status-bar">확인 중...</div>
+        <div class="fg">
+          <label class="fl">API Token <span style="color:var(--red)">*</span></label>
+          <input class="fi" id="cf-token" type="password" placeholder="Cloudflare API Token">
+        </div>
+        <div class="fg">
+          <label class="fl">Account ID</label>
+          <input class="fi" id="cf-account" placeholder="Account ID">
+        </div>
+        <div class="fg">
+          <label class="fl">Zone ID</label>
+          <input class="fi" id="cf-zone" placeholder="Zone ID">
+        </div>
+        <div class="fg">
+          <label class="fl">Tunnel ID</label>
+          <input class="fi" id="cf-tunnel" placeholder="Named Tunnel ID">
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+          <button class="btn bp" onclick="saveCloudflareSettings()">저장</button>
+          <span id="cf-result" style="font-size:12.5px;font-family:var(--mono)"></span>
+        </div>
+      </div>
+    </div><!-- /#page-settings -->
+
   </div>
 </div>
 </div>
@@ -845,6 +892,13 @@ async function doConnectRepo(repoName){
 
 /* ─── TOGGLE APP ─── */
 async function toggleApp(name,action){
+  if(action==='start'){
+    var app=apps.find(function(a){return a.name===name;});
+    if(app&&!app.lastDeployedAt){
+      showToast('\u26a0 '+name+': 먼저 🚀 Deploy를 실행하세요. Start만으로는 Traefik 라우팅이 등록되지 않아 외부 접근이 불가합니다.',5000);
+      return;
+    }
+  }
   var r=await apiFetch('/api/apps/'+encodeURIComponent(name)+'/'+action,{method:'POST'});
   if(r.ok){
     showToast((action==='start'?'\u25b6 ':'\u25a0 ')+name+' '+(action==='start'?'\uc2dc\uc791':'\uc911\uc9c0')+'\ub428');
@@ -1354,16 +1408,68 @@ function copyText(elId,msg){
 }
 
 /* ─── TOAST ─── */
-function showToast(msg){
+function showToast(msg,ms){
   var t=document.getElementById('toast');
   t.textContent=msg;t.style.display='flex';
   clearTimeout(t._timer);
-  t._timer=setTimeout(function(){t.style.display='none';},2600);
+  t._timer=setTimeout(function(){t.style.display='none';},ms||2600);
+}
+
+/* ─── PAGE TABS ─── */
+function switchPageTab(tab){
+  ['apps','settings'].forEach(function(t){
+    document.getElementById('ptab-'+t).classList.toggle('active',t===tab);
+    document.getElementById('page-'+t).classList.toggle('active',t===tab);
+  });
+  if(tab==='settings')loadCloudflareStatus();
+}
+
+/* ─── CLOUDFLARE SETTINGS ─── */
+function saveCloudflareSettings(){
+  var token=document.getElementById('cf-token').value.trim();
+  var account=document.getElementById('cf-account').value.trim();
+  var zone=document.getElementById('cf-zone').value.trim();
+  var tunnel=document.getElementById('cf-tunnel').value.trim();
+  var result=document.getElementById('cf-result');
+  if(!token){result.textContent='API Token은 필수입니다.';result.style.color='var(--red)';return;}
+  result.textContent='저장 중...';result.style.color='var(--txt3)';
+  fetch('/api/settings/cloudflare',{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({apiToken:token,accountId:account,zoneId:zone,tunnelId:tunnel})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.success){
+        result.textContent='✅ 저장됨'+(d.zoneName?' ('+d.zoneName+')':'');
+        result.style.color='var(--green)';
+        loadCloudflareStatus();
+      }else{
+        result.textContent='❌ '+(d.error||'저장 실패');
+        result.style.color='var(--red)';
+      }
+    })
+    .catch(function(){result.textContent='❌ 요청 실패';result.style.color='var(--red)';});
+}
+
+function loadCloudflareStatus(){
+  var el=document.getElementById('cf-status');
+  if(!el)return;
+  fetch('/api/settings/cloudflare')
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.configured){
+        el.textContent='✅ 구성됨'+(d.zoneName?' ('+d.zoneName+')':'');
+        el.style.color='var(--green)';
+      }else{
+        el.textContent='⚠ 미구성 — API Token을 아래에 입력하고 저장하세요.';
+        el.style.color='var(--amber)';
+      }
+    })
+    .catch(function(){el.textContent='확인 실패';el.style.color='var(--txt3)';});
 }
 
 /* ─── INIT ─── */
 window.addEventListener('load',function(){
   renderLangGrid();
+  loadCloudflareStatus();
   document.getElementById('sub-base').addEventListener('change',updateSubPreview);
   document.getElementById('proj-name').addEventListener('input',updateProjPreview);
   document.getElementById('proj-port').addEventListener('input',updateProjPreview);
