@@ -23,7 +23,7 @@ import {
   getCredentialTargets,
 } from '../../utils/resources.js';
 import { sortByDependency } from '../../services/health-checker.js';
-import { createAdminServer } from '../../services/admin-server.js';
+import { launchAdminDaemon } from '../../services/admin-launcher.js';
 
 /**
  * Kill any process listening on the given port (best-effort).
@@ -290,19 +290,17 @@ export async function runCompleteStep(
     // Kill any existing admin server on the same port (from a previous session)
     await killPortProcess(ADMIN_PORT);
 
-    const admin = createAdminServer({
+    // Launch admin as a detached daemon — survives terminal close, CLI exit
+    const result = await launchAdminDaemon({
       port: ADMIN_PORT,
       projectPath: state.projectPath,
     });
-    await admin.start();
-
-    // Ignore SIGHUP so the admin server survives terminal close
-    process.on('SIGHUP', () => { /* keep running */ });
 
     console.log(chalk.bold('  Admin Panel'));
     console.log(chalk.dim('    홈서버 관리 대시보드가 시작되었습니다.'));
-    console.log(`    ${chalk.cyan.bold(adminUrl)}`);
-    console.log(chalk.dim('    (Ctrl+C로 brewnet을 종료해도 서비스는 계속 실행됩니다)'));
+    console.log(`    ${chalk.cyan.bold(adminUrl)}` + chalk.dim(` (PID ${result.pid})`));
+    console.log(chalk.dim(`    Log: ${result.logFile}`));
+    console.log(chalk.dim(`    Stop: kill ${result.pid}`));
     console.log();
 
     if (!options?.noOpen) {
@@ -314,13 +312,7 @@ export async function runCompleteStep(
       } catch { /* best-effort */ }
     }
 
-    // Keep the process alive — admin HTTP server must outlive the wizard.
-    // Without this, the function returns → Commander exits → process ends.
-    await new Promise<void>((resolve) => {
-      process.once('SIGINT', resolve);
-      process.once('SIGTERM', resolve);
-    });
-    console.log(chalk.dim('\n  Admin panel stopped.'));
+    // CLI can now exit — daemon continues independently
   } catch {
     // Non-fatal — admin panel failure should not block completion
     console.log(chalk.dim(`  Admin Panel 시작 실패. 수동 실행: ${chalk.cyan('brewnet admin')}`));

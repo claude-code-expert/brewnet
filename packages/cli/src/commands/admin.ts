@@ -1,8 +1,8 @@
 /**
- * brewnet admin — Start local admin panel
+ * brewnet admin — Start local admin panel as a background daemon
  *
- * Starts a localhost HTTP server with a terminal-style dashboard
- * and REST API for managing running services.
+ * Spawns a detached process that survives terminal close.
+ * The CLI exits immediately after the daemon is confirmed running.
  *
  * Default port: 8088  (override with --port)
  *
@@ -12,7 +12,22 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { createAdminServer } from '../services/admin-server.js';
+import { launchAdminDaemon } from '../services/admin-launcher.js';
+
+/** Kill any process listening on the given port (best-effort, cross-platform). */
+async function killPort(port: number): Promise<void> {
+  try {
+    const { execSync } = await import('node:child_process');
+    const pids = execSync(`lsof -ti :${port} 2>/dev/null || true`, { encoding: 'utf-8' }).trim();
+    if (pids) {
+      for (const pid of pids.split('\n').filter(Boolean)) {
+        try { process.kill(parseInt(pid, 10), 'SIGTERM'); } catch { /* ignore */ }
+      }
+      // Brief wait for port release
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  } catch { /* non-critical */ }
+}
 
 export function registerAdminCommand(program: Command): void {
   program
@@ -21,7 +36,8 @@ export function registerAdminCommand(program: Command): void {
     .option('--port <port>', 'Port to listen on (default: 8088)', '8088')
     .option('-p, --path <path>', 'Project path (defaults to last init project)', '')
     .option('--no-open', 'Do not automatically open in browser')
-    .action(async (options: { port: string; path: string; open: boolean }) => {
+    .option('--foreground', 'Run in foreground (do not daemonize)')
+    .action(async (options: { port: string; path: string; open: boolean; foreground: boolean }) => {
       const port = parseInt(options.port, 10);
       if (isNaN(port) || port < 1 || port > 65535) {
         console.error(chalk.red('Invalid port number.'));
@@ -29,50 +45,68 @@ export function registerAdminCommand(program: Command): void {
         return;
       }
 
+      // --foreground: run in current process (for debugging / test-cycle.sh)
+      if (options.foreground) {
+        const { createAdminServer } = await import('../services/admin-server.js');
+        const spinner = ora(`Starting admin panel on port ${port}...`).start();
+        const { start } = createAdminServer({ port, projectPath: options.path || undefined });
+        try {
+          await start();
+          spinner.succeed(chalk.green(`Admin panel running at `) + chalk.cyan(`http://localhost:${port}`));
+          console.log(chalk.dim('  Press Ctrl+C to stop.\n'));
+          process.on('SIGHUP', () => { /* survive terminal close */ });
+          if (options.open) {
+            try {
+              const { execa } = await import('execa');
+              const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'linux' ? 'xdg-open' : 'cmd';
+              const args = process.platform === 'win32' ? ['/c', 'start', `http://localhost:${port}`] : [`http://localhost:${port}`];
+              await execa(cmd, args);
+            } catch { /* best-effort */ }
+          }
+          await new Promise<void>((resolve) => {
+            process.once('SIGINT', resolve);
+            process.once('SIGTERM', resolve);
+          });
+          console.log(chalk.dim('\nShutting down admin panel...'));
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          spinner.fail(chalk.red(msg.includes('EADDRINUSE') ? `Port ${port} is already in use.` : `Failed: ${msg}`));
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      // Default: daemon mode — spawn background process and exit
       const spinner = ora(`Starting admin panel on port ${port}...`).start();
 
-      const { start } = createAdminServer({
-        port,
-        projectPath: options.path || undefined,
-      });
-
       try {
-        await start();
+        // Kill any existing admin on the same port
+        await killPort(port);
+
+        const result = await launchAdminDaemon({
+          port,
+          projectPath: options.path || undefined,
+        });
+
         spinner.succeed(
-          chalk.green(`Admin panel running at `) + chalk.cyan(`http://localhost:${port}`),
+          chalk.green(`Admin panel running at `) + chalk.cyan(`http://localhost:${port}`) +
+          chalk.dim(` (PID ${result.pid})`),
         );
-        console.log(chalk.dim('  Press Ctrl+C to stop.\n'));
+        console.log(chalk.dim(`  Log: ${result.logFile}`));
+        console.log(chalk.dim(`  Stop: kill ${result.pid}  or  kill $(lsof -ti :${port})`));
+        console.log();
 
         // Auto-open in default browser
         if (options.open) {
-          const url = `http://localhost:${port}`;
           try {
             const { execa } = await import('execa');
-            const platform = process.platform;
-            if (platform === 'darwin') {
-              await execa('open', [url]);
-            } else if (platform === 'linux') {
-              await execa('xdg-open', [url]);
-            } else if (platform === 'win32') {
-              await execa('cmd', ['/c', 'start', url]);
-            }
-          } catch {
-            // Browser open failure is non-fatal
-          }
+            const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'linux' ? 'xdg-open' : 'cmd';
+            const args = process.platform === 'win32' ? ['/c', 'start', `http://localhost:${port}`] : [`http://localhost:${port}`];
+            await execa(cmd, args);
+          } catch { /* best-effort */ }
         }
 
-        // Ignore SIGHUP so the admin server survives terminal close
-        process.on('SIGHUP', () => {
-          // Terminal closed — keep running in background
-        });
-
-        // Keep alive until explicit Ctrl+C or kill
-        await new Promise<void>((resolve) => {
-          process.once('SIGINT', resolve);
-          process.once('SIGTERM', resolve);
-        });
-
-        console.log(chalk.dim('\nShutting down admin panel...'));
+        // CLI exits here — daemon continues in background
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('EADDRINUSE')) {
