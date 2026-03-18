@@ -468,110 +468,33 @@ describe('POST /api/backup', () => {
 });
 
 // ---------------------------------------------------------------------------
-// GET / — service detail modal and external URLs
+// GET / — React SPA serving
+// (Legacy HTML-embedding tests removed — dashboard is now a React SPA)
 // ---------------------------------------------------------------------------
 
-describe('GET / — modal and external URL features', () => {
-  it('HTML contains SERVICE_DETAILS JSON for modal', async () => {
+describe('GET / — React SPA fallback', () => {
+  it('GET / returns SPA fallback (200 with dist or 503 without dist)', async () => {
     const res = await req('GET', '/');
-    expect(res.body).toContain('var SERVICE_DETAILS =');
+    // In test environment admin-ui/dist may not be built → 503 is expected.
+    // When dist exists the server returns 200 with index.html.
+    expect([200, 503]).toContain(res.status);
   });
 
-  it('HTML contains ADMIN_CREDS JSON', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('var ADMIN_CREDS =');
-  });
-
-  it('HTML contains DOMAIN_CONFIG JSON', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('var DOMAIN_CONFIG =');
-  });
-
-  it('HTML contains showServiceModal function', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('function showServiceModal(');
-  });
-
-  it('HTML contains closeServiceModal function', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('function closeServiceModal(');
-  });
-
-  it('HTML contains escapeHtml function', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('function escapeHtml(');
-  });
-
-  it('HTML contains handleModalEsc for ESC key support', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('function handleModalEsc(');
-  });
-
-  it('HTML contains External column header', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('<th>External</th>');
-  });
-
-  it('HTML contains modal-overlay CSS class', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('.modal-overlay');
-  });
-
-  it('HTML contains svc-link CSS class for clickable names', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('.svc-link');
-  });
-
-  it('HTML contains getExternalUrl function', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('function getExternalUrl(');
-  });
-
-  it('HTML contains EXT_PATHS for external URL routing', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('var EXT_PATHS');
-    expect(res.body).toContain('gitea');
-    expect(res.body).toContain('nextcloud');
-    expect(res.body).toContain('pgadmin');
-  });
-
-  it('HTML contains NAME_ALIASES for service name mapping', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('var NAME_ALIASES');
-    expect(res.body).toContain('OpenSSH Server');
-    expect(res.body).toContain('SSH Server');
+  it('GET /apps returns SPA fallback (200 with dist or 503 without dist)', async () => {
+    const res = await req('GET', '/apps');
+    expect([200, 503]).toContain(res.status);
   });
 });
 
 // ---------------------------------------------------------------------------
-// GET / — boilerplate stack modal feature
-// ---------------------------------------------------------------------------
-
-describe('GET / — boilerplate stack modal feature', () => {
-  it('HTML contains BOILERPLATE_STACKS JSON variable', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('var BOILERPLATE_STACKS =');
-  });
-
-  it('HTML contains showBoilerplateModal function', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('function showBoilerplateModal(');
-  });
-
-  it('BOILERPLATE_STACKS defaults to empty array when no metadata file', async () => {
-    const res = await req('GET', '/');
-    expect(res.body).toContain('var BOILERPLATE_STACKS = []');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 404 fallback
+// 404 / SPA fallback routing
 // ---------------------------------------------------------------------------
 
 describe('404 fallback', () => {
-  it('returns 404 for unknown non-api path', async () => {
+  it('returns SPA fallback (not 404) for unknown non-api path', async () => {
     const res = await req('GET', '/unknown-path');
-    expect(res.status).toBe(404);
+    // SPA fallback: 200 (dist present) or 503 (dist missing), never 404
+    expect([200, 503]).toContain(res.status);
   });
 
   it('returns 404 JSON for unknown API path', async () => {

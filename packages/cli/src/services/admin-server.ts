@@ -12,8 +12,8 @@
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { createConnection } from 'node:net';
-import { join } from 'node:path';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve, extname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import Dockerode from 'dockerode';
@@ -27,7 +27,7 @@ import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
 import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
-import { generateAppsPageHtml, generateAppDetailHtml } from './apps-page.js';
+// apps-page.ts import removed — HTML generation replaced by React SPA (T044)
 import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
@@ -95,6 +95,42 @@ interface DashboardConfig {
 // ---------------------------------------------------------------------------
 
 const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../../..');
+
+// ---------------------------------------------------------------------------
+// Static file serving for React SPA (packages/admin-ui/dist)
+// ---------------------------------------------------------------------------
+
+const ADMIN_UI_DIST = join(PKG_ROOT, 'packages/admin-ui/dist');
+
+const MIME_TYPES: Record<string, string> = {
+  '.html':  'text/html; charset=utf-8',
+  '.js':    'application/javascript; charset=utf-8',
+  '.mjs':   'application/javascript; charset=utf-8',
+  '.css':   'text/css; charset=utf-8',
+  '.json':  'application/json; charset=utf-8',
+  '.svg':   'image/svg+xml',
+  '.png':   'image/png',
+  '.jpg':   'image/jpeg',
+  '.jpeg':  'image/jpeg',
+  '.ico':   'image/x-icon',
+  '.woff':  'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf':   'font/ttf',
+  '.webmanifest': 'application/manifest+json',
+};
+
+function serveStaticFile(filePath: string, res: ServerResponse, statusCode = 200): void {
+  const stat = statSync(filePath);
+  const mime = MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  const isHashed = new RegExp('assets/[^/]+-[A-Za-z0-9]{8,}\\.[^.]+$').test(filePath);
+  const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'no-cache, no-store, must-revalidate';
+  res.writeHead(statusCode, {
+    'Content-Type': mime,
+    'Content-Length': stat.size,
+    'Cache-Control': cacheControl,
+  });
+  createReadStream(filePath).pipe(res);
+}
 
 /** Brewnet SVG icon (inline string, served at /icon.svg) */
 const ICON_SVG = (() => {
@@ -1272,30 +1308,39 @@ ${rows}
       return;
     }
 
-    // Serve dashboard HTML (with lazy Quick Tunnel + credential detection)
-    if ((req.method === 'GET' && url === '/') || url === '/index.html') {
-      await detectQuickTunnelUrl();
-      await detectCredentials();
-      refreshBoilerplateMeta();
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(dashboardHtml);
+    // Serve React SPA static assets (/assets/*)
+    if (req.method === 'GET' && url.startsWith('/assets/')) {
+      const pathname = url.split('?')[0];
+      const safePath = resolve(ADMIN_UI_DIST, '.' + pathname);
+      if (!safePath.startsWith(ADMIN_UI_DIST)) {
+        res.writeHead(403); res.end('Forbidden'); return;
+      }
+      if (existsSync(safePath) && statSync(safePath).isFile()) {
+        serveStaticFile(safePath, res);
+        return;
+      }
+      res.writeHead(404); res.end('Not Found');
       return;
     }
 
-    // Serve Apps page
-    if (req.method === 'GET' && (url === '/apps' || url === '/apps/')) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(generateAppsPageHtml());
-      return;
-    }
-
-    // Serve App Detail page at /apps/:name
-    if (req.method === 'GET' && parts.length === 2 && parts[0] === 'apps') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(generateAppDetailHtml(decodeURIComponent(parts[1]!), {
-        zoneName: dashConfig.zoneName ?? undefined,
-        tunnelId: dashConfig.tunnelId ?? undefined,
-      }));
+    // SPA fallback — serve index.html for all non-API GET requests
+    if (req.method === 'GET' && !url.startsWith('/api/')) {
+      const pathname = url.split('?')[0];
+      // Exact static file (e.g. /vite.svg, /favicon.ico from dist/)
+      const exactPath = resolve(ADMIN_UI_DIST, '.' + (pathname === '/' ? '/index.html' : pathname));
+      if (exactPath.startsWith(ADMIN_UI_DIST) && existsSync(exactPath) && statSync(exactPath).isFile()) {
+        serveStaticFile(exactPath, res);
+        return;
+      }
+      // SPA fallback: serve index.html
+      const indexPath = join(ADMIN_UI_DIST, 'index.html');
+      if (existsSync(indexPath)) {
+        serveStaticFile(indexPath, res);
+        return;
+      }
+      // admin-ui not built yet
+      res.writeHead(503, { 'Content-Type': 'text/plain' });
+      res.end('Admin UI not built. Run: pnpm --filter @brewnet/admin-ui build');
       return;
     }
 
@@ -1305,6 +1350,27 @@ ${rows}
       try {
         if (parts[1] === 'health' && req.method === 'GET') {
           json(res, 200, { status: 'ok', version: '1.0.1' });
+          return;
+        }
+
+        // GET /api/services/catalog — SERVICE_DETAIL_MAP + NAME_ALIASES for React SPA
+        if (parts[1] === 'services' && parts[2] === 'catalog' && req.method === 'GET') {
+          json(res, 200, { catalog: SERVICE_DETAIL_MAP, aliases: NAME_ALIASES });
+          return;
+        }
+
+        // GET /api/config — dashboard bootstrap data for React SPA
+        if (parts[1] === 'config' && req.method === 'GET') {
+          await detectQuickTunnelUrl();
+          await detectCredentials();
+          json(res, 200, {
+            adminUsername: dashConfig.adminUsername,
+            passwordHint: dashConfig.passwordHint,
+            domainProvider: dashConfig.domainProvider,
+            quickTunnelUrl: dashConfig.quickTunnelUrl,
+            zoneName: dashConfig.zoneName,
+            tunnelId: dashConfig.tunnelId,
+          });
           return;
         }
 
@@ -1505,10 +1571,17 @@ ${rows}
             return;
           }
 
-          // GET /api/apps/:name/logs — SSE stream
+          // GET /api/apps/:name/logs — SSE stream (auth: X-Admin-Password header or ?token query)
           if (req.method === 'GET' && parts[3] === 'logs') {
             const appDir = getAppDir(decodeURIComponent(parts[2] ?? ''));
             if (!appDir) { json(res, 404, { error: 'App not found' }); return; }
+            // EventSource cannot send custom headers — accept ?token as fallback
+            const reqUrlObj = new URL(req.url ?? '/', 'http://localhost');
+            const tokenParam = reqUrlObj.searchParams.get('token');
+            const authHeader = req.headers['x-admin-password'] as string | undefined;
+            if (password && !authHeader && tokenParam && tokenParam !== password) {
+              json(res, 401, { error: 'Unauthorized' }); return;
+            }
             res.writeHead(200, {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',

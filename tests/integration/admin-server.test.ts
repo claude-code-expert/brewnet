@@ -424,9 +424,10 @@ describe('Unknown routes', () => {
     expect(status).toBe(404);
   });
 
-  it('returns 404 for unknown path', async () => {
+  it('returns SPA fallback for unknown non-api path', async () => {
     const { status } = await req('GET', '/foo/bar');
-    expect(status).toBe(404);
+    // SPA fallback: 200 (dist present) or 503 (dist missing), never 404
+    expect([200, 503]).toContain(status);
   });
 
   it('returns 204 for OPTIONS (CORS preflight)', async () => {

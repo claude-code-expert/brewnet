@@ -10,7 +10,7 @@
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @brewnet/admin-ui build && pnpm -r --filter !@brewnet/admin-ui build",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest --passWithNoTests",
     "test:coverage": "NODE_OPTIONS='--experimental-vm-modules' jest --coverage --passWithNoTests",
     "lint": "eslint .",

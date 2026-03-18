@@ -1,0 +1,187 @@
+// T036 — OverviewTab: app metadata, URLs, git info
+import type { AppEntry, AppGitInfo } from '../types.js';
+
+interface OverviewTabProps {
+  app: AppEntry;
+  git: AppGitInfo | null;
+}
+
+function StatusBadge({ status }: { status: AppEntry['status'] }) {
+  const cls =
+    status === 'running' ? 'bdg b-run'
+    : status === 'stopped' ? 'bdg b-stop'
+    : status === 'creating' ? 'bdg b-build'
+    : 'bdg b-stop';
+  return <span className={cls}>{status}</span>;
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 12,
+      padding: '10px 0',
+      borderBottom: '1px solid var(--bdr)',
+    }}>
+      <span style={{
+        width: 140,
+        flexShrink: 0,
+        fontSize: 12,
+        color: 'var(--txt3)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+        paddingTop: 1,
+      }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 13, color: 'var(--txt)', wordBreak: 'break-all' }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
+function formatDate(iso: string) {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+export function OverviewTab({ app, git }: OverviewTabProps) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* App Info Card */}
+      <div className="card" style={{ padding: '20px 24px' }}>
+        <div className="section-title" style={{ marginBottom: 12 }}>App Info</div>
+        <div>
+          <InfoRow label="Name">
+            <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{app.name}</span>
+          </InfoRow>
+          <InfoRow label="Status">
+            <StatusBadge status={app.status} />
+          </InfoRow>
+          <InfoRow label="Port">
+            <span style={{ fontFamily: 'var(--mono)' }}>{app.port}</span>
+          </InfoRow>
+          {app.lang && (
+            <InfoRow label="Language">
+              {app.lang}{app.framework ? ` / ${app.framework}` : ''}
+            </InfoRow>
+          )}
+          <InfoRow label="App Directory">
+            <span style={{ fontFamily: 'var(--mono)', color: 'var(--txt2)', fontSize: 12 }}>
+              {app.appDir}
+            </span>
+          </InfoRow>
+          <InfoRow label="Created">
+            {formatDate(app.createdAt)}
+          </InfoRow>
+          <InfoRow label="Last Deployed">
+            {app.lastDeployedAt ? formatDate(app.lastDeployedAt) : (
+              <span style={{ color: 'var(--txt3)', fontStyle: 'italic' }}>Never deployed</span>
+            )}
+          </InfoRow>
+        </div>
+      </div>
+
+      {/* Access URLs */}
+      {(app.localUrl || app.externalUrl) && (
+        <div className="card" style={{ padding: '20px 24px' }}>
+          <div className="section-title" style={{ marginBottom: 12 }}>Access</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {app.localUrl && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ width: 80, fontSize: 12, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Local
+                </span>
+                <a
+                  href={app.localUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--teal)', fontSize: 13, fontFamily: 'var(--mono)', textDecoration: 'none' }}
+                >
+                  {app.localUrl}
+                  <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--txt3)' }}>↗</span>
+                </a>
+              </div>
+            )}
+            {app.externalUrl && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ width: 80, fontSize: 12, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  External
+                </span>
+                <a
+                  href={app.externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--amber)', fontSize: 13, fontFamily: 'var(--mono)', textDecoration: 'none' }}
+                >
+                  {app.externalUrl}
+                  <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--txt3)' }}>↗</span>
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Git Info */}
+      <div className="card" style={{ padding: '20px 24px' }}>
+        <div className="section-title" style={{ marginBottom: 12 }}>Git Repository</div>
+        {git ? (
+          <div>
+            <InfoRow label="Branch">
+              <span style={{ fontFamily: 'var(--mono)', color: 'var(--teal)' }}>
+                {git.branch}
+              </span>
+            </InfoRow>
+            {git.giteaUrl && (
+              <InfoRow label="Gitea URL">
+                <a
+                  href={git.giteaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--teal)', fontSize: 13, fontFamily: 'var(--mono)', textDecoration: 'none' }}
+                >
+                  {git.giteaUrl}
+                  <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--txt3)' }}>↗</span>
+                </a>
+              </InfoRow>
+            )}
+            {git.latestCommit ? (
+              <>
+                <InfoRow label="Latest Commit">
+                  <span style={{ fontFamily: 'var(--mono)', color: 'var(--amber)', fontSize: 12 }}>
+                    {git.latestCommit.shortHash}
+                  </span>
+                  <span style={{ marginLeft: 10, color: 'var(--txt2)', fontSize: 13 }}>
+                    {git.latestCommit.message}
+                  </span>
+                </InfoRow>
+                <InfoRow label="Commit Date">
+                  {formatDate(git.latestCommit.date)}
+                </InfoRow>
+              </>
+            ) : (
+              <InfoRow label="Latest Commit">
+                <span style={{ color: 'var(--txt3)', fontStyle: 'italic' }}>No commits yet</span>
+              </InfoRow>
+            )}
+            <InfoRow label="Clone (HTTP)">
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--txt2)' }}>
+                {git.cloneUrlHttp}
+              </span>
+            </InfoRow>
+          </div>
+        ) : (
+          <div style={{ color: 'var(--txt3)', fontSize: 13, fontStyle: 'italic' }}>
+            Git information unavailable
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
