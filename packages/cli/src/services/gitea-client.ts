@@ -157,7 +157,24 @@ export class GiteaClient {
     });
 
     if (!res.ok) {
-      throw new Error(`Gitea createRepo failed: ${res.status} ${await res.text()}`);
+      const body = await res.text();
+      // Gitea 500 "repository files already exist" — DB record was deleted
+      // (e.g. by uninstall) but bare git files remain on disk in the volume.
+      // Delete the orphan files and retry once.
+      if (res.status === 500 && body.includes('files already exist')) {
+        await this.deleteRepo(name).catch(() => { /* may 404 — that's fine */ });
+        const retry = await fetch(`${baseUrl}/api/v1/user/repos`, {
+          method: 'POST',
+          headers: await this.authHeaders(),
+          body: JSON.stringify({ name, description, private: true, auto_init: false }),
+        });
+        if (!retry.ok) {
+          throw new Error(`Gitea createRepo retry failed: ${retry.status} ${await retry.text()}`);
+        }
+        const retryData = (await retry.json()) as { clone_url: string };
+        return retryData.clone_url;
+      }
+      throw new Error(`Gitea createRepo failed: ${res.status} ${body}`);
     }
 
     const data = (await res.json()) as { clone_url: string };
