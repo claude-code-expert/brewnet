@@ -158,6 +158,22 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     await execa('git', ['pull', 'brewnet', settings.deployBranch], { cwd: app.appDir }).catch(() => {});
     setStep(job, 0, 'done');
 
+    // Check if deployable — must have docker-compose.yml (or auto-scaffold)
+    const hasCompose = existsSync(join(app.appDir, 'docker-compose.yml')) || existsSync(join(app.appDir, 'compose.yml'));
+    if (!hasCompose) {
+      // Try auto-scaffold for known project types
+      const projectType = _detectProjectType(app.appDir);
+      if (projectType) {
+        appendLog(job, `[scaffold] Detected ${projectType} project — generating Docker config`);
+        _scaffoldDockerConfig(app.appDir, appName, app.port, job);
+      } else {
+        throw new Error(
+          'This project has no docker-compose.yml or Dockerfile. ' +
+          'Add a Dockerfile and docker-compose.yml to deploy, or use a Brewnet boilerplate.',
+        );
+      }
+    }
+
     setStep(job, 1, 'running', 'docker compose up --build');
     await _dockerComposeUp(app.appDir, job);
     setStep(job, 1, 'done', 'containers started');
@@ -499,12 +515,22 @@ function _detectBasePath(appDir: string): string {
 }
 
 /**
- * Build the health check URL for an app, accounting for Next.js basePath.
+ * Build the health check URL for an app.
+ * - Brewnet boilerplates have /health endpoint → use /health
+ * - Scaffolded/general projects → use / (root)
+ * - Next.js with basePath → prefix accordingly
  */
 function _buildHealthUrl(appDir: string, port: number, fallbackPort: number): string {
   const healthPort = _resolveBackendPort(appDir, fallbackPort);
   const basePath = _detectBasePath(appDir);
-  return `http://127.0.0.1:${healthPort}${basePath}/health`;
+  // Check if this is a brewnet boilerplate (has .env.example with STACK_LANG)
+  // or has an explicit /health route file
+  const isBoilerplate = existsSync(join(appDir, '.env.example'))
+    && readFileSync(join(appDir, '.env.example'), 'utf-8').includes('STACK_LANG');
+  const hasHealthRoute = existsSync(join(appDir, 'src', 'app', 'health'))
+    || existsSync(join(appDir, 'backend', 'src'));
+  const healthPath = (isBoilerplate || hasHealthRoute) ? '/health' : '/';
+  return `http://127.0.0.1:${healthPort}${basePath}${healthPath}`;
 }
 
 async function _pollHealth(url: string, maxMs = 120_000, job?: AppJob): Promise<void> {
