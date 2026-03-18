@@ -49,7 +49,48 @@ export function readDotEnvValue(envPath: string, key: string): string {
 // ---------------------------------------------------------------------------
 
 export async function listApps(): Promise<AppEntry[]> {
-  return readApps(resolveAppsJsonPath());
+  const appsJson = resolveAppsJsonPath();
+  const apps = readApps(appsJson);
+
+  // Auto-register wizard boilerplates that aren't in apps.json yet.
+  // This bridges the gap between `brewnet init` (writes .brewnet-boilerplate.json)
+  // and the Apps page (reads apps.json).
+  try {
+    const ctx = resolveContext();
+    const bpPath = join(ctx.projectPath, '.brewnet-boilerplate.json');
+    if (existsSync(bpPath)) {
+      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+      const bpMetas: Array<{ stackId: string; appDir: string; lang?: string; frameworkId?: string; status?: string; backendUrl?: string }> =
+        Array.isArray(raw) ? raw : [raw];
+      let changed = false;
+      for (const bp of bpMetas) {
+        if (!bp.stackId || !bp.appDir) continue;
+        // Check if already registered by stackId or appDir
+        const exists = apps.some((a) => a.appDir === bp.appDir || a.stackId === bp.stackId);
+        if (!exists) {
+          const port = bp.backendUrl ? parseInt(new URL(bp.backendUrl).port || '8080', 10) : 8080;
+          const entry: AppEntry = {
+            name: bp.stackId,
+            mode: 'boilerplate',
+            stackId: bp.stackId,
+            appDir: bp.appDir,
+            lang: bp.lang,
+            framework: bp.frameworkId,
+            port,
+            status: (bp.status as AppEntry['status']) || 'running',
+            createdAt: new Date().toISOString(),
+          };
+          apps.push(entry);
+          changed = true;
+        }
+      }
+      if (changed) {
+        writeFileSync(appsJson, JSON.stringify(apps, null, 2), 'utf-8');
+      }
+    }
+  } catch { /* non-critical — boilerplate auto-register is best-effort */ }
+
+  return apps;
 }
 
 export function getDeployHistory(appName?: string): DeployHistoryEntry[] {

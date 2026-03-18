@@ -298,39 +298,17 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
     <div class="mh">
       <div>
         <div class="mt-m">New App</div>
-        <div class="ms">보일러플레이트, Git Clone, 또는 새 프로젝트를 Gitea에 자동 연결합니다</div>
+        <div class="ms">Git Clone 또는 새 프로젝트를 Gitea에 자동 연결합니다</div>
       </div>
       <button class="xbtn" onclick="closeModal('modal-new-app')">✕</button>
     </div>
     <div class="mb-m">
       <div class="tabs" id="newapp-tabs">
-        <div class="tab active" onclick="switchTab('newapp',0)">📦 보일러플레이트</div>
-        <div class="tab" onclick="switchTab('newapp',1)">⬇ Git Clone</div>
-        <div class="tab" onclick="switchTab('newapp',2)">✨ New Project</div>
+        <div class="tab active" onclick="switchTab('newapp',0)">⬇ Git Clone</div>
+        <div class="tab" onclick="switchTab('newapp',1)">✨ New Project</div>
       </div>
-      <!-- TAB 0: BOILERPLATE -->
+      <!-- TAB 0: GIT CLONE -->
       <div id="newapp-tab-0">
-        <div class="alert a-info" style="margin-bottom:16px">이미 설치된 보일러플레이트를 Gitea에 연결합니다. 새 프로젝트를 처음부터 생성하려면 <strong>New Project</strong> 탭을 사용하세요.</div>
-        <div class="bp-grid" id="bp-grid"></div>
-        <div class="row2">
-          <div class="fg">
-            <label class="fl">앱 이름 <span style="color:var(--red)">*</span></label>
-            <input class="fi" id="bp-appname" placeholder="my-app" oninput="sanitizeAppName(this)">
-            <div class="fhint">Gitea repo 이름으로 사용됩니다 (소문자·하이픈)</div>
-          </div>
-          <div class="fg">
-            <label class="fl">포트 <span style="color:var(--red)">*</span></label>
-            <input class="fi" id="bp-port" placeholder="8080" type="number" min="1024" max="65535" oninput="debouncedPortCheck('bp-port')">
-            <div class="fhint" id="bp-port-hint"></div>
-          </div>
-        </div>
-        <div id="bp-selected-info" style="display:none">
-          <div class="ir"><span class="ik">선택된 템플릿</span><span class="iv" id="bp-sel-nm">—</span></div>
-          <div class="ir"><span class="ik">Gitea 레포 경로</span><span class="iv" id="bp-sel-repo">—</span></div>
-        </div>
-      </div>
-      <!-- TAB 1: GIT CLONE -->
-      <div id="newapp-tab-1" style="display:none">
         <div class="alert a-dim" style="margin-bottom:16px">외부 Git URL(GitHub, GitLab 등)의 레포지토리를 클론한 뒤 로컬 Gitea에 자동으로 미러링합니다.</div>
         <div class="fg">
           <label class="fl">Git URL <span style="color:var(--red)">*</span></label>
@@ -353,7 +331,7 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
         </div>
       </div>
       <!-- TAB 2: NEW PROJECT -->
-      <div id="newapp-tab-2" style="display:none">
+      <div id="newapp-tab-1" style="display:none">
         <label class="fl" style="margin-bottom:10px">언어 선택 <span style="color:var(--red)">*</span></label>
         <div class="lgrid" id="lang-grid"></div>
         <div id="fw-section" style="display:none">
@@ -640,7 +618,7 @@ async function refreshAll(){
   // Do NOT await repos here — Gitea may be unreachable and would block forever
   await Promise.all([loadApps(),loadDomains().catch(function(){}),loadInstalledBp().catch(function(){})]);
   await loadGitInfo();
-  renderApps();renderBpGrid();
+  renderApps();
   showToast('\u21bb \uc0c8\ub85c\uace0\uce68 \uc644\ub8cc');
   // Load repos in background — render when ready, never blocks app list
   loadRepos().catch(function(){}).then(function(){renderRepos();});
@@ -1131,38 +1109,12 @@ function switchTab(group,idx){
   var tabs=document.getElementById(group+'-tabs').querySelectorAll('.tab');
   tabs.forEach(function(t,i){t.classList.toggle('active',i===idx);});
   if(group==='newapp'){
-    [0,1,2].forEach(function(i){document.getElementById('newapp-tab-'+i).style.display=i===idx?'block':'none';});
+    [0,1].forEach(function(i){document.getElementById('newapp-tab-'+i).style.display=i===idx?'block':'none';});
     currentNewAppTab=idx;
   }else if(group==='domain'){
     [0,1,2].forEach(function(i){document.getElementById('domain-tab-'+i).style.display=i===idx?'block':'none';});
     currentDomainTab=idx;
   }
-}
-
-/* ─── BOILERPLATE GRID ─── */
-function renderBpGrid(){
-  // Filter to only show installed boilerplates (from /api/apps/boilerplates)
-  var installedIds=installedBp.map(function(b){return b.stackId;});
-  var available=BOILERPLATES.filter(function(bp){return installedIds.indexOf(bp.id)>=0;});
-  if(available.length===0){
-    document.getElementById('bp-grid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--txt3);font-size:13px">설치된 보일러플레이트가 없습니다. <strong>New Project</strong> 탭에서 새 프로젝트를 생성하세요.</div>';
-    return;
-  }
-  document.getElementById('bp-grid').innerHTML=available.map(function(bp){
-    return '<div class="bp-card" id="bpc-'+bp.id+'" onclick="selectBp(&#39;'+bp.id+'&#39;)"><div class="bp-head"><span class="bp-em">'+bp.emoji+'</span><span class="bp-nm">'+escH(bp.lang)+'</span></div><div class="bp-fw">'+escH(bp.fw)+'</div><div class="bp-desc">'+escH(bp.desc)+'</div></div>';
-  }).join('');
-}
-
-function selectBp(id){
-  document.querySelectorAll('.bp-card').forEach(function(c){c.classList.remove('sel');});
-  document.getElementById('bpc-'+id).classList.add('sel');
-  selectedBp=BOILERPLATES.find(function(b){return b.id===id;});
-  document.getElementById('bp-port').value=selectedBp.port;
-  document.getElementById('bp-sel-nm').textContent=selectedBp.lang+' \u00b7 '+selectedBp.fw;
-  var nm=document.getElementById('bp-appname').value||'my-app';
-  document.getElementById('bp-sel-repo').textContent='git.local/admin/'+nm;
-  document.getElementById('bp-selected-info').style.display='block';
-  debouncedPortCheck('bp-port');
 }
 
 /* ─── LANG GRID ─── */
@@ -1211,9 +1163,6 @@ function autoFillFromUrl(url){
 /* ─── SANITIZE APP NAME ─── */
 function sanitizeAppName(el){
   el.value=el.value.toLowerCase().replace(/[^a-z0-9-]/g,'-');
-  if(el.id==='bp-appname'&&selectedBp){
-    document.getElementById('bp-sel-repo').textContent='git.local/admin/'+(el.value||'my-app');
-  }
   if(el.id==='proj-name')updateProjPreview();
 }
 
@@ -1259,11 +1208,6 @@ function usePort(inputId,port){
 async function submitNewApp(){
   var name='',port='',body={};
   if(currentNewAppTab===0){
-    name=document.getElementById('bp-appname').value;
-    port=document.getElementById('bp-port').value;
-    if(!selectedBp||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
-    body={mode:'boilerplate',appName:name,port:parseInt(port),stackId:selectedBp.id};
-  }else if(currentNewAppTab===1){
     name=document.getElementById('clone-name').value;
     port=document.getElementById('clone-port').value;
     var gitUrl=document.getElementById('clone-url').value;
@@ -1420,7 +1364,6 @@ function showToast(msg){
 
 /* ─── INIT ─── */
 window.addEventListener('load',function(){
-  renderBpGrid();
   renderLangGrid();
   document.getElementById('sub-base').addEventListener('change',updateSubPreview);
   document.getElementById('proj-name').addEventListener('input',updateProjPreview);

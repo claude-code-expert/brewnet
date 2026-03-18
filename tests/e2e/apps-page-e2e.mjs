@@ -142,23 +142,14 @@ function check(label, ok, detail) {
   check('New App modal opens on click', modalVisible);
 
   if (modalVisible) {
-    // ── 14. Boilerplate tab ──
-    const bpGrid = await page.locator('#bp-grid').isVisible();
-    check('Boilerplate grid visible', bpGrid);
+    // ── 14. Git Clone tab (default tab) ──
+    const cloneUrlInput = await page.locator('#clone-url').isVisible();
+    check('Git Clone tab — URL input visible', cloneUrlInput);
 
-    // ── 15. Git Clone tab ──
-    const gitCloneTab = page.locator('.tab').filter({ hasText: /Git Clone/i }).first();
-    if (await gitCloneTab.isVisible()) {
-      await gitCloneTab.click();
-      await page.waitForTimeout(300);
-      const cloneUrlInput = await page.locator('#clone-url').isVisible();
-      check('Git Clone tab — URL input visible', cloneUrlInput);
+    const cloneBranchInput = await page.locator('#clone-branch').isVisible();
+    check('Git Clone tab — Branch input visible', cloneBranchInput);
 
-      const cloneBranchInput = await page.locator('#clone-branch').isVisible();
-      check('Git Clone tab — Branch input visible', cloneBranchInput);
-    }
-
-    // ── 16. New Project tab ──
+    // ── 15. New Project tab ──
     const newProjTab = page.locator('.tab').filter({ hasText: /New Project/i }).first();
     if (await newProjTab.isVisible()) {
       await newProjTab.click();
