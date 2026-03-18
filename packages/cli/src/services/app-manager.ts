@@ -738,17 +738,27 @@ async function _createModeB(
   await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
-  setStep(job, 4, 'running', 'docker compose up --build');
-  ensureComposeFile(appDir, opts.appName, port, job);
-  _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
-  await _dockerComposeUp(appDir, job);
-  setStep(job, 4, 'done', 'containers started');
+  // Git Clone mode: skip Docker up + Health check.
+  // Clone + Gitea repo creation is sufficient — user deploys separately.
+  // If docker-compose.yml exists (e.g. brewnet boilerplate), auto-start.
+  const hasCompose = existsSync(join(appDir, 'docker-compose.yml')) || existsSync(join(appDir, 'compose.yml'));
+  if (hasCompose) {
+    setStep(job, 4, 'running', 'docker compose up --build');
+    _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
+    await _dockerComposeUp(appDir, job);
+    setStep(job, 4, 'done', 'containers started');
 
-  setStep(job, 5, 'running');
-  const healthUrlB = _buildHealthUrl(appDir, port, port);
-  setStep(job, 5, 'running', `polling ${healthUrlB}`);
-  await _pollHealth(healthUrlB, 120_000, job);
-  setStep(job, 5, 'done');
+    setStep(job, 5, 'running');
+    const healthUrlB = _buildHealthUrl(appDir, port, port);
+    setStep(job, 5, 'running', `polling ${healthUrlB}`);
+    await _pollHealth(healthUrlB, 120_000, job);
+    setStep(job, 5, 'done');
+  } else {
+    setStep(job, 4, 'done', 'skipped — no docker-compose.yml');
+    setStep(job, 5, 'done', 'skipped — deploy separately');
+    appendLog(job, '[info] No docker-compose.yml found — clone + Gitea push completed.');
+    appendLog(job, '[info] Deploy 버튼을 눌러 배포하거나, Dockerfile을 추가한 후 배포하세요.');
+  }
 
   addApp(appsJson, {
     name: opts.appName,
@@ -757,7 +767,7 @@ async function _createModeB(
     appDir,
     port,
     giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
-    status: 'running',
+    status: hasCompose ? 'running' : 'stopped',
     createdAt: new Date().toISOString(),
   });
 }
