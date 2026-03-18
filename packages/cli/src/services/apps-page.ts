@@ -907,12 +907,9 @@ function startJobPoll(jobId,appName,maxSteps,jobMode){
       // Merge: keep existing SSE lines, append new job log lines
       var existingLines=logEl.textContent.split('\\n').filter(function(l){return l.trim();});
       var jobLines=r.logs;
-      // Deduplicate: only add job lines not already shown
       var merged=existingLines.slice();
-      jobLines.forEach(function(jl){
-        if(merged.indexOf(jl)<0)merged.push(jl);
-      });
-      // Cap at 300 lines
+      var seen=new Set(existingLines);
+      jobLines.forEach(function(jl){if(!seen.has(jl)){merged.push(jl);seen.add(jl);}});
       if(merged.length>300)merged=merged.slice(merged.length-300);
       logEl.textContent=merged.join('\\n');
       logEl.scrollTop=logEl.scrollHeight;

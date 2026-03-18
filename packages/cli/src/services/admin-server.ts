@@ -28,7 +28,7 @@ import { verifyToken } from './cloudflare-client.js';
 import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { generateAppsPageHtml, generateAppDetailHtml } from './apps-page.js';
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, updateDeploySettings, getDeploySettings, getAppDir } from './app-manager.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 
@@ -1380,21 +1380,15 @@ ${rows}
             const apps = await listApps();
             // Enrich with lastDeployedAt + localUrl (with basePath for Next.js)
             const history = getDeployHistory();
+            const historyByApp = new Map<string, typeof history[0]>();
+            for (const h of history) { if (h.status === 'success') historyByApp.set(h.appName, h); }
             const enrichedApps = apps.map((a) => {
-              const deploys = history.filter((h) => h.appName === a.name && h.status === 'success');
-              const lastDeploy = deploys.length > 0 ? deploys[deploys.length - 1] : null;
+              const lastDeploy = historyByApp.get(a.name) ?? null;
               // Compute localUrl with basePath (same logic as Dashboard services)
               let localUrl = a.port ? `http://localhost:${a.port}` : null;
               if (a.appDir) {
-                for (const cfg of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
-                  const cfgPath = join(a.appDir, cfg);
-                  if (existsSync(cfgPath)) {
-                    const content = readFileSync(cfgPath, 'utf-8');
-                    const bpMatch = content.match(/basePath\s*:\s*['"`]([^'"`]+)['"`]/);
-                    if (bpMatch && localUrl) localUrl += bpMatch[1];
-                    break;
-                  }
-                }
+                const bp = detectBasePath(a.appDir);
+                if (bp && localUrl) localUrl += bp;
               }
               return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl };
             });

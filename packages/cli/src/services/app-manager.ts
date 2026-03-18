@@ -1,5 +1,5 @@
 // packages/cli/src/services/app-manager.ts
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -48,13 +48,17 @@ export function readDotEnvValue(envPath: string, key: string): string {
 // Public API
 // ---------------------------------------------------------------------------
 
+let _boilerplateRegistered = false;
+
 export async function listApps(): Promise<AppEntry[]> {
   const appsJson = resolveAppsJsonPath();
   const apps = readApps(appsJson);
 
-  // Auto-register wizard boilerplates that aren't in apps.json yet.
+  // Auto-register wizard boilerplates (once per process lifetime).
   // This bridges the gap between `brewnet init` (writes .brewnet-boilerplate.json)
   // and the Apps page (reads apps.json).
+  if (_boilerplateRegistered) return apps;
+  _boilerplateRegistered = true;
   try {
     const ctx = resolveContext();
     const bpPath = join(ctx.projectPath, '.brewnet-boilerplate.json');
@@ -206,7 +210,7 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
       const projectType = _detectProjectType(app.appDir);
       if (projectType) {
         appendLog(job, `[scaffold] Detected ${projectType} project — generating Docker config`);
-        _scaffoldDockerConfig(app.appDir, appName, app.port, job);
+        _scaffoldDockerConfig(app.appDir, appName, app.port, job, projectType);
       } else {
         throw new Error(
           'This project has no docker-compose.yml or Dockerfile. ' +
@@ -220,7 +224,7 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     setStep(job, 1, 'done', 'containers started');
 
     setStep(job, 2, 'running');
-    const healthUrlDeploy = _buildHealthUrl(app.appDir, app.port, app.port);
+    const healthUrlDeploy = _buildHealthUrl(app.appDir, app.port);
     setStep(job, 2, 'running', `polling ${healthUrlDeploy}`);
     await _pollHealth(healthUrlDeploy, 120_000, job);
     setStep(job, 2, 'done');
@@ -366,7 +370,6 @@ function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' 
     if (existsSync(join(dir, 'pom.xml')) || existsSync(join(dir, 'build.gradle')) || existsSync(join(dir, 'build.gradle.kts'))) return 'java';
     // Static HTML — fallback if index.html exists or any .html files
     if (existsSync(join(dir, 'index.html'))) return 'static';
-    const { readdirSync } = require('node:fs') as typeof import('node:fs');
     if (readdirSync(dir).some((f: string) => f.endsWith('.html'))) return 'static';
   } catch { /* ignore */ }
   return null;
@@ -375,11 +378,11 @@ function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' 
 /**
  * Generate Dockerfile + docker-compose.yml for projects that don't have them.
  */
-function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?: AppJob): void {
-  const type = _detectProjectType(dir);
+function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?: AppJob, detectedType?: string): void {
+  const type = detectedType || _detectProjectType(dir);
   if (!type) throw new Error(`Cannot auto-detect project type in ${dir}. Add a Dockerfile and docker-compose.yml manually.`);
 
-  if (job) appendLog(job, `[scaffold] Detected ${type} project — generating Docker config`);
+  if (job && !detectedType) appendLog(job, `[scaffold] Detected ${type} project — generating Docker config`);
 
   let dockerfile = '';
 
@@ -532,7 +535,7 @@ function _resolveBackendPort(appDir: string, fallbackPort: number): number {
  * Returns the basePath string (e.g. '/apps/my-app') or '' if not set.
  * Next.js bakes basePath at build time — /health becomes /apps/my-app/health.
  */
-function _detectBasePath(appDir: string): string {
+export function detectBasePath(appDir: string): string {
   for (const name of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
     const p = join(appDir, name);
     if (existsSync(p)) {
@@ -550,9 +553,9 @@ function _detectBasePath(appDir: string): string {
  * - Scaffolded/general projects → use / (root)
  * - Next.js with basePath → prefix accordingly
  */
-function _buildHealthUrl(appDir: string, port: number, fallbackPort: number): string {
+function _buildHealthUrl(appDir: string, fallbackPort: number): string {
   const healthPort = _resolveBackendPort(appDir, fallbackPort);
-  const basePath = _detectBasePath(appDir);
+  const basePath = detectBasePath(appDir);
   // Check if this is a brewnet boilerplate (has .env.example with STACK_LANG)
   // or has an explicit /health route file
   const isBoilerplate = existsSync(join(appDir, '.env.example'))
@@ -724,7 +727,7 @@ async function _createModeA(
 
   // Step 5: Health check — accounts for Next.js basePath
   setStep(job, 5, 'running');
-  const healthUrlA = _buildHealthUrl(meta.appDir, port, port);
+  const healthUrlA = _buildHealthUrl(meta.appDir, port);
   setStep(job, 5, 'running', `polling ${healthUrlA}`);
   await _pollHealth(healthUrlA, 120_000, job);
   setStep(job, 5, 'done');
@@ -771,20 +774,19 @@ async function _createModeB(
   await execa('git', cloneArgs);
   // Inject user-specified ports into .env so docker-compose picks them up
   // (prevents "port already allocated" when default 8080/3000 are in use)
-  const { existsSync: envExists, readFileSync: envRead, writeFileSync: envWrite } = await import('node:fs');
   const envExPath = join(appDir, '.env.example');
   const envPath = join(appDir, '.env');
-  if (envExists(envExPath)) {
+  if (existsSync(envExPath)) {
     const { findFreePort: findFreePortB } = await import('./boilerplate-manager.js');
-    let envContent = envRead(envExPath, 'utf-8');
+    let envContent = readFileSync(envExPath, 'utf-8');
     envContent = envContent.replace(/^BACKEND_PORT=.*/m, `BACKEND_PORT=${port}`);
     const fePort = await findFreePortB(3000);
     envContent = envContent.replace(/^FRONTEND_PORT=.*/m, `FRONTEND_PORT=${fePort}`);
-    envWrite(envPath, envContent, 'utf-8');
-  } else if (envExists(join(appDir, '.env'))) {
-    let envContent = envRead(join(appDir, '.env'), 'utf-8');
+    writeFileSync(envPath, envContent, 'utf-8');
+  } else if (existsSync(join(appDir, '.env'))) {
+    let envContent = readFileSync(join(appDir, '.env'), 'utf-8');
     envContent = envContent.replace(/^BACKEND_PORT=.*/m, `BACKEND_PORT=${port}`);
-    envWrite(join(appDir, '.env'), envContent, 'utf-8');
+    writeFileSync(join(appDir, '.env'), envContent, 'utf-8');
   }
   await reinitGitB(appDir);
   const alreadyExists = await gitea.repoExists(opts.appName);
@@ -810,7 +812,7 @@ async function _createModeB(
     setStep(job, 4, 'done', 'containers started');
 
     setStep(job, 5, 'running');
-    const healthUrlB = _buildHealthUrl(appDir, port, port);
+    const healthUrlB = _buildHealthUrl(appDir, port);
     setStep(job, 5, 'running', `polling ${healthUrlB}`);
     await _pollHealth(healthUrlB, 120_000, job);
     setStep(job, 5, 'done');
@@ -874,7 +876,7 @@ async function _createModeC(
   setStep(job, 4, 'done', 'containers started');
 
   setStep(job, 5, 'running');
-  const healthUrlC = _buildHealthUrl(appDir, port, port);
+  const healthUrlC = _buildHealthUrl(appDir, port);
   setStep(job, 5, 'running', `polling ${healthUrlC}`);
   await _pollHealth(healthUrlC, 120_000, job);
   setStep(job, 5, 'done');
