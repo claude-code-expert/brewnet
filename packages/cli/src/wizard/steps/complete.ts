@@ -296,6 +296,9 @@ export async function runCompleteStep(
     });
     await admin.start();
 
+    // Ignore SIGHUP so the admin server survives terminal close
+    process.on('SIGHUP', () => { /* keep running */ });
+
     console.log(chalk.bold('  Admin Panel'));
     console.log(chalk.dim('    홈서버 관리 대시보드가 시작되었습니다.'));
     console.log(`    ${chalk.cyan.bold(adminUrl)}`);
@@ -310,6 +313,14 @@ export async function runCompleteStep(
         await execa(cmd, [adminUrl]);
       } catch { /* best-effort */ }
     }
+
+    // Keep the process alive — admin HTTP server must outlive the wizard.
+    // Without this, the function returns → Commander exits → process ends.
+    await new Promise<void>((resolve) => {
+      process.once('SIGINT', resolve);
+      process.once('SIGTERM', resolve);
+    });
+    console.log(chalk.dim('\n  Admin panel stopped.'));
   } catch {
     // Non-fatal — admin panel failure should not block completion
     console.log(chalk.dim(`  Admin Panel 시작 실패. 수동 실행: ${chalk.cyan('brewnet admin')}`));

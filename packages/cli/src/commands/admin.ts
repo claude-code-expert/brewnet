@@ -61,7 +61,12 @@ export function registerAdminCommand(program: Command): void {
           }
         }
 
-        // Keep alive until Ctrl+C
+        // Ignore SIGHUP so the admin server survives terminal close
+        process.on('SIGHUP', () => {
+          // Terminal closed — keep running in background
+        });
+
+        // Keep alive until explicit Ctrl+C or kill
         await new Promise<void>((resolve) => {
           process.once('SIGINT', resolve);
           process.once('SIGTERM', resolve);
