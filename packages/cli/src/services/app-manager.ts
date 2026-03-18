@@ -315,7 +315,7 @@ function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: numbe
 /**
  * Detect project type from files in the directory.
  */
-function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' | 'rust' | 'java' | null {
+function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' | 'rust' | 'java' | 'static' | null {
   try {
     if (existsSync(join(dir, 'next.config.ts')) || existsSync(join(dir, 'next.config.mjs')) || existsSync(join(dir, 'next.config.js'))) return 'nextjs';
     if (existsSync(join(dir, 'package.json'))) return 'nodejs';
@@ -323,6 +323,10 @@ function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' 
     if (existsSync(join(dir, 'go.mod'))) return 'go';
     if (existsSync(join(dir, 'Cargo.toml'))) return 'rust';
     if (existsSync(join(dir, 'pom.xml')) || existsSync(join(dir, 'build.gradle')) || existsSync(join(dir, 'build.gradle.kts'))) return 'java';
+    // Static HTML — fallback if index.html exists or any .html files
+    if (existsSync(join(dir, 'index.html'))) return 'static';
+    const { readdirSync } = require('node:fs') as typeof import('node:fs');
+    if (readdirSync(dir).some((f: string) => f.endsWith('.html'))) return 'static';
   } catch { /* ignore */ }
   return null;
 }
@@ -423,9 +427,16 @@ function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?
         'CMD ["java", "-jar", "app.jar"]',
       ].join('\n');
       break;
+    case 'static':
+      dockerfile = [
+        'FROM nginx:1.27-alpine',
+        'COPY . /usr/share/nginx/html/',
+        'EXPOSE 80',
+      ].join('\n');
+      break;
   }
 
-  const internalPort = type === 'nextjs' ? 3000 : port;
+  const internalPort = type === 'nextjs' ? 3000 : type === 'static' ? 80 : port;
   const compose = [
     'services:',
     '  backend:',
