@@ -704,6 +704,11 @@ async function _createModeB(
   // Step 2: Clone external repo + create Gitea repo
   setStep(job, 2, 'running', 'Cloning external repository...');
   const { reinitGit: reinitGitB } = await import('./boilerplate-manager.js');
+  // Clean existing directory from a previous failed run
+  const { rmSync } = await import('node:fs');
+  if (existsSync(appDir)) {
+    rmSync(appDir, { recursive: true, force: true });
+  }
   const cloneArgs = ['clone', '--depth', '1'];
   if (opts.branch) cloneArgs.push('-b', opts.branch);
   cloneArgs.push(opts.gitUrl!, appDir);
