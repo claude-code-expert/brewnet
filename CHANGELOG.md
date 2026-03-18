@@ -3,6 +3,133 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-18 13:30 — Apps 페이지 대규모 리팩토링 + E2E 검증
+
+### 🎯 Prompts (주요)
+1. "FileBrowser external URL이 /static으로 나와 — /files가 맞는거 아냐?"
+2. "New Project UI 미지원 프레임워크 삭제해"
+3. "CLI 실행 후 창 닫혀도 서버 죽는다 — daemonize해"
+4. "brewnet shutdown 종료 명령어 연결해"
+5. "보일러플레이트 health check가 안 돼 — Next.js basePath 문제"
+6. "progress 모달에 docker/healthcheck 로그가 안 나와"
+7. "git clone 한 소스를 배포할 때 docker-compose 없으면 자동 처리해"
+8. "보일러플레이트 탭 왜 필요해? — 자동 등록으로 변경"
+9. "Dashboard와 Apps URL 표기가 달라 — 통일해"
+10. "New Project 탭을 첫번째로"
+
+### ✅ Changes
+
+**Admin Server**
+- **Fixed**: FileBrowser external URL `/static` → `/files` (primaryRouterKey 우선 매칭)
+- **Fixed**: Gitea autologin 쿠키 `Path=/git` 보존 (private repo 404 해결)
+- **Fixed**: `isUnifiedSvc` Gitea 포트 3000 오매칭 제외
+- **Fixed**: Dashboard 헤더 → Apps 페이지와 통일 디자인
+- **Added**: `/api/apps` 응답에 `localUrl` (basePath 포함) + `lastDeployedAt` 추가
+
+**Apps Page**
+- **Removed**: Boilerplate 탭 제거 (3탭 → 2탭: New Project + Git Clone)
+- **Changed**: New Project 탭이 기본 탭 (첫번째)
+- **Fixed**: 미지원 프레임워크 9개 제거 (LANG_DATA, FW_CODE_MAP)
+- **Added**: BOILERPLATES 정적 배열 12개 → 16개 완성
+- **Fixed**: progress 모달 `white-space: pre-wrap` (줄바꿈 표시)
+- **Fixed**: job 로그 + SSE 컨테이너 로그 병합 표시
+- **Fixed**: 성공/실패 토스트 생성 vs 배포 구분
+- **Removed**: "Git Server에서 관리" 불필요 링크 제거
+- **Fixed**: `localUrl`을 서버 제공 값 사용 (basePath 반영)
+
+**App Manager**
+- **Added**: Git Clone `branch` 옵션 지원
+- **Added**: Git Clone 모드 `.env` 포트 주입 (BACKEND_PORT/FRONTEND_PORT)
+- **Fixed**: Git Clone — compose 없으면 clone+push만 (Docker 단계 스킵)
+- **Added**: Deploy 시 docker-compose.yml 없으면 프로젝트 타입 감지 → 자동 스캐폴딩
+- **Added**: 지원 타입: Next.js, Node.js, Python, Go, Rust, Java/Kotlin, Static HTML (nginx)
+- **Fixed**: Next.js basePath health check URL 자동 반영
+- **Fixed**: 보일러플레이트/일반 프로젝트 health path 분기 (`/health` vs `/`)
+- **Added**: `_dockerComposeUp()` — stdout/stderr를 job.logs[]에 스트림
+- **Added**: `_pollHealth()` — 폴링 진행을 job.logs[]에 기록
+- **Fixed**: `cloneStack()` / Mode B — 기존 디렉토리 rmSync 후 재클론
+- **Added**: Wizard 보일러플레이트 `listApps()` 자동 등록
+
+**Gitea Client**
+- **Fixed**: `createRepo` 500 "files already exist" → orphan 파일 자동 삭제 후 재시도
+
+**CLI Commands**
+- **Added**: `brewnet shutdown [--port]` — admin daemon 종료
+- **Changed**: `brewnet admin` → detached daemon (터미널 닫아도 유지)
+- **Added**: `brewnet admin --foreground` — 디버그/테스트용
+- **Fixed**: `createRequire('../../package.json')` 번들 경로 해결
+
+**Wizard**
+- **Fixed**: Next.js(unified) 선택 시 Frontend 프롬프트 자동 스킵
+- **Fixed**: `cloneStack()` 기존 디렉토리 삭제 후 재클론
+
+**Tests**
+- **Added**: Playwright E2E (`tests/e2e/apps-page-e2e.mjs`) — 37개 검증
+- **Updated**: test-cycle.sh Phase 7.7+7.8 프레임워크 검증
+- **Updated**: admin/complete 테스트 → daemon mock 적용
+- **Updated**: subcommand count 13 → 14
+
+### 📊 Test Results
+- Unit: 67 suites passed, 2332 tests
+- E2E: 37 Playwright checks all passed
+- test-cycle.sh: Phase 7.7+7.8 추가
+
+### 📁 Files Modified (21 files, +1218, -336)
+- `packages/cli/src/services/admin-server.ts`
+- `packages/cli/src/services/apps-page.ts`
+- `packages/cli/src/services/app-manager.ts`
+- `packages/cli/src/services/admin-daemon.ts` (new)
+- `packages/cli/src/services/admin-launcher.ts` (new)
+- `packages/cli/src/services/gitea-client.ts`
+- `packages/cli/src/services/boilerplate-manager.ts`
+- `packages/cli/src/commands/admin.ts`
+- `packages/cli/src/commands/shutdown.ts` (new)
+- `packages/cli/src/commands/init.ts`
+- `packages/cli/src/wizard/steps/complete.ts`
+- `packages/cli/src/wizard/steps/dev-stack.ts`
+- `packages/cli/src/types/app-entry.ts`
+- `packages/cli/src/index.ts`
+- `packages/cli/tsup.config.ts`
+- `tests/e2e/apps-page-e2e.mjs` (new)
+- `tests/unit/cli/commands/*.test.ts` (4 files)
+- `test-cycle.sh`
+- `spec/ADMIN_APPS_FEATURES.md`
+
+---
+
+## [develop] - 2026-03-18 10:17
+
+### fix(init): system-check 테이블 상단 테두리 및 컬럼 정렬 수정
+- **증상**: Step 0 시스템 체크 테이블 첫 번째 컬럼 간격 어긋남, 상단 테두리 미렌더링
+- **원인**: `ora` 스피너의 `stop()` 호출 후 커서가 줄 중간에 남아 테이블 상단 테두리 손상
+- **해결**: 스피너 정지 후 `\r` + clearLine으로 커서 위치 초기화
+- **파일**: `packages/cli/src/wizard/steps/system-check.ts`
+
+### refactor(shared): mail server 관련 exports 제거
+- `mailServerConfigSchema`, `MailServerConfig` 타입, mail port 상수 4개 (`SMTP_PORT`, `IMAP_PORT`, `POP3_PORT`, `SMTPS_PORT`) 제거
+- mail server 기능 제거에 따른 잔존 exports 정리
+- 48개 테스트 실패 → 6개로 감소
+- **파일**: `packages/shared/src/index.ts`, `packages/shared/src/schemas/wizard-state.schema.ts`, `packages/shared/src/types/wizard-state.ts`
+
+### fix(test): 빈 network.test.ts 파일 삭제
+- JSDoc 주석만 있고 테스트 코드가 없는 `tests/unit/cli/utils/network.test.ts` 삭제
+- Jest "empty test suite" 오류 제거
+- **파일**: `tests/unit/cli/utils/network.test.ts` (deleted)
+
+### feat(init): PostgreSQL 버전 메이저 → 패치 릴리스로 업데이트
+- **변경 전**: 메이저 버전 선택 (16, 15, 14, 13)
+- **변경 후**: 패치 릴리스 선택 (18.3, 17.9, 16.13) — PostgreSQL 공식 문서 기준
+- Docker 이미지 `postgres:17-alpine` → `postgres:18.3-alpine` (기본값)
+- compose-generator에 동적 버전 선택 로직 구현 (`primaryVersion` 필드 활용)
+- 기본값 `18.3` 으로 업데이트
+- **파일**: `packages/shared/src/utils/constants.ts`, `packages/cli/src/config/services.ts`, `packages/cli/src/config/defaults.ts`, `packages/cli/src/services/compose-generator.ts`, `packages/cli/src/utils/resources.ts`
+
+### test: PostgreSQL 18.3 버전 업데이트에 따른 테스트 기대값 수정
+- 2,332개 테스트 전체 통과 확인
+- **파일**: `tests/integration/service-startup.test.ts`, `tests/e2e/full-install.test.ts`, `tests/integration/project-setup.test.ts`
+
+---
+
 ## [develop] - 2026-03-18
 
 ### fix(admin): FileBrowser external URL /static → /files
