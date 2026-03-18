@@ -304,34 +304,11 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
     </div>
     <div class="mb-m">
       <div class="tabs" id="newapp-tabs">
-        <div class="tab active" onclick="switchTab('newapp',0)">⬇ Git Clone</div>
-        <div class="tab" onclick="switchTab('newapp',1)">✨ New Project</div>
+        <div class="tab active" onclick="switchTab('newapp',0)">✨ New Project</div>
+        <div class="tab" onclick="switchTab('newapp',1)">⬇ Git Clone</div>
       </div>
-      <!-- TAB 0: GIT CLONE -->
+      <!-- TAB 0: NEW PROJECT -->
       <div id="newapp-tab-0">
-        <div class="alert a-dim" style="margin-bottom:16px">외부 Git URL(GitHub, GitLab 등)의 레포지토리를 클론한 뒤 로컬 Gitea에 자동으로 미러링합니다.</div>
-        <div class="fg">
-          <label class="fl">Git URL <span style="color:var(--red)">*</span></label>
-          <input class="fi" id="clone-url" placeholder="https://github.com/user/repo.git" oninput="autoFillFromUrl(this.value)">
-        </div>
-        <div class="row3">
-          <div class="fg">
-            <label class="fl">앱 이름 <span style="color:var(--red)">*</span></label>
-            <input class="fi" id="clone-name" placeholder="repo-name" oninput="sanitizeAppName(this)">
-          </div>
-          <div class="fg">
-            <label class="fl">포트 <span style="color:var(--red)">*</span></label>
-            <input class="fi" id="clone-port" placeholder="8080" type="number" oninput="debouncedPortCheck('clone-port')">
-            <div class="fhint" id="clone-port-hint"></div>
-          </div>
-          <div class="fg">
-            <label class="fl">브랜치</label>
-            <input class="fi" id="clone-branch" placeholder="main">
-          </div>
-        </div>
-      </div>
-      <!-- TAB 2: NEW PROJECT -->
-      <div id="newapp-tab-1" style="display:none">
         <label class="fl" style="margin-bottom:10px">언어 선택 <span style="color:var(--red)">*</span></label>
         <div class="lgrid" id="lang-grid"></div>
         <div id="fw-section" style="display:none">
@@ -352,6 +329,29 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
         <div id="proj-preview" style="display:none">
           <div class="ir"><span class="ik">생성될 Gitea 레포</span><span class="iv" id="proj-repo-preview">—</span></div>
           <div class="ir"><span class="ik">Docker 포트 바인딩</span><span class="iv" id="proj-port-preview">—</span></div>
+        </div>
+      </div>
+      <!-- TAB 1: GIT CLONE -->
+      <div id="newapp-tab-1" style="display:none">
+        <div class="alert a-dim" style="margin-bottom:16px">외부 Git URL(GitHub, GitLab 등)의 레포지토리를 클론한 뒤 로컬 Gitea에 자동으로 미러링합니다.</div>
+        <div class="fg">
+          <label class="fl">Git URL <span style="color:var(--red)">*</span></label>
+          <input class="fi" id="clone-url" placeholder="https://github.com/user/repo.git" oninput="autoFillFromUrl(this.value)">
+        </div>
+        <div class="row3">
+          <div class="fg">
+            <label class="fl">앱 이름 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="clone-name" placeholder="repo-name" oninput="sanitizeAppName(this)">
+          </div>
+          <div class="fg">
+            <label class="fl">포트 <span style="color:var(--red)">*</span></label>
+            <input class="fi" id="clone-port" placeholder="8080" type="number" oninput="debouncedPortCheck('clone-port')">
+            <div class="fhint" id="clone-port-hint"></div>
+          </div>
+          <div class="fg">
+            <label class="fl">브랜치</label>
+            <input class="fi" id="clone-branch" placeholder="main">
+          </div>
         </div>
       </div>
     </div>
@@ -1208,14 +1208,7 @@ function usePort(inputId,port){
 async function submitNewApp(){
   var name='',port='',body={};
   if(currentNewAppTab===0){
-    name=document.getElementById('clone-name').value;
-    port=document.getElementById('clone-port').value;
-    var gitUrl=document.getElementById('clone-url').value;
-    if(!gitUrl||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
-    var branch=document.getElementById('clone-branch').value.trim();
-    body={mode:'git-url',appName:name,port:parseInt(port),gitUrl:gitUrl};
-    if(branch)body.branch=branch;
-  }else{
+    // Tab 0: New Project
     name=document.getElementById('proj-name').value;
     port=document.getElementById('proj-port').value;
     if(!selectedLang||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
@@ -1223,6 +1216,15 @@ async function submitNewApp(){
     var FW_CODE_MAP={'Gin':'gin','Echo v4':'echo','Fiber v3':'fiber','FastAPI':'fastapi','Django':'django','Flask':'flask','Express':'express','NestJS':'nestjs','Actix-web':'actix-web','Axum':'axum','Spring Boot':'springboot','Spring Framework':'spring','Ktor':'ktor','Spring Boot (Kotlin)':'springboot-kt','Next.js':'nextjs'};
     body={mode:'new-project',appName:name,port:parseInt(port),language:LANG_CODE_MAP[selectedLang]||selectedLang.toLowerCase()};
     if(selectedFw)body.frameworkId=FW_CODE_MAP[selectedFw]||selectedFw.toLowerCase().replace(/[^a-z0-9-]/g,'-');
+  }else{
+    // Tab 1: Git Clone
+    name=document.getElementById('clone-name').value;
+    port=document.getElementById('clone-port').value;
+    var gitUrl=document.getElementById('clone-url').value;
+    if(!gitUrl||!name||!port){showToast('\u26a0 \ud544\uc218 \ud56d\ubaa9\uc744 \ubaa8\ub450 \uc785\ub825\ud558\uc138\uc694');return;}
+    var branch=document.getElementById('clone-branch').value.trim();
+    body={mode:'git-url',appName:name,port:parseInt(port),gitUrl:gitUrl};
+    if(branch)body.branch=branch;
   }
   document.getElementById('newapp-submit').disabled=true;
   var r=await apiFetch('/api/apps/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

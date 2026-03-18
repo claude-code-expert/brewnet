@@ -142,24 +142,27 @@ function check(label, ok, detail) {
   check('New App modal opens on click', modalVisible);
 
   if (modalVisible) {
-    // ── 14. Git Clone tab (default tab) ──
-    const cloneUrlInput = await page.locator('#clone-url').isVisible();
-    check('Git Clone tab — URL input visible', cloneUrlInput);
+    // ── 14. New Project tab (default tab) ──
+    const langGrid = await page.locator('#lang-grid').isVisible();
+    check('New Project tab — Language grid visible (default)', langGrid);
 
-    const cloneBranchInput = await page.locator('#clone-branch').isVisible();
-    check('Git Clone tab — Branch input visible', cloneBranchInput);
-
-    // ── 15. New Project tab ──
-    const newProjTab = page.locator('.tab').filter({ hasText: /New Project/i }).first();
-    if (await newProjTab.isVisible()) {
-      await newProjTab.click();
+    // ── 15. Git Clone tab ──
+    const gitCloneTab = page.locator('.tab').filter({ hasText: /Git Clone/i }).first();
+    if (await gitCloneTab.isVisible()) {
+      await gitCloneTab.click();
       await page.waitForTimeout(300);
+      const cloneUrlInput = await page.locator('#clone-url').isVisible();
+      check('Git Clone tab — URL input visible', cloneUrlInput);
+      const cloneBranchInput = await page.locator('#clone-branch').isVisible();
+      check('Git Clone tab — Branch input visible', cloneBranchInput);
+      // Switch back to New Project for framework checks
+      const projTab = page.locator('.tab').filter({ hasText: /New Project/i }).first();
+      await projTab.click();
+      await page.waitForTimeout(300);
+    }
 
-      // Language grid
-      const langGrid = await page.locator('#lang-grid').isVisible();
-      check('New Project tab — Language grid visible', langGrid);
-
-      // Count language options
+    // ── 16. New Project frameworks (already on New Project tab) ──
+    {
       const langCards = await page.locator('#lang-grid .lcard').count();
       check('Language options count', langCards === 7, `${langCards} languages`);
 
