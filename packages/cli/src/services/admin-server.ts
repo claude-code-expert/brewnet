@@ -132,7 +132,6 @@ function escHtml(s: string): string {
  */
 const NAME_ALIASES: Record<string, string> = {
   'OpenSSH Server': 'SSH Server',
-  'Docker Mailserver': 'Mail Server',
   'Cloudflare Tunnel': 'Cloudflared',
   'MinIO': 'MinIO Console',
 };
@@ -339,7 +338,7 @@ function getExternalUrl(id){
     var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});
     if(conn)return 'https://'+conn.hostname;
     if(c.quickTunnelUrl){
-      var NO_QT={"postgresql":1,"mysql":1,"mariadb":1,"openssh-server":1,"docker-mailserver":1,"traefik":1,"postgres":1,"db":1};
+      var NO_QT={"postgresql":1,"mysql":1,"mariadb":1,"openssh-server":1,"traefik":1,"postgres":1,"db":1};
       if(NO_QT[id])return null;
       var base=c.quickTunnelUrl.replace(new RegExp('/$'),'');
       // Map compose service name to Traefik path via BOILERPLATE_STACKS
@@ -470,7 +469,7 @@ async function loadServices(manual){
     var detailName=resolveDetailName(s.name);
     var hasDetail=!!SERVICE_DETAILS[detailName];
     var localUrl=s.url||null;
-    var isUnifiedSvc=localUrl&&(BOILERPLATE_STACKS||[]).some(function(bs){if(!bs.isUnified||!bs.backendUrl)return false;try{return new URL(bs.backendUrl).port===String(s.port);}catch(e){return false;}});
+    var isUnifiedSvc=localUrl&&s.id!=='gitea'&&s.id!=='nextcloud'&&(BOILERPLATE_STACKS||[]).some(function(bs){if(!bs.isUnified||!bs.backendUrl)return false;try{return new URL(bs.backendUrl).port===String(s.port);}catch(e){return false;}});
     var localCell=localUrl?(isUnifiedSvc?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a><br><a href="\${localUrl}/api/hello" target="_blank" style="color:#8b949e;font-size:11px">/api/hello ↗</a>\`:\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`):'<span style="color:#8b949e">—</span>';
     var nameHtml=hasDetail
       ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
@@ -667,7 +666,7 @@ const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudf
 // All other services with a public TCP port get http://localhost:<port>.
 const NO_HTTP_SERVICES = new Set([
   'postgresql', 'mysql', 'mariadb',
-  'openssh-server', 'docker-mailserver',
+  'openssh-server',
 ]);
 
 // Services that must be accessed through Traefik path-prefix routing.
@@ -828,7 +827,6 @@ function inferType(id: string): string {
   if (['jellyfin'].includes(id)) return 'media';
   if (['gitea'].includes(id)) return 'git';
   if (['openssh-server'].includes(id)) return 'ssh';
-  if (['docker-mailserver'].includes(id)) return 'mail';
   return 'app';
 }
 
