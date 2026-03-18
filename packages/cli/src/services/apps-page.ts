@@ -500,7 +500,7 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
       <div class="ppl" id="progress-steps"></div>
       <div id="progress-log" style="display:none;margin-top:16px">
         <div style="font-size:11.5px;color:var(--txt3);font-family:var(--mono);margin-bottom:6px">로그</div>
-        <div style="background:var(--bg0);border:1px solid var(--bdr);border-radius:var(--r);padding:12px 14px;font-family:var(--mono);font-size:11.5px;color:var(--txt2);line-height:1.8;height:130px;overflow-y:auto" id="log-content"></div>
+        <div style="background:var(--bg0);border:1px solid var(--bdr);border-radius:var(--r);padding:12px 14px;font-family:var(--mono);font-size:11.5px;color:var(--txt2);line-height:1.8;height:130px;overflow-y:auto;white-space:pre-wrap;word-break:break-all" id="log-content"></div>
       </div>
     </div>
     <div class="mfoot">
