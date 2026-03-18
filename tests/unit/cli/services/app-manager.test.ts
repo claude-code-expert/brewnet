@@ -20,6 +20,8 @@ jest.unstable_mockModule('node:fs', () => ({
   writeFileSync: mockWriteFileSync,
   mkdirSync: mockMkdirSync,
   chmodSync: mockChmodSync,
+  readdirSync: jest.fn(() => []),
+  rmSync: jest.fn(),
 }));
 
 // Mock homedir
@@ -175,7 +177,7 @@ describe('createApp — mode A (installed boilerplate)', () => {
 
     mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/my-app.git');
     mockRepoExists.mockResolvedValue(false);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
     const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
 
@@ -245,7 +247,7 @@ describe('createApp — mode B (git-url)', () => {
     fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
     mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/ext-app.git');
     mockRepoExists.mockResolvedValue(false);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
     const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
     const jobId = await createApp({
@@ -282,7 +284,7 @@ describe('createApp — mode C (new project)', () => {
     mockCloneStack.mockResolvedValue(undefined);
     mockGenerateEnv.mockReturnValue(undefined);
     mockReinitGit.mockResolvedValue(undefined);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
     const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
     const jobId = await createApp({
@@ -371,7 +373,7 @@ describe('listGiteaRepos', () => {
 describe('startApp / stopApp', () => {
   it('runs docker compose up and updates status', async () => {
     mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'stopped' }]);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
     const { startApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await startApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'up', '-d'], expect.objectContaining({ cwd: '/dir' }));
@@ -380,7 +382,7 @@ describe('startApp / stopApp', () => {
 
   it('runs docker compose down and updates status', async () => {
     mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'running' }]);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
     const { stopApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await stopApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'down'], expect.objectContaining({ cwd: '/dir' }));
