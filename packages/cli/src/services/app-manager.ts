@@ -337,44 +337,23 @@ function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?
   if (job) appendLog(job, `[scaffold] Detected ${type} project — generating Docker config`);
 
   let dockerfile = '';
-  let startCmd = '';
 
   switch (type) {
     case 'nextjs':
+      // Use simple single-stage build — external Next.js projects may not
+      // have output:'standalone' configured, and modifying their config
+      // can break cached Docker layers. Just npm install + build + start.
       dockerfile = [
-        'FROM node:22-alpine AS builder',
-        'WORKDIR /app',
-        'COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./',
-        'RUN npm install --legacy-peer-deps || yarn install --frozen-lockfile || true',
-        'COPY . .',
-        'RUN npm run build',
-        '',
         'FROM node:22-alpine',
         'WORKDIR /app',
-        'COPY --from=builder /app/.next/standalone ./.',
-        'COPY --from=builder /app/.next/static ./.next/static',
-        'COPY --from=builder /app/public ./public',
+        'COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./',
+        'RUN npm install --legacy-peer-deps 2>/dev/null || yarn install 2>/dev/null || true',
+        'COPY . .',
+        'RUN npm run build',
         'ENV PORT=3000 HOSTNAME=0.0.0.0',
         'EXPOSE 3000',
-        'CMD ["node", "server.js"]',
+        'CMD ["npm", "start"]',
       ].join('\n');
-      startCmd = 'node server.js';
-      // Ensure next.config has output: 'standalone'
-      for (const cfg of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
-        const cfgPath = join(dir, cfg);
-        if (existsSync(cfgPath)) {
-          let content = readFileSync(cfgPath, 'utf-8');
-          if (!content.includes("output")) {
-            content = content.replace(
-              /const\s+nextConfig\s*[:=]\s*\{/,
-              'const nextConfig = {\n    output: \'standalone\',',
-            );
-            writeFileSync(cfgPath, content, 'utf-8');
-            if (job) appendLog(job, `[scaffold] Added output:'standalone' to ${cfg}`);
-          }
-          break;
-        }
-      }
       break;
     case 'nodejs':
       dockerfile = [
@@ -387,7 +366,6 @@ function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?
         'EXPOSE ' + port,
         'CMD ["npm", "start"]',
       ].join('\n');
-      startCmd = 'npm start';
       break;
     case 'python':
       dockerfile = [
