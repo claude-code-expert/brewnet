@@ -19,6 +19,7 @@ import { registerLogsCommand } from './commands/logs.js';
 import { registerBackupCommand } from './commands/backup.js';
 import { registerRestoreCommand } from './commands/restore.js';
 import { registerAdminCommand } from './commands/admin.js';
+import { registerShutdownCommand } from './commands/shutdown.js';
 import { registerUninstallCommand } from './commands/uninstall.js';
 import { registerDomainCommand } from './commands/domain.js';
 import { registerCreateAppCommand } from './commands/create-app.js';
@@ -50,6 +51,7 @@ export function createProgram(): Command {
   registerBackupCommand(program);
   registerRestoreCommand(program);
   registerAdminCommand(program);
+  registerShutdownCommand(program);
   registerUninstallCommand(program);
   registerDomainCommand(program);
   registerCreateAppCommand(program);

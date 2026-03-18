@@ -11,15 +11,20 @@ import { Command } from 'commander';
 // Mocks for admin command
 // ---------------------------------------------------------------------------
 
-const mockStart = jest.fn<() => Promise<void>>();
-const mockCreateAdminServer = jest.fn(() => ({ start: mockStart }));
+const mockLaunchAdminDaemon = jest.fn<() => Promise<{ pid: number; port: number; logFile: string }>>();
 
 jest.unstable_mockModule(
-  '../../../../packages/cli/src/services/admin-server.js',
+  '../../../../packages/cli/src/services/admin-launcher.js',
   () => ({
-    createAdminServer: mockCreateAdminServer,
+    launchAdminDaemon: mockLaunchAdminDaemon,
   }),
 );
+
+// Mock child_process.execSync for killPort
+jest.unstable_mockModule('node:child_process', () => ({
+  execSync: jest.fn(() => ''),
+  execFileSync: jest.fn(() => ''),
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks for uninstall command
@@ -131,7 +136,7 @@ describe('admin command registration', () => {
 describe('admin command action', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockStart.mockResolvedValue(undefined);
+    mockLaunchAdminDaemon.mockResolvedValue({ pid: 12345, port: 8088, logFile: '/tmp/test.log' });
   });
 
   it('sets exitCode=1 for invalid port (NaN)', async () => {
@@ -142,9 +147,8 @@ describe('admin command action', () => {
     registerAdminCommand(p);
     await parseCommand(p, ['admin', '--port', 'notanumber']);
 
-    // Should have printed error and set exitCode=1
     expect(consoleSpy).toHaveBeenCalled();
-    expect(mockCreateAdminServer).not.toHaveBeenCalled();
+    expect(mockLaunchAdminDaemon).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
     process.exitCode = origExitCode as number | undefined;
@@ -158,20 +162,20 @@ describe('admin command action', () => {
     registerAdminCommand(p);
     await parseCommand(p, ['admin', '--port', '0']);
 
-    expect(mockCreateAdminServer).not.toHaveBeenCalled();
+    expect(mockLaunchAdminDaemon).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
     process.exitCode = origExitCode as number | undefined;
   });
 
-  it('sets exitCode=1 and prints EADDRINUSE message when port is in use', async () => {
-    mockStart.mockRejectedValue(new Error('EADDRINUSE: address already in use :::8088'));
+  it('sets exitCode=1 and prints EADDRINUSE message when daemon fails', async () => {
+    mockLaunchAdminDaemon.mockRejectedValue(new Error('EADDRINUSE: address already in use :::8088'));
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const origExitCode = process.exitCode;
 
     const p = makeProgram();
     registerAdminCommand(p);
-    await parseCommand(p, ['admin', '--port', '8088']);
+    await parseCommand(p, ['admin', '--port', '8088', '--no-open']);
 
     expect(process.exitCode).toBe(1);
 
@@ -180,13 +184,13 @@ describe('admin command action', () => {
   });
 
   it('sets exitCode=1 and prints generic failure message for non-EADDRINUSE error', async () => {
-    mockStart.mockRejectedValue(new Error('permission denied'));
+    mockLaunchAdminDaemon.mockRejectedValue(new Error('permission denied'));
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const origExitCode = process.exitCode;
 
     const p = makeProgram();
     registerAdminCommand(p);
-    await parseCommand(p, ['admin', '--port', '8088']);
+    await parseCommand(p, ['admin', '--port', '8088', '--no-open']);
 
     expect(process.exitCode).toBe(1);
 
@@ -194,33 +198,18 @@ describe('admin command action', () => {
     process.exitCode = origExitCode as number | undefined;
   });
 
-  it('starts server and resolves after SIGINT signal', async () => {
-    mockStart.mockResolvedValue(undefined);
+  it('launches daemon and exits cleanly', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    const origExitCode = process.exitCode;
-
-    // Spy on process.once to immediately call the listener for SIGINT/SIGTERM
-    const onceSpy = jest.spyOn(process, 'once').mockImplementation(
-      (event: string | symbol, listener: (...args: unknown[]) => void) => {
-        if (event === 'SIGINT' || event === 'SIGTERM') {
-          listener();
-        }
-        return process;
-      },
-    );
 
     const p = makeProgram();
     registerAdminCommand(p);
     await parseCommand(p, ['admin', '--port', '8088', '--no-open']);
 
-    expect(mockCreateAdminServer).toHaveBeenCalledWith(
+    expect(mockLaunchAdminDaemon).toHaveBeenCalledWith(
       expect.objectContaining({ port: 8088 }),
     );
-    expect(mockStart).toHaveBeenCalled();
 
-    onceSpy.mockRestore();
     consoleSpy.mockRestore();
-    process.exitCode = origExitCode as number | undefined;
   });
 });
 
