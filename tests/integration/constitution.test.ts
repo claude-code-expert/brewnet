@@ -44,7 +44,6 @@ import {
   generateGiteaConfig,
   generateTraefikConfig,
   generateFileBrowserConfig,
-  generateMailConfig,
 } from '../../packages/cli/src/services/config-generator.js';
 
 import {
@@ -137,7 +136,6 @@ function buildFullState(): WizardState {
       fileServer: { enabled: true, service: 'nextcloud' },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: true, service: 'docker-mailserver' },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
     domain: {
@@ -415,7 +413,7 @@ describe('TC-C-05: Offline First — all generators are pure functions', () => {
       const files = generateInfraConfigs(state);
 
       expect(files.length).toBeGreaterThan(0);
-      // Should have at least traefik + gitea + ssh + filebrowser + mail configs
+      // Should have at least traefik + gitea + ssh + filebrowser configs
       expect(files.length).toBeGreaterThanOrEqual(4);
     });
 
@@ -476,17 +474,6 @@ describe('TC-C-05: Offline First — all generators are pure functions', () => {
       expect(config).not.toBeNull();
       expect(config!.path).toBeTruthy();
       expect(config!.content).toBeTruthy();
-    });
-
-    it('generateMailConfig should work without network access', () => {
-      const state = buildFullState();
-      const configs = generateMailConfig(state);
-
-      expect(configs.length).toBeGreaterThan(0);
-      for (const config of configs) {
-        expect(config.path).toBeTruthy();
-        expect(config.content).toBeTruthy();
-      }
     });
   });
 
@@ -577,7 +564,6 @@ describe('TC-C-05: Offline First — all generators are pure functions', () => {
           fileServer: { enabled: false, service: '' as const },
           media: { enabled: false, services: [] },
           sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-          mailServer: { enabled: false, service: 'docker-mailserver' as const },
           fileBrowser: { enabled: false, mode: '' as const },
         },
       } as WizardState;

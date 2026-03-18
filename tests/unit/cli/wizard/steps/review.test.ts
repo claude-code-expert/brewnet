@@ -6,7 +6,7 @@
  * dev stack section, and config export/import round-trip.
  */
 
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from '@jest/globals';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -165,7 +165,6 @@ describe('generateReviewSections', () => {
         name: 'brewnet.local',
         ssl: 'self-signed',
         cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
     const sections = generateReviewSections(state);
@@ -181,7 +180,6 @@ describe('generateReviewSections', () => {
         name: 'myserver.example.com',
         ssl: 'cloudflare',
         cloudflare: { enabled: true, tunnelToken: '', tunnelName: 'my-tunnel', accountId: '', apiToken: '', tunnelId: 'tid-123', zoneId: '', zoneName: 'example.com' },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
     const sections = generateReviewSections(state);
@@ -267,30 +265,6 @@ describe('generateReviewSections', () => {
     expect(sshItem?.value).toContain('SFTP');
   });
 
-  it('servers section includes Mail Server when enabled', () => {
-    const base = makeState();
-    const state = makeState({
-      servers: {
-        ...base.servers,
-        mailServer: {
-          enabled: true,
-          service: 'docker-mailserver',
-          port25Blocked: false,
-          relayProvider: '',
-          relayHost: '',
-          relayPort: 587,
-          relayUser: '',
-          relayPassword: '',
-        },
-      },
-    });
-    const sections = generateReviewSections(state);
-    const servers = sections.find((s) => s.id === 'servers')!;
-    const mailItem = servers.items.find((i) => i.label === 'Mail Server');
-    expect(mailItem).toBeDefined();
-    expect(mailItem?.value).toBe('docker-mailserver');
-  });
-
   it('servers section includes File Browser when enabled with mode', () => {
     const base = makeState();
     const state = makeState({
@@ -317,83 +291,6 @@ describe('generateReviewSections', () => {
     expect(frontendItem?.value).toBe('react');
   });
 
-  it('domain section includes Mail Server with relay info when tunnel + mailServer enabled', () => {
-    const base = makeState();
-    const state = makeState({
-      domain: {
-        provider: 'tunnel',
-        name: 'myserver.example.com',
-        ssl: 'cloudflare',
-        cloudflare: {
-          enabled: true,
-          tunnelToken: '',
-          tunnelName: 'my-tunnel',
-          accountId: '',
-          apiToken: '',
-          tunnelId: '',
-          zoneId: '',
-          zoneName: 'example.com',
-        },
-      },
-      servers: {
-        ...base.servers,
-        mailServer: {
-          enabled: true,
-          service: 'docker-mailserver',
-          port25Blocked: true,
-          relayProvider: 'sendgrid',
-          relayHost: 'smtp.sendgrid.net',
-          relayPort: 587,
-          relayUser: 'apikey',
-          relayPassword: 'secret',
-        },
-      },
-    });
-    const sections = generateReviewSections(state);
-    const domain = sections.find((s) => s.id === 'domain')!;
-    const mailItem = domain.items.find((i) => i.label === 'Mail Server');
-    expect(mailItem).toBeDefined();
-    expect(mailItem?.value).toContain('sendgrid');
-  });
-
-  it('domain section includes Mail Server without relay when tunnel + mailServer enabled (no relay)', () => {
-    const base = makeState();
-    const state = makeState({
-      domain: {
-        provider: 'tunnel',
-        name: 'myserver.example.com',
-        ssl: 'cloudflare',
-        cloudflare: {
-          enabled: true,
-          tunnelToken: '',
-          tunnelName: 'my-tunnel',
-          accountId: '',
-          apiToken: '',
-          tunnelId: '',
-          zoneId: '',
-          zoneName: 'example.com',
-        },
-      },
-      servers: {
-        ...base.servers,
-        mailServer: {
-          enabled: true,
-          service: 'docker-mailserver',
-          port25Blocked: false,
-          relayProvider: '',
-          relayHost: '',
-          relayPort: 587,
-          relayUser: '',
-          relayPassword: '',
-        },
-      },
-    });
-    const sections = generateReviewSections(state);
-    const domain = sections.find((s) => s.id === 'domain')!;
-    const mailItem = domain.items.find((i) => i.label === 'Mail Server');
-    expect(mailItem).toBeDefined();
-    expect(mailItem?.value).toBe('docker-mailserver');
-  });
 });
 
 // ---------------------------------------------------------------------------

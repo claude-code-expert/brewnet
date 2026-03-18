@@ -1,0 +1,66 @@
+<h2>현재 컬러 팔레트 비교</h2>
+<p class="subtitle">Admin Dashboard (좌) vs App Deploy UI (우) — App Deploy UI를 기준으로 통일 예정</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Admin Dashboard (현재)</div>
+    <div class="mockup-body" style="background:#0d1117;padding:20px;font-family:'Courier New',monospace">
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div style="width:60px;height:40px;background:#0d1117;border:1px solid #30363d;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#8b949e;font-size:9px">bg #0d1117</div>
+        <div style="width:60px;height:40px;background:#161b22;border:1px solid #30363d;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#8b949e;font-size:9px">bg2 #161b22</div>
+        <div style="width:60px;height:40px;background:#21262d;border:1px solid #30363d;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#8b949e;font-size:9px">hover #21262d</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div style="width:60px;height:40px;background:#f5a623;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#000;font-size:9px;font-weight:bold">accent</div>
+        <div style="width:60px;height:40px;background:#58a6ff;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#000;font-size:9px">link</div>
+        <div style="width:60px;height:40px;background:#30363d;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#8b949e;font-size:9px">border</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <span style="background:#1a4731;color:#3fb950;padding:2px 8px;border-radius:12px;font-size:10px">running</span>
+        <span style="background:#3d1f1f;color:#f85149;padding:2px 8px;border-radius:12px;font-size:10px">stopped</span>
+        <span style="background:#3d2b1f;color:#e3b341;padding:2px 8px;border-radius:12px;font-size:10px">error</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button style="background:transparent;border:1px solid #3fb950;color:#3fb950;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer">Start</button>
+        <button style="background:transparent;border:1px solid #f85149;color:#f85149;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer">Stop</button>
+        <button style="background:transparent;border:1px solid #8b949e;color:#8b949e;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer">Remove</button>
+      </div>
+      <div style="color:#c9d1d9;font-size:11px;margin-top:8px">
+        Font: <span style="font-family:'Courier New'">Courier New (monospace)</span><br>
+        Radius: 4-6px<br>
+        CSS Variables: <span style="color:#f85149">없음 (하드코딩)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">App Deploy UI (기준)</div>
+    <div class="mockup-body" style="background:#070d1a;padding:20px;font-family:'Outfit',sans-serif">
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div style="width:60px;height:40px;background:#070d1a;border:1px solid #1a2d47;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#7a93be;font-size:9px">bg0</div>
+        <div style="width:60px;height:40px;background:#111e33;border:1px solid #1a2d47;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#7a93be;font-size:9px">bg2</div>
+        <div style="width:60px;height:40px;background:#162640;border:1px solid #1a2d47;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#7a93be;font-size:9px">bg3</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <div style="width:60px;height:40px;background:#e8a849;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#000;font-size:9px;font-weight:bold">amber</div>
+        <div style="width:60px;height:40px;background:#3dd6c8;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#000;font-size:9px">teal</div>
+        <div style="width:60px;height:40px;background:#1a2d47;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#7a93be;font-size:9px">border</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <span style="background:rgba(61,232,154,.09);color:#3de89a;padding:3px 10px;border:1px solid rgba(61,232,154,.2);border-radius:8px;font-size:10px">running</span>
+        <span style="background:rgba(240,75,90,.09);color:#f04b5a;padding:3px 10px;border:1px solid rgba(240,75,90,.2);border-radius:8px;font-size:10px">stopped</span>
+        <span style="background:rgba(232,168,73,.09);color:#e8a849;padding:3px 10px;border:1px solid rgba(232,168,73,.2);border-radius:8px;font-size:10px">building</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button style="background:rgba(61,232,154,.1);border:1px solid transparent;color:#3de89a;padding:4px 12px;border-radius:8px;font-size:10px;cursor:pointer">Start</button>
+        <button style="background:rgba(240,75,90,.1);border:1px solid transparent;color:#f04b5a;padding:4px 12px;border-radius:8px;font-size:10px;cursor:pointer">Stop</button>
+        <button style="background:transparent;border:1px solid #22385c;color:#7a93be;padding:4px 12px;border-radius:8px;font-size:10px;cursor:pointer">Remove</button>
+      </div>
+      <div style="color:#d2dff5;font-size:11px;font-family:'Outfit',sans-serif;margin-top:8px">
+        Font: <span style="font-family:'Outfit'">Outfit (sans)</span> + <span style="font-family:'JetBrains Mono'">JetBrains Mono</span><br>
+        Radius: 8-12px<br>
+        CSS Variables: <span style="color:#3de89a">var(--amber), var(--teal), ...</span>
+      </div>
+    </div>
+  </div>
+</div>

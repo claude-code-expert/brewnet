@@ -70,7 +70,6 @@ function makeState(overrides: Record<string, unknown> = {}): WizardState {
       dbServer: { enabled: false, primary: '' as const, primaryVersion: '', dbName: '', dbUser: '', dbPassword: '', adminUI: false, pgadminEmail: '', cache: '' as const },
       media: { enabled: false, services: [] },
       sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-      mailServer: { enabled: false, service: 'docker-mailserver' as const, port25Blocked: false, relayProvider: '' as const, relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       appServer: { enabled: false },
       fileBrowser: { enabled: false, mode: '' as const },
     },

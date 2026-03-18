@@ -96,24 +96,6 @@ export interface SshServerConfig {
   sftp: boolean;
 }
 
-export interface MailServerConfig {
-  enabled: boolean;
-  /** Mail server implementation */
-  service: 'docker-mailserver';
-  /** Whether port 25 is blocked by the ISP */
-  port25Blocked: boolean;
-  /** SMTP relay provider when port 25 is blocked */
-  relayProvider: '' | 'gmail' | 'sendgrid' | 'custom';
-  /** SMTP relay host (e.g. "smtp.gmail.com") */
-  relayHost: string;
-  /** SMTP relay port (typically 587) */
-  relayPort: number;
-  /** SMTP relay username */
-  relayUser: string;
-  /** SMTP relay password */
-  relayPassword: string;
-}
-
 export interface AppServerConfig {
   /** Auto-enabled when devStack has languages or frontend selected */
   enabled: boolean;
@@ -132,7 +114,6 @@ export interface ServerComponents {
   dbServer: DbServerConfig;
   media: MediaConfig;
   sshServer: SshServerConfig;
-  mailServer: MailServerConfig;
   appServer: AppServerConfig;
   fileBrowser: FileBrowserConfig;
 }

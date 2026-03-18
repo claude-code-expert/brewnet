@@ -110,12 +110,6 @@ function getServiceVolumes(serviceId: string): string[] {
       ];
     case 'openssh-server':
       return [`${BREWNET_PREFIX}_ssh_config:/config`];
-    case 'docker-mailserver':
-      return [
-        `${BREWNET_PREFIX}_mail_data:/var/mail`,
-        `${BREWNET_PREFIX}_mail_state:/var/mail-state`,
-        `${BREWNET_PREFIX}_mail_config:/tmp/docker-mailserver`,
-      ];
     case 'pgadmin':
       return [`${BREWNET_PREFIX}_pgadmin_data:/var/lib/pgadmin`];
     case 'filebrowser':
@@ -328,22 +322,6 @@ function getSshEnv(state: WizardState): Record<string, string> {
   };
 }
 
-function getMailEnv(state: WizardState): Record<string, string> {
-  const env: Record<string, string> = {
-    OVERRIDE_HOSTNAME: `mail.${state.domain.name}`,
-    ENABLE_CLAMAV: '0',
-    ENABLE_FAIL2BAN: '1',
-  };
-
-  if (state.servers.mailServer.relayProvider) {
-    env['DEFAULT_RELAY_HOST'] = `[${state.servers.mailServer.relayHost}]:${state.servers.mailServer.relayPort}`;
-    env['RELAY_USER'] = '${SMTP_RELAY_USER}';
-    env['RELAY_PASSWORD'] = '${SMTP_RELAY_PASSWORD}';
-  }
-
-  return env;
-}
-
 function getPgadminEnv(state: WizardState): Record<string, string> {
   const env: Record<string, string> = {
     PGADMIN_DEFAULT_EMAIL: state.servers.dbServer.pgadminEmail || `${state.admin.username || 'admin'}@brewnet.dev`,
@@ -534,8 +512,6 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
     }
     case 'openssh-server':
       return [`${remap(state.servers.sshServer.port)}:2222`];
-    case 'docker-mailserver':
-      return [`${remap(25)}:25`, `${remap(587)}:587`, `${remap(993)}:993`];
     case 'jellyfin':
       return [`${remap(8096)}:8096`];
     case 'nextcloud': {
@@ -614,8 +590,6 @@ function getServiceEnvironment(
       return getMinioEnv(state);
     case 'openssh-server':
       return getSshEnv(state);
-    case 'docker-mailserver':
-      return getMailEnv(state);
     case 'pgadmin':
       return getPgadminEnv(state);
     case 'filebrowser':
@@ -883,16 +857,6 @@ function applySecretsMigration(
       break;
     }
 
-    // --- docker-mailserver: RELAY_PASSWORD → RELAY_PASSWORD__FILE ---
-    case 'docker-mailserver': {
-      if (env['RELAY_PASSWORD']) {
-        delete env['RELAY_PASSWORD'];
-        env['RELAY_PASSWORD__FILE'] = '/run/secrets/smtp_relay_password';
-        secrets.push('smtp_relay_password');
-      }
-      break;
-    }
-
     // --- Traefik: basicauth.users → basicauth.usersfile (BasicAuth bug fix) ---
     case 'traefik': {
       secrets.push('traefik_dashboard_auth');
@@ -1035,7 +999,12 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     const dbId = state.servers.dbServer.primary; // 'postgresql' | 'mysql'
     const dbDef = SERVICE_REGISTRY.get(dbId);
     if (dbDef) {
-      services[dbId] = buildComposeService(dbDef, state);
+      const ver = state.servers.dbServer.primaryVersion;
+      const versionedImage =
+        ver && dbId === 'postgresql' ? `postgres:${ver}-alpine`
+        : ver && dbId === 'mysql' ? `mysql:${ver}`
+        : dbDef.image;
+      services[dbId] = buildComposeService({ ...dbDef, image: versionedImage }, state);
     }
 
     // Admin UI (pgadmin only for postgresql)
@@ -1074,15 +1043,7 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     }
   }
 
-  // 7. Mail server (optional)
-  if (state.servers.mailServer.enabled) {
-    const mailDef = SERVICE_REGISTRY.get('docker-mailserver');
-    if (mailDef) {
-      services['docker-mailserver'] = buildComposeService(mailDef, state);
-    }
-  }
-
-  // 8. Cloudflare tunnel (optional)
+  // 7. Cloudflare tunnel (optional)
   if (state.domain.cloudflare.enabled) {
     const cfDef = SERVICE_REGISTRY.get('cloudflared');
     if (cfDef) {

@@ -21,7 +21,6 @@ import { jest } from '@jest/globals';
 
 const {
   applyDomainDefaults,
-  isMailServerAllowed,
   buildDomainConfig,
 } = await import(
   '../../../../packages/cli/src/wizard/steps/domain-network.js'
@@ -44,7 +43,6 @@ const {
 import type {
   WizardState,
   DomainConfig,
-  DomainProvider,
   SslMode,
 } from '@brewnet/shared';
 
@@ -116,12 +114,6 @@ describe('TC-06-01: Local domain configuration', () => {
     expect(result.domain.name).toMatch(/\.local$/);
   });
 
-  it('local domain → mail server NOT allowed', () => {
-    const state = buildState({ domain: { provider: 'local' } });
-    const result = applyDomainDefaults(state, 'local');
-
-    expect(isMailServerAllowed(result)).toBe(false);
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -217,31 +209,6 @@ describe('TC-06-07: SSL configuration', () => {
     });
 
     expect(config.ssl).toBe('cloudflare');
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TC-06-08: Mail server availability
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('TC-06-08: Mail server availability', () => {
-  it('domain = local → mail NOT shown (isMailServerAllowed returns false)', () => {
-    const state = buildState({ domain: { provider: 'local' } });
-    expect(isMailServerAllowed(state)).toBe(false);
-  });
-
-  it('domain = tunnel → mail IS available', () => {
-    const state = buildState({
-      domain: { provider: 'tunnel', name: 'myserver.example.com' },
-    });
-    expect(isMailServerAllowed(state)).toBe(true);
-  });
-
-  it('domain = custom → mail IS available', () => {
-    const state = buildState({
-      domain: { provider: 'tunnel', name: 'example.com' },
-    });
-    expect(isMailServerAllowed(state)).toBe(true);
   });
 });
 

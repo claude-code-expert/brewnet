@@ -219,7 +219,6 @@ describe('generateEndpoints', () => {
         name: 'myserver.example.com',
         ssl: 'cloudflare',
         cloudflare: { enabled: true, tunnelToken: '', tunnelName: 'my-tunnel', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
 
@@ -237,7 +236,6 @@ describe('generateEndpoints', () => {
         name: 'brewnet.local',
         ssl: 'self-signed',
         cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
 
@@ -266,7 +264,6 @@ describe('generateEndpoints', () => {
         name: 'brewnet.local',
         ssl: 'self-signed',
         cloudflare: { enabled: false, tunnelToken: '', tunnelName: '', accountId: '', apiToken: '', tunnelId: '', zoneId: '', zoneName: '' },
-        mailServer: { enabled: false, service: 'docker-mailserver', port25Blocked: false, relayProvider: '', relayHost: '', relayPort: 587, relayUser: '', relayPassword: '' },
       },
     });
 

@@ -31,10 +31,6 @@ export const DEFAULT_GIT_SSH_PORT = 3022;
 export const DEFAULT_HTTP_PORT = 80;
 export const DEFAULT_HTTPS_PORT = 443;
 export const DEFAULT_TRAEFIK_DASHBOARD_PORT = 8080;
-export const DEFAULT_SMTP_PORT = 25;
-export const DEFAULT_IMAP_PORT = 143;
-export const DEFAULT_SMTP_SUBMISSION_PORT = 587;
-export const DEFAULT_IMAPS_PORT = 993;
 
 // ─── Health Check ────────────────────────────────────────────────────────────
 
@@ -86,14 +82,14 @@ export const SERVICE_IMAGES = {
   nextcloud: 'nextcloud:29-apache',
   minio: 'minio/minio:latest',
   gitea: 'gitea/gitea:1.22',
-  postgresql: 'postgres:16-alpine',
+  postgresql: 'postgres:18.3-alpine',
   mysql: 'mysql:8.4',
   sqlite: '',
   redis: 'redis:7-alpine',
   valkey: 'valkey/valkey:8-alpine',
   keydb: 'eqalpha/keydb:latest',
   jellyfin: 'jellyfin/jellyfin:latest',
-  dockerMailserver: 'ghcr.io/docker-mailserver/docker-mailserver:latest',
+
   filebrowser: 'filebrowser/filebrowser:latest',
   pgadmin: 'dpage/pgadmin4:latest',
   phpmyadmin: 'phpmyadmin:latest',
@@ -102,7 +98,7 @@ export const SERVICE_IMAGES = {
 // ─── Database Versions ───────────────────────────────────────────────────────
 
 export const DB_VERSIONS: Record<string, string[]> = {
-  postgresql: ['16', '15', '14', '13'],
+  postgresql: ['18.3', '17.9', '16.13'],
   mysql: ['8.4', '8.0', '5.7'],
   sqlite: ['3'],
 };

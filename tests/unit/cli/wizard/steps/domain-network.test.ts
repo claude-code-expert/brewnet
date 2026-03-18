@@ -2,7 +2,6 @@
  * Unit tests for wizard/steps/domain-network module (pure functions)
  *
  * Covers:
- *   - isMailServerAllowed
  *   - applyDomainDefaults (local / tunnel providers)
  *   - buildDomainConfig (local / tunnel variants)
  */
@@ -17,7 +16,6 @@ jest.unstable_mockModule('@inquirer/prompts', () => ({
   input: jest.fn(),
   select: jest.fn(),
   confirm: jest.fn(),
-  password: jest.fn(),
   checkbox: jest.fn(),
 }));
 
@@ -38,16 +36,11 @@ jest.unstable_mockModule('../../../../../packages/cli/src/services/cloudflare-cl
   getActiveServiceRoutes: jest.fn(() => []),
 }));
 
-jest.unstable_mockModule('../../../../../packages/cli/src/utils/network.js', () => ({
-  checkPort25Blocked: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
-}));
-
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
 const {
-  isMailServerAllowed,
   applyDomainDefaults,
   buildDomainConfig,
 } = await import(
@@ -90,35 +83,9 @@ function makeDomainConfig(overrides: Partial<DomainConfig> = {}): DomainConfig {
       zoneId: '',
       zoneName: '',
     },
-    mailServer: {
-      enabled: false,
-      service: 'docker-mailserver',
-      port25Blocked: false,
-      relayProvider: '',
-      relayHost: '',
-      relayPort: 587,
-      relayUser: '',
-      relayPassword: '',
-    },
     ...overrides,
   };
 }
-
-// ---------------------------------------------------------------------------
-// isMailServerAllowed
-// ---------------------------------------------------------------------------
-
-describe('isMailServerAllowed', () => {
-  it('returns false when provider is local', () => {
-    const state = makeState({ domain: { ...makeState().domain, provider: 'local' } });
-    expect(isMailServerAllowed(state)).toBe(false);
-  });
-
-  it('returns true when provider is tunnel', () => {
-    const state = makeState({ domain: { ...makeState().domain, provider: 'tunnel' } });
-    expect(isMailServerAllowed(state)).toBe(true);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // applyDomainDefaults — local provider

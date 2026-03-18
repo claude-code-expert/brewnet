@@ -243,7 +243,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
       passwordAuth: false,
       sftp: true,
     };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
@@ -273,7 +272,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
       passwordAuth: false,
       sftp: true,
     };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
@@ -292,7 +290,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
     expect(services).toContain('nextcloud');
     expect(services).toContain('jellyfin');
     expect(services).toContain('openssh-server');
-    expect(services).toContain('docker-mailserver');
     expect(services).toContain('filebrowser');
     expect(services).toContain('cloudflared');
   });
@@ -308,7 +305,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
       passwordAuth: false,
       sftp: true,
     };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
 
     const targets = getCredentialTargets(state);
@@ -318,7 +314,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
     expect(targets).toContain('pgAdmin');
     expect(targets).toContain('Jellyfin');
     expect(targets).toContain('SSH Server');
-    expect(targets).toContain('Mail Server');
     expect(targets).toContain('FileBrowser');
   });
 });
@@ -538,30 +533,24 @@ describe('Integration: Multiple component toggles produce additive estimates', (
     expect(bothDelta).toBe(dbDelta + mediaDelta);
   });
 
-  it('should be additive: enabling SSH + mail + filebrowser = sum of individual increases', () => {
+  it('should be additive: enabling SSH + filebrowser = sum of individual increases', () => {
     // SSH only
     const withSSH = cloneState(baseState);
     withSSH.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
     const sshDelta = estimateResources(withSSH).ramMB - baseEstimate.ramMB;
-
-    // Mail only
-    const withMail = cloneState(baseState);
-    withMail.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
-    const mailDelta = estimateResources(withMail).ramMB - baseEstimate.ramMB;
 
     // FileBrowser standalone only
     const withFB = cloneState(baseState);
     withFB.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     const fbDelta = estimateResources(withFB).ramMB - baseEstimate.ramMB;
 
-    // All three
+    // Both
     const withAll = cloneState(baseState);
     withAll.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-    withAll.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     withAll.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     const allDelta = estimateResources(withAll).ramMB - baseEstimate.ramMB;
 
-    expect(allDelta).toBe(sshDelta + mailDelta + fbDelta);
+    expect(allDelta).toBe(sshDelta + fbDelta);
   });
 
   it('should have additive container counts when toggling multiple services', () => {
@@ -624,7 +613,6 @@ describe('Integration: collectAllServices length matches countSelectedServices',
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     // Note: app server is excluded here because collectAllServices does NOT
     // include the generic 'app' container (user-deployed app), while
@@ -671,12 +659,6 @@ describe('Integration: collectAllServices length matches countSelectedServices',
         label: 'sshServer',
         patch: (s) => {
           s.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-        },
-      },
-      {
-        label: 'mailServer',
-        patch: (s) => {
-          s.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
         },
       },
       {
@@ -924,21 +906,16 @@ describe('Integration: Sequential component toggling simulates wizard flow', () 
     counts.push(countSelectedServices(state));
     expect(counts[5]).toBe(7);
 
-    // +mail
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
-    counts.push(countSelectedServices(state));
-    expect(counts[6]).toBe(8);
-
     // +filebrowser standalone
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     counts.push(countSelectedServices(state));
-    expect(counts[7]).toBe(9);
+    expect(counts[6]).toBe(8);
 
     // +app server
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
     counts.push(countSelectedServices(state));
-    expect(counts[8]).toBe(10);
+    expect(counts[7]).toBe(9);
   });
 
   it('should decrease RAM when a service is toggled off', () => {
@@ -1046,7 +1023,6 @@ describe('Integration: getImageName matches service registry', () => {
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     state.domain.cloudflare = { enabled: true, tunnelToken: 'tok', tunnelName: 'tun' };
 

@@ -151,11 +151,6 @@ function generateReviewSections(state: WizardState): ReviewSection[] {
     serverItems.push({ label: 'SSH Server', value: sshDesc });
   }
 
-  // Mail
-  if (state.servers.mailServer.enabled) {
-    serverItems.push({ label: 'Mail Server', value: state.servers.mailServer.service });
-  }
-
   // FileBrowser
   if (state.servers.fileBrowser.enabled && state.servers.fileBrowser.mode) {
     serverItems.push({ label: 'File Browser', value: state.servers.fileBrowser.mode });
@@ -268,7 +263,6 @@ function exportConfig(state: WizardState, projectPath: string): string {
       },
       media: { ...state.servers.media },
       sshServer: { ...state.servers.sshServer },
-      mailServer: { ...state.servers.mailServer },
       appServer: { ...state.servers.appServer },
       fileBrowser: { ...state.servers.fileBrowser },
     },
@@ -324,15 +318,6 @@ function importConfig(configPath: string): WizardState {
       },
       media: config.servers.media,
       sshServer: config.servers.sshServer,
-      mailServer: {
-        ...config.servers.mailServer,
-        port25Blocked: false,
-        relayProvider: '' as const,
-        relayHost: '',
-        relayPort: 587,
-        relayUser: '',
-        relayPassword: '',
-      },
       appServer: config.servers.appServer,
       fileBrowser: config.servers.fileBrowser,
     },
@@ -391,10 +376,6 @@ function createCompletedState(): WizardState {
       fileServer: { enabled: true, service: 'nextcloud' },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: {
-        ...state.servers.mailServer,
-        enabled: false,
-      },
       appServer: { enabled: true },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
@@ -511,7 +492,6 @@ describe('T064 — Review & Export', () => {
       expect(labels).not.toContain('File Server');
       expect(labels).not.toContain('Media');
       expect(labels).not.toContain('SSH Server');
-      expect(labels).not.toContain('Mail Server');
       expect(labels).not.toContain('File Browser');
     });
 
@@ -793,7 +773,6 @@ describe('T064 — Review & Export', () => {
       expect(imported.servers.media.enabled).toBe(state.servers.media.enabled);
       expect(imported.servers.media.services).toEqual(state.servers.media.services);
       expect(imported.servers.sshServer).toEqual(state.servers.sshServer);
-      expect(imported.servers.mailServer).toEqual(state.servers.mailServer);
       expect(imported.servers.appServer).toEqual(state.servers.appServer);
       expect(imported.servers.fileBrowser).toEqual(state.servers.fileBrowser);
       expect(imported.devStack).toEqual(state.devStack);
@@ -1036,7 +1015,6 @@ describe('T064 — Review & Export', () => {
       expect(loaded.servers).toHaveProperty('dbServer');
       expect(loaded.servers).toHaveProperty('media');
       expect(loaded.servers).toHaveProperty('sshServer');
-      expect(loaded.servers).toHaveProperty('mailServer');
       expect(loaded.servers).toHaveProperty('appServer');
       expect(loaded.servers).toHaveProperty('fileBrowser');
     });

@@ -141,12 +141,6 @@ describe('addService', () => {
     expect(result.success).toBe(true);
   });
 
-  it('returns success when adding docker-mailserver to existing compose', async () => {
-    setCompose(COMPOSE_PATH, makeComposeYaml());
-    const result = await addService('docker-mailserver', '/tmp/project');
-    expect(result.success).toBe(true);
-  });
-
   it('returns success when adding pgadmin to existing compose', async () => {
     setCompose(COMPOSE_PATH, makeComposeYaml());
     const result = await addService('pgadmin', '/tmp/project');

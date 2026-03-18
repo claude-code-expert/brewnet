@@ -53,7 +53,6 @@ function buildState(overrides: {
     dbServer: Partial<WizardState['servers']['dbServer']>;
     media: Partial<WizardState['servers']['media']>;
     sshServer: Partial<WizardState['servers']['sshServer']>;
-    mailServer: Partial<WizardState['servers']['mailServer']>;
     appServer: Partial<WizardState['servers']['appServer']>;
     fileBrowser: Partial<WizardState['servers']['fileBrowser']>;
   }>;
@@ -117,7 +116,6 @@ function buildFullState(): WizardState {
       },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: true, service: 'docker-mailserver' },
       appServer: { enabled: true },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
@@ -229,11 +227,10 @@ describe('ComposeGenerator — Web + DB (TC-08-01)', () => {
     expect(config.services['postgresql']!.image).toMatch(/^postgres:\d+-alpine/);
   });
 
-  it('should not include disabled services (nextcloud, jellyfin, ssh, mail)', () => {
+  it('should not include disabled services (nextcloud, jellyfin, ssh)', () => {
     expect(config.services).not.toHaveProperty('nextcloud');
     expect(config.services).not.toHaveProperty('jellyfin');
     expect(config.services).not.toHaveProperty('openssh-server');
-    expect(config.services).not.toHaveProperty('docker-mailserver');
     expect(config.services).not.toHaveProperty('cloudflared');
   });
 
@@ -303,10 +300,6 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('openssh-server');
   });
 
-  it('should include docker-mailserver (mail)', () => {
-    expect(config.services).toHaveProperty('docker-mailserver');
-  });
-
   it('should include cloudflared (tunnel)', () => {
     expect(config.services).toHaveProperty('cloudflared');
   });
@@ -315,10 +308,10 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('filebrowser');
   });
 
-  it('should have at least 10 service definitions', () => {
+  it('should have at least 9 service definitions', () => {
     // traefik, gitea, nextcloud, postgresql, pgadmin,
-    // jellyfin, openssh-server, docker-mailserver, cloudflared, filebrowser
-    expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(10);
+    // jellyfin, openssh-server, cloudflared, filebrowser
+    expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(9);
   });
 });
 
@@ -857,19 +850,6 @@ describe('ComposeGenerator — Port mappings', () => {
     expect(pgPorts.every((p: string) => !p.includes('0.0.0.0'))).toBe(true);
   });
 
-  it('should expose mail server ports when mail is enabled', () => {
-    const state = buildState({
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-      domain: { provider: 'custom', name: 'example.com' },
-    });
-    const config = generateComposeConfig(state);
-    const ports = config.services['docker-mailserver']!.ports ?? [];
-
-    // Mail server needs SMTP (25), submission (587), IMAPS (993)
-    expect(ports.length).toBeGreaterThan(0);
-  });
 });
 
 // =========================================================================
@@ -1403,35 +1383,6 @@ describe('ComposeGenerator — Nextcloud with MySQL env', () => {
     // Environment should include mysql connection
     const env = nextcloudService?.environment as Record<string, string> | undefined;
     expect(env?.['MYSQL_HOST']).toBe('mysql');
-  });
-});
-
-// =========================================================================
-// Mail relay env (covers getMailEnv relay branch + env-generator relay)
-// =========================================================================
-
-describe('ComposeGenerator — Mail Server with relay provider', () => {
-  it('should configure relay env when relayProvider is set', () => {
-    const state = buildState({
-      servers: {
-        mailServer: {
-          enabled: true,
-          service: 'docker-mailserver',
-          port25Blocked: true,
-          relayProvider: 'sendgrid',
-          relayHost: 'smtp.sendgrid.net',
-          relayPort: 587,
-          relayUser: 'apikey',
-          relayPassword: 'SG.testtoken',
-        },
-      },
-      domain: { provider: 'tunnel', name: 'test.example.com' },
-    });
-    const config = generateComposeConfig(state);
-    expect(config.services).toHaveProperty('docker-mailserver');
-    const mailService = config.services['docker-mailserver'];
-    const env = mailService?.environment as Record<string, string> | undefined;
-    expect(env?.['DEFAULT_RELAY_HOST']).toContain('smtp.sendgrid.net');
   });
 });
 

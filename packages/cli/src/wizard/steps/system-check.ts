@@ -363,21 +363,21 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     const spinner = ora({ text: 'Running system checks...', indent: 2 }).start();
     const { results, hasCriticalFailure, warnings } = await runAllChecks();
     spinner.stop();
+    console.log();
 
     // -----------------------------------------------------------------------
     // 4. Display results table
     // -----------------------------------------------------------------------
     const table = new Table({
-      head: [chalk.bold(''), chalk.bold('Check'), chalk.bold('Result'), chalk.bold('Details')],
-      colWidths: [4, 30, 40, 26],
+      head: [chalk.bold('Check'), chalk.bold('Result'), chalk.bold('Details')],
+      colWidths: [35, 40, 26],
       style: { head: [], border: ['dim'] },
       wordWrap: true,
     });
 
     for (const result of results) {
       table.push([
-        statusIcon(result.status),
-        formatName(result.name, result.status),
+        `${statusIcon(result.status)} ${formatName(result.name, result.status)}`,
         formatMessage(result.message, result.status),
         result.details ? chalk.dim(result.details) : chalk.dim('—'),
       ]);

@@ -120,17 +120,6 @@ jest.unstable_mockModule('execa', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock network — port 25 not blocked
-// ---------------------------------------------------------------------------
-
-jest.unstable_mockModule(
-  '../../../packages/cli/src/utils/network.js',
-  () => ({
-    checkPort25Blocked: jest.fn().mockResolvedValue(false),
-  }),
-);
-
-// ---------------------------------------------------------------------------
 // Dynamic imports (after all mock setup)
 // ---------------------------------------------------------------------------
 
@@ -161,8 +150,6 @@ describe('T039 — Scenario 1: Quick Tunnel', () => {
     jest.clearAllMocks();
     // Scenario 1: Quick Tunnel selected
     mockSelect.mockResolvedValueOnce('1-quick');
-    // Confirm mail server: no
-    mockConfirm.mockResolvedValue(false);
   });
 
   it('sets quickTunnelUrl to empty (URL captured later in Step 6)', async () => {
@@ -217,8 +204,6 @@ describe('T040 — Scenario 2: Named Tunnel with existing domain (success)', () 
     mockSelect.mockResolvedValueOnce('2-named-existing');
     // API token input
     mockInput.mockResolvedValue('valid-cf-api-token');
-    // Mail server: no
-    mockConfirm.mockResolvedValue(false);
 
     // CF API mocks
     mockVerifyToken.mockResolvedValue({ valid: true, email: 'user@example.com' });
@@ -317,7 +302,6 @@ describe('T041 — Scenario 2 rollback: DNS failure', () => {
     // Scenario 2 selected
     mockSelect.mockResolvedValueOnce('2-named-existing');
     mockInput.mockResolvedValue('valid-cf-api-token');
-    mockConfirm.mockResolvedValue(false);
 
     // CF API: tunnel creation succeeds
     mockVerifyToken.mockResolvedValue({ valid: true });
@@ -420,7 +404,6 @@ describe('T043 — Scenario 4: Named Tunnel only, domain later', () => {
     // Scenario 4 selected
     mockSelect.mockResolvedValueOnce('4-named-only');
     mockInput.mockResolvedValue('valid-cf-api-token');
-    mockConfirm.mockResolvedValue(false);
 
     // CF API: token + account + zone + tunnel creation
     mockVerifyToken.mockResolvedValue({ valid: true });

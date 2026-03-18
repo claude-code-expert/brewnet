@@ -247,7 +247,7 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
     {
       id: 'postgresql',
       name: 'PostgreSQL',
-      image: 'postgres:17-alpine',
+      image: 'postgres:18.3-alpine',
       ports: [5432],
       subdomain: '',
       ramMB: 120,
@@ -333,29 +333,6 @@ export const SERVICE_REGISTRY: Map<string, ServiceDefinition> = new Map([
         retries: 3,
       },
       requiredEnvVars: ['PUID', 'PGID', 'TZ', 'PASSWORD_ACCESS', 'USER_NAME'],
-    },
-  ],
-
-  // -- Mail -----------------------------------------------------------------
-  [
-    'docker-mailserver',
-    {
-      id: 'docker-mailserver',
-      name: 'Docker Mailserver',
-      image: 'ghcr.io/docker-mailserver/docker-mailserver:latest',
-      ports: [25, 587, 993],
-      subdomain: 'mail',
-      ramMB: 256,
-      diskGB: 1,
-      networks: ['brewnet'],
-      healthCheck: {
-        endpoint: '',
-        interval: 60,
-        timeout: 10,
-        retries: 5,
-      },
-      requiredEnvVars: ['OVERRIDE_HOSTNAME', 'ENABLE_CLAMAV', 'ENABLE_FAIL2BAN'],
-      traefikLabels: traefikRouterLabels('docker-mailserver', 'mail', 443),
     },
   ],
 

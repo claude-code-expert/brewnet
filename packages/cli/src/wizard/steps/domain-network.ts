@@ -11,7 +11,6 @@
  * Pure functions:
  *   - applyDomainDefaults  — Apply provider-specific defaults to wizard state
  *   - buildDomainConfig    — Clean / normalize a DomainConfig object
- *   - isMailServerAllowed  — Check if mail server can be enabled
  *
  * Interactive:
  *   - runDomainNetworkStep — Step 4 wizard UI
@@ -19,7 +18,7 @@
  * @module wizard/steps/domain-network
  */
 
-import { input, password, select, confirm } from '@inquirer/prompts';
+import { input, select, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import { execa } from 'execa';
@@ -42,8 +41,6 @@ import {
 } from '../../services/cloudflare-client.js';
 import { TunnelLogger } from '../../utils/tunnel-logger.js';
 import { QuickTunnelManager } from '../../services/quick-tunnel.js';
-import { checkPort25Blocked } from '../../utils/network.js';
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -63,14 +60,6 @@ async function tryOpenUrl(url: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Pure Functions
 // ---------------------------------------------------------------------------
-
-/**
- * Return true if the Mail Server option should be shown.
- * Mail Server requires a tunnel (non-local) domain.
- */
-export function isMailServerAllowed(state: WizardState): boolean {
-  return state.domain.provider !== 'local';
-}
 
 /**
  * Apply provider-specific defaults to the wizard state's domain configuration.
@@ -293,9 +282,6 @@ async function runQuickTunnelScenario(
   next.domain.cloudflare.tunnelName = '';
   next.domain.cloudflare.zoneId = '';
   next.domain.cloudflare.zoneName = '';
-
-  // Mail Server (allowed with tunnel)
-  await runMailServerSection(next);
 
   printNetworkSummary(next);
   return next;
@@ -603,7 +589,6 @@ async function runNamedTunnelWithDomainScenario(
 
   try {
     const updated = await runNamedTunnelApiFlow(next, tunnelLogger, true);
-    await runMailServerSection(updated);
     printNetworkSummary(updated);
     return updated;
   } catch (err) {
@@ -684,7 +669,6 @@ async function runGuidedDomainPurchaseScenario(
       console.log();
     }
 
-    await runMailServerSection(updated);
     printNetworkSummary(updated);
     return updated;
   } catch (err) {
@@ -802,107 +786,6 @@ async function rollbackTunnel(
 }
 
 // ---------------------------------------------------------------------------
-// Mail Server section helper
-// ---------------------------------------------------------------------------
-
-async function runMailServerSection(next: WizardState): Promise<void> {
-  console.log(chalk.bold('  Mail Server'));
-
-  const mailEnabled = await confirm({
-    message: 'Mail Server를 활성화하겠습니까? (docker-mailserver)',
-    default: false,
-  });
-  next.servers.mailServer.enabled = mailEnabled;
-
-  if (!mailEnabled) {
-    console.log();
-    return;
-  }
-
-  console.log();
-  const portSpinner = ora('SMTP 포트 25 확인 중...').start();
-  let port25Blocked = false;
-
-  try {
-    port25Blocked = await checkPort25Blocked();
-  } catch {
-    port25Blocked = false;
-  }
-
-  next.servers.mailServer.port25Blocked = port25Blocked;
-
-  if (port25Blocked) {
-    portSpinner.warn('포트 25 차단됨 — SMTP 릴레이 필요');
-    console.log(chalk.dim('  ISP가 스팸 방지를 위해 포트 25를 차단하는 경우가 많습니다.'));
-    console.log();
-
-    const relayChoice = await select<'' | 'gmail' | 'sendgrid' | 'custom'>({
-      message: 'SMTP 릴레이 제공자',
-      choices: [
-        { name: 'Gmail SMTP (무료, 일 500건 제한)', value: 'gmail' },
-        { name: 'SendGrid (무료 티어, 일 100건)', value: 'sendgrid' },
-        { name: '직접 SMTP 릴레이 설정', value: 'custom' },
-        { name: 'Mail Server 건너뜀', value: '' },
-      ],
-    });
-
-    if (relayChoice === '') {
-      next.servers.mailServer.enabled = false;
-      console.log();
-      return;
-    }
-
-    next.servers.mailServer.relayProvider = relayChoice;
-
-    if (relayChoice === 'gmail') {
-      next.servers.mailServer.relayHost = 'smtp.gmail.com';
-      next.servers.mailServer.relayPort = 587;
-      console.log();
-      console.log(chalk.dim('  Gmail: 앱 비밀번호 사용 (일반 비밀번호 아님).'));
-      console.log(chalk.dim('  → Google 계정 → 보안 → 2단계 인증 → 앱 비밀번호'));
-    } else if (relayChoice === 'sendgrid') {
-      next.servers.mailServer.relayHost = 'smtp.sendgrid.net';
-      next.servers.mailServer.relayPort = 587;
-    } else {
-      const relayHost = await input({
-        message: '릴레이 SMTP 호스트',
-        default: next.servers.mailServer.relayHost || '',
-        validate: (v) => v.trim().length > 0 ? true : '릴레이 호스트가 필요합니다',
-      });
-      next.servers.mailServer.relayHost = relayHost.trim();
-
-      const relayPortStr = await input({
-        message: '릴레이 SMTP 포트',
-        default: String(next.servers.mailServer.relayPort || 587),
-        validate: (v) => /^\d+$/.test(v.trim()) ? true : '포트는 숫자여야 합니다',
-      });
-      next.servers.mailServer.relayPort = parseInt(relayPortStr.trim(), 10);
-    }
-
-    console.log();
-
-    const relayUser = await input({
-      message: relayChoice === 'gmail' ? 'Gmail 주소' : '릴레이 사용자명',
-      default: next.servers.mailServer.relayUser || '',
-      validate: (v) => v.trim().length > 0 ? true : '사용자명이 필요합니다',
-    });
-    next.servers.mailServer.relayUser = relayUser.trim();
-
-    const relayPassword = await password({
-      message: relayChoice === 'gmail' ? 'Gmail 앱 비밀번호' : '릴레이 비밀번호',
-      mask: '*',
-      validate: (v: string) => v.trim().length > 0 ? true : '비밀번호가 필요합니다',
-    });
-    next.servers.mailServer.relayPassword = relayPassword.trim();
-
-  } else {
-    portSpinner.succeed('포트 25 오픈 — 직접 메일 전송 가능');
-  }
-
-  console.log();
-}
-
-// ---------------------------------------------------------------------------
 // Summary helper
 // ---------------------------------------------------------------------------
 
@@ -928,12 +811,6 @@ function printNetworkSummary(state: WizardState): void {
       console.log(chalk.dim('    도메인: 미설정 (`brewnet domain connect`로 연결)'));
     }
     console.log(chalk.dim('    SSL:   Cloudflare 관리'));
-    if (state.servers.mailServer.enabled) {
-      const relayInfo = state.servers.mailServer.relayProvider
-        ? ` (릴레이: ${state.servers.mailServer.relayProvider})`
-        : '';
-      console.log(chalk.dim(`    메일:  docker-mailserver${relayInfo}`));
-    }
   }
   console.log();
   console.log(chalk.green('  Network Access configured.'));

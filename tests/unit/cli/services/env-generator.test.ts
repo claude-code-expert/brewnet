@@ -46,7 +46,6 @@ const { createDefaultWizardState } = await import(
 
 import type {
   WizardState,
-  ServerComponents,
 } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
@@ -391,77 +390,6 @@ describe('generateEnvFiles', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mail Server
-  // -------------------------------------------------------------------------
-
-  describe('Mail Server enabled', () => {
-    it('includes MAIL_* keys when mail server is enabled', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        domain: {
-          provider: 'custom',
-          name: 'mail.example.com',
-        },
-        servers: {
-          mailServer: { enabled: true, service: 'docker-mailserver' },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      // Should include mail-related environment variables
-      const mailKeys = Object.keys(env).filter(
-        (k: string) => k.startsWith('MAIL_') || k.startsWith('SMTP_') || k.startsWith('POSTMASTER'),
-      );
-      expect(mailKeys.length).toBeGreaterThan(0);
-    });
-
-    it('does not include MAIL_* keys when mail server is disabled', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        servers: {
-          mailServer: { enabled: false, service: 'docker-mailserver' },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      const mailKeys = Object.keys(env).filter(
-        (k: string) => k.startsWith('MAIL_') || k.startsWith('SMTP_') || k.startsWith('POSTMASTER'),
-      );
-      expect(mailKeys).toHaveLength(0);
-    });
-
-    it('includes SMTP relay credentials (SMTP_RELAY_USER in .env; SMTP_RELAY_PASSWORD in secretFiles)', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        servers: {
-          mailServer: {
-            enabled: true,
-            service: 'docker-mailserver',
-            port25Blocked: true,
-            relayProvider: 'sendgrid',
-            relayHost: 'smtp.sendgrid.net',
-            relayPort: 587,
-            relayUser: 'apikey',
-            relayPassword: 'SG.testtoken',
-          },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      expect(env['SMTP_RELAY_USER']).toBe('apikey');
-      // SMTP_RELAY_PASSWORD is a secret — stored in secretFiles
-      const smtpSecret = getSecretContent(result.secretFiles, 'secrets/smtp_relay_password');
-      expect(smtpSecret).toBe('SG.testtoken');
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // .env.example — masked values
   // -------------------------------------------------------------------------
 
@@ -480,7 +408,6 @@ describe('generateEnvFiles', () => {
             adminUI: true,
             cache: '',
           },
-          mailServer: { enabled: true, service: 'docker-mailserver' },
         },
         domain: {
           provider: 'custom',
@@ -595,7 +522,6 @@ describe('generateEnvFiles', () => {
             cache: '',
           },
           fileServer: { enabled: true, service: 'nextcloud' },
-          mailServer: { enabled: true, service: 'docker-mailserver' },
           sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
         },
         domain: {

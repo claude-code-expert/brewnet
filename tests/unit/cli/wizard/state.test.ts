@@ -101,7 +101,6 @@ function buildValidState(overrides: Record<string, unknown> = {}): any {
       },
       media: { enabled: false, services: [] },
       sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-      mailServer: { enabled: false, service: 'docker-mailserver' },
       appServer: { enabled: false },
       fileBrowser: { enabled: false, mode: '' },
     },
@@ -191,7 +190,6 @@ describe('createState', () => {
     expect(state.servers.dbServer.primary).toBe('postgresql');
     expect(state.servers.media.enabled).toBe(false);
     expect(state.servers.sshServer.enabled).toBe(false);
-    expect(state.servers.mailServer.enabled).toBe(false);
     expect(state.servers.appServer.enabled).toBe(false);
     expect(state.servers.fileBrowser.enabled).toBe(false);
 

@@ -27,7 +27,6 @@ const EXPECTED_SERVICE_IDS: string[] = [
   'mysql',
   'pgadmin',
   'openssh-server',
-  'docker-mailserver',
   'cloudflared',
 ];
 
@@ -192,21 +191,6 @@ describe('Specific service definitions', () => {
     it('requires USER_NAME and PASSWORD_ACCESS env vars', () => {
       expect(ssh.requiredEnvVars).toContain('USER_NAME');
       expect(ssh.requiredEnvVars).toContain('PASSWORD_ACCESS');
-    });
-  });
-
-  // -- Docker Mailserver ------------------------------------------------------
-  describe('docker-mailserver', () => {
-    const mail = getServiceDefinition('docker-mailserver')!;
-
-    it('exposes ports 25, 587, 993', () => {
-      expect(mail.ports).toContain(25);
-      expect(mail.ports).toContain(587);
-      expect(mail.ports).toContain(993);
-    });
-
-    it('uses subdomain "mail"', () => {
-      expect(mail.subdomain).toBe('mail');
     });
   });
 

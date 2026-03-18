@@ -9,7 +9,6 @@
  *   - Web Server is always enabled (required)
  *   - Git Server is always enabled (required)
  *   - File Server or Media Server enabled → SFTP auto-suggested
- *   - Domain = 'local' → Mail Server hidden / not available
  *   - DB Server enabled + empty dbPassword → auto-generate password
  *   - SSH Server default → passwordAuth = false (key-only)
  *   - Language/frontend selected → App Server auto-enabled
@@ -58,29 +57,12 @@ export function applyComponentRules(state: WizardState): WizardState {
     next.servers.sshServer.sftp = true;
   }
 
-  // Mail Server hidden when domain is local
-  if (!isMailServerAvailable(next)) {
-    next.servers.mailServer.enabled = false;
-  }
-
   // DB password auto-generation
   if (next.servers.dbServer.enabled && !next.servers.dbServer.dbPassword) {
     next.servers.dbServer.dbPassword = generatePassword(16);
   }
 
   return next;
-}
-
-/**
- * Check whether the mail server option should be visible / available.
- * Mail requires a real domain (not 'local').
- *
- * @param state - Current wizard state
- * @returns true if mail server can be enabled
- */
-export function isMailServerAvailable(state: WizardState): boolean {
-  // Mail server requires a real domain (not local)
-  return state.domain.provider !== 'local';
 }
 
 /**

@@ -333,7 +333,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['traefik', 'postgresql', '17'];
+      selectQueue = ['traefik', 'postgresql', '18.3'];
 
       state = await runServerComponentsStep(state);
 
@@ -361,7 +361,6 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(state.domain.name).toBe('my-homeserver.local');
       expect(state.domain.ssl).toBe('self-signed');
       expect(state.domain.cloudflare.enabled).toBe(false);
-      expect(state.servers.mailServer.enabled).toBe(false);
 
       // --- Step 5: Review ---
       selectQueue = ['generate'];
@@ -457,7 +456,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       const state = applyFullInstallDefaults(createDefaultWizardState());
       expect(state.servers.dbServer.enabled).toBe(true);
       expect(state.servers.dbServer.primary).toBe('postgresql');
-      expect(state.servers.dbServer.primaryVersion).toBe('17');
+      expect(state.servers.dbServer.primaryVersion).toBe('18.3');
     });
 
     it('should have empty cache', () => {
@@ -530,16 +529,6 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       const state = await runDomainNetworkStep(baseState);
 
       expect(state.domain.name).toBe('my-homeserver.local');
-    });
-
-    it('should disable mail server for local domain', async () => {
-      selectQueue = ['local'];
-
-      const baseState = applyFullInstallDefaults(createDefaultWizardState());
-      baseState.projectName = 'my-homeserver';
-      const state = await runDomainNetworkStep(baseState);
-
-      expect(state.servers.mailServer.enabled).toBe(false);
     });
 
     it('should apply correct defaults via pure function', () => {

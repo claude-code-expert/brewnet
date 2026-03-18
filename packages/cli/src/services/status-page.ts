@@ -248,27 +248,6 @@ export const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       'SFTP runs as SSH subsystem — no separate container needed',
     ],
   },
-  'Mail Server': {
-    description: 'Full mail stack in a single container (Postfix + Dovecot + Rspamd)',
-    license: 'MIT',
-    homepage: 'https://docker-mailserver.github.io/docker-mailserver/',
-    features: [
-      'SMTP (Postfix) + IMAP (Dovecot) + spam filter (Rspamd)',
-      'DKIM, SPF, DMARC support',
-      'Fail2Ban built-in (brute force protection)',
-      'Let\'s Encrypt certificate integration',
-    ],
-    credentials: {
-      method: 'cli',
-      summary: 'No web UI. Create email accounts via CLI within 120 seconds of first start.',
-      command: 'docker exec -it brewnet-docker-mailserver setup email add admin@your.domain',
-    },
-    tips: [
-      'DNS records required: MX, SPF, DKIM, DMARC — without them mail delivery fails',
-      'Many ISPs block port 25 — verify before setup',
-      'ClamAV uses ~1 GB RAM; disable with ENABLE_CLAMAV=0 if resources are limited',
-    ],
-  },
   FileBrowser: {
     description: 'Lightweight web-based file manager written in Go',
     license: 'Apache-2.0',
@@ -599,17 +578,6 @@ function collectStatusData(state: WizardState): StatusPageData {
     });
   }
 
-  // Mail (no web UI)
-  if (state.servers.mailServer.enabled) {
-    services.push({
-      name: 'Mail Server',
-      status: 'unknown',
-      localUrl: `localhost:${remap(25)} (SMTP), localhost:${remap(993)} (IMAP)`,
-      note: 'Use mail client (Thunderbird, etc.)',
-      homepage: 'https://docker-mailserver.github.io/docker-mailserver/',
-    });
-  }
-
   // FileBrowser — container port 80 → host 8085
   // Ref: https://filebrowser.org/
   if (state.servers.fileBrowser.enabled) {
@@ -776,7 +744,7 @@ function generateStatusHtml(data: StatusPageData): string {
 </head>
 <body>
   <div class="container">
-    <h1>🍺 Brewnet</h1>
+    <h1>☕ Brewnet</h1>
     <div style="color:#94a3b8;margin-bottom:8px;">Your Home Server, Brewed Fresh</div>
     <div style="color:#64748b;font-size:13px;">Project: <strong style="color:#cbd5e1;">${data.projectName}</strong> &nbsp;•&nbsp; Generated: ${generatedDate}</div>
 

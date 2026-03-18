@@ -202,7 +202,6 @@ brewnet create-app <name>      # Scaffold a new app project
 | Database | PostgreSQL, MySQL, MariaDB, SQLite + Cache: Redis, Valkey, KeyDB |
 | Media (optional) | Jellyfin |
 | SSH Server | OpenSSH (port 2222), key-based auth, SFTP subsystem (auto-suggested if File/Media enabled) |
-| Mail Server | docker-mailserver (SMTP/IMAP), requires domain (shown in Step 4) |
 | Domain & Network | Local / Custom + Cloudflare Tunnel (default ON) |
 
 ## Installation Flow (7-step wizard)
@@ -212,7 +211,7 @@ Step 0: System check (OS, Docker, ports, disk)
 Step 1: Project setup (name, path, Full Install / Partial Install)
 Step 2: Admin account + Server components (Web/File/App/DB/Media/SSH toggle cards)
 Step 3: Runtime & Boilerplate (language, framework, scaffolding) — conditional: appServer only
-Step 4: Domain & Network (provider: Local/Custom with Cloudflare Tunnel, SSL, Mail Server)
+Step 4: Domain & Network (provider: Local/Custom with Cloudflare Tunnel, SSL)
 Step 5: Review & Confirm (includes credential propagation summary)
 Step 6: Docker Compose generation, service startup, credential propagation, external access verification
 Step 7: Complete (endpoints, credentials summary, tunnel status, external access verification commands)

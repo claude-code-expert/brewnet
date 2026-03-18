@@ -47,9 +47,6 @@ export const SERVICE_RAM_MAP: Readonly<Record<string, number>> = {
   // SSH Server
   'openssh-server': 16,
 
-  // Mail Server
-  'docker-mailserver': 256,
-
   // FileBrowser
   filebrowser: 32,
 
@@ -90,9 +87,6 @@ export const SERVICE_DISK_MAP: Readonly<Record<string, number>> = {
   // SSH Server
   'openssh-server': 0.05,
 
-  // Mail Server
-  'docker-mailserver': 0.5,
-
   // FileBrowser
   filebrowser: 0.1,
 
@@ -113,11 +107,10 @@ const DOCKER_IMAGE_MAP: Readonly<Record<string, string>> = {
   nextcloud: 'nextcloud:29-apache',
   minio: 'minio/minio:latest',
   jellyfin: 'jellyfin/jellyfin:latest',
-  postgresql: 'postgres:17-alpine',
+  postgresql: 'postgres:18.3-alpine',
   mysql: 'mysql:8.4',
   pgadmin: 'dpage/pgadmin4:latest',
   'openssh-server': 'linuxserver/openssh-server:latest',
-  'docker-mailserver': 'ghcr.io/docker-mailserver/docker-mailserver:latest',
   filebrowser: 'filebrowser/filebrowser:latest',
   cloudflared: 'cloudflare/cloudflared:latest',
   gitea: 'gitea/gitea:latest',
@@ -189,9 +182,6 @@ export function countSelectedServices(state: WizardState): number {
 
   // SSH Server
   if (s.sshServer?.enabled) count++;
-
-  // Mail Server
-  if (s.mailServer?.enabled) count++;
 
   // FileBrowser (standalone mode only — directory mode is served by the web server)
   if (s.fileBrowser?.enabled && s.fileBrowser.mode === 'standalone') count++;
@@ -274,14 +264,6 @@ export function estimateResources(state: WizardState): ResourceEstimate {
     containers++;
   }
 
-  // Mail Server
-  if (s.mailServer?.enabled) {
-    const mailSvc = s.mailServer.service || 'docker-mailserver';
-    ram += ramFor(mailSvc) || 256;
-    disk += diskFor(mailSvc) || 0.5;
-    containers++;
-  }
-
   // Cloudflare Tunnel
   if (state.domain?.cloudflare?.enabled) {
     ram += ramFor('cloudflared');
@@ -336,11 +318,6 @@ export function collectAllServices(state: WizardState): string[] {
     ids.push('openssh-server');
   }
 
-  // Mail Server
-  if (s.mailServer?.enabled) {
-    ids.push(s.mailServer.service || 'docker-mailserver');
-  }
-
   // FileBrowser (standalone)
   if (s.fileBrowser?.enabled && s.fileBrowser.mode === 'standalone') {
     ids.push('filebrowser');
@@ -381,9 +358,6 @@ export function getCredentialTargets(state: WizardState): string[] {
   }
   if (s.sshServer?.enabled) {
     targets.push('SSH Server');
-  }
-  if (s.mailServer?.enabled) {
-    targets.push('Mail Server');
   }
   if (s.fileBrowser?.enabled) {
     targets.push('FileBrowser');

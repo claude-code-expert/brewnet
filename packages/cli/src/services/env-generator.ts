@@ -133,7 +133,6 @@ const ENV_TO_SECRET_FILE: Record<string, string> = {
   GITEA_ADMIN_PASSWORD:           'secrets/admin_password',
   NEXTCLOUD_ADMIN_PASSWORD:       'secrets/admin_password',
   PGADMIN_DEFAULT_PASSWORD:       'secrets/admin_password',
-  SMTP_RELAY_PASSWORD:            'secrets/smtp_relay_password',
   TRAEFIK_DASHBOARD_AUTH:         'secrets/traefik_dashboard_auth',
   // CLOUDFLARE_TUNNEL_TOKEN stays in .env — cloudflared image does not support _FILE convention
   // MINIO_ROOT_PASSWORD stays in .env (_FILE not supported)
@@ -170,8 +169,7 @@ function serializeEnv(
  * Collects entries from:
  *   1. Admin credentials + credential propagation (credential-manager)
  *   2. Cloudflare Tunnel token
- *   3. Mail server configuration
- *   4. Domain configuration
+ *   3. Domain configuration
  *   5. Generated secret keys (Gitea secret, etc.)
  *
  * Any PASSWORD/SECRET/TOKEN entry that is empty will be filled with a
@@ -189,22 +187,7 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
     entries['CLOUDFLARE_TUNNEL_TOKEN'] = state.domain.cloudflare.tunnelToken;
   }
 
-  // ── 4. Mail Server ─────────────────────────────────────────────────
-  if (state.servers.mailServer.enabled) {
-    const domainName = state.domain.name || 'brewnet.local';
-    entries['MAIL_DOMAIN'] = domainName;
-    entries['MAIL_HOSTNAME'] = `mail.${domainName}`;
-    entries['POSTMASTER_ADDRESS'] = `postmaster@${domainName}`;
-    entries['SMTP_PORT'] = '25';
-
-    // SMTP relay credentials (when port 25 is blocked)
-    if (state.servers.mailServer.relayProvider && state.servers.mailServer.relayUser) {
-      entries['SMTP_RELAY_USER'] = state.servers.mailServer.relayUser;
-      entries['SMTP_RELAY_PASSWORD'] = state.servers.mailServer.relayPassword || generatePassword(16);
-    }
-  }
-
-  // ── 5. Traefik Dashboard BasicAuth ─────────────────────────────────
+  // ── 4. Traefik Dashboard BasicAuth ─────────────────────────────────
   // htpasswd format with $$ escaping for docker-compose interpolation.
   // Generated at install time via openssl; falls back to a placeholder.
   entries['TRAEFIK_DASHBOARD_AUTH'] = generateHtpasswd(

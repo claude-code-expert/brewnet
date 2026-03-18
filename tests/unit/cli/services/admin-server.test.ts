@@ -237,7 +237,6 @@ describe('GET /api/services', () => {
       makeContainer('nextcloud', 'running'),
       makeContainer('jellyfin', 'running'),
       makeContainer('openssh-server', 'running'),
-      makeContainer('docker-mailserver', 'running'),
       makeContainer('myapp', 'running'),
     ]);
     const res = await req('GET', '/api/services');
@@ -247,7 +246,6 @@ describe('GET /api/services', () => {
     expect(byId['nextcloud']).toBe('file');
     expect(byId['jellyfin']).toBe('media');
     expect(byId['openssh-server']).toBe('ssh');
-    expect(byId['docker-mailserver']).toBe('mail');
     // 'myapp' is not in SERVICE_REGISTRY so inferType is not called → 'unknown'
     expect(byId['myapp']).toBe('unknown');
   });

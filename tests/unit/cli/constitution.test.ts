@@ -79,7 +79,6 @@ function buildFullState(): WizardState {
       fileServer: { enabled: true, service: 'nextcloud' },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: true, service: 'docker-mailserver' },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
     domain: {
@@ -324,21 +323,6 @@ describe('TC-C-03: Transparent — all services have security_opt and restart', 
       const config = generateComposeConfig(state);
 
       const svc = config.services['openssh-server'];
-      expect(svc).toBeDefined();
-      expect(svc.security_opt).toEqual(['no-new-privileges:true']);
-      expect(svc.restart).toBe('unless-stopped');
-    });
-
-    it('docker-mailserver should have security_opt and restart', () => {
-      const state = buildState({
-        servers: {
-          ...createDefaultWizardState().servers,
-          mailServer: { enabled: true, service: 'docker-mailserver' },
-        },
-      }) as WizardState;
-      const config = generateComposeConfig(state);
-
-      const svc = config.services['docker-mailserver'];
       expect(svc).toBeDefined();
       expect(svc.security_opt).toEqual(['no-new-privileges:true']);
       expect(svc.restart).toBe('unless-stopped');
