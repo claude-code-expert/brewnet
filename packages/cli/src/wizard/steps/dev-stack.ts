@@ -245,27 +245,40 @@ export async function runDevStackStep(
 
   // -------------------------------------------------------------------------
   // 5. Frontend tech single-select (T023-T024)
+  //    Skip if a unified stack (Next.js) is selected — it has its own frontend.
   // -------------------------------------------------------------------------
-  console.log(chalk.bold('  Frontend Technology'));
-  console.log(chalk.dim('  Select a frontend framework (optional)'));
-  console.log();
-
-  const frontendChoices = (Object.keys(FRONTEND_REGISTRY) as FrontendTech[]).map(
-    (key) => ({
-      name: `${FRONTEND_REGISTRY[key].name} — ${FRONTEND_REGISTRY[key].description}`,
-      value: key,
-    }),
+  const hasUnifiedStack = Object.values(frameworkSelections).some(
+    (fw) => fw === 'nextjs' || fw === 'nextjs-app',
   );
 
-  const selectedFrontendRaw = await select<FrontendTech>({
-    message: 'Frontend',
-    choices: frontendChoices,
-    default: next.devStack.frontend ?? 'none',
-  });
+  let selectedFrontend: FrontendTech | null = null;
 
-  // T024: 'none' maps to null
-  const selectedFrontend: FrontendTech | null =
-    selectedFrontendRaw === 'none' ? null : selectedFrontendRaw;
+  if (hasUnifiedStack) {
+    console.log(chalk.bold('  Frontend Technology'));
+    console.log(chalk.dim('  Next.js 통합 스택이 선택되어 별도 프론트엔드가 필요하지 않습니다.'));
+    console.log(chalk.green('  ✔ Skipped (Next.js includes frontend)'));
+    console.log();
+  } else {
+    console.log(chalk.bold('  Frontend Technology'));
+    console.log(chalk.dim('  Select a frontend framework (optional)'));
+    console.log();
+
+    const frontendChoices = (Object.keys(FRONTEND_REGISTRY) as FrontendTech[]).map(
+      (key) => ({
+        name: `${FRONTEND_REGISTRY[key].name} — ${FRONTEND_REGISTRY[key].description}`,
+        value: key,
+      }),
+    );
+
+    const selectedFrontendRaw = await select<FrontendTech>({
+      message: 'Frontend',
+      choices: frontendChoices,
+      default: next.devStack.frontend ?? 'none',
+    });
+
+    // T024: 'none' maps to null
+    selectedFrontend = selectedFrontendRaw === 'none' ? null : selectedFrontendRaw;
+  }
 
   console.log();
 
