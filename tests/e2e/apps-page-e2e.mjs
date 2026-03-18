@@ -22,6 +22,18 @@ function check(label, ok, detail) {
 }
 
 (async () => {
+  // Pre-flight: ensure admin is reachable
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const r = await fetch(`${BASE}/api/health`);
+      if (r.ok) break;
+    } catch {
+      if (attempt === 4) { console.log('\x1b[31m  Admin server not reachable after 5 attempts. Aborting.\x1b[0m'); process.exit(1); }
+      console.log(`\x1b[33m  Waiting for admin server... (${attempt + 1}/5)\x1b[0m`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
@@ -260,13 +272,13 @@ function check(label, ok, detail) {
     { url: '/api/health', check: (d) => d.status === 'ok' },
   ];
 
+  // Use fetch() instead of page.goto() to avoid Playwright navigating away from
+  // the HTML page and potentially crashing the admin server with rapid navigation.
   for (const { url, check: validator } of apiChecks) {
     try {
-      const res = await page.goto(`${BASE}${url}`);
-      const body = await page.evaluate(() => {
-        try { return JSON.parse(document.body.innerText); } catch { return null; }
-      });
-      check(`API ${url}`, res.status() === 200 && body && validator(body), `HTTP ${res.status()}`);
+      const res = await fetch(`${BASE}${url}`);
+      const body = await res.json();
+      check(`API ${url}`, res.status === 200 && body && validator(body), `HTTP ${res.status}`);
     } catch (e) {
       check(`API ${url}`, false, e.message.substring(0, 100));
     }
