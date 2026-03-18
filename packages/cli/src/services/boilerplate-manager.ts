@@ -68,6 +68,12 @@ export { BOILERPLATE_REPO_URL };
  * @throws {Error} if git clone fails (network error, unknown branch, etc.)
  */
 export async function cloneStack(stackId: string, projectDir: string): Promise<void> {
+  // If directory already exists (previous run), remove and re-clone for a clean state.
+  // git clone refuses to write into a non-empty directory.
+  const { existsSync: dirExists, rmSync } = await import('node:fs');
+  if (dirExists(projectDir)) {
+    rmSync(projectDir, { recursive: true, force: true });
+  }
   await execa('git', [
     'clone',
     '--depth=1',
