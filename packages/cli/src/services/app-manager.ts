@@ -761,8 +761,7 @@ async function _createModeB(
   } else {
     setStep(job, 4, 'done', 'skipped — no docker-compose.yml');
     setStep(job, 5, 'done', 'skipped — deploy separately');
-    appendLog(job, '[info] No docker-compose.yml found — clone + Gitea push completed.');
-    appendLog(job, '[info] Deploy 버튼을 눌러 배포하거나, Dockerfile을 추가한 후 배포하세요.');
+    appendLog(job, '[clone] Gitea push completed — no docker-compose.yml, skipping Docker up');
   }
 
   addApp(appsJson, {

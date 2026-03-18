@@ -955,16 +955,10 @@ function startJobPoll(jobId,appName,maxSteps){
           method:'PUT',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({autoDeploy:true,deployBranch:'main'})
         }).catch(function(){});
-        // Append success guide to log
-        logEl.textContent+='\\n\\n\u2705 '+appName+' \uc0dd\uc131 \uc644\ub8cc!\\n\u2192 \uc571 \uce74\ub4dc\uc758 Deploy \ubc84\ud2bc\uc744 \ub20c\ub7ec \ubc30\ud3ec\ub97c \uc9c4\ud589\ud558\uc138\uc694.\\n\u2192 \ub610\ub294 Gitea\uc5d0\uc11c \ucf54\ub4dc\ub97c \uc218\uc815\ud55c \ud6c4 git push\ud558\uba74 \uc790\ub3d9 \ubc30\ud3ec\ub429\ub2c8\ub2e4.';
-        logEl.scrollTop=logEl.scrollHeight;
       }else{
-        showToast('\u274c '+appName+' \uc2e4\ud328: '+(r.error||''));
-        document.getElementById('progress-log').style.display='block';
-        logEl.textContent+='\\n\\n\u274c Error: '+(r.error||'Unknown error');
         var failedStep=r.steps?r.steps.find(function(s){return s.status==='failed';}):null;
-        if(failedStep){logEl.textContent+='\\nFailed at: '+failedStep.label+(failedStep.message?' ('+failedStep.message+')':'');}
-        logEl.scrollTop=logEl.scrollHeight;
+        var errDetail=failedStep?failedStep.label+(failedStep.message?' ('+failedStep.message+')':''):(r.error||'Unknown error');
+        showToast('\u274c '+appName+' \uc2e4\ud328: '+errDetail);
       }
       await loadApps();await loadRepos();renderApps();renderRepos();
     }
