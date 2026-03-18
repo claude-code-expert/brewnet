@@ -158,13 +158,14 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     await execa('git', ['pull', 'brewnet', settings.deployBranch], { cwd: app.appDir }).catch(() => {});
     setStep(job, 0, 'done');
 
-    setStep(job, 1, 'running');
-    await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: app.appDir });
-    setStep(job, 1, 'done');
+    setStep(job, 1, 'running', 'docker compose up --build');
+    await _dockerComposeUp(app.appDir, job);
+    setStep(job, 1, 'done', 'containers started');
 
     setStep(job, 2, 'running');
     const healthUrlDeploy = _buildHealthUrl(app.appDir, app.port, app.port);
-    await _pollHealth(healthUrlDeploy);
+    setStep(job, 2, 'running', `polling ${healthUrlDeploy}`);
+    await _pollHealth(healthUrlDeploy, 120_000, job);
     setStep(job, 2, 'done');
 
     updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
@@ -218,6 +219,13 @@ function newJob(appName: string, stepLabels: string[]): AppJob {
 function setStep(job: AppJob, index: number, status: AppJobStep['status'], message?: string): void {
   const step = job.steps[index];
   if (step) { step.status = status; if (message) step.message = message; }
+}
+
+/** Append a log line to the job's rolling log buffer (max 200 lines). */
+function appendLog(job: AppJob, line: string): void {
+  if (!job.logs) job.logs = [];
+  job.logs.push(line);
+  if (job.logs.length > 200) job.logs.splice(0, job.logs.length - 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -344,16 +352,50 @@ function _buildHealthUrl(appDir: string, port: number, fallbackPort: number): st
   return `http://127.0.0.1:${healthPort}${basePath}/health`;
 }
 
-async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
+async function _pollHealth(url: string, maxMs = 120_000, job?: AppJob): Promise<void> {
   const deadline = Date.now() + maxMs;
+  let attempt = 0;
   while (Date.now() < deadline) {
+    attempt++;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) return;
-    } catch { /* not ready yet */ }
+      if (res.ok) {
+        if (job) appendLog(job, `[health] ✓ ${url} → ${res.status} (attempt ${attempt})`);
+        return;
+      }
+      if (job) appendLog(job, `[health] ${url} → ${res.status} (attempt ${attempt})`);
+    } catch {
+      if (job && attempt % 3 === 1) appendLog(job, `[health] waiting... ${url} (attempt ${attempt})`);
+    }
     await new Promise((r) => setTimeout(r, 3000));
   }
+  if (job) appendLog(job, `[health] ✗ timeout after ${maxMs / 1000}s`);
   throw new Error(`Health check timed out after ${maxMs / 1000}s: ${url}`);
+}
+
+/**
+ * Run `docker compose up -d --build` with stdout/stderr streamed to job logs.
+ */
+async function _dockerComposeUp(cwd: string, job: AppJob): Promise<void> {
+  appendLog(job, `[docker] $ docker compose up -d --build`);
+  appendLog(job, `[docker] cwd: ${cwd}`);
+  const proc = execa('docker', ['compose', 'up', '-d', '--build'], { cwd, reject: false });
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString().split('\n').filter(Boolean)) {
+      appendLog(job, `[docker] ${line}`);
+    }
+  });
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString().split('\n').filter(Boolean)) {
+      appendLog(job, `[docker] ${line}`);
+    }
+  });
+  const result = await proc;
+  if (result.exitCode !== 0) {
+    appendLog(job, `[docker] ✗ exit code ${result.exitCode}`);
+    throw new Error(`Command failed with exit code ${result.exitCode}: docker compose up -d --build\n${result.stderr}`);
+  }
+  appendLog(job, `[docker] ✓ containers started`);
 }
 
 // ---------------------------------------------------------------------------
@@ -466,14 +508,14 @@ async function _createModeA(
   setStep(job, 4, 'running', 'docker compose up --build');
   assertComposeFile(meta.appDir);
   _injectQuickTunnelIfNeeded(meta.appDir, opts.appName, port);
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
+  await _dockerComposeUp(meta.appDir, job);
   setStep(job, 4, 'done', 'containers started');
 
   // Step 5: Health check — accounts for Next.js basePath
   setStep(job, 5, 'running');
   const healthUrlA = _buildHealthUrl(meta.appDir, port, port);
   setStep(job, 5, 'running', `polling ${healthUrlA}`);
-  await _pollHealth(healthUrlA);
+  await _pollHealth(healthUrlA, 120_000, job);
   setStep(job, 5, 'done');
 
   // Register
@@ -544,13 +586,13 @@ async function _createModeB(
   setStep(job, 4, 'running', 'docker compose up --build');
   assertComposeFile(appDir);
   _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  await _dockerComposeUp(appDir, job);
   setStep(job, 4, 'done', 'containers started');
 
   setStep(job, 5, 'running');
   const healthUrlB = _buildHealthUrl(appDir, port, port);
   setStep(job, 5, 'running', `polling ${healthUrlB}`);
-  await _pollHealth(healthUrlB);
+  await _pollHealth(healthUrlB, 120_000, job);
   setStep(job, 5, 'done');
 
   addApp(appsJson, {
@@ -603,13 +645,13 @@ async function _createModeC(
   setStep(job, 4, 'running', 'docker compose up --build');
   assertComposeFile(appDir);
   _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  await _dockerComposeUp(appDir, job);
   setStep(job, 4, 'done', 'containers started');
 
   setStep(job, 5, 'running');
   const healthUrlC = _buildHealthUrl(appDir, port, port);
   setStep(job, 5, 'running', `polling ${healthUrlC}`);
-  await _pollHealth(healthUrlC, 120_000);
+  await _pollHealth(healthUrlC, 120_000, job);
   setStep(job, 5, 'done');
 
   addApp(appsJson, {

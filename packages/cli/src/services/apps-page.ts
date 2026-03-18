@@ -921,6 +921,13 @@ function startJobPoll(jobId,appName,maxSteps){
     var r=await fetch('/api/apps/jobs/'+encodeURIComponent(jobId)).then(function(x){return x.json();}).catch(function(){return null;});
     if(!r)return;
     if(r.steps)renderProgressSteps(r.steps,maxSteps);
+    // Render job logs (docker compose output + health check progress)
+    if(r.logs&&r.logs.length>0){
+      var logEl=document.getElementById('log-content');
+      logEl.textContent=r.logs.join('\\n');
+      logEl.scrollTop=logEl.scrollHeight;
+      document.getElementById('progress-log').style.display='block';
+    }
     if(r.status==='running'){
       document.getElementById('progress-log').style.display='block';
     }

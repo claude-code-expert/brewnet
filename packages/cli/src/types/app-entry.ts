@@ -23,6 +23,8 @@ export interface AppJob {
   status: 'running' | 'done' | 'failed';
   steps: AppJobStep[];
   error?: string;
+  /** Rolling log lines from docker compose / health check (last 200 lines). */
+  logs?: string[];
 }
 
 /** Persisted record for one managed app (stored in apps.json). */
