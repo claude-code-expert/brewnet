@@ -276,7 +276,6 @@ html,body{height:100%;background:var(--bg0);color:var(--txt);font-family:var(--s
     <div style="margin-top:30px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div class="sec-title">📦 Gitea Repositories <span class="nbadge" id="badge-repos">0</span></div>
-        <a href="http://localhost/git" class="btn bg bsm" style="text-decoration:none;font-size:12px" target="_blank" rel="noopener">Git Server에서 관리 →</a>
       </div>
       <div class="rtbl-wrap">
         <table class="rtbl">
