@@ -1,6 +1,7 @@
 // packages/cli/src/services/gitea-client.ts
-import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, chmodSync, mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { execSync } from 'node:child_process';
 import type { GitRepoEntry } from '../types/app-entry.js';
 
 export interface GiteaClientConfig {
@@ -23,39 +24,107 @@ export class GiteaClient {
   // Token management
   // ---------------------------------------------------------------------------
 
-  private async ensureToken(): Promise<string> {
+  /**
+   * Create a Gitea API token via Basic Auth.
+   * If the admin account has mustChangePassword=true (403), auto-fixes via docker exec and retries.
+   * Saves the token to tokenPath on success.
+   */
+  private async _createToken(): Promise<{ wasFixed: boolean }> {
     const { tokenPath, baseUrl, username, password } = this.config;
-
-    if (existsSync(tokenPath)) {
-      return readFileSync(tokenPath, 'utf-8').trim();
-    }
-
-    // Create token via Basic Auth
     const basic = Buffer.from(`${username}:${password}`).toString('base64');
-    const res = await fetch(`${baseUrl}/api/v1/users/${username}/tokens`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${basic}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: `brewnet-${Date.now()}`,
-        scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
-      }),
-    });
+
+    const makeRequest = () =>
+      fetch(`${baseUrl}/api/v1/users/${username}/tokens`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `brewnet-${Date.now()}`,
+          scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+
+    let res = await makeRequest();
+    let wasFixed = false;
 
     if (!res.ok) {
-      throw new Error(`Gitea token creation failed: ${res.status} ${await res.text()}`);
+      const body = await res.text();
+      if (res.status === 403 && body.includes('must change')) {
+        // Auto-fix: reset mustChangePassword via docker exec, then retry
+        try {
+          execSync(
+            `docker exec -u git brewnet-gitea gitea admin user change-password` +
+            ` --username ${username} --password ${password} --must-change-password=false`,
+            { stdio: 'pipe' },
+          );
+        } catch (e) {
+          const stderr = (e as { stderr?: Buffer }).stderr?.toString().trim() ?? String(e);
+          throw new Error(
+            `Gitea admin requires password change — auto-fix failed:\n  ${stderr}\n` +
+            `  Manual fix: docker exec -u git brewnet-gitea gitea admin user change-password` +
+            ` --username ${username} --password <password> --must-change-password=false`,
+          );
+        }
+        wasFixed = true;
+        res = await makeRequest();
+        if (!res.ok) {
+          throw new Error(
+            `Gitea token creation failed after auto-fix: ${res.status} ${await res.text()}`,
+          );
+        }
+      } else {
+        throw new Error(`Gitea token creation failed: ${res.status} ${body}`);
+      }
     }
 
     const data = (await res.json()) as { sha1: string };
-    const token = data.sha1;
-
     mkdirSync(dirname(tokenPath), { recursive: true });
-    writeFileSync(tokenPath, token, 'utf-8');
+    writeFileSync(tokenPath, data.sha1, 'utf-8');
     chmodSync(tokenPath, 0o600);
+    return { wasFixed };
+  }
 
-    return token;
+  /**
+   * Explicit setup step — call once before any API operations.
+   * Validates any cached token; deletes and re-creates if stale (401).
+   * Returns what happened so the caller can surface it in job step logs.
+   */
+  async prepare(): Promise<{ autoFixed: boolean; message: string }> {
+    const { tokenPath, baseUrl } = this.config;
+    if (existsSync(tokenPath)) {
+      // Validate cached token — it may be stale if Gitea was reset or re-installed
+      const token = readFileSync(tokenPath, 'utf-8').trim();
+      try {
+        const check = await fetch(`${baseUrl}/api/v1/user`, {
+          headers: { Authorization: `token ${token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (check.status !== 401) {
+          return { autoFixed: false, message: 'token cached' };
+        }
+        // Token is stale — delete and fall through to re-create
+        unlinkSync(tokenPath);
+      } catch {
+        // Network error — assume token is still valid, let API calls fail naturally
+        return { autoFixed: false, message: 'token cached (network check skipped)' };
+      }
+    }
+    const { wasFixed } = await this._createToken();
+    return {
+      autoFixed: wasFixed,
+      message: wasFixed
+        ? 'mustChangePassword was set — auto-fixed via docker exec; token created'
+        : 'token created',
+    };
+  }
+
+  private async ensureToken(): Promise<string> {
+    const { tokenPath } = this.config;
+    if (existsSync(tokenPath)) {
+      return readFileSync(tokenPath, 'utf-8').trim();
+    }
+    await this._createToken();
+    return readFileSync(tokenPath, 'utf-8').trim();
   }
 
   private async authHeaders(): Promise<Record<string, string>> {
@@ -78,21 +147,72 @@ export class GiteaClient {
     return res.status === 200;
   }
 
+  /** Returns true if the repo exists but has no commits (empty: true from Gitea API). */
+  async repoIsEmpty(name: string): Promise<boolean> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(
+      `${baseUrl}/api/v1/repos/${username}/${name}`,
+      { headers: await this.authHeaders() },
+    );
+    if (res.status !== 200) return false;
+    const data = await res.json() as { empty?: boolean };
+    return data.empty === true;
+  }
+
   /** Creates a private repo and returns the clone URL. */
   async createRepo(name: string, description = ''): Promise<string> {
     const { baseUrl } = this.config;
     const res = await fetch(`${baseUrl}/api/v1/user/repos`, {
       method: 'POST',
       headers: await this.authHeaders(),
-      body: JSON.stringify({ name, description, private: true, auto_init: false }),
+      body: JSON.stringify({ name, description, private: false, auto_init: false }),
     });
 
     if (!res.ok) {
-      throw new Error(`Gitea createRepo failed: ${res.status} ${await res.text()}`);
+      const body = await res.text();
+      // 409 "repository already exists" — previous partial creation left the repo.
+      // Fetch the existing repo's clone_url and continue.
+      if (res.status === 409) {
+        const existing = await fetch(`${baseUrl}/api/v1/repos/${this.config.username}/${name}`, {
+          headers: await this.authHeaders(),
+        });
+        if (existing.ok) {
+          const data = (await existing.json()) as { clone_url: string };
+          return data.clone_url;
+        }
+      }
+      // Gitea 500 "repository files already exist" — DB record was deleted
+      // (e.g. by uninstall) but bare git files remain on disk in the volume.
+      // Delete the orphan files and retry once.
+      if (res.status === 500 && body.includes('files already exist')) {
+        await this.deleteRepo(name).catch(() => { /* may 404 — that's fine */ });
+        const retry = await fetch(`${baseUrl}/api/v1/user/repos`, {
+          method: 'POST',
+          headers: await this.authHeaders(),
+          body: JSON.stringify({ name, description, private: false, auto_init: false }),
+        });
+        if (!retry.ok) {
+          throw new Error(`Gitea createRepo retry failed: ${retry.status} ${await retry.text()}`);
+        }
+        const retryData = (await retry.json()) as { clone_url: string };
+        return retryData.clone_url;
+      }
+      throw new Error(`Gitea createRepo failed: ${res.status} ${body}`);
     }
 
     const data = (await res.json()) as { clone_url: string };
     return data.clone_url;
+  }
+
+  /** Patch a repo from private to public visibility. No-op if already public. */
+  async makeRepoPublic(name: string): Promise<void> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/repos/${username}/${name}`, {
+      method: 'PATCH',
+      headers: await this.authHeaders(),
+      body: JSON.stringify({ private: false }),
+    });
+    if (!res.ok) throw new Error(`Gitea makeRepoPublic failed: ${res.status} ${await res.text()}`);
   }
 
   async deleteRepo(name: string): Promise<void> {
@@ -108,11 +228,66 @@ export class GiteaClient {
     const { baseUrl } = this.config;
     const res = await fetch(`${baseUrl}/api/v1/user/repos`, {
       headers: await this.authHeaders(),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       throw new Error(`Gitea listRepos failed: ${res.status} ${await res.text()}`);
     }
     return (await res.json()) as GitRepoEntry[];
+  }
+
+  /** Fetch a single repo's detail (includes default_branch, ssh_url). */
+  async getRepo(name: string): Promise<{
+    id: number; name: string; clone_url: string; ssh_url: string;
+    html_url: string; description: string; private: boolean; default_branch: string;
+  }> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/repos/${username}/${name}`, {
+      headers: await this.authHeaders(),
+    });
+    if (!res.ok) throw new Error(`Gitea getRepo failed: ${res.status} ${await res.text()}`);
+    return res.json() as Promise<{
+      id: number; name: string; clone_url: string; ssh_url: string;
+      html_url: string; description: string; private: boolean; default_branch: string;
+    }>;
+  }
+
+  /** Get the latest commit on a branch. Returns null for empty repos. */
+  async getLatestCommit(
+    repoName: string,
+    branch: string,
+  ): Promise<{ hash: string; shortHash: string; message: string; date: string } | null> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(
+      `${baseUrl}/api/v1/repos/${username}/${repoName}/commits?sha=${encodeURIComponent(branch)}&limit=1`,
+      { headers: await this.authHeaders() },
+    );
+    if (!res.ok) return null;
+    const commits = (await res.json()) as Array<{ sha: string; commit: { message: string; committer: { date: string } } }>;
+    if (!commits.length) return null;
+    const c = commits[0]!;
+    return {
+      hash: c.sha,
+      shortHash: c.sha.slice(0, 7),
+      message: c.commit.message.split('\n')[0]!,
+      date: c.commit.committer.date,
+    };
+  }
+
+  /** Register a push webhook on the repo. */
+  async createWebhook(repoName: string, webhookUrl: string, secret: string): Promise<void> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/repos/${username}/${repoName}/hooks`, {
+      method: 'POST',
+      headers: await this.authHeaders(),
+      body: JSON.stringify({
+        type: 'gitea',
+        config: { url: webhookUrl, content_type: 'json', secret },
+        events: ['push'],
+        active: true,
+      }),
+    });
+    if (!res.ok) throw new Error(`Gitea createWebhook failed: ${res.status} ${await res.text()}`);
   }
 
   /** URL suitable for git remote add — includes credentials in URL (stored in .git/config which is chmod 600). */

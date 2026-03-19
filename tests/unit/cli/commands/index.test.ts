@@ -73,7 +73,8 @@ async function runCLI(args: string[]): Promise<ParseResult> {
 describe('createProgram()', () => {
   it('returns a Commander Command instance', () => {
     const program = createProgram();
-    expect(program).toBeInstanceOf(Command);
+    // Use constructor name check to avoid ESM module duplication instanceof issues
+    expect(program?.constructor?.name).toBe('Command');
   });
 
   it('has program name set to "brewnet"', () => {
@@ -237,10 +238,10 @@ describe('TC-01-03 (extended): various invalid inputs', () => {
 // ---------------------------------------------------------------------------
 
 describe('TC-01-05 (partial): subcommand registration', () => {
-  it('has exactly 13 registered subcommands', () => {
+  it('has exactly 14 registered subcommands', () => {
     const program = createProgram();
     const subcommands = program.commands.map((cmd) => cmd.name());
-    expect(subcommands).toHaveLength(13);
+    expect(subcommands).toHaveLength(14);
   });
 
   const requiredSubcommands = [

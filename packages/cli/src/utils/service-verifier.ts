@@ -46,7 +46,7 @@ export interface VerifyResult {
  */
 export function buildServiceUrlMap(state: WizardState): ServiceUrlEntry[] {
   const entries: ServiceUrlEntry[] = [];
-  const { servers, domain, portRemapping } = state;
+  const { servers, domain, portRemapping = {} } = state;
 
   const hasTunnel =
     (domain.cloudflare.enabled || domain.provider === 'quick-tunnel') &&

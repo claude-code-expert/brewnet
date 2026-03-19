@@ -53,7 +53,8 @@ describe('CLI Bootstrap — subcommand registration', () => {
   // -----------------------------------------------------------------------
 
   it('createProgram() returns a Commander.js Command instance', () => {
-    expect(program).toBeInstanceOf(Command);
+    // Use constructor name check to avoid ESM module duplication instanceof issues
+    expect(program?.constructor?.name).toBe('Command');
   });
 
   it('program name is "brewnet"', () => {
@@ -94,7 +95,7 @@ describe('CLI Bootstrap — subcommand registration', () => {
     (cmdName) => {
       const cmd = findCommand(program, cmdName);
       expect(cmd).toBeDefined();
-      expect(cmd).toBeInstanceOf(Command);
+      expect(cmd?.constructor?.name).toBe('Command');
     },
   );
 

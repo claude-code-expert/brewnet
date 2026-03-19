@@ -321,7 +321,6 @@ function createCompletedState(): WizardState {
       fileServer: { enabled: true, service: 'nextcloud' },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: false, service: 'docker-mailserver' },
       appServer: { enabled: true },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
@@ -418,8 +417,7 @@ describe('T065 — Service Startup Flow', () => {
     it('image names map to expected Docker images', () => {
       expect(getImageName('traefik')).toBe('traefik:v3.0');
       expect(getImageName('gitea')).toBe('gitea/gitea:latest');
-      expect(getImageName('postgresql')).toBe('postgres:17-alpine');
-      expect(getImageName('redis')).toBe('redis:7-alpine');
+      expect(getImageName('postgresql')).toBe('postgres:18.3-alpine');
       expect(getImageName('nextcloud')).toBe('nextcloud:29-apache');
       expect(getImageName('jellyfin')).toBe('jellyfin/jellyfin:latest');
     });

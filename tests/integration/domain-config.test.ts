@@ -5,13 +5,11 @@
  * domain-specific configurations correctly:
  *
  *   - Cloudflared service in docker-compose (tunnel token, restart policy)
- *   - Mail Server in docker-compose (ports, hostname, local domain override)
  *   - SSL/Traefik configuration (letsencrypt ACME, self-signed, cloudflare DNS)
  *
  * Test cases (from TEST_CASES.md):
  *   TC-06-05: Tunnel token validation in compose context
  *   TC-06-06: Cloudflared service block in compose
- *   TC-06-09: Mail Server compose block
  *   SSL/Traefik config tests (letsencrypt, self-signed, cloudflare)
  *
  * Approach: Use `createDefaultWizardState()` + deep-merge overrides to build
@@ -30,8 +28,6 @@ import {
 
 import {
   generateTraefikConfig,
-  generateMailConfig,
-  generateInfraConfigs,
 } from '../../packages/cli/src/services/config-generator.js';
 
 import { createDefaultWizardState } from '../../packages/cli/src/config/defaults.js';
@@ -98,53 +94,6 @@ function buildCloudflareState(tunnelToken: string): WizardState {
         enabled: true,
         tunnelToken,
         tunnelName: 'my-tunnel',
-      },
-    },
-  });
-}
-
-/**
- * Build a state with mail server enabled and the given domain config.
- */
-function buildMailState(
-  provider: 'local' | 'tunnel',
-  domainName: string,
-  mailEnabled: boolean,
-): WizardState {
-  return buildState({
-    admin: {
-      username: 'brewadmin',
-      password: 'securepassword',
-      storage: 'local',
-    },
-    servers: {
-      webServer: { enabled: true, service: 'traefik' },
-      fileServer: { enabled: false, service: '' },
-      gitServer: { enabled: true, service: 'gitea', port: 3000, sshPort: 3022 },
-      dbServer: {
-        enabled: false,
-        primary: '',
-        primaryVersion: '',
-        dbName: '',
-        dbUser: '',
-        dbPassword: '',
-        adminUI: false,
-        cache: '',
-      },
-      media: { enabled: false, services: [] },
-      sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-      mailServer: { enabled: mailEnabled, service: 'docker-mailserver' },
-      appServer: { enabled: false },
-      fileBrowser: { enabled: false, mode: '' },
-    },
-    domain: {
-      provider,
-      name: domainName,
-      ssl: provider === 'local' ? 'self-signed' : 'letsencrypt',
-      cloudflare: {
-        enabled: false,
-        tunnelToken: '',
-        tunnelName: '',
       },
     },
   });
@@ -331,173 +280,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
   });
 
   // =========================================================================
-  // TC-06-09: Mail Server compose
-  // =========================================================================
-
-  describe('TC-06-09: Mail Server compose block', () => {
-    it('non-local domain + mail server enabled → compose includes docker-mailserver service', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      expect(config.services).toHaveProperty('docker-mailserver');
-    });
-
-    it('docker-mailserver service has ports 25, 587, 993', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService).toBeDefined();
-      expect(mailService.ports).toBeDefined();
-      expect(mailService.ports).toContain('25:25');
-      expect(mailService.ports).toContain('587:587');
-      expect(mailService.ports).toContain('993:993');
-    });
-
-    it('docker-mailserver service has correct OVERRIDE_HOSTNAME with mail subdomain', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.environment).toBeDefined();
-      expect(mailService.environment!['OVERRIDE_HOSTNAME']).toBe('mail.myserver.example.com');
-    });
-
-    it('docker-mailserver service has fail2ban enabled and clamav disabled', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.environment!['ENABLE_FAIL2BAN']).toBe('1');
-      expect(mailService.environment!['ENABLE_CLAMAV']).toBe('0');
-    });
-
-    it('docker-mailserver uses correct Docker image', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.image).toBe('ghcr.io/docker-mailserver/docker-mailserver:latest');
-    });
-
-    it('docker-mailserver has correct restart policy', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.restart).toBe('unless-stopped');
-    });
-
-    it('docker-mailserver has persistent volumes for mail data, state, and config', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.volumes).toBeDefined();
-      expect(mailService.volumes).toContain('brewnet_mail_data:/var/mail');
-      expect(mailService.volumes).toContain('brewnet_mail_state:/var/mail-state');
-      expect(mailService.volumes).toContain('brewnet_mail_config:/tmp/docker-mailserver');
-    });
-
-    it('docker-mailserver has security_opt no-new-privileges', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.security_opt).toContain('no-new-privileges:true');
-    });
-
-    it('mail server config uses admin username in postfix hostname', () => {
-      // The config-generator produces postfix main.cf with the domain name.
-      // The admin username is used as the postmaster concept by propagating
-      // admin credentials. Verify the generated mail config references the domain.
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const mailConfigs = generateMailConfig(state);
-
-      expect(mailConfigs.length).toBeGreaterThan(0);
-
-      // Postfix config should reference the domain
-      const postfixConfig = mailConfigs.find((f) => f.path.includes('postfix'));
-      expect(postfixConfig).toBeDefined();
-      expect(postfixConfig!.content).toContain('myhostname = myserver.example.com');
-      expect(postfixConfig!.content).toContain('mydomain = myserver.example.com');
-    });
-
-    it('mail server disabled + non-local domain → no docker-mailserver in compose', () => {
-      const state = buildMailState('custom', 'myserver.example.com', false);
-      const config = generateComposeConfig(state);
-
-      expect(config.services).not.toHaveProperty('docker-mailserver');
-    });
-
-    it('local domain + mail server enabled → compose still includes docker-mailserver (compose generator does not enforce domain rule)', () => {
-      // NOTE: The compose generator itself does NOT enforce the "local domain = no mail"
-      // business rule. That validation happens at the wizard/UI level (Step 4).
-      // The compose generator faithfully produces whatever the state says.
-      // This test documents that behavior. The wizard should prevent this state
-      // from being created, but the generator is transparent.
-      const state = buildMailState('local', 'brewnet.local', true);
-      const config = generateComposeConfig(state);
-
-      // The compose generator includes it because mailServer.enabled is true
-      expect(config.services).toHaveProperty('docker-mailserver');
-
-      // But the OVERRIDE_HOSTNAME will be mail.brewnet.local — which won't work
-      // in practice. The wizard prevents this state.
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.environment!['OVERRIDE_HOSTNAME']).toBe('mail.brewnet.local');
-    });
-
-    it('tunnel + mail server enabled → compose includes docker-mailserver', () => {
-      const state = buildMailState('tunnel', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-
-      expect(config.services).toHaveProperty('docker-mailserver');
-
-      const mailService = config.services['docker-mailserver'];
-      expect(mailService.environment!['OVERRIDE_HOSTNAME']).toBe('mail.myserver.example.com');
-    });
-
-    it('docker-mailserver YAML output contains all three port mappings', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const config = generateComposeConfig(state);
-      const yamlStr = composeConfigToYaml(config);
-
-      expect(yamlStr).toContain('25:25');
-      expect(yamlStr).toContain('587:587');
-      expect(yamlStr).toContain('993:993');
-    });
-
-    it('mail server disabled → generateMailConfig returns empty array', () => {
-      const state = buildMailState('custom', 'myserver.example.com', false);
-      const mailConfigs = generateMailConfig(state);
-
-      expect(mailConfigs).toEqual([]);
-    });
-
-    it('mail server enabled → generateMailConfig returns postfix and dovecot configs', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const mailConfigs = generateMailConfig(state);
-
-      expect(mailConfigs.length).toBe(2);
-
-      const paths = mailConfigs.map((f) => f.path);
-      expect(paths).toContain('infrastructure/mail/postfix/main.cf');
-      expect(paths).toContain('infrastructure/mail/dovecot/dovecot.conf');
-    });
-
-    it('dovecot config references the domain in SSL cert paths', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const mailConfigs = generateMailConfig(state);
-
-      const dovecotConfig = mailConfigs.find((f) => f.path.includes('dovecot'));
-      expect(dovecotConfig).toBeDefined();
-      expect(dovecotConfig!.content).toContain('myserver.example.com.pem');
-      expect(dovecotConfig!.content).toContain('myserver.example.com.key');
-    });
-  });
-
-  // =========================================================================
   // SSL/Traefik configuration
   // =========================================================================
 
@@ -677,60 +459,6 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
   // =========================================================================
 
   describe('Combined scenarios: full state with domain services', () => {
-    it('custom domain with cloudflare tunnel + mail server → both services present in compose', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'secret', storage: 'local' },
-        servers: {
-          webServer: { enabled: true, service: 'traefik' },
-          fileServer: { enabled: false, service: '' },
-          gitServer: { enabled: true, service: 'gitea', port: 3000, sshPort: 3022 },
-          dbServer: {
-            enabled: false,
-            primary: '',
-            primaryVersion: '',
-            dbName: '',
-            dbUser: '',
-            dbPassword: '',
-            adminUI: false,
-            cache: '',
-          },
-          media: { enabled: false, services: [] },
-          sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-          mailServer: { enabled: true, service: 'docker-mailserver' },
-          appServer: { enabled: false },
-          fileBrowser: { enabled: false, mode: '' },
-        },
-        domain: {
-          provider: 'custom',
-          name: 'myserver.example.com',
-          ssl: 'letsencrypt',
-          cloudflare: {
-            enabled: true,
-            tunnelToken: 'combined-test-token',
-            tunnelName: 'combined-tunnel',
-          },
-        },
-      });
-
-      const config = generateComposeConfig(state);
-
-      // Both domain-specific services should be present
-      expect(config.services).toHaveProperty('cloudflared');
-      expect(config.services).toHaveProperty('docker-mailserver');
-
-      // Plus the required services
-      expect(config.services).toHaveProperty('traefik');
-      expect(config.services).toHaveProperty('gitea');
-
-      // Verify token and hostname
-      expect(config.services['cloudflared'].environment!['TUNNEL_TOKEN']).toBe(
-        'combined-test-token',
-      );
-      expect(config.services['docker-mailserver'].environment!['OVERRIDE_HOSTNAME']).toBe(
-        'mail.myserver.example.com',
-      );
-    });
-
     it('YAML output for full domain state is valid and contains all expected sections', () => {
       const state = buildState({
         admin: { username: 'admin', password: 'secret', storage: 'local' },
@@ -746,11 +474,10 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
             dbUser: 'brewnet',
             dbPassword: 'dbpass',
             adminUI: false,
-            cache: 'redis',
+            cache: '',
           },
           media: { enabled: false, services: [] },
           sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-          mailServer: { enabled: true, service: 'docker-mailserver' },
           appServer: { enabled: false },
           fileBrowser: { enabled: false, mode: '' },
         },
@@ -779,33 +506,8 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       expect(yamlStr).toContain('traefik:');
       expect(yamlStr).toContain('gitea:');
       expect(yamlStr).toContain('postgresql:');
-      expect(yamlStr).toContain('redis:');
       expect(yamlStr).toContain('openssh-server:');
-      expect(yamlStr).toContain('docker-mailserver:');
       expect(yamlStr).toContain('cloudflared:');
-    });
-
-    it('generateInfraConfigs includes mail configs when mail server is enabled', () => {
-      const state = buildMailState('custom', 'myserver.example.com', true);
-      const infraConfigs = generateInfraConfigs(state);
-
-      const paths = infraConfigs.map((f) => f.path);
-
-      // Should include traefik + gitea (always) + mail configs
-      expect(paths).toContain('infrastructure/traefik/traefik.yml');
-      expect(paths).toContain('infrastructure/gitea/app.ini');
-      expect(paths).toContain('infrastructure/mail/postfix/main.cf');
-      expect(paths).toContain('infrastructure/mail/dovecot/dovecot.conf');
-    });
-
-    it('generateInfraConfigs excludes mail configs when mail server is disabled', () => {
-      const state = buildMailState('custom', 'myserver.example.com', false);
-      const infraConfigs = generateInfraConfigs(state);
-
-      const paths = infraConfigs.map((f) => f.path);
-
-      expect(paths).not.toContain('infrastructure/mail/postfix/main.cf');
-      expect(paths).not.toContain('infrastructure/mail/dovecot/dovecot.conf');
     });
 
     it('compose networks include both brewnet (external) and brewnet-internal', () => {

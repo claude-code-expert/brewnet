@@ -18,6 +18,8 @@
 import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { CLI_LOG_RETENTION_DAYS } from '@brewnet/shared';
+import { cleanOldCliLogs } from './log-rotation.js';
 
 export type LogLevel = 'info' | 'warn' | 'error';
 
@@ -49,6 +51,13 @@ export function createLogger(logsDir: string): Logger {
   // Eagerly ensure the log directory exists.
   if (!existsSync(logsDir)) {
     mkdirSync(logsDir, { recursive: true });
+  }
+
+  // Clean up old CLI log files (non-blocking, never prevents logger creation)
+  try {
+    cleanOldCliLogs(logsDir, CLI_LOG_RETENTION_DAYS);
+  } catch {
+    // Rotation failure must never crash the CLI
   }
 
   function write(

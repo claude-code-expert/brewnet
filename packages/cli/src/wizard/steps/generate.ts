@@ -13,7 +13,7 @@
  * @module wizard/steps/generate
  */
 
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import chalk from 'chalk';
@@ -535,6 +535,24 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
               '-c', `CREATE DATABASE gitea_db OWNER ${dbUser}`,
             ]);
           }
+
+          // 5. Sync db user password to match current secret file (handles re-run
+          //    scenarios where the volume has an old password but secrets changed).
+          try {
+            const dbPassPath = join(projectPath, 'secrets', 'db_password');
+            const { readFileSync } = await import('node:fs');
+            const dbPass = readFileSync(dbPassPath, 'utf-8').trim();
+            if (dbPass) {
+              await execaFn('docker', [
+                'exec', 'brewnet-postgresql',
+                'psql', '-U', dbUser, '-d', 'postgres',
+                '-c', `ALTER USER ${dbUser} WITH PASSWORD '${dbPass}'`,
+              ]);
+            }
+          } catch {
+            // best-effort — if it fails, Gitea will crash-loop and surface the error
+          }
+
           pgPreSpinner.succeed('  gitea_db ready');
         }
       }
@@ -656,7 +674,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
               // Quick Tunnel URL changes on every cloudflared restart; this prevents
               // the "untrusted domain" error without needing another occ run each time.
               await occQuick(['config:system:set', 'trusted_domains', '4',
-                '--value=/.*\\.trycloudflare\\.com/',
+                '--value=*.trycloudflare.com',
               ]);
               // Trust Traefik's bridge range so Nextcloud reads X-Forwarded-Proto.
               await occQuick(['config:system:set', 'trusted_proxies', '0', '--value=172.16.0.0/12']);
@@ -670,7 +688,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             console.log(chalk.yellow('\n  ⚠ Nextcloud: occ 설정 실패 (90s 대기 초과). 수동으로 실행하세요:'));
             const d = state.domain.name || '<tunnel-url>';
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 0 --value=localhost`));
-            console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 4 --value='/.*.trycloudflare.com/'`));
+            console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 4 --value='*.trycloudflare.com'`));
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 5 --value=${d}`));
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_proxies 0 --value=172.16.0.0/12`));
           }
@@ -777,10 +795,6 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       pollHealth: boilerplatePollHealth,
       verifyEndpoints: boilerplateVerifyEndpoints,
       findFreePort,
-      writeTraefikOverride,
-      patchViteConfig,
-      patchDockerfileHealthcheck,
-      patchNextjsConfig,
     } = await import('../../services/boilerplate-manager.js');
 
     // Map wizard DB selection to boilerplate DB_DRIVER value
@@ -802,8 +816,6 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       appDir: string;
       backendUrl: string;
       frontendUrl: string;
-      externalUrl: string;
-      frontendExternalUrl: string;
       isUnified: boolean;
       lang: string;
       frameworkId: string;
@@ -852,7 +864,6 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       const isJavaOrKotlin = stackId.startsWith('java-') || stackId.startsWith('kotlin-');
       const healthTimeoutMs = isRust ? 600_000 : (isJavaOrKotlin ? 300_000 : 120_000);
 
-      const bpTunnelMode = state.domain.cloudflare?.tunnelMode;
       console.log();
       const bpSpinner = ora(`  [${stackId}] 클론 중...`).start();
       let stackStatus: StackStatus = 'failed';
@@ -864,30 +875,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
 
         // Step 2: generate .env with wizard DB settings (hostPort/frontendPort ensure correct port bindings)
         bpSpinner.text = `  [${stackId}] 런타임 환경 구성 중... (DB: ${dbDriver}, user: ${dbOpts.dbUser})`;
-        boilerplateGenerateEnv(appDir, stackId, dbDriver, { ...dbOpts, hostPort: backendPort, frontendPort, integrated: true });
-
-        // Step 2b: write docker-compose.override.yml to join brewnet network + Traefik labels
-        // Frontend containers in boilerplate stacks are nginx-served builds: internal port 80.
-        // (Host-side FRONTEND_PORT maps to 80 inside the container, e.g. "3001:80".)
-        if (bpTunnelMode === 'quick' || bpTunnelMode === 'named') {
-          try {
-            const { execa: execaNet } = await import('execa');
-            await execaNet('docker', ['network', 'inspect', 'brewnet']);
-            writeTraefikOverride(appDir, stackId, defaultPort, isUnified ? undefined : 80);
-          } catch { /* brewnet network not available — skip Traefik override */ }
-        }
-
-        // Step 2c: fix Dockerfile HEALTHCHECK localhost → 127.0.0.1 (Alpine IPv6 issue).
-        // Must run before startContainers so the fixed Dockerfile is baked into the image.
-        patchDockerfileHealthcheck(appDir, stackId);
-
-        // Step 2d: patch frontend/vite.config.ts `base` so Vite asset URLs include the
-        // /apps/<stackId>-ui/ sub-path prefix (prevents blank screen via Traefik tunnel).
-        patchViteConfig(appDir, stackId);
-
-        // Step 2e: patch next.config.ts basePath for Next.js stacks so asset URLs
-        // include the /apps/<stackId> prefix (required when served under Traefik sub-path).
-        patchNextjsConfig(appDir, stackId);
+        boilerplateGenerateEnv(appDir, stackId, dbDriver, { ...dbOpts, hostPort: backendPort, frontendPort });
 
         // Step 3: start containers (with build)
         if (isRust) {
@@ -911,13 +899,25 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             try { await execaFn('docker', ['compose', 'down'], { cwd: prev.appDir }); } catch { /* ignore */ }
           }
         }
+        // Inject Traefik labels for Quick Tunnel external access at /apps/{stackId}
+        // For Next.js stacks, this also patches next.config with basePath and
+        // updates the compose healthcheck path to include the basePath prefix.
+        let isNextjsBasePath = false;
+        if (state.domain.cloudflare.tunnelMode === 'quick') {
+          try {
+            const { injectTraefikForQuickTunnel } = await import('../../services/boilerplate-manager.js');
+            injectTraefikForQuickTunnel(appDir, stackId, backendPort);
+            // Next.js with basePath: all routes shift under /apps/{stackId}/
+            if (stackId.startsWith('nodejs-nextjs')) isNextjsBasePath = true;
+          } catch { /* non-critical: external access simply won't work */ }
+        }
         await boilerplateStartContainers(appDir);
 
-        // Step 4: poll health endpoint until ready.
-        // All stacks (including Next.js) use /health because Traefik stripPrefix
-        // ensures the container always receives the request at its own root path.
+        // Step 4: poll health endpoint until ready
+        // Next.js basePath shifts /health → /apps/{stackId}/health on direct port access
+        const healthBaseUrl = isNextjsBasePath ? `${baseUrl}/apps/${stackId}` : baseUrl;
         bpSpinner.text = `  [${stackId}] 헬스체크 대기 중... (timeout: ${Math.round(healthTimeoutMs / 1000)}s)`;
-        const health = await boilerplatePollHealth(baseUrl, healthTimeoutMs, '/health');
+        const health = await boilerplatePollHealth(healthBaseUrl, healthTimeoutMs);
 
         if (!health.healthy) {
           bpSpinner.warn(`  [${stackId}] 헬스체크 타임아웃 (${Math.round(healthTimeoutMs / 1000)}s 초과)`);
@@ -925,7 +925,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
           stackStatus = 'timeout';
         } else {
           // Step 5: verify API endpoints (/api/hello, /api/echo)
-          await boilerplateVerifyEndpoints(baseUrl);
+          await boilerplateVerifyEndpoints(healthBaseUrl);
           bpSpinner.succeed(`  [${stackId}] 완료 — 백엔드: ${chalk.cyan(baseUrl)}`);
           if (!isUnified && frontendPort !== undefined) {
             console.log(chalk.dim(`    프론트엔드: http://127.0.0.1:${frontendPort}`));
@@ -947,24 +947,11 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         stackStatus = 'failed';
       }
 
-      const bpBaseExternal =
-        bpTunnelMode === 'quick' && state.domain.cloudflare?.quickTunnelUrl
-          ? state.domain.cloudflare.quickTunnelUrl
-          : bpTunnelMode === 'named' && state.domain.cloudflare?.zoneName
-            ? `https://${state.domain.cloudflare.zoneName}`
-            : '';
-      const bpExternalUrl = bpBaseExternal ? `${bpBaseExternal}/apps/${stackId}` : '';
-      const bpFrontendExternalUrl = (!isUnified && bpBaseExternal)
-        ? `${bpBaseExternal}/apps/${stackId}-ui`
-        : '';
-
       stackMetas.push({
         stackId,
         appDir,
         backendUrl: baseUrl,
         frontendUrl: isUnified ? baseUrl : `http://127.0.0.1:${frontendPort ?? 3000}`,
-        externalUrl: bpExternalUrl,
-        frontendExternalUrl: bpFrontendExternalUrl,
         isUnified,
         lang,
         frameworkId,
@@ -1179,7 +1166,56 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         });
 
         if ((result as { exitCode: number }).exitCode === 0) {
+          // Always sync password + reset must_change_password.
+          // --password syncs Gitea's stored password to match the current state on re-runs
+          // (first-run: no-op since user was just created with the same password).
+          // 'user edit' was removed in Gitea 1.22+; use 'change-password' to sync
+          // credentials and clear mustChangePassword in one command.
+          await execaFn('docker', [
+            'exec', '-u', 'git', 'brewnet-gitea',
+            'gitea', 'admin', 'user', 'change-password',
+            '--username', adminUser,
+            '--password', adminPass,
+            '--must-change-password=false',
+          ]).catch((e: unknown) => {
+            const msg = (e as { stderr?: string }).stderr ?? String(e);
+            gitea.warn(`  Gitea: 계정 동기화 실패 — ${msg.slice(0, 120)}`);
+          });
           gitea.succeed(`  Gitea: admin 계정 생성 완료 (${adminUser})`);
+
+          // Eager token creation — validates mustChangePassword=false immediately,
+          // not lazily at create-app time. Saves token to ~/.brewnet/gitea-token.
+          const tokenPath = join(homedir(), '.brewnet', 'gitea-token');
+          if (!existsSync(tokenPath)) {
+            const giteaDirectUrl = 'http://localhost:3000'; // direct port (health check passed)
+            const basic = Buffer.from(`${adminUser}:${adminPass}`).toString('base64');
+            try {
+              const tr = await fetch(`${giteaDirectUrl}/api/v1/users/${adminUser}/tokens`, {
+                method: 'POST',
+                headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: 'brewnet-init',
+                  scopes: ['write:repository', 'read:repository', 'write:user', 'read:user'],
+                }),
+              });
+              if (tr.ok) {
+                const td = (await tr.json()) as { sha1: string };
+                mkdirSync(join(homedir(), '.brewnet'), { recursive: true });
+                writeFileSync(tokenPath, td.sha1, 'utf-8');
+                chmodSync(tokenPath, 0o600);
+                gitea.succeed('  Gitea: API 토큰 생성 완료');
+              } else {
+                const errBody = await tr.text();
+                gitea.warn(`  Gitea: API 토큰 생성 실패 (${tr.status}) — create-app 시 자동 재시도됩니다`);
+                if (errBody.includes('must change')) {
+                  gitea.warn('  Gitea: must-change-password 플래그가 여전히 설정되어 있습니다');
+                  gitea.warn(`  Fix: docker exec -u git brewnet-gitea gitea admin user change-password --username ${adminUser} --password <password> --must-change-password=false`);
+                }
+              }
+            } catch {
+              gitea.warn('  Gitea: 토큰 사전 생성 건너뜀 — create-app 시 재시도됩니다');
+            }
+          }
         } else {
           gitea.warn('  Gitea: admin 계정 생성 실패 — 수동으로 생성하세요:');
           console.log(chalk.dim(`    docker exec -u git brewnet-gitea gitea admin user create --username ${adminUser} --password <password> --email ${adminEmail} --admin --must-change-password false`));

@@ -321,19 +321,19 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(state.servers.gitServer.service).toBe('gitea');
       expect(state.servers.dbServer.enabled).toBe(true);
       expect(state.servers.dbServer.primary).toBe('postgresql');
-      expect(state.servers.dbServer.cache).toBe('redis');
+      expect(state.servers.dbServer.cache).toBe('');
 
       // --- Step 2: Server Components ---
       // Admin is pre-set (done by runAdminSetupStep Pre-Step in real flow)
       // Web server: traefik
       // File server: disabled
-      // DB: postgresql 17, adminUI=false, db name, db user, cache=redis
+      // DB: postgresql 17, adminUI=false, db name, db user
       // Media: disabled
       // SSH: disabled
       state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['configure', 'traefik', 'postgresql', '17', 'redis'];
+      selectQueue = ['traefik', 'postgresql', '18.3'];
 
       state = await runServerComponentsStep(state);
 
@@ -342,7 +342,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(state.servers.webServer.service).toBe('traefik');
       expect(state.servers.dbServer.enabled).toBe(true);
       expect(state.servers.dbServer.primary).toBe('postgresql');
-      expect(state.servers.dbServer.cache).toBe('redis');
+      expect(state.servers.dbServer.cache).toBe('');
 
       // --- Step 3: Dev Stack — SKIP ---
       confirmQueue = [true]; // Skip dev stack
@@ -361,7 +361,6 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(state.domain.name).toBe('my-homeserver.local');
       expect(state.domain.ssl).toBe('self-signed');
       expect(state.domain.cloudflare.enabled).toBe(false);
-      expect(state.servers.mailServer.enabled).toBe(false);
 
       // --- Step 5: Review ---
       selectQueue = ['generate'];
@@ -375,7 +374,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(serviceNames).toContain('traefik');
       expect(serviceNames).toContain('gitea');
       expect(serviceNames).toContain('postgresql');
-      expect(serviceNames).toContain('redis');
+      expect(serviceNames).not.toContain('redis');
       expect(serviceNames).not.toContain('cloudflared');
       expect(serviceNames).not.toContain('filebrowser');
       expect(serviceNames).not.toContain('openssh-server');
@@ -457,12 +456,12 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       const state = applyFullInstallDefaults(createDefaultWizardState());
       expect(state.servers.dbServer.enabled).toBe(true);
       expect(state.servers.dbServer.primary).toBe('postgresql');
-      expect(state.servers.dbServer.primaryVersion).toBe('17');
+      expect(state.servers.dbServer.primaryVersion).toBe('18.3');
     });
 
-    it('should have redis as cache', () => {
+    it('should have empty cache', () => {
       const state = applyFullInstallDefaults(createDefaultWizardState());
-      expect(state.servers.dbServer.cache).toBe('redis');
+      expect(state.servers.dbServer.cache).toBe('');
     });
   });
 
@@ -532,16 +531,6 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(state.domain.name).toBe('my-homeserver.local');
     });
 
-    it('should disable mail server for local domain', async () => {
-      selectQueue = ['local'];
-
-      const baseState = applyFullInstallDefaults(createDefaultWizardState());
-      baseState.projectName = 'my-homeserver';
-      const state = await runDomainNetworkStep(baseState);
-
-      expect(state.servers.mailServer.enabled).toBe(false);
-    });
-
     it('should apply correct defaults via pure function', () => {
       const baseState = createDefaultWizardState();
       const localState = applyDomainDefaults(baseState, 'local');
@@ -557,7 +546,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
   // =========================================================================
 
   describe('Compose config generation for full install', () => {
-    it('should generate compose config with 4 core services', () => {
+    it('should generate compose config with 3 core services', () => {
       const state = applyFullInstallDefaults(createDefaultWizardState());
       state.admin.password = 'test-password-12345';
       state.servers.dbServer.dbPassword = 'db-password-12345';
@@ -568,7 +557,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(serviceNames).toContain('traefik');
       expect(serviceNames).toContain('gitea');
       expect(serviceNames).toContain('postgresql');
-      expect(serviceNames).toContain('redis');
+      expect(serviceNames).not.toContain('redis');
     });
 
     it('should have traefik with correct ports', () => {
@@ -604,17 +593,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(config.services['postgresql'].healthcheck!.test).toContain('CMD-SHELL');
     });
 
-    it('should have redis with healthcheck', () => {
-      const state = applyFullInstallDefaults(createDefaultWizardState());
-      state.admin.password = 'test-password-12345';
-      state.servers.dbServer.dbPassword = 'db-password-12345';
-
-      const config = generateComposeConfig(state);
-
-      expect(config.services['redis'].healthcheck).toBeDefined();
-    });
-
-    it('should have gitea depending on postgresql and redis', () => {
+    it('should have gitea depending on postgresql', () => {
       const state = applyFullInstallDefaults(createDefaultWizardState());
       state.admin.password = 'test-password-12345';
       state.servers.dbServer.dbPassword = 'db-password-12345';
@@ -622,7 +601,6 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       const config = generateComposeConfig(state);
 
       expect(config.services['gitea'].depends_on).toContain('postgresql');
-      expect(config.services['gitea'].depends_on).toContain('redis');
     });
 
     it('should NOT include cloudflared when local domain', () => {
@@ -662,7 +640,6 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       expect(yaml).toContain('traefik:');
       expect(yaml).toContain('gitea:');
       expect(yaml).toContain('postgresql:');
-      expect(yaml).toContain('redis:');
     });
 
     it('should have security_opt on all services', () => {

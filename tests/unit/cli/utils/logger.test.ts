@@ -26,6 +26,13 @@ jest.unstable_mockModule('node:fs', () => ({
   existsSync: mockExistsSync,
   mkdirSync: mockMkdirSync,
   appendFileSync: mockAppendFileSync,
+  readFileSync: jest.fn(() => ''),
+  readdirSync: jest.fn(() => []),
+  statSync: jest.fn(() => ({ size: 0 })),
+  unlinkSync: jest.fn(),
+  copyFileSync: jest.fn(),
+  renameSync: jest.fn(),
+  truncateSync: jest.fn(),
 }));
 
 jest.unstable_mockModule('node:os', () => ({

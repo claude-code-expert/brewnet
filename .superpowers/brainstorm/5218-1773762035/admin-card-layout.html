@@ -1,0 +1,205 @@
+<h2>Admin Dashboard — 카드 기반 레이아웃 목업</h2>
+<p class="subtitle">App Deploy UI 디자인 시스템 기반. 서비스를 카드로 표시하고 상단에 통계 요약.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Admin Dashboard (새 디자인)</div>
+  <div class="mockup-body" style="background:#070d1a;padding:0;font-family:'Outfit',sans-serif;overflow:hidden">
+
+    <!-- Header -->
+    <div style="background:#0c1525;border-bottom:1px solid #1a2d47;padding:14px 24px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:16px">
+        <span style="font-family:'Courier New';color:#e8a849;font-weight:bold;font-size:15px">brewnet</span>
+        <div style="display:flex;gap:2px">
+          <span style="padding:6px 14px;font-size:12px;color:#e8a849;background:rgba(232,168,73,.1);border-radius:8px;cursor:pointer;font-weight:600">Dashboard</span>
+          <span style="padding:6px 14px;font-size:12px;color:#7a93be;cursor:pointer">Apps</span>
+          <span style="padding:6px 14px;font-size:12px;color:#7a93be;cursor:pointer">Logs</span>
+          <span style="padding:6px 14px;font-size:12px;color:#7a93be;cursor:pointer">Domain</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:11px;color:#3a5070">my-homeserver</span>
+        <button style="background:transparent;border:1px solid #22385c;color:#7a93be;padding:5px 12px;border-radius:8px;font-size:11px;cursor:pointer">Refresh</button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div style="padding:24px">
+
+      <!-- Stats Row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;padding:16px">
+          <div style="font-size:10px;color:#7a93be;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Total Services</div>
+          <div style="font-size:26px;font-weight:700;color:#d2dff5">9</div>
+        </div>
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;padding:16px">
+          <div style="font-size:10px;color:#7a93be;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Running</div>
+          <div style="font-size:26px;font-weight:700;color:#3de89a">8</div>
+        </div>
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;padding:16px">
+          <div style="font-size:10px;color:#7a93be;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Stopped</div>
+          <div style="font-size:26px;font-weight:700;color:#f04b5a">1</div>
+        </div>
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;padding:16px">
+          <div style="font-size:10px;color:#7a93be;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">External</div>
+          <div style="font-size:26px;font-weight:700;color:#3dd6c8">Quick Tunnel</div>
+        </div>
+      </div>
+
+      <!-- Service Cards Grid -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+
+        <!-- Traefik -->
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;overflow:hidden;cursor:pointer;transition:border-color .14s" onmouseover="this.style.borderColor='#22385c'" onmouseout="this.style.borderColor='#1a2d47'">
+          <div style="height:3px;background:#3de89a"></div>
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#d2dff5">Traefik</div>
+                <div style="font-size:11px;color:#7a93be;margin-top:2px">Web Server</div>
+              </div>
+              <span style="background:rgba(61,232,154,.09);color:#3de89a;padding:2px 8px;border:1px solid rgba(61,232,154,.15);border-radius:6px;font-size:10px">running</span>
+            </div>
+            <div style="display:flex;gap:16px;font-size:11px;color:#3a5070;margin-bottom:12px">
+              <span>Port 80</span>
+              <span>|</span>
+              <a style="color:#3dd6c8;text-decoration:none" href="#">localhost/dashboard</a>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button style="background:rgba(240,75,90,.1);border:1px solid transparent;color:#f04b5a;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Stop</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gitea -->
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;overflow:hidden;cursor:pointer" onmouseover="this.style.borderColor='#22385c'" onmouseout="this.style.borderColor='#1a2d47'">
+          <div style="height:3px;background:#3de89a"></div>
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#d2dff5">Gitea</div>
+                <div style="font-size:11px;color:#7a93be;margin-top:2px">Git Server</div>
+              </div>
+              <span style="background:rgba(61,232,154,.09);color:#3de89a;padding:2px 8px;border:1px solid rgba(61,232,154,.15);border-radius:6px;font-size:10px">running</span>
+            </div>
+            <div style="display:flex;gap:16px;font-size:11px;color:#3a5070;margin-bottom:12px">
+              <span>Port 3000</span>
+              <span>|</span>
+              <a style="color:#3dd6c8;text-decoration:none" href="#">localhost/git</a>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button style="background:rgba(240,75,90,.1);border:1px solid transparent;color:#f04b5a;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Stop</button>
+              <button style="background:transparent;border:1px solid #22385c;color:#7a93be;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PostgreSQL -->
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;overflow:hidden;cursor:pointer" onmouseover="this.style.borderColor='#22385c'" onmouseout="this.style.borderColor='#1a2d47'">
+          <div style="height:3px;background:#3de89a"></div>
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#d2dff5">PostgreSQL</div>
+                <div style="font-size:11px;color:#7a93be;margin-top:2px">Database</div>
+              </div>
+              <span style="background:rgba(61,232,154,.09);color:#3de89a;padding:2px 8px;border:1px solid rgba(61,232,154,.15);border-radius:6px;font-size:10px">running</span>
+            </div>
+            <div style="font-size:11px;color:#3a5070;margin-bottom:12px">
+              <span>Port 5432 (internal)</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button style="background:rgba(240,75,90,.1);border:1px solid transparent;color:#f04b5a;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Stop</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Jellyfin -->
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;overflow:hidden;cursor:pointer" onmouseover="this.style.borderColor='#22385c'" onmouseout="this.style.borderColor='#1a2d47'">
+          <div style="height:3px;background:#3de89a"></div>
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#d2dff5">Jellyfin</div>
+                <div style="font-size:11px;color:#7a93be;margin-top:2px">Media Server</div>
+              </div>
+              <span style="background:rgba(61,232,154,.09);color:#3de89a;padding:2px 8px;border:1px solid rgba(61,232,154,.15);border-radius:6px;font-size:10px">running</span>
+            </div>
+            <div style="display:flex;gap:16px;font-size:11px;color:#3a5070;margin-bottom:12px">
+              <span>Port 8096</span>
+              <span>|</span>
+              <a style="color:#3dd6c8;text-decoration:none" href="#">External ↗</a>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button style="background:rgba(240,75,90,.1);border:1px solid transparent;color:#f04b5a;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Stop</button>
+              <button style="background:transparent;border:1px solid #22385c;color:#7a93be;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Boilerplate Stack (nextjs-full) -->
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;overflow:hidden;cursor:pointer" onmouseover="this.style.borderColor='#22385c'" onmouseout="this.style.borderColor='#1a2d47'">
+          <div style="height:3px;background:#3de89a"></div>
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#d2dff5">nodejs-nextjs-full</div>
+                <div style="font-size:11px;color:#7a93be;margin-top:2px">Dev Stack</div>
+              </div>
+              <span style="background:rgba(61,232,154,.09);color:#3de89a;padding:2px 8px;border:1px solid rgba(61,232,154,.15);border-radius:6px;font-size:10px">running</span>
+            </div>
+            <div style="font-size:11px;color:#3a5070;margin-bottom:4px">
+              <a style="color:#3dd6c8;text-decoration:none" href="#">localhost:3015/apps/nodejs-nextjs-full</a>
+            </div>
+            <div style="font-size:11px;color:#3a5070;margin-bottom:12px">
+              <a style="color:#5b8fff;text-decoration:none" href="#">/api/hello ↗</a>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button style="background:rgba(240,75,90,.1);border:1px solid transparent;color:#f04b5a;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Stop</button>
+              <button style="background:transparent;border:1px solid #22385c;color:#7a93be;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Remove</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stopped Service -->
+        <div style="background:#111e33;border:1px solid #1a2d47;border-radius:10px;overflow:hidden;cursor:pointer;opacity:.7" onmouseover="this.style.borderColor='#22385c'" onmouseout="this.style.borderColor='#1a2d47'">
+          <div style="height:3px;background:#f04b5a"></div>
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:14px;font-weight:600;color:#d2dff5">FileBrowser</div>
+                <div style="font-size:11px;color:#7a93be;margin-top:2px">File Server</div>
+              </div>
+              <span style="background:rgba(240,75,90,.09);color:#f04b5a;padding:2px 8px;border:1px solid rgba(240,75,90,.15);border-radius:6px;font-size:10px">stopped</span>
+            </div>
+            <div style="font-size:11px;color:#3a5070;margin-bottom:12px">
+              <span>Port 8085</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button style="background:rgba(61,232,154,.1);border:1px solid transparent;color:#3de89a;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Start</button>
+              <button style="background:transparent;border:1px solid #22385c;color:#7a93be;padding:3px 10px;border-radius:6px;font-size:10px;cursor:pointer">Remove</button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /grid -->
+
+      <!-- Activity Log (collapsed by default) -->
+      <div style="margin-top:24px;background:#111e33;border:1px solid #1a2d47;border-radius:10px;padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px;font-weight:600;color:#d2dff5">Activity Log</div>
+          <div style="display:flex;gap:8px">
+            <span style="font-size:10px;color:#7a93be;padding:2px 8px;background:rgba(122,147,190,.07);border-radius:6px;cursor:pointer">CLI</span>
+            <span style="font-size:10px;color:#7a93be;padding:2px 8px;background:rgba(122,147,190,.07);border-radius:6px;cursor:pointer">Tunnel</span>
+            <span style="font-size:10px;color:#7a93be;padding:2px 8px;background:rgba(122,147,190,.07);border-radius:6px;cursor:pointer">Access</span>
+          </div>
+        </div>
+        <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#3a5070;max-height:100px;overflow:hidden">
+          <div style="padding:2px 0"><span style="color:#3a5070;user-select:none">13:42:01</span> <span style="color:#3dd6c8">[traefik] request: GET /apps/nodejs-nextjs-full → 200</span></div>
+          <div style="padding:2px 0"><span style="color:#3a5070;user-select:none">13:41:58</span> <span style="color:#58d1ff">[cli] admin panel started on port 8088</span></div>
+          <div style="padding:2px 0"><span style="color:#3a5070;user-select:none">13:41:55</span> <span style="color:#d2a8ff">[tunnel] connected: lines-holly-yourself-forms.trycloudflare.com</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

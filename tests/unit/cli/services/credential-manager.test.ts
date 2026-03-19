@@ -263,7 +263,6 @@ describe('getCredentialPropagationTargets', () => {
         },
         media: { enabled: false, services: [] },
         sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-        mailServer: { enabled: false, service: 'docker-mailserver' },
       },
     });
 

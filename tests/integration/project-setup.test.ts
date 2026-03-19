@@ -103,14 +103,14 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
 
       expect(result.servers.dbServer.enabled).toBe(true);
       expect(result.servers.dbServer.primary).toBe('postgresql');
-      expect(result.servers.dbServer.primaryVersion).toBe('17');
+      expect(result.servers.dbServer.primaryVersion).toBe('18.3');
     });
 
-    it('should enable redis cache', () => {
+    it('should have empty cache', () => {
       const state = createDefaultWizardState();
       const result = applyFullInstallDefaults(state);
 
-      expect(result.servers.dbServer.cache).toBe('redis');
+      expect(result.servers.dbServer.cache).toBe('');
     });
 
     it('should enable adminUI for database', () => {
@@ -152,7 +152,6 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
 
       // These are optional and should not be auto-enabled by Full Install
       expect(result.servers.sshServer.enabled).toBe(false);
-      expect(result.servers.mailServer.enabled).toBe(false);
     });
   });
 
@@ -207,13 +206,6 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
       const result = applyPartialInstallDefaults(state);
 
       expect(result.servers.sshServer.enabled).toBe(false);
-    });
-
-    it('should disable mailServer', () => {
-      const state = createDefaultWizardState();
-      const result = applyPartialInstallDefaults(state);
-
-      expect(result.servers.mailServer.enabled).toBe(false);
     });
 
     it('should disable appServer', () => {

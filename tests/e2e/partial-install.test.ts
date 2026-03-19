@@ -293,7 +293,6 @@ describe('T103 — E2E: Partial Install Flow', () => {
       expect(state.servers.fileServer.enabled).toBe(false);
       expect(state.servers.media.enabled).toBe(false);
       expect(state.servers.sshServer.enabled).toBe(false);
-      expect(state.servers.mailServer.enabled).toBe(false);
       expect(state.servers.appServer.enabled).toBe(false);
       expect(state.servers.fileBrowser.enabled).toBe(false);
     });

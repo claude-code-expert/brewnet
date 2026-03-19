@@ -10,7 +10,7 @@
  * @module wizard/steps/review
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { select, input } from '@inquirer/prompts';
 import chalk from 'chalk';
@@ -122,11 +122,6 @@ export function generateReviewSections(state: WizardState): ReviewSection[] {
     serverItems.push({ label: 'SSH Server', value: sshDesc });
   }
 
-  // Mail
-  if (state.servers.mailServer.enabled) {
-    serverItems.push({ label: 'Mail Server', value: state.servers.mailServer.service });
-  }
-
   // FileBrowser
   if (state.servers.fileBrowser.enabled && state.servers.fileBrowser.mode) {
     serverItems.push({ label: 'File Browser', value: state.servers.fileBrowser.mode });
@@ -175,12 +170,6 @@ export function generateReviewSections(state: WizardState): ReviewSection[] {
     }
     domainItems.push({ label: 'Domain', value: state.domain.cloudflare.zoneName || '(pending)' });
     domainItems.push({ label: 'SSL', value: 'Cloudflare (managed)' });
-    if (state.servers.mailServer.enabled) {
-      const relayInfo = state.servers.mailServer.relayProvider
-        ? ` via ${state.servers.mailServer.relayProvider}`
-        : '';
-      domainItems.push({ label: 'Mail Server', value: `docker-mailserver${relayInfo}` });
-    }
   }
   sections.push({
     id: 'domain',
@@ -254,7 +243,6 @@ export function exportConfig(state: WizardState, projectPath: string): string {
       },
       media: { ...state.servers.media },
       sshServer: { ...state.servers.sshServer },
-      mailServer: { ...state.servers.mailServer },
       appServer: { ...state.servers.appServer },
       fileBrowser: { ...state.servers.fileBrowser },
     },
@@ -267,7 +255,6 @@ export function exportConfig(state: WizardState, projectPath: string): string {
       cloudflare: {
         enabled: state.domain.cloudflare.enabled,
         tunnelName: state.domain.cloudflare.tunnelName,
-        tunnelMode: state.domain.cloudflare.tunnelMode,
         // tunnelToken excluded
       },
     },
@@ -316,15 +303,6 @@ export function importConfig(configPath: string): WizardState {
       },
       media: config.servers.media,
       sshServer: config.servers.sshServer,
-      mailServer: {
-        ...config.servers.mailServer,
-        port25Blocked: false,
-        relayProvider: '',
-        relayHost: '',
-        relayPort: 587,
-        relayUser: '',
-        relayPassword: '',
-      },
       appServer: config.servers.appServer,
       fileBrowser: config.servers.fileBrowser,
     },
@@ -335,18 +313,20 @@ export function importConfig(configPath: string): WizardState {
       cloudflare: {
         enabled: config.domain.cloudflare.enabled,
         tunnelName: config.domain.cloudflare.tunnelName,
-        tunnelMode: (config.domain.cloudflare.tunnelMode ?? 'none') as 'none' | 'quick' | 'named',
+        // Derive tunnelMode from domain.provider: quick-tunnel → 'quick', else 'none'.
+        // BrewnetConfig omits tunnelMode (export-safe subset), so infer from provider.
+        tunnelMode: config.domain.provider === 'quick-tunnel' ? 'quick' : 'none',
         quickTunnelUrl: '',           // ephemeral, not preserved across sessions
         accountId: '',
         apiToken: '',
         tunnelId: '',
-        tunnelToken: '', // must be re-supplied
+        tunnelToken: '', // must be re-supplied for named tunnels
         zoneId: '',
         zoneName: '',
       },
     },
     domainConnections: [],
-    portRemapping: {},
+    portRemapping: {},  // not persisted in config; reset fresh on each import
   };
 
   return state;

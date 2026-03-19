@@ -46,7 +46,6 @@ const { createDefaultWizardState } = await import(
 
 import type {
   WizardState,
-  ServerComponents,
 } from '@brewnet/shared';
 
 // ---------------------------------------------------------------------------
@@ -167,7 +166,7 @@ describe('generateEnvFiles', () => {
             dbUser: 'brewnet',
             dbPassword: 'DbP@ss99',
             adminUI: true,
-            cache: 'redis',
+            cache: '',
           },
         },
       });
@@ -193,7 +192,7 @@ describe('generateEnvFiles', () => {
             dbUser: 'myuser',
             dbPassword: 'DbSecret',
             adminUI: false,
-            cache: 'redis',
+            cache: '',
           },
         },
       });
@@ -206,30 +205,6 @@ describe('generateEnvFiles', () => {
       // POSTGRES_PASSWORD is a secret — stored in secretFiles/db_password
       const dbSecret = getSecretContent(result.secretFiles, 'secrets/db_password');
       expect(dbSecret).toBe('DbSecret');
-    });
-
-    it('includes REDIS_PASSWORD when cache is redis', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'AdminPass' },
-        servers: {
-          dbServer: {
-            enabled: true,
-            primary: 'postgresql',
-            primaryVersion: '17',
-            dbName: 'brewnet_db',
-            dbUser: 'brewnet',
-            dbPassword: 'DbPass',
-            adminUI: false,
-            cache: 'redis',
-          },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      expect(env['REDIS_PASSWORD']).toBeDefined();
-      expect(env['REDIS_PASSWORD']!.length).toBeGreaterThan(0);
     });
 
     it('includes Gitea keys (GITEA_ADMIN_USER in .env; GITEA_ADMIN_PASSWORD and SECRET_KEY in secretFiles)', () => {
@@ -415,77 +390,6 @@ describe('generateEnvFiles', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mail Server
-  // -------------------------------------------------------------------------
-
-  describe('Mail Server enabled', () => {
-    it('includes MAIL_* keys when mail server is enabled', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        domain: {
-          provider: 'custom',
-          name: 'mail.example.com',
-        },
-        servers: {
-          mailServer: { enabled: true, service: 'docker-mailserver' },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      // Should include mail-related environment variables
-      const mailKeys = Object.keys(env).filter(
-        (k: string) => k.startsWith('MAIL_') || k.startsWith('SMTP_') || k.startsWith('POSTMASTER'),
-      );
-      expect(mailKeys.length).toBeGreaterThan(0);
-    });
-
-    it('does not include MAIL_* keys when mail server is disabled', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        servers: {
-          mailServer: { enabled: false, service: 'docker-mailserver' },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      const mailKeys = Object.keys(env).filter(
-        (k: string) => k.startsWith('MAIL_') || k.startsWith('SMTP_') || k.startsWith('POSTMASTER'),
-      );
-      expect(mailKeys).toHaveLength(0);
-    });
-
-    it('includes SMTP relay credentials (SMTP_RELAY_USER in .env; SMTP_RELAY_PASSWORD in secretFiles)', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        servers: {
-          mailServer: {
-            enabled: true,
-            service: 'docker-mailserver',
-            port25Blocked: true,
-            relayProvider: 'sendgrid',
-            relayHost: 'smtp.sendgrid.net',
-            relayPort: 587,
-            relayUser: 'apikey',
-            relayPassword: 'SG.testtoken',
-          },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      expect(env['SMTP_RELAY_USER']).toBe('apikey');
-      // SMTP_RELAY_PASSWORD is a secret — stored in secretFiles
-      const smtpSecret = getSecretContent(result.secretFiles, 'secrets/smtp_relay_password');
-      expect(smtpSecret).toBe('SG.testtoken');
-    });
-  });
-
-  // -------------------------------------------------------------------------
   // .env.example — masked values
   // -------------------------------------------------------------------------
 
@@ -502,9 +406,8 @@ describe('generateEnvFiles', () => {
             dbUser: 'brewnet',
             dbPassword: 'DbPass',
             adminUI: true,
-            cache: 'redis',
+            cache: '',
           },
-          mailServer: { enabled: true, service: 'docker-mailserver' },
         },
         domain: {
           provider: 'custom',
@@ -539,7 +442,7 @@ describe('generateEnvFiles', () => {
             dbUser: 'brewnet',
             dbPassword: 'RealDbPass',
             adminUI: false,
-            cache: 'redis',
+            cache: '',
           },
         },
       });
@@ -616,10 +519,9 @@ describe('generateEnvFiles', () => {
             dbUser: 'brewnet',
             dbPassword: 'DbP@ss',
             adminUI: true,
-            cache: 'redis',
+            cache: '',
           },
           fileServer: { enabled: true, service: 'nextcloud' },
-          mailServer: { enabled: true, service: 'docker-mailserver' },
           sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
         },
         domain: {
@@ -657,65 +559,6 @@ describe('generateEnvFiles', () => {
       // Admin password is propagated to all services via the shared secret file
       const adminSecret = getSecretContent(result.secretFiles, 'secrets/admin_password');
       expect(adminSecret).toBe('ValidPass!');
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Valkey / KeyDB cache variants
-  // -------------------------------------------------------------------------
-
-  describe('cache variants', () => {
-    it('includes cache password when cache is valkey', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        servers: {
-          dbServer: {
-            enabled: true,
-            primary: 'postgresql',
-            primaryVersion: '17',
-            dbName: 'brewnet_db',
-            dbUser: 'brewnet',
-            dbPassword: 'DbPass',
-            adminUI: false,
-            cache: 'valkey',
-          },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      // Either VALKEY_PASSWORD or REDIS_PASSWORD (valkey is redis-compatible)
-      const hasCachePassword =
-        env['VALKEY_PASSWORD'] !== undefined ||
-        env['REDIS_PASSWORD'] !== undefined;
-      expect(hasCachePassword).toBe(true);
-    });
-
-    it('includes cache password when cache is keydb', () => {
-      const state = buildState({
-        admin: { username: 'admin', password: 'Pass' },
-        servers: {
-          dbServer: {
-            enabled: true,
-            primary: 'postgresql',
-            primaryVersion: '17',
-            dbName: 'brewnet_db',
-            dbUser: 'brewnet',
-            dbPassword: 'DbPass',
-            adminUI: false,
-            cache: 'keydb',
-          },
-        },
-      });
-
-      const result: EnvGeneratorResult = generateEnvFiles(state);
-      const env = parseEnvContent(result.envContent);
-
-      const hasCachePassword =
-        env['KEYDB_PASSWORD'] !== undefined ||
-        env['REDIS_PASSWORD'] !== undefined;
-      expect(hasCachePassword).toBe(true);
     });
   });
 

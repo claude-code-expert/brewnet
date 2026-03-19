@@ -12,13 +12,13 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockAdminStart = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
-const mockCreateAdminServer = jest.fn(() => ({ start: mockAdminStart }));
+const mockLaunchAdminDaemon = jest.fn<() => Promise<{ pid: number; port: number; logFile: string }>>()
+  .mockResolvedValue({ pid: 99999, port: 8088, logFile: '/tmp/test.log' });
 
 jest.unstable_mockModule(
-  '../../../../../packages/cli/src/services/admin-server.js',
+  '../../../../../packages/cli/src/services/admin-launcher.js',
   () => ({
-    createAdminServer: mockCreateAdminServer,
+    launchAdminDaemon: mockLaunchAdminDaemon,
   }),
 );
 
@@ -35,6 +35,12 @@ jest.unstable_mockModule(
     getImageName: jest.fn(() => 'traefik:latest'),
   }),
 );
+
+// Mock execa — complete.ts does dynamic import('execa') to open browser
+const mockExeca = jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+jest.unstable_mockModule('execa', () => ({
+  execa: mockExeca,
+}));
 
 const mockGenerateEndpoints = jest.fn<() => { service: string; url: string }[]>();
 const mockSortByDependency = jest.fn<(s: string[]) => string[]>((s) => s);
@@ -93,7 +99,7 @@ beforeEach(() => {
     { service: 'gitea', url: 'http://git.brewnet.local' },
   ]);
   mockGetCredentialTargets.mockReturnValue(['Gitea', 'Traefik Dashboard']);
-  mockAdminStart.mockResolvedValue(undefined);
+  mockLaunchAdminDaemon.mockResolvedValue({ pid: 99999, port: 8088, logFile: '/tmp/test.log' });
 });
 
 describe('runCompleteStep', () => {
@@ -127,24 +133,22 @@ describe('runCompleteStep', () => {
     expect(mockGetCredentialTargets).toHaveBeenCalled();
   });
 
-  it('starts the admin server', async () => {
+  it('launches the admin daemon', async () => {
     const state = makeState();
     await runCompleteStep(state);
-    expect(mockCreateAdminServer).toHaveBeenCalledWith(
+    expect(mockLaunchAdminDaemon).toHaveBeenCalledWith(
       expect.objectContaining({ port: 8088 }),
     );
-    expect(mockAdminStart).toHaveBeenCalled();
   });
 
   it('passes noOpen option — skips browser open', async () => {
     const state = makeState();
-    // noOpen=true should still start the server, just not open the browser
     await expect(runCompleteStep(state, { noOpen: true })).resolves.toBeUndefined();
-    expect(mockAdminStart).toHaveBeenCalled();
+    expect(mockLaunchAdminDaemon).toHaveBeenCalled();
   });
 
-  it('does not throw when admin server fails to start (non-fatal)', async () => {
-    mockAdminStart.mockRejectedValue(new Error('port in use'));
+  it('does not throw when admin daemon fails to start (non-fatal)', async () => {
+    mockLaunchAdminDaemon.mockRejectedValue(new Error('port in use'));
     const state = makeState();
     await expect(runCompleteStep(state)).resolves.toBeUndefined();
   });

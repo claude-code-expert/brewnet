@@ -15,11 +15,13 @@
  * @module services/boilerplate-manager
  */
 
-import { readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { join, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import { execa } from 'execa';
+import yaml from 'js-yaml';
+import { addQuickTunnelAppLabels } from './compose-generator.js';
 import { BOILERPLATE_REPO_URL } from '@brewnet/shared';
 import type { StackHealthResult } from '@brewnet/shared';
 
@@ -66,6 +68,12 @@ export { BOILERPLATE_REPO_URL };
  * @throws {Error} if git clone fails (network error, unknown branch, etc.)
  */
 export async function cloneStack(stackId: string, projectDir: string): Promise<void> {
+  // If directory already exists (previous run), remove and re-clone for a clean state.
+  // git clone refuses to write into a non-empty directory.
+  const { existsSync: dirExists, rmSync } = await import('node:fs');
+  if (dirExists(projectDir)) {
+    rmSync(projectDir, { recursive: true, force: true });
+  }
   await execa('git', [
     'clone',
     '--depth=1',
@@ -74,6 +82,41 @@ export async function cloneStack(stackId: string, projectDir: string): Promise<v
     BOILERPLATE_REPO_URL,
     projectDir,
   ]);
+  // Next.js stacks need absolute paths for <Image> component.
+  // All other stacks keep relative paths (./...) so they work under
+  // Traefik sub-path routing (/apps/{name}/) via Quick Tunnel.
+  if (stackId.startsWith('nodejs-nextjs')) {
+    patchImagePaths(projectDir, '/brewnet-site-banner.png');
+  }
+  // Non-Next.js stacks: boilerplate already uses "./brewnet-site-banner.png" — no patch needed.
+}
+
+/**
+ * Patch image paths in cloned boilerplate source files.
+ *
+ * Next.js <Image> component requires absolute paths (`/brewnet-site-banner.png`).
+ * Other stacks (Vite/React) must keep relative paths (`./brewnet-site-banner.png`)
+ * because under Quick Tunnel sub-path routing (/apps/{name}/), an absolute root
+ * path `/image.png` resolves to the tunnel root (Traefik catch-all landing page).
+ * Relative `./image.png` resolves correctly to `/apps/{name}/image.png` when the
+ * trailing-slash redirect middleware ensures the browser URL has a trailing slash.
+ */
+function patchImagePaths(dir: string, replacement: string, search = './brewnet-site-banner.png'): void {
+  const jsxExts = new Set(['.tsx', '.ts', '.jsx', '.js']);
+  const needle = `src="${search}"`;
+  const insert = `src="${replacement}"`;
+  const walk = (d: string) => {
+    for (const entry of readdirSync(d)) {
+      if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue;
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) { walk(full); continue; }
+      if (!jsxExts.has(extname(entry))) continue;
+      const original = readFileSync(full, 'utf-8');
+      const patched = original.replaceAll(needle, insert);
+      if (patched !== original) writeFileSync(full, patched, 'utf-8');
+    }
+  };
+  walk(dir);
 }
 
 // ---------------------------------------------------------------------------
@@ -120,12 +163,10 @@ function buildPrismaDatabaseUrl(
   dbUser: string,
   dbPassword: string,
   dbName: string,
-  integrated = false,
 ): string {
-  const pgHost = integrated ? 'postgresql' : 'postgres';
   switch (dbDriver) {
     case 'postgres':
-      return `postgresql://${dbUser}:${dbPassword}@${pgHost}:5432/${dbName}`;
+      return `postgresql://${dbUser}:${dbPassword}@postgres:5432/${dbName}`;
     case 'mysql':
       return `mysql://${dbUser}:${dbPassword}@mysql:3306/${dbName}`;
     default:
@@ -160,12 +201,6 @@ export interface GenerateEnvOpts {
    * container on port 3000. Set this to avoid "port already in use" errors.
    */
   frontendPort?: number;
-  /**
-   * When true, override DB_HOST / DATABASE_URL hostname to 'postgresql'
-   * to match the main brewnet compose service name. Used by the wizard
-   * (integrated mode) so boilerplate apps connect to the shared DB.
-   */
-  integrated?: boolean;
 }
 
 /**
@@ -219,11 +254,6 @@ export function generateEnv(
     .replace(/^MYSQL_PASSWORD=.*/m, `MYSQL_PASSWORD=${mysqlPassword}`)
     .replace(/^MYSQL_ROOT_PASSWORD=.*/m, `MYSQL_ROOT_PASSWORD=${mysqlRoot}`);
 
-  // Override DB_HOST to match the main brewnet compose service name in integrated mode.
-  if (dbDriver === 'postgres' && opts?.integrated) {
-    content = content.replace(/^DB_HOST=.*/m, 'DB_HOST=postgresql');
-  }
-
   // 4. Override host ports if free ports were selected (avoids "port already in use").
   //    Stacks use `${BACKEND_PORT:-default}:containerPort` so only the host side changes.
   if (opts?.hostPort !== undefined) {
@@ -244,7 +274,7 @@ export function generateEnv(
   // 5. Node.js stacks (Prisma): set PRISMA_DB_PROVIDER + DATABASE_URL
   if (stackId.startsWith('nodejs-')) {
     const provider = PRISMA_PROVIDER[dbDriver] ?? 'sqlite';
-    const databaseUrl = buildPrismaDatabaseUrl(dbDriver, dbUser, dbPassword, dbName, opts?.integrated);
+    const databaseUrl = buildPrismaDatabaseUrl(dbDriver, dbUser, dbPassword, dbName);
     content = content
       .replace(/^PRISMA_DB_PROVIDER=.*/m, `PRISMA_DB_PROVIDER=${provider}`)
       .replace(/^DATABASE_URL=.*/m, `DATABASE_URL=${databaseUrl}`);
@@ -252,6 +282,190 @@ export function generateEnv(
 
   // 5. Write .env — not committed, not displayed
   writeFileSync(envPath, content, 'utf-8');
+}
+
+// ---------------------------------------------------------------------------
+// T006b-pre — patchNextConfig (basePath injection)
+// ---------------------------------------------------------------------------
+
+/**
+ * Inject `basePath: '/apps/{appName}'` into next.config.{ts,mjs,js} so that
+ * Next.js generates all asset/image paths under the sub-path prefix.
+ *
+ * Without basePath, Next.js emits `/_next/static/...` absolute root paths.
+ * Under Quick Tunnel sub-path routing (/apps/{appName}/), the browser requests
+ * `https://tunnel/_next/static/...` which misses Traefik's PathPrefix rule and
+ * returns the landing-page HTML instead of CSS/JS assets.
+ *
+ * With basePath set, Next.js emits `/apps/{appName}/_next/static/...` which
+ * correctly matches Traefik's PathPrefix route.
+ *
+ * @param projectDir - Absolute path to the Next.js project
+ * @param appName    - Logical app name used as path segment (e.g. "nextjs-full")
+ */
+export function patchNextConfig(projectDir: string, appName: string): void {
+  const candidates = ['next.config.ts', 'next.config.mjs', 'next.config.js'];
+  let configPath: string | null = null;
+  for (const c of candidates) {
+    const p = join(projectDir, c);
+    if (existsSync(p)) { configPath = p; break; }
+  }
+  if (!configPath) return;
+
+  let content = readFileSync(configPath, 'utf-8');
+  const basePath = `/apps/${appName}`;
+
+  // Already patched — skip
+  if (content.includes('basePath')) return;
+
+  // Insert basePath + unoptimized images after output: 'standalone'.
+  // images.unoptimized is required because Next.js standalone _next/image optimizer
+  // fails to resolve local images when basePath is set (fetches /img.png instead of
+  // /apps/{name}/img.png internally → 400 "not a valid image").
+  // With unoptimized: true, <Image> renders a plain <img> tag pointing directly to
+  // /apps/{name}/img.png which Traefik routes correctly.
+  content = content.replace(
+    /output:\s*['"]standalone['"]/,
+    `output: 'standalone',\n    basePath: '${basePath}',\n    images: { unoptimized: true }`,
+  );
+
+  // Fallback: non-standalone configs (user-owned repos without output: 'standalone')
+  if (!content.includes('basePath')) {
+    content = content.replace(
+      /((?:const|let|var)\s+\w+(?:\s*:\s*[\w<>, |&]+)?\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s+\{)/,
+      `$1\n  basePath: '${basePath}',`,
+    );
+  }
+
+  writeFileSync(configPath, content, 'utf-8');
+
+  // Re-patch image paths to include basePath prefix.
+  // With images.unoptimized=true, <Image src="/foo.png"> renders <img src="/foo.png">.
+  // The browser resolves absolute paths from the tunnel root, missing Traefik's
+  // PathPrefix route. Must be /apps/{appName}/foo.png for correct routing.
+  // cloneStack() already converted ./brewnet-site-banner.png → /brewnet-site-banner.png
+  // for Next.js stacks; now add the basePath prefix.
+  patchImagePaths(projectDir, `${basePath}/brewnet-site-banner.png`, '/brewnet-site-banner.png');
+
+  // Also patch docker-compose.yml healthcheck: /health → /apps/{appName}/health
+  // With basePath set, Next.js serves all routes (including /health) under the prefix.
+  const composePath = join(projectDir, 'docker-compose.yml');
+  if (existsSync(composePath)) {
+    let compose = readFileSync(composePath, 'utf-8');
+    const oldHealthPath = 'http://127.0.0.1:3000/health';
+    const newHealthPath = `http://127.0.0.1:3000${basePath}/health`;
+    if (compose.includes(oldHealthPath) && !compose.includes(newHealthPath)) {
+      compose = compose.replaceAll(oldHealthPath, newHealthPath);
+    }
+    // Fallback: scaffolded templates use root path (/) instead of /health
+    const oldRootPath = 'http://127.0.0.1:3000/';
+    const newRootPath = `http://127.0.0.1:3000${basePath}/`;
+    if (compose.includes(oldRootPath) && !compose.includes(newRootPath)) {
+      compose = compose.replaceAll(oldRootPath, newRootPath);
+    }
+    writeFileSync(composePath, compose, 'utf-8');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// T006b — injectTraefikForQuickTunnel
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the container-internal port from a docker-compose ports entry.
+ * e.g. "${BACKEND_PORT:-8080}:8080" → 8080
+ *      "3000:80" → 80
+ *      "${PORT}:3000" → 3000
+ */
+function parseContainerPort(portSpec: string): number | null {
+  const str = String(portSpec);
+  // "host:container" or "${VAR:-default}:container"
+  const colonIdx = str.lastIndexOf(':');
+  if (colonIdx >= 0) {
+    const containerPart = str.slice(colonIdx + 1).replace(/\/.*$/, ''); // strip /tcp, /udp
+    const n = parseInt(containerPart, 10);
+    return isNaN(n) ? null : n;
+  }
+  const n = parseInt(str, 10);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Inject Traefik PathPrefix labels and brewnet external network into a
+ * boilerplate's docker-compose.yml so that HTTP services are routable
+ * through Quick Tunnel at /apps/{appName} (backend) and /apps/{appName}-ui (frontend).
+ *
+ * Reads the compose file to:
+ * 1. Detect backend service (backend, app, web, api, server) and its internal port
+ * 2. Detect frontend service (frontend, ui) and its internal port
+ * 3. Inject Traefik labels + force brewnet to external: true
+ *
+ * @param projectDir  - Absolute path to the boilerplate project
+ * @param appName     - Logical name used as path segment (e.g. "nodejs-nestjs")
+ * @param _backendPort - Host port (unused — we detect internal port from compose)
+ */
+export function injectTraefikForQuickTunnel(
+  projectDir: string,
+  appName: string,
+  _backendPort: number,
+): void {
+  const composePath = join(projectDir, 'docker-compose.yml');
+  if (!existsSync(composePath)) return;
+
+  const raw = readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return;
+
+  // Detect Next.js projects: basePath handles sub-path routing internally,
+  // so Traefik must NOT strip the prefix (noStrip: true).
+  const isNextjs = ['next.config.ts', 'next.config.mjs', 'next.config.js']
+    .some((f) => existsSync(join(projectDir, f)));
+  if (isNextjs) {
+    patchNextConfig(projectDir, appName);
+  }
+
+  // addQuickTunnelAppLabels imported at top level (static import for ESM compatibility)
+
+  // Non-HTTP services to skip
+  const skipServices = new Set(['postgres', 'postgresql', 'mysql', 'mariadb', 'redis', 'db']);
+
+  // Backend: common names
+  const backendNames = ['backend', 'app', 'web', 'api', 'server'];
+  const backendKey = backendNames.find((n) => services[n] && !skipServices.has(n));
+
+  // Frontend: common names
+  const frontendNames = ['frontend', 'ui'];
+  const frontendKey = frontendNames.find((n) => services[n]);
+
+  // Single-service stacks: just use the first HTTP service
+  const allSvcKeys = Object.keys(services).filter((k) => !skipServices.has(k));
+  const singleService = allSvcKeys.length === 1 ? allSvcKeys[0]! : null;
+
+  if (singleService && !backendKey && !frontendKey) {
+    // Unified single-service stack
+    const svc = services[singleService]!;
+    const ports = (svc['ports'] ?? []) as string[];
+    const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 8080 : 8080;
+    addQuickTunnelAppLabels(composePath, appName, singleService, containerPort, isNextjs);
+    return;
+  }
+
+  // Multi-service: inject labels for both backend and frontend
+  if (backendKey) {
+    const svc = services[backendKey]!;
+    const ports = (svc['ports'] ?? []) as string[];
+    const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 8080 : 8080;
+    addQuickTunnelAppLabels(composePath, appName, backendKey, containerPort, isNextjs);
+  }
+
+  if (frontendKey) {
+    const svc = services[frontendKey]!;
+    const ports = (svc['ports'] ?? []) as string[];
+    const containerPort = ports.length > 0 ? parseContainerPort(ports[0]!) ?? 80 : 80;
+    // Re-read the compose file since addQuickTunnelAppLabels writes it
+    addQuickTunnelAppLabels(composePath, `${appName}-ui`, frontendKey, containerPort);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -278,28 +492,22 @@ export async function startContainers(projectDir: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Poll GET <baseUrl><healthPath> until HTTP 200 with body.status === "ok".
+ * Poll GET <baseUrl>/health until HTTP 200 with body.status === "ok".
  *
  * Uses `127.0.0.1` in baseUrl (not `localhost`) to avoid Alpine Linux
  * IPv6 resolution failures where localhost resolves to ::1.
  *
- * @param baseUrl    - e.g. "http://127.0.0.1:8080" (no trailing slash)
- * @param timeoutMs  - Maximum wait time in milliseconds (120_000 or 600_000 for Rust)
- * @param healthPath - Health endpoint path (default: "/health"). Use "/apps/<stackId>/health"
- *                     for Next.js stacks with basePath set.
+ * @param baseUrl   - e.g. "http://127.0.0.1:8080" (no trailing slash)
+ * @param timeoutMs - Maximum wait time in milliseconds (120_000 or 600_000 for Rust)
  * @returns StackHealthResult with healthy, elapsedMs, and dbConnected
  */
-export async function pollHealth(
-  baseUrl: string,
-  timeoutMs: number,
-  healthPath = '/health',
-): Promise<StackHealthResult> {
+export async function pollHealth(baseUrl: string, timeoutMs: number): Promise<StackHealthResult> {
   const start = Date.now();
   const deadline = start + timeoutMs;
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${baseUrl}${healthPath}`, {
+      const res = await fetch(`${baseUrl}/health`, {
         signal: AbortSignal.timeout(3000),
       });
       if (res.ok) {
@@ -370,267 +578,4 @@ export async function verifyEndpoints(baseUrl: string): Promise<void> {
       `POST /api/echo response mismatch: expected test="brewnet", got "${String(echoBody.test)}"`,
     );
   }
-}
-
-// ---------------------------------------------------------------------------
-// T010 — writeTraefikOverride
-// ---------------------------------------------------------------------------
-
-/**
- * Write docker-compose.override.yml to connect boilerplate containers to the
- * main brewnet Traefik network and register PathPrefix routing labels.
- *
- * - backend  → /apps/<stackId>        (StripPrefix → container port)
- * - frontend → /apps/<stackId>-ui     (non-unified only, StripPrefix → port 3000)
- *
- * @param projectDir              - Absolute path to the boilerplate project directory
- * @param stackId                 - Stack identifier (e.g. "go-gin")
- * @param containerPort           - Backend container-internal port (3000 unified, 8080 others)
- * @param frontendContainerPort   - Frontend container-internal port (3000); omit for unified stacks
- */
-export function writeTraefikOverride(
-  projectDir: string,
-  stackId: string,
-  containerPort: number,
-  frontendContainerPort?: number,
-): void {
-  const rn = `bp-${stackId}`;
-  const pp = `/apps/${stackId}`;
-
-  // All stacks use Traefik stripPrefix. The container always receives the request
-  // at its own root path (e.g. /api/hello, not /apps/go-gin/api/hello).
-  // For Next.js stacks we set assetPrefix (not basePath) so static assets load
-  // correctly when served via the tunnel sub-path, while API routes stay at /*.
-  const backendLabels = [
-    '      - "traefik.enable=true"',
-    `      - "traefik.docker.network=brewnet"`,
-    `      - "traefik.http.routers.${rn}.rule=PathPrefix(\`${pp}\`)"`,
-    `      - "traefik.http.routers.${rn}.entrypoints=web"`,
-    `      - "traefik.http.middlewares.${rn}-strip.stripprefix.prefixes=${pp}"`,
-    `      - "traefik.http.routers.${rn}.middlewares=${rn}-strip"`,
-    `      - "traefik.http.services.${rn}.loadbalancer.server.port=${containerPort}"`,
-  ];
-
-  // Next.js stacks need a healthcheck override in the compose override so that
-  // docker-compose.override.yml's healthcheck takes precedence over the one in
-  // the cloned docker-compose.yml (which may have a stale URL).
-  // Other stacks (Go, Rust, Python, Java, …) already have a correct healthcheck
-  // in their docker-compose.yml; overriding it with wget would break containers
-  // that don't have wget, making them appear unhealthy to Traefik.
-  const isNextjs = stackId.startsWith('nodejs-nextjs');
-  const healthcheckLines = isNextjs
-    ? [
-        '    healthcheck:',
-        `      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${containerPort}/health"]`,
-        '      interval: 10s',
-        '      timeout: 5s',
-        '      retries: 5',
-        '      start_period: 30s',
-      ]
-    : [];
-
-  const lines = [
-    'networks:',
-    '  brewnet:',
-    '    external: true',
-    '',
-    'services:',
-    '  backend:',
-    '    networks:',
-    '      - default',
-    '      - brewnet',
-    ...healthcheckLines,
-    '    labels:',
-    ...backendLabels,
-  ];
-
-  // Disable the boilerplate's own DB services so they don't clash with
-  // the main brewnet postgresql/mysql containers on the shared network.
-  lines.push(
-    '',
-    '  postgres:',
-    '    profiles:',
-    '      - disabled',
-    '',
-    '  mysql:',
-    '    profiles:',
-    '      - disabled',
-  );
-
-  if (frontendContainerPort !== undefined) {
-    const frn = `bp-${stackId}-ui`;
-    const fpp = `/apps/${stackId}-ui`;
-    lines.push(
-      '',
-      '  frontend:',
-      '    networks:',
-      '      - default',
-      '      - brewnet',
-      '    labels:',
-      '      - "traefik.enable=true"',
-      `      - "traefik.docker.network=brewnet"`,
-      `      - "traefik.http.routers.${frn}.rule=PathPrefix(\`${fpp}\`)"`,
-      `      - "traefik.http.routers.${frn}.entrypoints=web"`,
-      `      - "traefik.http.middlewares.${frn}-slash.redirectregex.regex=${fpp}$$"`,
-      `      - "traefik.http.middlewares.${frn}-slash.redirectregex.replacement=${fpp}/"`,
-      `      - "traefik.http.middlewares.${frn}-strip.stripprefix.prefixes=${fpp}"`,
-      `      - "traefik.http.routers.${frn}.middlewares=${frn}-slash,${frn}-strip"`,
-      `      - "traefik.http.services.${frn}.loadbalancer.server.port=${frontendContainerPort}"`,
-    );
-  }
-
-  writeFileSync(join(projectDir, 'docker-compose.override.yml'), lines.join('\n') + '\n', 'utf-8');
-}
-
-// ---------------------------------------------------------------------------
-// T010a — patchViteConfig
-// ---------------------------------------------------------------------------
-
-/**
- * Patch frontend/vite.config.ts to set `base: '/apps/<stackId>-ui/'`.
- *
- * Without this, Vite builds asset URLs as root-relative (`/assets/...`).
- * When Traefik routes `/apps/<stackId>-ui/` to the nginx container via
- * stripprefix, the browser tries to load assets from the domain root
- * (e.g. `https://tunnel.com/assets/...`) which has no Traefik route →
- * the catch-all landing page is returned instead of the JS/CSS → blank screen.
- *
- * Only applies to non-unified, non-nextjs stacks that have a `frontend/`
- * directory with a `vite.config.ts`. No-ops silently for unified or Next.js stacks.
- *
- * @param projectDir - Absolute path to the boilerplate project directory
- * @param stackId    - Stack identifier (e.g. "nodejs-nestjs")
- */
-export function patchViteConfig(projectDir: string, stackId: string): void {
-  // Unified stacks have no separate frontend container; Next.js is handled by patchNextjsConfig.
-  if (stackId.startsWith('nodejs-nextjs')) return;
-
-  // Use relative base ('./') so that asset URLs resolve correctly in BOTH scenarios:
-  //   - Direct port access (localhost:{port}): './assets/...' → same origin ✓
-  //   - Traefik stripprefix (external tunnel): './assets/...' resolves relative to the
-  //     sub-path URL, then Traefik strips the prefix before forwarding to Nginx ✓
-  // An absolute subpath (e.g. '/apps/{stackId}-ui/') only works via Traefik and
-  // breaks direct port access because Nginx never sees those prefixed paths.
-  const base = './';
-  const candidates = [
-    join(projectDir, 'frontend', 'vite.config.ts'),
-    join(projectDir, 'frontend', 'vite.config.js'),
-    join(projectDir, 'frontend', 'vite.config.mjs'),
-  ];
-
-  for (const p of candidates) {
-    try {
-      let content = readFileSync(p, 'utf-8');
-      if (/\bbase\s*:/.test(content)) {
-        // Already has base — update it
-        content = content.replace(/\bbase\s*:\s*['"`][^'"`]*['"`]/, `base: '${base}'`);
-      } else {
-        // Inject base before the first top-level key inside defineConfig({...})
-        content = content.replace(
-          /(defineConfig\s*\(\s*\{)/,
-          `$1\n  base: '${base}',`,
-        );
-      }
-      writeFileSync(p, content, 'utf-8');
-      return; // only patch the first file found
-    } catch { /* not found — try next candidate */ }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// T010b — patchDockerfileHealthcheck
-// ---------------------------------------------------------------------------
-
-/**
- * Replace `localhost` with `127.0.0.1` in all Dockerfile HEALTHCHECK lines.
- *
- * On Alpine Linux, `localhost` resolves to `::1` (IPv6) but many service
- * containers only listen on IPv4. This makes `wget http://localhost:<port>`
- * fail with "Connection refused", leaving containers permanently unhealthy
- * and invisible to Traefik's Docker provider.
- *
- * Patches both `backend/Dockerfile` and `frontend/Dockerfile` if present.
- * Only applies to non-Next.js stacks — Next.js healthchecks are handled by
- * writeTraefikOverride which generates a fresh CMD with the correct basePath URL.
- *
- * @param projectDir - Absolute path to the boilerplate project directory
- * @param stackId    - Stack identifier (e.g. "python-django")
- */
-export function patchDockerfileHealthcheck(projectDir: string, stackId: string): void {
-  if (stackId.startsWith('nodejs-nextjs')) return;
-
-  const dockerfiles = [
-    join(projectDir, 'Dockerfile'),
-    join(projectDir, 'backend', 'Dockerfile'),
-    join(projectDir, 'frontend', 'Dockerfile'),
-  ];
-
-  for (const p of dockerfiles) {
-    try {
-      const original = readFileSync(p, 'utf-8');
-      const patched = original.replace(
-        /HEALTHCHECK(.*\\\n.*|\s.*)\bhttp:\/\/localhost:/g,
-        (m) => m.replace(/http:\/\/localhost:/g, 'http://127.0.0.1:'),
-      );
-      if (patched !== original) {
-        writeFileSync(p, patched, 'utf-8');
-      }
-    } catch { /* file not present — skip */ }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// T011 — patchNextjsConfig
-// ---------------------------------------------------------------------------
-
-/**
- * Patch next.config.ts (or next.config.js) in the boilerplate directory to set
- * `assetPrefix` so that Next.js generates static asset URLs (/_next/...) prefixed
- * with the Traefik path, preventing broken CSS/JS when served under a sub-path.
- *
- * We use `assetPrefix` (NOT `basePath`) so that:
- * - API routes remain at /api/... → Traefik stripPrefix makes them work locally too
- * - Static assets load correctly via the tunnel sub-path
- * - Docker build cache issues with basePath are avoided
- *
- * Must be called BEFORE startContainers so that `next build` (inside Docker)
- * bakes the correct assetPrefix into the build output.
- *
- * Only applies to nodejs-nextjs* stacks. No-ops silently for other stacks.
- *
- * @param projectDir - Absolute path to the boilerplate project directory
- * @param stackId    - Stack identifier (e.g. "nodejs-nextjs-full")
- */
-export function patchNextjsConfig(projectDir: string, stackId: string): void {
-  if (!stackId.startsWith('nodejs-nextjs')) return;
-
-  const assetPrefix = `/apps/${stackId}`;
-
-  const candidates = ['next.config.ts', 'next.config.js', 'next.config.mjs'];
-  let configPath = '';
-  for (const name of candidates) {
-    const p = join(projectDir, name);
-    try {
-      readFileSync(p);
-      configPath = p;
-      break;
-    } catch { /* not found */ }
-  }
-  if (!configPath) return;
-
-  let content = readFileSync(configPath, 'utf-8');
-  // Replace existing assetPrefix if present, otherwise inject after output: 'standalone'
-  if (/assetPrefix\s*:/.test(content)) {
-    content = content.replace(/assetPrefix\s*:\s*['"`][^'"`]*['"`]/, `assetPrefix: '${assetPrefix}'`);
-  } else if (/output\s*:\s*['"`]standalone['"`]/.test(content)) {
-    content = content.replace(
-      /(output\s*:\s*['"`]standalone['"`])/,
-      `$1,\n    assetPrefix: '${assetPrefix}'`,
-    );
-  } else {
-    content = content.replace(/(\};\s*$)/, `  assetPrefix: '${assetPrefix}',\n$1`);
-  }
-  // Remove any stale basePath that might have been set by a previous install
-  content = content.replace(/,?\s*\n?\s*basePath\s*:\s*['"`][^'"`]*['"`],?/g, '');
-  writeFileSync(configPath, content, 'utf-8');
 }

@@ -20,6 +20,8 @@ jest.unstable_mockModule('node:fs', () => ({
   writeFileSync: mockWriteFileSync,
   mkdirSync: mockMkdirSync,
   chmodSync: mockChmodSync,
+  readdirSync: jest.fn(() => []),
+  rmSync: jest.fn(),
 }));
 
 // Mock homedir
@@ -40,11 +42,22 @@ const mockRepoExists = jest.fn<(...args: any[]) => Promise<boolean>>();
 const mockAuthedCloneUrl = jest.fn((url: string) => url.replace('http://', 'http://admin:pw@'));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockListRepos = jest.fn<(...args: any[]) => Promise<unknown[]>>();
+const mockPrepare = jest.fn<() => Promise<{ autoFixed: boolean; message: string }>>().mockResolvedValue({ autoFixed: false, message: 'token cached' });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetRepo = jest.fn<(...args: any[]) => Promise<unknown>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetLatestCommit = jest.fn<(...args: any[]) => Promise<unknown>>().mockResolvedValue(null);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockMakeRepoPublic = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
 const MockGiteaClient = jest.fn().mockImplementation(() => ({
   createRepo: mockCreateRepo,
   repoExists: mockRepoExists,
   authedCloneUrl: mockAuthedCloneUrl,
   listRepos: mockListRepos,
+  prepare: mockPrepare,
+  getRepo: mockGetRepo,
+  getLatestCommit: mockGetLatestCommit,
+  makeRepoPublic: mockMakeRepoPublic,
 }));
 jest.unstable_mockModule('../../../../packages/cli/src/services/gitea-client.js', () => ({
   GiteaClient: MockGiteaClient,
@@ -168,10 +181,12 @@ describe('createApp — mode A (installed boilerplate)', () => {
       frameworkId: 'nextjs-full',
       status: 'running',
     }]);
+    // assertComposeFile() requires docker-compose.yml in the app dir
+    fsContent['/proj/nodejs-nextjs-full/docker-compose.yml'] = 'version: "3"';
 
     mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/my-app.git');
     mockRepoExists.mockResolvedValue(false);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
     const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
 
@@ -241,11 +256,11 @@ describe('createApp — mode B (git-url)', () => {
     fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
     mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/ext-app.git');
     mockRepoExists.mockResolvedValue(false);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
     const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
     const jobId = await createApp({
-      mode: 'git-url',
+      mode: 'git-clone',
       appName: 'ext-app',
       gitUrl: 'https://github.com/user/template.git',
       port: 8080,
@@ -278,7 +293,7 @@ describe('createApp — mode C (new project)', () => {
     mockCloneStack.mockResolvedValue(undefined);
     mockGenerateEnv.mockReturnValue(undefined);
     mockReinitGit.mockResolvedValue(undefined);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 
     const { createApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
     const jobId = await createApp({
@@ -364,10 +379,151 @@ describe('listGiteaRepos', () => {
   });
 });
 
+describe('getAppGitInfo', () => {
+  beforeEach(() => {
+    fsContent = {};
+    jest.clearAllMocks();
+    mockReadApps.mockReturnValue([{
+      name: 'my-app', appDir: '/proj/my-app', port: 3000, status: 'running',
+    }]);
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+  });
+
+  it('constructs correct giteaUrl for quick tunnel mode', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+      domain: { cloudflare: { tunnelMode: 'quick' } },
+    });
+    mockGetRepo.mockResolvedValue({
+      id: 1, name: 'my-app', clone_url: 'http://localhost/git/admin/my-app.git',
+      ssh_url: 'ssh://git@localhost:2222/admin/my-app.git',
+      html_url: 'http://localhost/git/admin/my-app',
+      description: '', private: false, default_branch: 'main',
+    });
+    const { getAppGitInfo } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const info = await getAppGitInfo('my-app');
+    expect(info.giteaUrl).toBe('http://localhost/git/admin/my-app');
+    expect(info.branch).toBe('main');
+    expect(mockMakeRepoPublic).not.toHaveBeenCalled();
+  });
+
+  it('calls makeRepoPublic when repo is private', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+      domain: { cloudflare: { tunnelMode: 'quick' } },
+    });
+    mockGetRepo.mockResolvedValue({
+      id: 1, name: 'my-app', clone_url: 'http://localhost/git/admin/my-app.git',
+      ssh_url: 'ssh://git@localhost:2222/admin/my-app.git',
+      html_url: 'http://localhost/git/admin/my-app',
+      description: '', private: true, default_branch: 'main',
+    });
+    const { getAppGitInfo } = await import('../../../../packages/cli/src/services/app-manager.js');
+    await getAppGitInfo('my-app');
+    expect(mockMakeRepoPublic).toHaveBeenCalledWith('my-app');
+  });
+
+  it('returns partial info (branch=main, latestCommit=null) when Gitea is unreachable', async () => {
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+      domain: { cloudflare: { tunnelMode: '' } },
+    });
+    mockGetRepo.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const { getAppGitInfo } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const info = await getAppGitInfo('my-app');
+    expect(info.giteaUrl).toContain('my-app');
+    expect(info.branch).toBe('main');
+    expect(info.latestCommit).toBeNull();
+  });
+});
+
+describe('deployApp', () => {
+  function setupDeploy() {
+    fsContent = {};
+    jest.clearAllMocks();
+    mockLoadState.mockReturnValue({
+      projectPath: '/proj',
+      servers: { gitServer: { port: 3000 } },
+      admin: { username: 'admin', password: 'pw' },
+      domain: { cloudflare: { tunnelMode: '' } },
+    });
+    fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
+    fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+    mockReadApps.mockReturnValue([{
+      name: 'nodejs-express', appDir: '/proj/nodejs-express', port: 3000, status: 'running',
+    }]);
+    fsContent['/proj/nodejs-express/docker-compose.yml'] = 'version: "3"';
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as never);
+    mockFetch.mockResolvedValue({ ok: true, status: 200 } as unknown as Response);
+  }
+
+  async function waitForJob(jobId: string, getJobStatus: (id: string) => unknown) {
+    for (let i = 0; i < 50; i++) {
+      const j = getJobStatus(jobId) as { status: string } | undefined;
+      if (j && j.status !== 'running') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  }
+
+  it('when Gitea repo is missing: recreates repo, sets remote, pushes, then starts docker', async () => {
+    setupDeploy();
+    mockRepoExists.mockResolvedValue(false);
+    mockCreateRepo.mockResolvedValue('http://localhost:3000/admin/nodejs-express.git');
+    const { deployApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const jobId = await deployApp('nodejs-express');
+    await waitForJob(jobId, getJobStatus);
+
+    const job = getJobStatus(jobId) as { status: string; logs?: string[] };
+    expect(job.status).toBe('done');
+    expect(mockCreateRepo).toHaveBeenCalledWith('nodejs-express', expect.any(String));
+    const pushCalls = (mockExeca.mock.calls as unknown[][]).filter(
+      (c) => (c[1] as string[])?.includes('push'),
+    );
+    expect(pushCalls.length).toBeGreaterThan(0);
+    expect(job.logs?.some((l) => l.includes('recreated'))).toBe(true);
+  });
+
+  it('when Gitea repo exists: pulls from brewnet remote and starts docker', async () => {
+    setupDeploy();
+    mockRepoExists.mockResolvedValue(true);
+    const { deployApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const jobId = await deployApp('nodejs-express');
+    await waitForJob(jobId, getJobStatus);
+
+    const job = getJobStatus(jobId) as { status: string };
+    expect(job.status).toBe('done');
+    expect(mockCreateRepo).not.toHaveBeenCalled();
+    const pullCalls = (mockExeca.mock.calls as unknown[][]).filter(
+      (c) => (c[1] as string[])?.includes('pull'),
+    );
+    expect(pullCalls.length).toBeGreaterThan(0);
+  });
+
+  it('when Gitea is unreachable: logs warning and continues with docker up', async () => {
+    setupDeploy();
+    mockRepoExists.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    const { deployApp, getJobStatus } = await import('../../../../packages/cli/src/services/app-manager.js');
+    const jobId = await deployApp('nodejs-express');
+    await waitForJob(jobId, getJobStatus);
+
+    const job = getJobStatus(jobId) as { status: string; logs?: string[] };
+    // docker up should still proceed
+    expect(job.status).toBe('done');
+    expect(job.logs?.some((l) => l.includes('failed'))).toBe(true);
+  });
+});
+
 describe('startApp / stopApp', () => {
   it('runs docker compose up and updates status', async () => {
     mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'stopped' }]);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
     const { startApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await startApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'up', '-d'], expect.objectContaining({ cwd: '/dir' }));
@@ -376,7 +532,7 @@ describe('startApp / stopApp', () => {
 
   it('runs docker compose down and updates status', async () => {
     mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'running' }]);
-    mockExeca.mockResolvedValue({ stdout: '', stderr: '' });
+    mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
     const { stopApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await stopApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'down'], expect.objectContaining({ cwd: '/dir' }));

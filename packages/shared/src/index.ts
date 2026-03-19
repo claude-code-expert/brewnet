@@ -13,7 +13,6 @@ export type {
   DbServerConfig,
   MediaConfig,
   SshServerConfig,
-  MailServerConfig,
   AppServerConfig,
   FileBrowserConfig,
   DevStackConfig,
@@ -67,6 +66,16 @@ export type {
   GeneratedConfig,
 } from './types/errors.js';
 
+export type {
+  // Centralized logging types
+  LogSource,
+  UnifiedLogLevel,
+  UnifiedLogEntry,
+  LogQuery,
+  LogQueryResult,
+  LogStats,
+} from './types/logging.js';
+
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
 export {
@@ -82,7 +91,6 @@ export {
   dbServerConfigSchema,
   mediaConfigSchema,
   sshServerConfigSchema,
-  mailServerConfigSchema,
   appServerConfigSchema,
   fileBrowserConfigSchema,
   serverComponentsSchema,
@@ -148,10 +156,6 @@ export {
   DEFAULT_HTTP_PORT,
   DEFAULT_HTTPS_PORT,
   DEFAULT_TRAEFIK_DASHBOARD_PORT,
-  DEFAULT_SMTP_PORT,
-  DEFAULT_IMAP_PORT,
-  DEFAULT_SMTP_SUBMISSION_PORT,
-  DEFAULT_IMAPS_PORT,
   // Health Check
   HEALTH_CHECK_TIMEOUT_MS,
   HEALTH_CHECK_INTERVAL_MS,
@@ -194,4 +198,12 @@ export {
   DOCKER_START_TIMEOUT_MS,
   SSL_ISSUANCE_TIMEOUT_MS,
   DNS_PROPAGATION_TIMEOUT_MS,
+  // Logging
+  DOCKER_LOG_MAX_SIZE,
+  DOCKER_LOG_MAX_FILES,
+  CLI_LOG_RETENTION_DAYS,
+  ACCESS_LOG_MAX_BYTES,
+  LOG_QUERY_DEFAULT_LIMIT,
+  LOG_QUERY_MAX_LIMIT,
+  LOG_POLL_INTERVAL_MS,
 } from './utils/constants.js';

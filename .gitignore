@@ -9,12 +9,12 @@ packages/*/dist/
 packages/*/tsconfig.tsbuildinfo
 
 .claude/git_cli.md
-DEV.md
-.mcp.json 
+# DEV.md
+
 # docs 
 /docs/license
-# /docs/spec
-# /docs/phase
+/docs/spec
+/docs/phase
 public/demo
 
 README.md.bak

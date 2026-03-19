@@ -8,8 +8,10 @@
  * @module services/compose-generator
  */
 
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import yaml from 'js-yaml';
 import type { WizardState } from '@brewnet/shared';
+import { DOCKER_LOG_MAX_SIZE, DOCKER_LOG_MAX_FILES } from '@brewnet/shared';
 import { SERVICE_REGISTRY } from '../config/services.js';
 import type { ServiceDefinition } from '../config/services.js';
 
@@ -22,6 +24,11 @@ export interface ComposeHealthcheck {
   interval: string;
   timeout: string;
   retries: number;
+}
+
+export interface ComposeLogging {
+  driver: string;
+  options: Record<string, string>;
 }
 
 export interface ComposeService {
@@ -40,6 +47,7 @@ export interface ComposeService {
   command?: string | string[];
   entrypoint?: string[];
   secrets?: string[];
+  logging?: ComposeLogging;
 }
 
 export interface ComposeConfig {
@@ -57,6 +65,21 @@ export interface ComposeConfig {
 const BREWNET_PREFIX = 'brewnet';
 
 // ---------------------------------------------------------------------------
+// Logging configuration
+// ---------------------------------------------------------------------------
+
+function getLoggingConfig(): ComposeLogging {
+  return {
+    driver: 'json-file',
+    options: {
+      'max-size': DOCKER_LOG_MAX_SIZE,
+      'max-file': DOCKER_LOG_MAX_FILES,
+      tag: '{{.Name}}',
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Volume definitions per service
 // ---------------------------------------------------------------------------
 
@@ -66,6 +89,7 @@ function getServiceVolumes(serviceId: string): string[] {
       return [
         '/var/run/docker.sock:/var/run/docker.sock',
         `${BREWNET_PREFIX}_traefik_certs:/letsencrypt`,
+        './logs:/logs',
       ];
     case 'gitea':
       return [`${BREWNET_PREFIX}_gitea_data:/data`];
@@ -73,12 +97,6 @@ function getServiceVolumes(serviceId: string): string[] {
       return [`${BREWNET_PREFIX}_postgres_data:/var/lib/postgresql/data`];
     case 'mysql':
       return [`${BREWNET_PREFIX}_mysql_data:/var/lib/mysql`];
-    case 'redis':
-      return [`${BREWNET_PREFIX}_redis_data:/data`];
-    case 'valkey':
-      return [`${BREWNET_PREFIX}_valkey_data:/data`];
-    case 'keydb':
-      return [`${BREWNET_PREFIX}_keydb_data:/data`];
     case 'nextcloud':
       return [
         `${BREWNET_PREFIX}_nextcloud_data:/var/www/html`,
@@ -92,12 +110,6 @@ function getServiceVolumes(serviceId: string): string[] {
       ];
     case 'openssh-server':
       return [`${BREWNET_PREFIX}_ssh_config:/config`];
-    case 'docker-mailserver':
-      return [
-        `${BREWNET_PREFIX}_mail_data:/var/mail`,
-        `${BREWNET_PREFIX}_mail_state:/var/mail-state`,
-        `${BREWNET_PREFIX}_mail_config:/tmp/docker-mailserver`,
-      ];
     case 'pgadmin':
       return [`${BREWNET_PREFIX}_pgadmin_data:/var/lib/pgadmin`];
     case 'filebrowser':
@@ -132,15 +144,6 @@ function getHealthcheck(serviceId: string, state: WizardState): ComposeHealthche
         interval: '10s',
         timeout: '5s',
         retries: 5,
-      };
-    case 'redis':
-    case 'valkey':
-    case 'keydb':
-      return {
-        test: ['CMD', 'redis-cli', 'ping'],
-        interval: '10s',
-        timeout: '3s',
-        retries: 3,
       };
     case 'gitea':
       return {
@@ -246,22 +249,6 @@ function getGiteaEnv(state: WizardState): Record<string, string> {
     env['GITEA__database__PASSWD'] = state.servers.dbServer.dbPassword || '${DB_PASSWORD}';
   }
 
-  if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
-    const cacheId = state.servers.dbServer.cache;
-    // Cache password env var name differs by adapter (REDIS_PASSWORD / VALKEY_PASSWORD / KEYDB_PASSWORD).
-    // Docker Compose interpolates ${VAR} from .env at runtime, keeping the password out of the image.
-    const cachePwVar =
-      cacheId === 'valkey' ? 'VALKEY_PASSWORD'
-      : cacheId === 'keydb' ? 'KEYDB_PASSWORD'
-      : 'REDIS_PASSWORD';
-    const cacheUrl = `redis://:\${${cachePwVar}}@${cacheId}:6379/0`;
-    env['GITEA__cache__ADAPTER'] = 'redis';
-    env['GITEA__cache__HOST'] = cacheUrl;
-    // Gitea also uses Redis for async task queue — use the same authenticated URL.
-    env['GITEA__queue__TYPE'] = 'redis';
-    env['GITEA__queue__CONN_STR'] = cacheUrl;
-  }
-
   return env;
 }
 
@@ -292,7 +279,7 @@ function getNextcloudEnv(state: WizardState): Record<string, string> {
     // added post-install via `occ` once the Quick Tunnel URL is known.
     const portMap = state.portRemapping ?? {};
     const ncPort = portMap[8443] ?? 8443;
-    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${ncDomain} localhost localhost:${ncPort}`;
+    env['NEXTCLOUD_TRUSTED_DOMAINS'] = `${ncDomain} localhost localhost:${ncPort} *.trycloudflare.com`;
   } else if (ncDomain) {
     // Named Tunnel or local — subdomain routing, direct port access enabled.
     env['OVERWRITEHOST'] = `cloud.${ncDomain}`;
@@ -333,22 +320,6 @@ function getSshEnv(state: WizardState): Record<string, string> {
     PASSWORD_ACCESS: state.servers.sshServer.passwordAuth ? 'true' : 'false',
     USER_NAME: state.admin.username || 'admin',
   };
-}
-
-function getMailEnv(state: WizardState): Record<string, string> {
-  const env: Record<string, string> = {
-    OVERRIDE_HOSTNAME: `mail.${state.domain.name}`,
-    ENABLE_CLAMAV: '0',
-    ENABLE_FAIL2BAN: '1',
-  };
-
-  if (state.servers.mailServer.relayProvider) {
-    env['DEFAULT_RELAY_HOST'] = `[${state.servers.mailServer.relayHost}]:${state.servers.mailServer.relayPort}`;
-    env['RELAY_USER'] = '${SMTP_RELAY_USER}';
-    env['RELAY_PASSWORD'] = '${SMTP_RELAY_PASSWORD}';
-  }
-
-  return env;
 }
 
 function getPgadminEnv(state: WizardState): Record<string, string> {
@@ -541,8 +512,6 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
     }
     case 'openssh-server':
       return [`${remap(state.servers.sshServer.port)}:2222`];
-    case 'docker-mailserver':
-      return [`${remap(25)}:25`, `${remap(587)}:587`, `${remap(993)}:993`];
     case 'jellyfin':
       return [`${remap(8096)}:8096`];
     case 'nextcloud': {
@@ -564,12 +533,9 @@ function getServicePorts(serviceId: string, state: WizardState): string[] {
       return [`${remap(5050)}:80`];
     case 'cloudflared':
       return [];
-    // DB/cache ports are NOT exposed externally
+    // DB ports are NOT exposed externally
     case 'postgresql':
     case 'mysql':
-    case 'redis':
-    case 'valkey':
-    case 'keydb':
       return [];
     default:
       return [];
@@ -584,18 +550,14 @@ function getDependsOn(serviceId: string, state: WizardState): string[] {
   const deps: string[] = [];
 
   const dbEnabled = state.servers.dbServer.enabled && state.servers.dbServer.primary;
-  const cacheEnabled = state.servers.dbServer.enabled && state.servers.dbServer.cache;
   const primaryId = state.servers.dbServer.primary; // 'postgresql' | 'mysql' | ...
-  const cacheId = state.servers.dbServer.cache;      // 'redis' | 'valkey' | 'keydb'
 
   switch (serviceId) {
     case 'gitea':
       if (dbEnabled) deps.push(primaryId);
-      if (cacheEnabled) deps.push(cacheId);
       break;
     case 'nextcloud':
       if (dbEnabled) deps.push(primaryId);
-      if (cacheEnabled) deps.push(cacheId);
       break;
     case 'pgadmin':
       deps.push('postgresql');
@@ -628,8 +590,6 @@ function getServiceEnvironment(
       return getMinioEnv(state);
     case 'openssh-server':
       return getSshEnv(state);
-    case 'docker-mailserver':
-      return getMailEnv(state);
     case 'pgadmin':
       return getPgadminEnv(state);
     case 'filebrowser':
@@ -672,6 +632,9 @@ function buildComposeService(
   if (volumes.length > 0) {
     svc.volumes = volumes;
   }
+
+  // Logging — json-file driver with rotation for all services
+  svc.logging = getLoggingConfig();
 
   // Environment
   const environment = getServiceEnvironment(def.id, state);
@@ -741,6 +704,16 @@ function buildComposeService(
         '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json',
       );
     }
+    // Access log — JSON format, buffered writes, minimal header retention
+    cmds.push(
+      '--accesslog=true',
+      '--accesslog.filepath=/logs/access.log',
+      '--accesslog.format=json',
+      '--accesslog.bufferingsize=100',
+      '--accesslog.fields.headers.defaultmode=drop',
+      '--accesslog.fields.headers.names.User-Agent=keep',
+      '--accesslog.fields.headers.names.X-Forwarded-For=keep',
+    );
     svc.command = cmds;
 
     // Dashboard labels — BasicAuth-protected access to Traefik Dashboard/API
@@ -816,7 +789,7 @@ function buildComposeService(
 function applySecretsMigration(
   serviceId: string,
   svc: ComposeService,
-  state: WizardState,
+  _state: WizardState,
 ): void {
   const env = svc.environment ?? {};
   const secrets: string[] = [];
@@ -873,13 +846,6 @@ function applySecretsMigration(
         env['MYSQL_PASSWORD_FILE'] = '/run/secrets/db_password';
         secrets.push('db_password');
       }
-
-      // Redis password integration (if cache is enabled)
-      if (state.servers.dbServer.enabled && state.servers.dbServer.cache) {
-        env['REDIS_HOST'] = state.servers.dbServer.cache; // container name
-        env['REDIS_HOST_PASSWORD_FILE'] = '/run/secrets/cache_password';
-        secrets.push('cache_password');
-      }
       break;
     }
 
@@ -888,29 +854,6 @@ function applySecretsMigration(
       delete env['PGADMIN_DEFAULT_PASSWORD'];
       env['PGADMIN_DEFAULT_PASSWORD_FILE'] = '/run/secrets/admin_password';
       secrets.push('admin_password');
-      break;
-    }
-
-    // --- Redis/Valkey/KeyDB: no _FILE support → command workaround ---
-    case 'redis':
-    case 'valkey':
-    case 'keydb': {
-      secrets.push('cache_password');
-      // Override command to read password from secret file
-      svc.command = [
-        'sh', '-c',
-        'redis-server --requirepass "$(cat /run/secrets/cache_password)"',
-      ];
-      break;
-    }
-
-    // --- docker-mailserver: RELAY_PASSWORD → RELAY_PASSWORD__FILE ---
-    case 'docker-mailserver': {
-      if (env['RELAY_PASSWORD']) {
-        delete env['RELAY_PASSWORD'];
-        env['RELAY_PASSWORD__FILE'] = '/run/secrets/smtp_relay_password';
-        secrets.push('smtp_relay_password');
-      }
       break;
     }
 
@@ -1041,6 +984,7 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
       security_opt: ['no-new-privileges:true'],
       networks: ['brewnet'],
       labels: landingLabels,
+      logging: getLoggingConfig(),
     };
   }
 
@@ -1055,16 +999,12 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     const dbId = state.servers.dbServer.primary; // 'postgresql' | 'mysql'
     const dbDef = SERVICE_REGISTRY.get(dbId);
     if (dbDef) {
-      services[dbId] = buildComposeService(dbDef, state);
-    }
-
-    // Cache (optional, part of dbServer)
-    if (state.servers.dbServer.cache) {
-      const cacheId = state.servers.dbServer.cache; // 'redis' | 'valkey' | 'keydb'
-      const cacheDef = SERVICE_REGISTRY.get(cacheId);
-      if (cacheDef) {
-        services[cacheId] = buildComposeService(cacheDef, state);
-      }
+      const ver = state.servers.dbServer.primaryVersion;
+      const versionedImage =
+        ver && dbId === 'postgresql' ? `postgres:${ver}-alpine`
+        : ver && dbId === 'mysql' ? `mysql:${ver}`
+        : dbDef.image;
+      services[dbId] = buildComposeService({ ...dbDef, image: versionedImage }, state);
     }
 
     // Admin UI (pgadmin only for postgresql)
@@ -1103,15 +1043,7 @@ export function generateComposeConfig(state: WizardState): ComposeConfig {
     }
   }
 
-  // 7. Mail server (optional)
-  if (state.servers.mailServer.enabled) {
-    const mailDef = SERVICE_REGISTRY.get('docker-mailserver');
-    if (mailDef) {
-      services['docker-mailserver'] = buildComposeService(mailDef, state);
-    }
-  }
-
-  // 8. Cloudflare tunnel (optional)
+  // 7. Cloudflare tunnel (optional)
   if (state.domain.cloudflare.enabled) {
     const cfDef = SERVICE_REGISTRY.get('cloudflared');
     if (cfDef) {
@@ -1164,8 +1096,7 @@ export function addExternalLabels(
   hostname: string,
   port: number,
 ): void {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const raw = fs.readFileSync(composePath, 'utf-8');
+  const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
@@ -1202,7 +1133,7 @@ export function addExternalLabels(
     quotingType: '"',
     forceQuotes: false,
   });
-  fs.writeFileSync(composePath, output, 'utf-8');
+  writeFileSync(composePath, output, 'utf-8');
 }
 
 /**
@@ -1212,8 +1143,7 @@ export function removeExternalLabels(
   composePath: string,
   appName: string,
 ): void {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const raw = fs.readFileSync(composePath, 'utf-8');
+  const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
   const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
   if (!services) return;
@@ -1249,7 +1179,110 @@ export function removeExternalLabels(
     quotingType: '"',
     forceQuotes: false,
   });
-  fs.writeFileSync(composePath, output, 'utf-8');
+  writeFileSync(composePath, output, 'utf-8');
+}
+
+/**
+ * Add Traefik Quick Tunnel PathPrefix routing labels + brewnet network to a
+ * boilerplate / app docker-compose.yml so that the service is accessible
+ * externally via the Quick Tunnel URL at /apps/{appName}.
+ *
+ * - Injects `traefik.enable`, PathPrefix rule, strip-prefix middleware
+ * - Adds `brewnet` as an external network and attaches it to the target service
+ *
+ * @param composePath - Absolute path to docker-compose.yml
+ * @param appName     - Logical app name used as path segment (e.g. "node-nest")
+ * @param serviceName - Docker Compose service key to label (e.g. "backend", "app")
+ * @param port        - Container HTTP port
+ */
+export function addQuickTunnelAppLabels(
+  composePath: string,
+  appName: string,
+  serviceName: string,
+  port: number,
+  noStrip?: boolean,
+): void {
+  const raw = readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return;
+
+  const svc = services[serviceName];
+  if (!svc) return;
+
+  // --- Traefik labels ---
+  // Convert array-style labels (["key=val"]) to object format ({key: "val"})
+  // Boilerplate compose files use array-style; Traefik needs object-style.
+  const routerName = `app-${appName}`;
+  const pathPrefix = `/apps/${appName}`;
+  let labels: Record<string, string>;
+  const rawLabels = svc['labels'];
+  if (Array.isArray(rawLabels)) {
+    labels = {};
+    for (const l of rawLabels) {
+      const s = String(l);
+      const idx = s.indexOf('=');
+      if (idx > 0) labels[s.slice(0, idx)] = s.slice(idx + 1);
+    }
+  } else {
+    labels = (rawLabels ?? {}) as Record<string, string>;
+  }
+  labels['traefik.enable'] = 'true';
+  labels[`traefik.http.routers.${routerName}.rule`] = `PathPrefix(\`${pathPrefix}\`)`;
+  labels[`traefik.http.routers.${routerName}.entrypoints`] = 'web';
+  // Priority based on path length — longer paths get higher priority to avoid
+  // /apps/nodejs-nestjs matching /apps/nodejs-nestjs-ui before the -ui router
+  labels[`traefik.http.routers.${routerName}.priority`] = String(10 + pathPrefix.length);
+  labels[`traefik.http.routers.${routerName}.service`] = routerName;
+  labels[`traefik.http.services.${routerName}.loadbalancer.server.port`] = String(port);
+  // Trailing slash redirect — essential for Vite/React SPA frontends.
+  // Without trailing slash, relative asset paths (./assets/...) resolve to
+  // the parent directory, bypassing Traefik's PathPrefix route.
+  // Uses $$ to escape $ in Docker Compose (prevents variable interpolation).
+  labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.regex`] =
+    `^(.*${pathPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})$$`;
+  labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.replacement`] =
+    '$$' + '{1}/';
+  labels[`traefik.http.middlewares.${routerName}-slash.redirectregex.permanent`] = 'false';
+  if (noStrip) {
+    // Next.js with basePath handles sub-path routing internally.
+    // No strip-prefix needed (basePath handles the prefix).
+    // No trailing-slash redirect needed (conflicts with Next.js default trailingSlash:false,
+    // causing a redirect loop: Traefik adds slash → Next.js removes slash → loop).
+  } else {
+    // Strip /apps/{appName} prefix before forwarding to the container
+    labels[`traefik.http.middlewares.${routerName}-strip.stripprefix.prefixes`] = pathPrefix;
+    labels[`traefik.http.routers.${routerName}.middlewares`] = `${routerName}-slash,${routerName}-strip`;
+  }
+  svc['labels'] = labels;
+
+  // --- brewnet external network ---
+  const svcNetworks = (svc['networks'] ?? []) as string[] | Record<string, unknown>;
+  if (Array.isArray(svcNetworks)) {
+    if (!svcNetworks.includes('brewnet')) svcNetworks.push('brewnet');
+    svc['networks'] = svcNetworks;
+  } else {
+    if (!svcNetworks['brewnet']) svcNetworks['brewnet'] = {};
+    svc['networks'] = svcNetworks;
+  }
+
+  // Top-level networks — FORCE brewnet to external: true
+  // Boilerplate compose files may declare brewnet as { driver: bridge } which creates
+  // a separate project-scoped network (e.g. nodejs-nestjs_brewnet) instead of using
+  // the pre-existing global 'brewnet' network that Traefik monitors.
+  const topNetworks = (doc['networks'] ?? {}) as Record<string, unknown>;
+  topNetworks['brewnet'] = { external: true };
+  doc['networks'] = topNetworks;
+
+  const output = yaml.dump(doc, {
+    indent: 2,
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+    quotingType: '"',
+    forceQuotes: false,
+  });
+  writeFileSync(composePath, output, 'utf-8');
 }
 
 /**

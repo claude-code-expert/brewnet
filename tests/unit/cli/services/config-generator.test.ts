@@ -2,12 +2,11 @@
  * Unit tests for services/config-generator module (T063)
  *
  * Tests infrastructure configuration file generation from wizard state.
- * Verifies SSH sshd_config, Gitea app.ini, FileBrowser config, mail configs,
+ * Verifies SSH sshd_config, Gitea app.ini, FileBrowser config,
  * and template variable substitution.
  *
  * Test cases covered:
  * - TC-08-07: SSH Server enabled → sshd_config has `PasswordAuthentication no`
- * - TC-08-08: Non-local domain + Mail → mail configs in `infrastructure/mail/`
  * - TC-08-09: Gitea enabled → `gitea/app.ini` with admin account
  * - TC-08-10: FileBrowser enabled → `filebrowser.json` with admin credential API call
  * - TC-08-12: Boilerplate selected → template substitution (`${PROJECT_NAME}`, `${DOMAIN}` replaced)
@@ -25,7 +24,6 @@ const {
   generateSshdConfig,
   generateGiteaConfig,
   generateFileBrowserConfig,
-  generateMailConfig,
   substituteTemplateVars,
 } = await import(
   '../../../../packages/cli/src/services/config-generator.js'
@@ -334,125 +332,6 @@ describe('generateFileBrowserConfig', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: generateMailConfig — Mail Server Configuration
-// ---------------------------------------------------------------------------
-
-describe('generateMailConfig', () => {
-  it('generates mail configs when mail is enabled with non-local domain', () => {
-    const state = buildState({
-      admin: { username: 'admin', password: 'Pass' },
-      domain: {
-        provider: 'custom',
-        name: 'example.com',
-      },
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateMailConfig(state);
-
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  it('returns empty array when mail is disabled', () => {
-    const state = buildState({
-      servers: {
-        mailServer: { enabled: false, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateMailConfig(state);
-
-    expect(result).toHaveLength(0);
-  });
-
-  it('mail config paths are under infrastructure/mail/', () => {
-    const state = buildState({
-      admin: { username: 'admin', password: 'Pass' },
-      domain: {
-        provider: 'custom',
-        name: 'example.com',
-      },
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateMailConfig(state);
-
-    for (const file of result) {
-      expect(file.path).toMatch(/infrastructure\/mail\//);
-    }
-  });
-
-  it('includes postfix main.cf in generated configs', () => {
-    const state = buildState({
-      admin: { username: 'admin', password: 'Pass' },
-      domain: {
-        provider: 'custom',
-        name: 'mail.example.com',
-      },
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateMailConfig(state);
-    const paths = result.map((f: GeneratedFile) => f.path);
-
-    // Should include postfix configuration
-    const hasPostfix = paths.some(
-      (p: string) => p.includes('postfix') || p.includes('main.cf'),
-    );
-    expect(hasPostfix).toBe(true);
-  });
-
-  it('includes dovecot config in generated configs', () => {
-    const state = buildState({
-      admin: { username: 'admin', password: 'Pass' },
-      domain: {
-        provider: 'custom',
-        name: 'mail.example.com',
-      },
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateMailConfig(state);
-    const paths = result.map((f: GeneratedFile) => f.path);
-
-    // Should include dovecot configuration
-    const hasDovecot = paths.some(
-      (p: string) => p.includes('dovecot') || p.includes('dovecot.conf'),
-    );
-    expect(hasDovecot).toBe(true);
-  });
-
-  it('references the domain name in mail configuration content', () => {
-    const state = buildState({
-      admin: { username: 'admin', password: 'Pass' },
-      domain: {
-        provider: 'custom',
-        name: 'my-mail-domain.org',
-      },
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateMailConfig(state);
-
-    // At least one generated file should reference the domain
-    const anyContainsDomain = result.some((f: GeneratedFile) =>
-      f.content.includes('my-mail-domain.org'),
-    );
-    expect(anyContainsDomain).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Tests: generateTraefikConfig
 // ---------------------------------------------------------------------------
 
@@ -666,41 +545,6 @@ describe('generateInfraConfigs', () => {
     expect(traefikConfigs.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('includes mail configs when mail server is enabled', () => {
-    const state = buildState({
-      admin: { username: 'admin', password: 'Pass' },
-      domain: {
-        provider: 'custom',
-        name: 'example.com',
-      },
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateInfraConfigs(state);
-    const mailConfigs = result.filter((f: GeneratedFile) =>
-      f.path.includes('mail'),
-    );
-
-    expect(mailConfigs.length).toBeGreaterThan(0);
-  });
-
-  it('does not include mail configs when mail server is disabled', () => {
-    const state = buildState({
-      servers: {
-        mailServer: { enabled: false, service: 'docker-mailserver' },
-      },
-    });
-
-    const result: GeneratedFile[] = generateInfraConfigs(state);
-    const mailConfigs = result.filter((f: GeneratedFile) =>
-      f.path.includes('infrastructure/mail/'),
-    );
-
-    expect(mailConfigs).toHaveLength(0);
-  });
-
   it('includes FileBrowser config when enabled', () => {
     const state = buildState({
       admin: { username: 'admin', password: 'Pass' },
@@ -737,7 +581,6 @@ describe('generateInfraConfigs', () => {
       admin: { username: 'admin', password: 'Pass' },
       servers: {
         sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-        mailServer: { enabled: true, service: 'docker-mailserver' },
         fileBrowser: { enabled: true, mode: 'standalone' },
       },
       domain: {

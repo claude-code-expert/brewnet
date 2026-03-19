@@ -13,6 +13,7 @@ const mockWriteFileSync = jest.fn((p: unknown, data: unknown) => {
 });
 const mockChmodSync = jest.fn();
 const mockMkdirSync = jest.fn();
+const mockUnlinkSync = jest.fn((p: unknown) => { delete fsContent[p as string]; });
 
 jest.unstable_mockModule('node:fs', () => ({
   existsSync: mockExistsSync,
@@ -20,6 +21,7 @@ jest.unstable_mockModule('node:fs', () => ({
   writeFileSync: mockWriteFileSync,
   chmodSync: mockChmodSync,
   mkdirSync: mockMkdirSync,
+  unlinkSync: mockUnlinkSync,
 }));
 
 // Mock global fetch (Node.js 20+ has fetch as a global built-in — not via node:fetch)
@@ -121,6 +123,26 @@ describe('GiteaClient', () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'conflict' }, 422));
       const client = makeClient();
       await expect(client.createRepo('my-app')).rejects.toThrow();
+    });
+  });
+
+  describe('makeRepoPublic', () => {
+    it('sends PATCH request with private:false', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+      mockFetch.mockResolvedValueOnce(jsonResponse({}, 200));
+      const client = makeClient();
+      await client.makeRepoPublic('my-app');
+      const [url, opts] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe('http://localhost:3000/api/v1/repos/admin/my-app');
+      expect((opts as { method: string }).method).toBe('PATCH');
+      expect(JSON.parse(opts.body as string)).toMatchObject({ private: false });
+    });
+
+    it('throws on non-2xx response', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+      mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'not found' }, 404));
+      const client = makeClient();
+      await expect(client.makeRepoPublic('missing')).rejects.toThrow('makeRepoPublic failed');
     });
   });
 

@@ -11,22 +11,25 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
-import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { createConnection } from 'node:net';
+import { join, resolve, extname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
 import { createBackup, listBackups } from './backup-manager.js';
 import { getServiceDefinition, SERVICE_REGISTRY } from '../config/services.js';
-import { SERVICE_DETAIL_MAP } from './status-page.js';
+// SERVICE_DETAIL_MAP inlined from deleted status-page.ts (T044/T045)
 import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
-import type { WizardState } from '@brewnet/shared';
-import { generateAppsPageHtml } from './apps-page.js';
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos } from './app-manager.js';
+import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
+import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
+// apps-page.ts import removed — HTML generation replaced by React SPA (T044)
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
+import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
@@ -43,9 +46,9 @@ export interface ServiceStatus {
   uptime: string;
   port: number | null;
   url: string | null;
+  externalUrl: string | null;
   removable: boolean;
-  /** docker compose project name — used to identify which boilerplate stack this container belongs to */
-  project?: string;
+  stackId?: string;
 }
 
 export interface AdminServerOptions {
@@ -57,6 +60,22 @@ export interface AdminServerOptions {
 // HTML Dashboard (inline, dynamically generated with embedded config)
 // ---------------------------------------------------------------------------
 
+/** Shape of a single stack entry in .brewnet-boilerplate.json */
+interface BoilerplateMeta {
+  stackId: string;
+  appDir?: string;
+  backendUrl?: string;
+  frontendUrl?: string;
+  isUnified?: boolean;
+  lang?: string;
+  frameworkId?: string;
+  dbDriver?: string;
+  dbUser?: string;
+  dbName?: string;
+  gitBranch?: string;
+  status?: string;
+}
+
 interface DashboardConfig {
   adminUsername: string;
   passwordHint: string;
@@ -64,19 +83,49 @@ interface DashboardConfig {
   quickTunnelUrl: string;
   zoneName: string;
   tunnelId: string;
-  /** Pre-rendered HTML for the boilerplate Dev Stack App section (empty string when no app) */
-  boilerplateHtml: string;
-  /** JSON-serialised array of BoilerplateMeta for JS embedding */
-  boilerplateStacksJson: string;
-  /** JSON-serialised array of DomainConnection for JS embedding */
-  domainConnectionsJson: string;
 }
 
 // ---------------------------------------------------------------------------
 // Static icon assets — resolved once at module load from public/images/
 // ---------------------------------------------------------------------------
 
-const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../../..');
+const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../..');
+
+// ---------------------------------------------------------------------------
+// Static file serving for React SPA (packages/admin-ui/dist)
+// ---------------------------------------------------------------------------
+
+const ADMIN_UI_DIST = join(PKG_ROOT, 'packages/admin-ui/dist');
+
+const MIME_TYPES: Record<string, string> = {
+  '.html':  'text/html; charset=utf-8',
+  '.js':    'application/javascript; charset=utf-8',
+  '.mjs':   'application/javascript; charset=utf-8',
+  '.css':   'text/css; charset=utf-8',
+  '.json':  'application/json; charset=utf-8',
+  '.svg':   'image/svg+xml',
+  '.png':   'image/png',
+  '.jpg':   'image/jpeg',
+  '.jpeg':  'image/jpeg',
+  '.ico':   'image/x-icon',
+  '.woff':  'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf':   'font/ttf',
+  '.webmanifest': 'application/manifest+json',
+};
+
+function serveStaticFile(filePath: string, res: ServerResponse, statusCode = 200): void {
+  const stat = statSync(filePath);
+  const mime = MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  const isHashed = new RegExp('assets/[^/]+-[A-Za-z0-9]{8,}\\.[^.]+$').test(filePath);
+  const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'no-cache, no-store, must-revalidate';
+  res.writeHead(statusCode, {
+    'Content-Type': mime,
+    'Content-Length': stat.size,
+    'Cache-Control': cacheControl,
+  });
+  createReadStream(filePath).pipe(res);
+}
 
 /** Brewnet SVG icon (inline string, served at /icon.svg) */
 const ICON_SVG = (() => {
@@ -103,6 +152,375 @@ const FAVICON_ICO = (() => {
   return null;
 })();
 
+// ---------------------------------------------------------------------------
+// Service catalog data — moved from deleted status-page.ts (T044/T045)
+// ---------------------------------------------------------------------------
+
+interface ServiceDetailInfo {
+  description: string;
+  license: string;
+  homepage: string;
+  features: string[];
+  credentials: {
+    method: 'env' | 'wizard' | 'cli' | 'basicauth' | 'none';
+    summary: string;
+    command?: string;
+  };
+  tips: string[];
+}
+
+const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
+  Traefik: {
+    description: 'Go-based open-source reverse proxy and load balancer',
+    license: 'MIT',
+    homepage: 'https://traefik.io/traefik/',
+    features: [
+      'Docker label-based automatic service discovery',
+      'Let\'s Encrypt certificate auto-renewal',
+      'Built-in web dashboard for route monitoring',
+      'Middleware chain: BasicAuth, Rate Limit, IP Whitelist',
+      'HTTP to HTTPS automatic redirect',
+    ],
+    credentials: {
+      method: 'basicauth',
+      summary: 'No login in dev mode (--api.insecure=true). Use BasicAuth middleware for production.',
+      command: 'htpasswd -nb admin YOUR_PASSWORD',
+    },
+    tips: [
+      'Remove --api.insecure=true in production and add BasicAuth or Authelia',
+      'Set exposedbydefault=false and explicitly enable each service with traefik.enable=true',
+      'Add --certificatesresolvers.le.acme.email=YOUR_EMAIL for Let\'s Encrypt',
+    ],
+  },
+  'Traefik Dashboard': {
+    description: 'Built-in Traefik web UI for monitoring routes, services, and middleware',
+    license: 'MIT',
+    homepage: 'https://doc.traefik.io/traefik/operations/dashboard/',
+    features: [
+      'Real-time view of HTTP/TCP routers',
+      'Service health and load balancer status',
+      'Middleware chain visualization',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No authentication in dev mode (--api.insecure=true). Protected by BasicAuth in production.',
+    },
+    tips: [
+      'Dashboard URL requires trailing slash: /dashboard/',
+      'Secure with BasicAuth middleware before exposing externally',
+    ],
+  },
+  Gitea: {
+    description: 'Lightweight self-hosted Git service written in Go',
+    license: 'MIT',
+    homepage: 'https://about.gitea.com/',
+    features: [
+      'GitHub-like web UI with issues, PRs, wiki, project boards',
+      'Gitea Actions — GitHub Actions compatible CI/CD',
+      'Low memory footprint (~200 MB)',
+      'LDAP, OAuth2, SMTP authentication support',
+      'PostgreSQL, MySQL, SQLite backend support',
+    ],
+    credentials: {
+      method: 'wizard',
+      summary: 'First visit shows Installation Wizard. Create admin account in "Administrator Account Settings" section.',
+      command: 'docker exec -it brewnet-gitea gitea admin user create --username admin --password PASSWORD --email admin@brewnet.dev --admin',
+    },
+    tips: [
+      'Set DISABLE_REGISTRATION=true to allow only admin-created accounts',
+      'Set REQUIRE_SIGNIN_VIEW=true to prevent anonymous repo browsing',
+      'SSH port mapped to 3022 to avoid conflict with host SSH (22)',
+    ],
+  },
+  Nextcloud: {
+    description: 'Self-hosted cloud storage platform (Google Drive/Dropbox alternative)',
+    license: 'AGPL-3.0',
+    homepage: 'https://nextcloud.com/',
+    features: [
+      'File sync, sharing, and collaboration',
+      '200+ app extensions: calendar, contacts, notes, office docs',
+      'WebDAV protocol support',
+      'Desktop and mobile clients available',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin credentials set in Pre-Step of brewnet init wizard.',
+      command: 'docker exec -u www-data brewnet-nextcloud php occ user:add USERNAME --display-name="Display Name"',
+    },
+    tips: [
+      'Redis connection recommended for file locking and cache performance',
+      'Add all access domains/IPs to NEXTCLOUD_TRUSTED_DOMAINS',
+      'Switch background jobs to cron: docker exec -u www-data brewnet-nextcloud php occ background:cron',
+    ],
+  },
+  PostgreSQL: {
+    description: 'Advanced open-source relational database',
+    license: 'PostgreSQL (BSD-like)',
+    homepage: 'https://www.postgresql.org/',
+    features: [
+      'Full ACID compliance with MVCC',
+      'Native JSON/JSONB support',
+      'Full-text search, PostGIS, time-series extensions',
+      'Logical and physical replication',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Configured via POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB environment variables.',
+      command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet_db',
+    },
+    tips: [
+      'Internal network only (brewnet-internal) — no host port exposed',
+      'Data persisted in named volume — safe across container restarts',
+      'Use init SQL scripts in docker-entrypoint-initdb.d/ for multi-DB setup',
+    ],
+  },
+  MySQL: {
+    description: 'Popular open-source relational database',
+    license: 'GPL-2.0',
+    homepage: 'https://www.mysql.com/',
+    features: [
+      'InnoDB storage engine with ACID transactions',
+      'JSON support and document store',
+      'Replication and clustering',
+      'Widely supported by web applications',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Configured via MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD environment variables.',
+      command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet_db',
+    },
+    tips: [
+      'Internal network only (brewnet-internal) — no host port exposed',
+      'Root password required at first startup',
+      'Init SQL scripts run once from docker-entrypoint-initdb.d/',
+    ],
+  },
+  Redis: {
+    description: 'In-memory key-value store for caching and message brokering',
+    license: 'BSD-3',
+    homepage: 'https://redis.io/',
+    features: [
+      'Session storage, cache, message queue, Pub/Sub',
+      'Single-threaded event loop — 100K+ ops/sec',
+      'RDB + AOF persistence support',
+      'Used by Nextcloud file locking and Gitea caching',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with --requirepass flag.',
+      command: 'docker exec -it brewnet-redis redis-cli ping',
+    },
+    tips: [
+      'Set --maxmemory and --maxmemory-policy to prevent unbounded memory growth',
+      'Internal network only — no host port exposed',
+      'Redis 6+ supports ACL for multi-user access control',
+    ],
+  },
+  pgAdmin: {
+    description: 'Web-based administration tool for PostgreSQL',
+    license: 'PostgreSQL (BSD-like)',
+    homepage: 'https://www.pgadmin.org/',
+    features: [
+      'SQL editor with query execution and plan visualization',
+      'Table, index, view, and function GUI management',
+      'Backup and restore (pg_dump, pg_restore)',
+      'Multi-server management via server groups',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin credentials set in Pre-Step. Email format: {username}@brewnet.dev. Register the DB server after first login.',
+    },
+    tips: [
+      'Connect to PostgreSQL using hostname "postgresql" (Docker container name), port 5432',
+      'Set PGADMIN_CONFIG_SERVER_MODE=False to skip login in dev mode',
+      'Mount servers.json to auto-register DB servers on startup',
+    ],
+  },
+  Jellyfin: {
+    description: 'Open-source media server (Plex/Emby free alternative)',
+    license: 'GPL-2.0',
+    homepage: 'https://jellyfin.org/',
+    features: [
+      'Movies, TV, music, photos, and live TV/DVR',
+      'Hardware transcoding (Intel QSV, NVIDIA NVENC, VAAPI)',
+      'Clients for web, Android, iOS, Roku, Fire TV, Kodi',
+      'DLNA support',
+    ],
+    credentials: {
+      method: 'wizard',
+      summary: 'First visit shows Setup Wizard. Create admin account in step 2 (User).',
+    },
+    tips: [
+      'Mount media folders as read-only (:ro) for safety',
+      'Add --device=/dev/dri:/dev/dri for Intel GPU hardware transcoding',
+      'DLNA requires --net=host (does not work in Docker bridge mode)',
+    ],
+  },
+  'SSH Server': {
+    description: 'Industry-standard remote access via OpenSSH in Docker',
+    license: 'BSD',
+    homepage: 'https://www.openssh.com/',
+    features: [
+      'Key-based authentication (more secure than passwords)',
+      'Built-in SFTP — no separate FTP server needed',
+      'Port forwarding and tunneling support',
+      'Remote management entry point for Brewnet containers',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin username set in Pre-Step. Password auth enabled (PASSWORD_ACCESS=true); switch to key-only after setup.',
+      command: 'ssh -p 2222 USER@localhost',
+    },
+    tips: [
+      'Switch to key-only auth after initial setup: set PASSWORD_ACCESS=false',
+      'Port 2222 avoids conflict with host SSH (port 22)',
+      'SFTP runs as SSH subsystem — no separate container needed',
+    ],
+  },
+  FileBrowser: {
+    description: 'Lightweight web-based file manager written in Go',
+    license: 'Apache-2.0',
+    homepage: 'https://filebrowser.org/',
+    features: [
+      'Upload, download, edit, and delete files via browser',
+      'Multi-user support with per-user directory scoping',
+      'Built-in code editor for text files',
+      'Share link generation and shell command execution',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'Default user: admin. Random password printed to container logs on first start.',
+      command: 'docker logs brewnet-filebrowser | grep "password"',
+    },
+    tips: [
+      'Initial password is shown only once in logs — change it immediately',
+      'Set per-user Scope to restrict directory access',
+      'All settings and user data stored in filebrowser.db file',
+    ],
+  },
+  'MinIO Console': {
+    description: 'S3-compatible object storage with a web console',
+    license: 'AGPL-3.0',
+    homepage: 'https://min.io/',
+    features: [
+      'Amazon S3-compatible API',
+      'Web console for bucket and object management',
+      'Erasure coding and bitrot protection',
+      'Multi-user IAM with policies',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin credentials set in Pre-Step of brewnet init wizard.',
+    },
+    tips: [
+      'Console on port 9001, API on port 9000',
+      'Create IAM users with limited policies for application access',
+      'Use mc (MinIO Client) CLI for scripted bucket management',
+    ],
+  },
+  Cloudflared: {
+    description: 'Cloudflare Tunnel daemon — exposes local services to the internet securely',
+    license: 'Apache-2.0',
+    homepage: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
+    features: [
+      'No port forwarding or public IP required',
+      'Automatic SSL/TLS via Cloudflare',
+      'Quick Tunnel (*.trycloudflare.com) or Named Tunnel with custom domain',
+      'DDoS protection included',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No login. Quick Tunnel needs no account. Named Tunnel uses TUNNEL_TOKEN from Cloudflare API.',
+    },
+    tips: [
+      'Quick Tunnel URL changes on every restart — use Named Tunnel for permanent access',
+      'Check tunnel status: brewnet domain tunnel status',
+      'Audit logs saved to ~/.brewnet/logs/tunnel.log',
+    ],
+  },
+  Nginx: {
+    description: 'High-performance HTTP and reverse proxy server',
+    license: 'BSD-2',
+    homepage: 'https://nginx.org/',
+    features: [
+      'Event-driven architecture — handles 10K+ concurrent connections',
+      'Static file serving and reverse proxy',
+      'Load balancing with multiple algorithms',
+      'SSL/TLS termination',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No built-in authentication. Use auth_basic module or upstream auth for protection.',
+    },
+    tips: [
+      'Default config serves welcome page on port 80',
+      'Use location blocks for path-based routing to upstream services',
+      'Reload config without downtime: nginx -s reload',
+    ],
+  },
+  Caddy: {
+    description: 'Modern web server with automatic HTTPS',
+    license: 'Apache-2.0',
+    homepage: 'https://caddyserver.com/',
+    features: [
+      'Automatic HTTPS with Let\'s Encrypt (zero config)',
+      'HTTP/2 and HTTP/3 support out of the box',
+      'Simple Caddyfile configuration',
+      'Reverse proxy with health checks',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No built-in authentication. Use basicauth directive in Caddyfile for protection.',
+    },
+    tips: [
+      'Caddyfile syntax is simpler than Nginx — great for small setups',
+      'Automatic certificate management requires ports 80 and 443',
+      'Use caddy reload for config changes without downtime',
+    ],
+  },
+  Valkey: {
+    description: 'Open-source, high-performance Redis-compatible in-memory data store (Linux Foundation fork)',
+    license: 'BSD-3',
+    homepage: 'https://valkey.io/',
+    features: [
+      'Drop-in Redis replacement — fully API compatible',
+      'Session storage, cache, message queue, Pub/Sub',
+      'RDB + AOF persistence support',
+      'Active community-driven development post Redis license change',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with --requirepass flag.',
+      command: 'docker exec -it brewnet-valkey valkey-cli ping',
+    },
+    tips: [
+      'Set --maxmemory and --maxmemory-policy to prevent unbounded memory growth',
+      'Internal network only — no host port exposed',
+      'Use OBJECT ENCODING to inspect memory layout of individual keys',
+    ],
+  },
+  KeyDB: {
+    description: 'Multithreaded Redis-compatible in-memory database with higher throughput',
+    license: 'BSD-3',
+    homepage: 'https://docs.keydb.dev/',
+    features: [
+      'Multi-threaded architecture — higher throughput than Redis on multi-core CPUs',
+      'Active-Active replication for multi-master setups',
+      'FLASH storage support for large datasets exceeding RAM',
+      'Drop-in Redis replacement — fully API compatible',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with requirepass config.',
+      command: 'docker exec -it brewnet-keydb keydb-cli ping',
+    },
+    tips: [
+      'Set server-threads to number of CPU cores for best performance',
+      'Internal network only — no host port exposed',
+      'Use keydb-cli --stat to monitor live throughput',
+    ],
+  },
+};
 
 /**
  * Name alias map: SERVICE_REGISTRY display names → SERVICE_DETAIL_MAP keys.
@@ -110,452 +528,12 @@ const FAVICON_ICO = (() => {
  */
 const NAME_ALIASES: Record<string, string> = {
   'OpenSSH Server': 'SSH Server',
-  'Docker Mailserver': 'Mail Server',
   'Cloudflare Tunnel': 'Cloudflared',
   'MinIO': 'MinIO Console',
-  'valkey': 'Valkey',
-  'keydb': 'KeyDB',
 };
 
-function generateDashboardHtml(config: DashboardConfig): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Brewnet Admin</title>
-<link rel="icon" type="image/svg+xml" href="/icon.svg"/>
-<link rel="alternate icon" href="/favicon.ico"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:24px}
-h1{color:#f5a623;margin-bottom:4px;font-size:20px;display:flex;align-items:center;gap:10px}
-.sub{color:#8b949e;margin-bottom:24px;font-size:12px}
-table{width:100%;border-collapse:collapse;margin-bottom:24px}
-th{text-align:left;padding:8px 12px;background:#161b22;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d}
-td{padding:8px 12px;border-bottom:1px solid #21262d;vertical-align:middle}
-tr:hover td{background:#161b22}
-.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
-.running{background:#1a4731;color:#3fb950}
-.stopped{background:#3d1f1f;color:#f85149}
-.error{background:#3d2b1f;color:#e3b341}
-.btn{padding:4px 10px;border:1px solid;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;background:transparent}
-.btn-start{border-color:#3fb950;color:#3fb950}
-.btn-start:hover{background:#1a4731}
-.btn-stop{border-color:#f85149;color:#f85149}
-.btn-stop:hover{background:#3d1f1f}
-.btn-remove{border-color:#8b949e;color:#8b949e;margin-left:4px}
-.btn-remove:hover{background:#21262d}
-.actions{display:flex;gap:4px;align-items:center}
-#log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;height:200px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
-.section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-.header{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
-.nav-link{color:#58a6ff;font-size:13px;text-decoration:none;border:1px solid #30363d;padding:4px 10px;border-radius:4px;font-family:inherit}
-.nav-link:hover{background:#21262d}
-.refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
-.svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
-.svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
-.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
-.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:740px;width:90%;max-height:80vh;overflow-y:auto;font-family:'Courier New',monospace;font-size:14px;color:#c9d1d9}
-.modal-titlebar{background:#0d1117;padding:10px 16px;display:flex;align-items:center;gap:8px;border-radius:10px 10px 0 0;position:sticky;top:0;z-index:1}
-.modal-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
-.modal-dot.r{background:#f85149}.modal-dot.y{background:#e3b341}.modal-dot.g{background:#3fb950}
-.modal-title{flex:1;color:#8b949e;font-size:13px;margin-left:4px}
-.modal-close{background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
-.modal-close:hover{color:#c9d1d9}
-.modal-body{padding:16px}
-.modal-desc{color:#8b949e;margin-bottom:4px}
-.modal-license{color:#484f58;font-size:12px;margin-bottom:16px}
-.modal-sh{color:#58a6ff;font-weight:600;margin-bottom:8px;margin-top:16px}
-.modal-sh:first-child{margin-top:0}
-.modal-url{margin-bottom:6px}
-.modal-url-label{color:#8b949e;font-size:13px}
-.modal-url-a{color:#58a6ff;text-decoration:underline;text-decoration-color:#30363d}
-.modal-url-a:hover{text-decoration-color:#58a6ff}
-.modal-bullet{color:#8b949e;padding-left:16px;margin-bottom:4px;position:relative}
-.modal-bullet::before{content:'> ';color:#3fb950;position:absolute;left:0}
-.modal-cmd{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 12px;color:#58a6ff;font-family:monospace;font-size:13px;margin-top:8px;word-break:break-all}
-.modal-cred{margin-top:6px}
-.modal-cred-l{color:#8b949e;font-size:13px}
-.modal-cred-v{color:#c9d1d9;font-family:monospace}
-.modal-tip{color:#8b949e;padding-left:16px;margin-bottom:4px;position:relative}
-.modal-tip::before{content:'! ';color:#e3b341;font-weight:700;position:absolute;left:0}
-</style>
-</head>
-<body>
-<div class="header">
-  <div>
-    <h1><svg width="32" height="32" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg><span style="display:flex;flex-direction:column;line-height:1.3"><span>Brewnet</span><span style="color:#ffffff;font-size:10px;font-weight:400;opacity:.8">Your server on tap. Just brew it.</span></span></h1>
-    <div class="sub" id="subtitle">Loading...</div>
-  </div>
-  <span class="refresh" onclick="loadServices(true)" style="margin-left:12px">&#8635; Refresh</span>
-  <a href="/apps" class="nav-link" style="margin-left:auto">🚀 App Deploy</a>
-</div>
-<div class="section-title">Services</div>
-<table id="svc-table">
-  <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
-  <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>
-${config.boilerplateHtml}
-
-<!-- ── Domains Section (T039) ── -->
-<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
-  External Domains
-  <span style="display:flex;gap:8px">
-    <span class="btn btn-start" style="font-size:11px" onclick="showConnectModal()">+ Connect Domain</span>
-    <span class="btn" style="font-size:11px;border-color:#58a6ff;color:#58a6ff" onclick="showCnameGuide()">CNAME Guide</span>
-  </span>
-</div>
-<table id="domain-table">
-  <thead><tr><th>App</th><th>External URL</th><th>Status</th><th>Connected</th><th>Actions</th></tr></thead>
-  <tbody id="domain-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>
-
-<!-- ── Settings Section (T043) ── -->
-<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
-  Cloudflare Settings
-  <span id="cf-status" style="font-size:11px;color:#8b949e"></span>
-</div>
-<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:16px;margin-bottom:24px">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">API Token</label>
-      <input id="cf-token" type="password" placeholder="Cloudflare API Token" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Account ID</label>
-      <input id="cf-account" type="text" placeholder="Account ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Zone ID</label>
-      <input id="cf-zone" type="text" placeholder="Zone ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-    <div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Tunnel ID</label>
-      <input id="cf-tunnel" type="text" placeholder="Tunnel ID" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <span class="btn btn-start" onclick="saveCloudflareSettings()">Verify & Save</span>
-    <span id="cf-result" style="font-size:12px"></span>
-    <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" style="color:#58a6ff;font-size:11px;margin-left:auto">Create Token →</a>
-  </div>
-  <div style="margin-top:8px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Admin Password (for API auth)</label>
-    <input id="admin-pw" type="password" placeholder="Admin password" style="width:300px;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-</div>
-
-<!-- ── Connect Domain Modal (T040) ── -->
-<div id="connect-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal-box" style="max-width:500px">
-    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">Connect Domain</span></div>
-    <div style="padding:16px">
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">App</label>
-        <select id="conn-app" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"><option>Loading...</option></select></div>
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Subdomain</label>
-        <input id="conn-sub" type="text" placeholder="my-api" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-      <div style="margin-bottom:12px"><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Domain</label>
-        <input id="conn-domain" type="text" placeholder="yourdomain.com" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px 8px;color:#c9d1d9;font-family:inherit;font-size:12px"/></div>
-      <div id="conn-steps" style="margin-bottom:12px;font-size:12px;color:#8b949e"></div>
-      <div style="display:flex;gap:8px"><span class="btn btn-start" onclick="connectDomain()">Connect</span><span class="btn btn-stop" onclick="document.getElementById('connect-modal').style.display='none'">Cancel</span></div>
-    </div>
-  </div>
-</div>
-
-<!-- ── CNAME Guide Modal (T041) ── -->
-<div id="cname-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal-box" style="max-width:600px">
-    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">CNAME Setup Guide (Scenario C)</span></div>
-    <div style="padding:16px">
-      <p style="color:#c9d1d9;margin-bottom:12px">도메인 네임서버를 Cloudflare로 이전하지 않고, CNAME 레코드만으로 연결하는 방법입니다.</p>
-      <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:12px;margin-bottom:16px">
-        <p style="font-size:11px;color:#8b949e;margin-bottom:4px">CNAME 값 (터널 UUID):</p>
-        <div style="display:flex;align-items:center;gap:8px">
-          <code id="cname-value" style="color:#f5a623;font-size:13px;flex:1;word-break:break-all"></code>
-          <span class="btn" style="border-color:#58a6ff;color:#58a6ff;font-size:11px;white-space:nowrap" onclick="navigator.clipboard.writeText(document.getElementById('cname-value').textContent)">Copy</span>
-        </div>
-      </div>
-      <div style="margin-bottom:16px">
-        <p style="font-weight:bold;color:#c9d1d9;margin-bottom:8px">DNS 제공자별 설정 방법:</p>
-        <table style="width:100%;font-size:12px">
-          <tr><td style="padding:4px 8px;color:#f5a623">GoDaddy</td><td style="padding:4px 8px">DNS 관리 → 레코드 추가 → 유형: CNAME → 이름: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
-          <tr><td style="padding:4px 8px;color:#f5a623">Namecheap</td><td style="padding:4px 8px">고급 DNS → 새 레코드 추가 → Type: CNAME → Host: {subdomain} → Value: {tunnelId}.cfargotunnel.com</td></tr>
-          <tr><td style="padding:4px 8px;color:#f5a623">가비아</td><td style="padding:4px 8px">DNS 관리 → 레코드 추가 → 타입: CNAME → 호스트: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
-          <tr><td style="padding:4px 8px;color:#f5a623">Cafe24</td><td style="padding:4px 8px">DNS 관리 → CNAME 추가 → 호스트: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
-        </table>
-      </div>
-      <div style="margin-bottom:16px">
-        <p style="font-weight:bold;color:#c9d1d9;margin-bottom:8px">CLI 명령어:</p>
-        <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;font-size:12px">
-          <code style="color:#3fb950">brewnet domain connect &lt;app&gt; --domain &lt;subdomain&gt;.yourdomain.com</code>
-        </div>
-      </div>
-      <span class="btn btn-stop" onclick="document.getElementById('cname-modal').style.display='none'">Close</span>
-    </div>
-  </div>
-</div>
-
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Log<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
-<div id="log"></div>
-<script>
-var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
-var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
-var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName, tunnelId: config.tunnelId })};
-var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
-var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
-var DOMAIN_CONNECTIONS = ${config.domainConnectionsJson};
-var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
-function getExternalUrl(id,port,project){
-  var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
-  var base=c.quickTunnelUrl?c.quickTunnelUrl.replace(/\\/$/,''):(c.zoneName?'https://'+c.zoneName:'');
-  if(!base)return null;
-  // 1. Static known services (EXT_PATHS lookup by service ID)
-  var e=EXT_PATHS[id];
-  if(e){return base+e.path;}
-  // 2. Boilerplate containers — project label = compose project dir name (= stackId)
-  if(project&&id==='backend')return base+'/apps/'+project;
-  if(project&&id==='frontend')return base+'/apps/'+project+'-ui';
-  return null;
-}
-function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function resolveDetailName(n){return NAME_ALIASES[n]||n;}
-function showServiceModal(name,localUrl,externalUrl){
-  log('['+name+'] info'+(localUrl?' — local: '+localUrl:'')+(externalUrl?' | ext: '+externalUrl:''),'info');
-  var detailName=resolveDetailName(name);
-  var info=SERVICE_DETAILS[detailName];
-  if(!info)return;
-  var ov=document.createElement('div');ov.className='modal-overlay';
-  ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
-  var accessHtml='';
-  if(localUrl&&localUrl.indexOf('http')===0){
-    accessHtml+='<div class="modal-url"><span class="modal-url-label">Local:</span> <a href="'+escapeHtml(localUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(localUrl)+'</a></div>';
-  }else if(localUrl){
-    accessHtml+='<div class="modal-url"><span class="modal-url-label">Local:</span> <span style="color:#8b949e">'+escapeHtml(localUrl)+'</span></div>';
-  }
-  if(externalUrl){
-    accessHtml+='<div class="modal-url"><span class="modal-url-label">External:</span> <a href="'+escapeHtml(externalUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(externalUrl)+'</a></div>';
-  }
-  var featHtml=info.features.map(function(f){return '<div class="modal-bullet">'+escapeHtml(f)+'</div>';}).join('');
-  var credHtml='<div style="color:#8b949e">'+escapeHtml(info.credentials.summary)+'</div>';
-  if(info.credentials.method==='env'||info.credentials.method==='basicauth'){
-    credHtml+='<div class="modal-cred"><span class="modal-cred-l">Username:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.username)+'</span></div>';
-    credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+'</span></div>';
-  }
-  if(info.credentials.command){credHtml+='<div class="modal-cmd">'+escapeHtml(info.credentials.command)+'</div>';}
-  var tipsHtml=info.tips.map(function(t){return '<div class="modal-tip">'+escapeHtml(t)+'</div>';}).join('');
-  ov.innerHTML='<div class="modal-box">'+
-    '<div class="modal-titlebar">'+
-      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">'+escapeHtml(name)+' \\u2014 service info</span>'+
-      '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
-    '</div>'+
-    '<div class="modal-body">'+
-      '<div class="modal-desc">'+escapeHtml(info.description)+'</div>'+
-      '<div class="modal-license">License: '+escapeHtml(info.license)+'</div>'+
-      (accessHtml?'<div class="modal-sh">$ access</div>'+accessHtml:'')+
-      '<div class="modal-sh">$ features</div>'+featHtml+
-      '<div class="modal-sh">$ credentials</div>'+credHtml+
-      '<div class="modal-sh">$ tips</div>'+tipsHtml+
-      (info.homepage?'<div class="modal-sh">$ homepage</div><div class="modal-url"><a href="'+escapeHtml(info.homepage)+'" target="_blank" class="modal-url-a">'+escapeHtml(info.homepage)+'</a> — Refer to the official documentation for usage manual</div>':'')+
-    '</div></div>';
-  document.body.appendChild(ov);
-  document.addEventListener('keydown',handleModalEsc);
-}
-function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o)o.remove();document.removeEventListener('keydown',handleModalEsc);}
-function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
-function showBoilerplateModal(idx){
-  var stack=BOILERPLATE_STACKS[idx];if(!stack)return;
-  var ov=document.createElement('div');ov.className='modal-overlay';
-  ov.onclick=function(e){if(e.target===ov)ov.remove();};
-  var endpoints=(stack.endpoints||[]).map(function(ep){return '<div class="modal-url"><span class="modal-url-label">'+escapeHtml(ep.label||ep.url)+':</span> <a href="'+escapeHtml(ep.url)+'" target="_blank" class="modal-url-a">'+escapeHtml(ep.url)+'</a></div>';}).join('');
-  var credHtml='';
-  if(stack.dbUser){credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(stack.dbUser)+'</span></div>';}
-  if(stack.dbName){credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(stack.dbName)+'</span></div>';}
-  ov.innerHTML='<div class="modal-box">'+
-    '<div class="modal-titlebar">'+
-      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">'+escapeHtml(stack.stackId||'boilerplate')+' \\u2014 app info</span>'+
-      '<button class="modal-close">\\u00d7</button>'+
-    '</div>'+
-    '<div class="modal-body">'+
-      (stack.branch?'<div class="modal-cred"><span class="modal-cred-l">Branch:</span> <span class="modal-cred-v">'+escapeHtml(stack.branch)+'</span></div>':'')+
-      credHtml+
-      (endpoints?'<div class="modal-sh">$ endpoints</div>'+endpoints:'')+
-      (stack.readme?'<div class="modal-sh">$ readme</div><div class="modal-url"><a href="'+escapeHtml(stack.readme)+'" target="_blank" class="modal-url-a">View README on GitHub</a></div>':'')+
-    '</div></div>';
-  var cb=ov.querySelector('.modal-close');if(cb)cb.onclick=function(){ov.remove();};
-  document.body.appendChild(ov);
-}
-const LOG_COL={info:'#58a6ff',ok:'#3fb950',warn:'#e3b341',error:'#f85149',dim:'#484f58'};
-const log=(msg,lv)=>{lv=lv||'info';const d=document.getElementById('log');const row=document.createElement('div');row.style.cssText='padding:1px 0;line-height:1.6';row.innerHTML='<span style="color:#30363d;user-select:none">'+new Date().toLocaleTimeString()+'</span> <span style="color:'+(LOG_COL[lv]||LOG_COL.info)+'">'+escapeHtml(String(msg))+'</span>';d.insertBefore(row,d.firstChild);while(d.children.length>80)d.removeChild(d.lastChild);};
-const badge=(s)=>{const c=s==='running'?'running':s==='stopped'?'stopped':'error';return \`<span class="badge \${c}">\${s}</span>\`;}
-const fmt=(s,r)=>\`<button class="btn btn-\${s==='running'?'stop':'start'}" onclick="toggle('\${r.id}','\${s}')">\${s==='running'?'Stop':'Start'}</button><button class="btn btn-remove" onclick="removeSvc('\${r.id}')">Remove</button>\`
-async function loadServices(manual){
-  if(manual)log('Refreshing service list...','dim');
-  const r=await fetch('/api/services').then(r=>r.json()).catch(()=>{log('API error: failed to reach admin server','error');return{services:[]};});
-  const tbody=document.getElementById('svc-body');
-  if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
-  tbody.innerHTML=r.services.map(s=>{
-    var ext=getExternalUrl(s.id,s.port,s.project);
-    var detailName=resolveDetailName(s.name);
-    var hasDetail=!!SERVICE_DETAILS[detailName];
-    var localUrl=s.url||null;
-    var isUnifiedNext=(s.project||'').startsWith('nodejs-nextjs');
-    var localCellHtml;
-    if(!localUrl){localCellHtml='<span style="color:#8b949e">—</span>';}
-    else if(isUnifiedNext){var apiUrl=localUrl+'/api/hello';var frontLabel=s.project==='nodejs-nextjs-full'?'Frontend':'App';localCellHtml='<a href="'+localUrl+'" target="_blank" style="color:#58a6ff">'+localUrl+'</a> <span style="color:#8b949e;font-size:11px">'+frontLabel+'</span><br><a href="'+apiUrl+'" target="_blank" style="color:#58a6ff">'+apiUrl+'</a> <span style="color:#8b949e;font-size:11px">API</span>';}
-    else{localCellHtml='<a href="'+localUrl+'" target="_blank" style="color:#58a6ff">'+localUrl+'</a>';}
-    var nameHtml=hasDetail
-      ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
-      :\`<b>\${s.name}</b>\`;
-    return \`<tr>
-    <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
-    <td>\${badge(s.status)}</td>
-    <td>\${s.port??'—'}</td>
-    <td>\${localCellHtml}</td>
-    <td>\${ext?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`:'<span style="color:#8b949e">—</span>'}</td>
-    <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
-  </tr>\`;}).join('');
-  const sum=r.summary;
-  document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
-  if(manual&&r.services){
-    r.services.forEach(function(s){
-      var ext=getExternalUrl(s.id,s.port,s.project);
-      var lv=s.status==='running'?'ok':s.status==='error'?'error':'dim';
-      var detail='['+s.id+'] '+s.status+(s.port?' port='+s.port:'')+(s.url?' — '+s.url:'')+(ext?' | ext: '+ext:'');
-      log(detail,lv);
-    });
-    if(sum)log(sum.running+'/'+sum.total+' services running · cpu: '+(sum.cpu||'—')+' · mem: '+(sum.memory||'—'),'info');
-  }
-}
-async function toggle(id,cur){
-  const action=cur==='running'?'stop':'start';
-  log(\`[\${id}] \${action} requested...\`,'dim');
-  const t0=Date.now();
-  const r=await fetch(\`/api/services/containers/\${id}/\${action}\`,{method:'POST'}).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  const ms=Date.now()-t0;
-  if(r.success){
-    log(\`[\${id}] \${action==='start'?'started ✓':'stopped ✓'} (\${ms}ms)\`+(r.status?' — status: '+r.status:''),'ok');
-  }else{
-    log(\`[\${id}] \${action} failed (\${ms}ms) — \${r.error||'unknown error'}\`,'error');
-  }
-  setTimeout(loadServices,800);
-}
-async function removeSvc(id){
-  if(!confirm(\`Remove \${id}? Data will be preserved (use purge=true to delete).\`))return;
-  log(\`[\${id}] remove requested — stopping container...\`,'warn');
-  const t0=Date.now();
-  const r=await fetch(\`/api/services/containers/\${id}\`,{method:'DELETE'}).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  const ms=Date.now()-t0;
-  if(r.success){
-    log(\`[\${id}] removed ✓ (\${ms}ms)\`,'ok');
-  }else{
-    log(\`[\${id}] remove failed (\${ms}ms) — \${r.error||'unknown error'}\`,'error');
-  }
-  setTimeout(loadServices,800);
-}
-log('Brewnet admin panel connected — localhost:8088','ok');
-log('Click a service name for details · Refresh to reload status','dim');
-loadServices(true);
-setInterval(loadServices,15000);
-
-// ── Domain management JS (T042, T044) ──
-function getAdminPw(){return document.getElementById('admin-pw').value||'';}
-function domainFetch(url,opts){
-  var h=Object.assign({'Content-Type':'application/json','X-Admin-Password':getAdminPw()},opts&&opts.headers||{});
-  return fetch(url,Object.assign({},opts,{headers:h}));
-}
-async function loadDomains(){
-  try{
-    var r=await domainFetch('/api/domain/list');
-    var d=await r.json();
-    if(!r.ok){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#f85149">'+((d&&d.message)||'Auth required — enter admin password')+'</td></tr>';return;}
-    var conns=d.connections||[];
-    if(conns.length===0){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">No external domain connections</td></tr>';return;}
-    var rows=conns.map(function(c){
-      var url='https://'+c.hostname;
-      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><span class="btn btn-stop" style="font-size:11px" onclick="disconnectDomain(\''+c.appName+'\')">Disconnect</span></td></tr>';
-    }).join('');
-    document.getElementById('domain-body').innerHTML=rows;
-  }catch(e){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">Enter admin password to view domains</td></tr>';}
-}
-async function disconnectDomain(app){
-  if(!confirm('Disconnect '+app+' from external domain?'))return;
-  log('Disconnecting '+app+'...','dim');
-  var r=await domainFetch('/api/domain/disconnect/'+app,{method:'DELETE'});
-  var d=await r.json();
-  if(d.success){log(app+' disconnected ✓','ok');}else{log('Disconnect failed: '+(d.message||d.error),'error');}
-  loadDomains();
-}
-function showConnectModal(){
-  document.getElementById('connect-modal').style.display='flex';
-  document.getElementById('conn-steps').innerHTML='';
-  // Load apps
-  domainFetch('/api/domain/apps').then(function(r){return r.json();}).then(function(d){
-    var sel=document.getElementById('conn-app');
-    sel.innerHTML=(d.apps||[]).map(function(a){
-      var lbl=a.name+(a.alreadyConnected?' (connected: '+a.hostname+')':'');
-      return '<option value="'+a.name+'" '+(a.alreadyConnected?'disabled':'')+'>'+lbl+'</option>';
-    }).join('')||'<option>No apps available</option>';
-    // Pre-fill domain from settings
-    var dc=DOMAIN_CONFIG;
-    if(dc.zoneName)document.getElementById('conn-domain').value=dc.zoneName;
-  });
-}
-async function connectDomain(){
-  var app=document.getElementById('conn-app').value;
-  var sub=document.getElementById('conn-sub').value.trim();
-  var dom=document.getElementById('conn-domain').value.trim();
-  if(!app||!sub||!dom){log('All fields required','error');return;}
-  var stepsDiv=document.getElementById('conn-steps');
-  stepsDiv.innerHTML='<span style="color:#e3b341">⏳ Connecting...</span>';
-  try{
-    var r=await domainFetch('/api/domain/connect',{method:'POST',body:JSON.stringify({appName:app,subdomain:sub,domain:dom})});
-    var d=await r.json();
-    if(d.success){
-      var html=(d.steps||[]).map(function(s){return '<div>'+(s.status==='completed'?'✅':'❌')+' '+s.step+(s.durationMs?' <span style="color:#8b949e">('+Math.round(s.durationMs/1000*10)/10+'s)</span>':'')+'</div>';}).join('');
-      stepsDiv.innerHTML=html+'<div style="color:#3fb950;margin-top:8px">✅ '+d.externalUrl+' is live!</div>';
-      log(app+' connected → '+d.externalUrl,'ok');
-      loadDomains();
-    }else{
-      stepsDiv.innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
-      log('Connect failed: '+(d.message||d.error),'error');
-    }
-  }catch(e){stepsDiv.innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
-}
-function showCnameGuide(){
-  document.getElementById('cname-modal').style.display='flex';
-  var tid=DOMAIN_CONFIG.tunnelId||DOMAIN_CONFIG.zoneName||'(configure tunnel first)';
-  document.getElementById('cname-value').textContent=tid+'.cfargotunnel.com';
-}
-async function saveCloudflareSettings(){
-  var token=document.getElementById('cf-token').value.trim();
-  var acct=document.getElementById('cf-account').value.trim();
-  var zone=document.getElementById('cf-zone').value.trim();
-  var tunnel=document.getElementById('cf-tunnel').value.trim();
-  if(!token){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">API Token required</span>';return;}
-  document.getElementById('cf-result').innerHTML='<span style="color:#e3b341">Verifying...</span>';
-  try{
-    var r=await domainFetch('/api/settings/cloudflare',{method:'PUT',body:JSON.stringify({apiToken:token,accountId:acct,zoneId:zone,tunnelId:tunnel})});
-    var d=await r.json();
-    if(d.success){
-      document.getElementById('cf-result').innerHTML='<span style="color:#3fb950">✅ Verified'+(d.email?' ('+d.email+')':'')+(d.zoneName?' — '+d.zoneName:'')+'</span>';
-      log('Cloudflare settings saved ✓','ok');
-      loadDomains();
-    }else{
-      document.getElementById('cf-result').innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
-    }
-  }catch(e){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
-}
-async function loadCloudflareStatus(){
-  try{
-    var r=await domainFetch('/api/settings/cloudflare');
-    var d=await r.json();
-    var el=document.getElementById('cf-status');
-    if(d.configured){el.innerHTML='<span style="color:#3fb950">✅ Configured'+(d.zoneName?' ('+d.zoneName+')':'')+'</span>';}
-    else{el.innerHTML='<span style="color:#e3b341">⚠️ Not configured</span>';}
-  }catch(e){}
-}
-// Auto-load domains and settings status
-setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
-</script>
-</body>
-</html>`;
-}
-
 // ---------------------------------------------------------------------------
-// Docker helpers
+// // Docker helpers
 // ---------------------------------------------------------------------------
 
 const docker = new Dockerode();
@@ -564,9 +542,11 @@ const REQUIRED_SERVICES = new Set(['traefik', 'nginx', 'caddy', 'gitea']);
 
 const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudflared']);
 
-const WEB_UI_SERVICES = new Set([
-  'traefik', 'nginx', 'caddy', 'gitea', 'nextcloud', 'minio',
-  'jellyfin', 'pgadmin', 'filebrowser',
+// Non-HTTP services that should never show a clickable local URL.
+// All other services with a public TCP port get http://localhost:<port>.
+const NO_HTTP_SERVICES = new Set([
+  'postgresql', 'mysql', 'mariadb',
+  'openssh-server',
 ]);
 
 // Services that must be accessed through Traefik path-prefix routing.
@@ -613,6 +593,8 @@ async function handleGetServices(
   _body: string,
   _projectPath: string,
   urlMap: Record<string, string> = TRAEFIK_PATH_SERVICES,
+  quickTunnelUrl = '',
+  allowedDirs?: Set<string>,
 ): Promise<void> {
   try {
     const allContainers = await docker.listContainers({ all: true });
@@ -623,12 +605,76 @@ async function handleGetServices(
       if (!composeService) continue;
       if (INTERNAL_SERVICES.has(composeService)) continue;
 
+      const workingDir = c.Labels?.['com.docker.compose.project.working_dir'] ?? '';
+
+      // Skip containers from unselected boilerplate stacks.
+      // A container whose working_dir is under projectPath but NOT in allowedDirs
+      // is an unselected boilerplate stack that shouldn't appear in the dashboard.
+      if (allowedDirs && allowedDirs.size > 0) {
+        if (workingDir && workingDir.startsWith(_projectPath) && !allowedDirs.has(workingDir)) {
+          continue;
+        }
+      }
+
       const def = getServiceDefinition(composeService);
       const s = c.State as string;
       const status = s === 'running' ? 'running' : s === 'exited' ? 'stopped' : ('error' as const);
       const port = getPrimaryPort(c) ?? def?.ports?.[0] ?? null;
 
-      const projectLabel = c.Labels?.['com.docker.compose.project'] ?? undefined;
+      // Detect Traefik PathPrefix and strip-prefix from container labels.
+      // A container may have multiple PathPrefix routers (e.g. FileBrowser has
+      // /files as main route and /static as an extra asset route).  We need the
+      // primary router whose name matches `quicktunnel-{serviceId}` exactly,
+      // not auxiliary routers like `quicktunnel-{serviceId}-static`.
+      const labels = c.Labels ?? {};
+      const primaryRouterKey = `traefik.http.routers.quicktunnel-${composeService}.rule`;
+      const routerRule: [string, string] | undefined =
+        labels[primaryRouterKey] && String(labels[primaryRouterKey]).includes('PathPrefix')
+          ? [primaryRouterKey, labels[primaryRouterKey]]
+          : Object.entries(labels).find(
+              ([k, v]) => k.includes('traefik.http.routers.') && k.endsWith('.rule') && String(v).includes('PathPrefix'),
+            );
+      let traefikPath = '';
+      if (routerRule) {
+        const pathMatch = String(routerRule[1]).match(/PathPrefix\(`([^`]+)`\)/);
+        if (pathMatch) traefikPath = pathMatch[1]!;
+      }
+      // basePath stacks (e.g. Next.js): PathPrefix exists but no strip-prefix middleware.
+      // The app serves content at the sub-path even on direct port access.
+      const hasStripPrefix = Object.keys(labels).some(
+        (k) => k.includes('.stripprefix.'),
+      );
+      const localBasePath = (traefikPath && !hasStripPrefix) ? traefikPath : '';
+
+      // Compute external URL from Traefik PathPrefix labels on the container
+      let externalUrl: string | null = null;
+      const qtUrl = quickTunnelUrl;
+      if (qtUrl && traefikPath) {
+        let extPath = traefikPath;
+        // Unified API-only stacks (e.g. nextjs-app): append /api/hello
+        // so the external URL points to the API endpoint, not the empty root
+        const stackLabel = labels['com.brewnet.stack'] ?? '';
+        if (stackLabel === 'nodejs-nextjs' || (composeService === 'backend' && extPath.includes('nextjs-app'))) {
+          extPath += '/api/hello';
+        }
+        externalUrl = qtUrl.replace(/\/$/, '') + extPath;
+      }
+      if (!externalUrl && qtUrl) {
+        // Fallback for known homeserver services (EXT_PATHS)
+        const EXT_PATH_MAP: Record<string, string> = {
+          traefik: '', gitea: '/git', nextcloud: '/cloud', pgadmin: '/pgadmin',
+          jellyfin: '/jellyfin', filebrowser: '/files', minio: '/minio',
+        };
+        if (EXT_PATH_MAP[composeService] !== undefined) {
+          externalUrl = qtUrl.replace(/\/$/, '') + EXT_PATH_MAP[composeService];
+        }
+      }
+
+      // Extract stackId from working_dir relative to projectPath (e.g. ".../go-gin" → "go-gin")
+      const stackId = (workingDir && workingDir.startsWith(_projectPath))
+        ? workingDir.slice(_projectPath.length).replace(/^[/\\]/, '') || undefined
+        : undefined;
+
       services.push({
         id: composeService,
         name: def?.name ?? composeService,
@@ -638,28 +684,23 @@ async function handleGetServices(
         memory: '—',
         uptime: c.Status?.startsWith('Up') ? c.Status.replace(/^Up /, '') : '—',
         port: port ?? null,
-        url: WEB_UI_SERVICES.has(composeService) && port
-          ? urlMap[composeService] ?? `http://localhost:${port}`
-          : (!def && port ? `http://localhost:${port}` : null),
+        // Show a local URL for any service with a public HTTP port.
+        // Database/queue services (non-HTTP) are excluded via NO_HTTP_SERVICES.
+        // urlMap overrides apply first (e.g. Traefik-path services like gitea → /git).
+        // localBasePath: Next.js basePath stacks serve at /apps/{name} even locally.
+        url: port && !NO_HTTP_SERVICES.has(composeService)
+          ? urlMap[composeService] ?? `http://localhost:${port}${localBasePath}`
+          : null,
+        externalUrl,
         removable: !REQUIRED_SERVICES.has(composeService),
-        project: projectLabel,
+        stackId,
       });
-
-      // Debug: log boilerplate container identifiers for external URL diagnosis
-      if (composeService === 'backend' || composeService === 'frontend') {
-        logger.info('admin-server', `[diag:docker] ${composeService}: project=${projectLabel ?? 'MISSING'} port=${port ?? '—'} name=${c.Names?.[0] ?? '?'} state=${s}`);
-      }
     }
 
-    // Deduplicate: if the main 'postgresql' service exists, hide the
-    // boilerplate's 'postgres' container to avoid duplicate dashboard entries.
-    const hasPostgresql = services.some((s) => s.id === 'postgresql');
-    const deduped = hasPostgresql ? services.filter((s) => s.id !== 'postgres') : services;
-
-    const running = deduped.filter((s) => s.status === 'running').length;
+    const running = services.filter((s) => s.status === 'running').length;
     json(res, 200, {
-      services: deduped,
-      summary: { total: deduped.length, running, stopped: deduped.length - running },
+      services,
+      summary: { total: services.length, running, stopped: services.length - running },
     });
   } catch (err) {
     json(res, 500, { success: false, error: String(err), code: 'BN001' });
@@ -668,12 +709,11 @@ async function handleGetServices(
 
 function inferType(id: string): string {
   if (['traefik', 'nginx', 'caddy'].includes(id)) return 'web';
-  if (['postgresql', 'postgres', 'mysql', 'redis', 'valkey', 'keydb'].includes(id)) return 'db';
+  if (['postgresql', 'mysql'].includes(id)) return 'db';
   if (['nextcloud', 'minio', 'filebrowser'].includes(id)) return 'file';
   if (['jellyfin'].includes(id)) return 'media';
   if (['gitea'].includes(id)) return 'git';
   if (['openssh-server'].includes(id)) return 'ssh';
-  if (['docker-mailserver'].includes(id)) return 'mail';
   return 'app';
 }
 
@@ -854,28 +894,20 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   // Resolve project path and wizard state.
   // Always load wizard state from the last project — options.projectPath only
   // overrides the filesystem path, not whether state is loaded.
-  // Expand leading ~ — Node.js fs functions don't resolve shell tilde notation.
-  // Apply unconditionally so callers passing state.projectPath directly are also covered.
-  const rawPath = options.projectPath ?? process.cwd();
-  let projectPath = rawPath.startsWith('~') ? join(homedir(), rawPath.slice(1)) : rawPath;
+  let projectPath = options.projectPath ?? process.cwd();
   let wizardState: WizardState | null = null;
   const last = getLastProject();
-  logger.info('admin-server', `[init] lastProject=${JSON.stringify(last)} rawPath=${rawPath} projectPath=${projectPath}`);
   if (last) {
     const state = loadState(last);
     if (state) {
       wizardState = state;
       // Only fall back to state.projectPath when caller didn't supply one
-      if (!options.projectPath && state.projectPath) {
-        const raw = state.projectPath;
-        projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-        logger.info('admin-server', `[init] projectPath resolved from state: ${projectPath}`);
-      }
-    } else {
-      logger.warn('admin-server', `[init] loadState("${last}") returned null — state file missing?`);
+      if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
     }
-  } else {
-    logger.warn('admin-server', '[init] lastProject is empty — no wizard state loaded, projectPath fallback to cwd');
+  }
+  // Expand leading ~ — Node.js fs APIs do not interpret tilde as home directory
+  if (projectPath.startsWith('~/') || projectPath === '~') {
+    projectPath = join(homedir(), projectPath.slice(1));
   }
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
@@ -886,6 +918,31 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
+  // Build set of allowed compose working dirs for service filtering.
+  // Only containers from these directories are shown in the Services table.
+  // This excludes unselected boilerplate stacks (e.g. test deployments of all 16 stacks).
+  const allowedWorkingDirs = new Set<string>();
+  allowedWorkingDirs.add(projectPath); // homeserver services (traefik, gitea, etc.)
+  try {
+    // Selected boilerplate stacks from wizard
+    const bpMetaPath2 = join(projectPath, '.brewnet-boilerplate.json');
+    if (existsSync(bpMetaPath2)) {
+      const raw2 = JSON.parse(readFileSync(bpMetaPath2, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+      const stacks2: BoilerplateMeta[] = Array.isArray(raw2) ? raw2 : (raw2.stackId ? [raw2] : []);
+      for (const s of stacks2) {
+        if (s.appDir) allowedWorkingDirs.add(s.appDir);
+      }
+    }
+    // Apps registered via `brewnet deploy` (app-manager) — ~/.brewnet/apps.json
+    const appsJsonPath = join(homedir(), '.brewnet', 'apps.json');
+    if (existsSync(appsJsonPath)) {
+      const apps = JSON.parse(readFileSync(appsJsonPath, 'utf-8')) as Array<{ appDir?: string }>;
+      for (const app of apps) {
+        if (app.appDir) allowedWorkingDirs.add(app.appDir);
+      }
+    }
+  } catch { /* non-fatal */ }
+
   const dashConfig: DashboardConfig = {
     adminUsername: username ? maskUser(username) : '**',
     passwordHint: password ? maskPass(password) : '********',
@@ -893,9 +950,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
     tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
-    boilerplateHtml,
-    boilerplateStacksJson,
-    domainConnectionsJson: JSON.stringify(wizardState?.domainConnections ?? []),
   };
 
   // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
@@ -909,8 +963,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     jellyfin: 'http://localhost:8096/jellyfin/web/',
   };
 
-  // Cache for dashboard HTML (regenerated when Quick Tunnel URL is detected)
-  let dashboardHtml = generateDashboardHtml(dashConfig);
   let quickTunnelDetected = !!dashConfig.quickTunnelUrl;
 
   /**
@@ -929,11 +981,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       const container = docker.getContainer(cf.Id);
       const logBuf = await container.logs({ stdout: true, stderr: true, tail: 50 });
       const logStr = logBuf.toString('utf-8');
-      const match = logStr.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      const match = logStr.match(/https?:\/\/([\w]+-[\w][\w-]*\.trycloudflare\.com)/i);
       if (match) {
-        dashConfig.quickTunnelUrl = match[0];
+        dashConfig.quickTunnelUrl = `https://${match[1]}`;
         dashConfig.domainProvider = 'quick-tunnel';
-        dashboardHtml = generateDashboardHtml(dashConfig);
       }
     } catch {
       // Non-critical — just serve without external URLs
@@ -969,29 +1020,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       if (u || p) {
         dashConfig.adminUsername = maskUser(u || 'admin');
         dashConfig.passwordHint = maskPass(p);
-        dashboardHtml = generateDashboardHtml(dashConfig);
       }
     } catch {
       // Non-critical — fall through to defaults
-    }
-  }
-
-  /**
-   * Lazy-load boilerplate metadata from .brewnet-boilerplate.json.
-   * Re-checks on every GET / until the file appears.
-   */
-  let boilerplateLoaded = false;
-  function refreshBoilerplateMeta(): void {
-    if (boilerplateLoaded) return;
-    const bpPath = join(projectPath, '.brewnet-boilerplate.json');
-    if (!existsSync(bpPath)) return;
-    try {
-      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-      dashConfig.boilerplateStacks = Array.isArray(raw) ? raw : [raw];
-      boilerplateLoaded = true;
-      dashboardHtml = generateDashboardHtml(dashConfig);
-    } catch {
-      // Non-critical — keep empty array
     }
   }
 
@@ -1030,22 +1061,42 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       return;
     }
 
-    // Serve dashboard HTML (with lazy Quick Tunnel + credential + boilerplate detection)
-    if ((req.method === 'GET' && url === '/') || url === '/index.html') {
-      await detectQuickTunnelUrl();
-      await detectCredentials();
-      refreshBoilerplateMeta();
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(dashboardHtml);
+    // Serve React SPA static assets (/assets/*)
+    if (req.method === 'GET' && url.startsWith('/assets/')) {
+      const pathname = url.split('?')[0];
+      const safePath = resolve(ADMIN_UI_DIST, '.' + pathname);
+      if (!safePath.startsWith(ADMIN_UI_DIST)) {
+        res.writeHead(403); res.end('Forbidden'); return;
+      }
+      if (existsSync(safePath) && statSync(safePath).isFile()) {
+        serveStaticFile(safePath, res);
+        return;
+      }
+      res.writeHead(404); res.end('Not Found');
       return;
     }
 
-    // Serve Apps page
-    if (req.method === 'GET' && (url === '/apps' || url === '/apps/')) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(generateAppsPageHtml());
+    // SPA fallback — serve index.html for all non-API GET requests
+    if (req.method === 'GET' && !url.startsWith('/api/')) {
+      const pathname = url.split('?')[0];
+      // Exact static file (e.g. /vite.svg, /favicon.ico from dist/)
+      const exactPath = resolve(ADMIN_UI_DIST, '.' + (pathname === '/' ? '/index.html' : pathname));
+      if (exactPath.startsWith(ADMIN_UI_DIST) && existsSync(exactPath) && statSync(exactPath).isFile()) {
+        serveStaticFile(exactPath, res);
+        return;
+      }
+      // SPA fallback: serve index.html
+      const indexPath = join(ADMIN_UI_DIST, 'index.html');
+      if (existsSync(indexPath)) {
+        serveStaticFile(indexPath, res);
+        return;
+      }
+      // admin-ui not built yet
+      res.writeHead(503, { 'Content-Type': 'text/plain' });
+      res.end('Admin UI not built. Run: pnpm --filter @brewnet/admin-ui build');
       return;
     }
+
 
     // --- API routing ---
     if (parts[0] === 'api') {
@@ -1055,9 +1106,30 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           return;
         }
 
+        // GET /api/services/catalog — SERVICE_DETAIL_MAP + NAME_ALIASES for React SPA
+        if (parts[1] === 'services' && parts[2] === 'catalog' && req.method === 'GET') {
+          json(res, 200, { catalog: SERVICE_DETAIL_MAP, aliases: NAME_ALIASES });
+          return;
+        }
+
+        // GET /api/config — dashboard bootstrap data for React SPA
+        if (parts[1] === 'config' && req.method === 'GET') {
+          await detectQuickTunnelUrl();
+          await detectCredentials();
+          json(res, 200, {
+            adminUsername: dashConfig.adminUsername,
+            passwordHint: dashConfig.passwordHint,
+            domainProvider: dashConfig.domainProvider,
+            quickTunnelUrl: dashConfig.quickTunnelUrl,
+            zoneName: dashConfig.zoneName,
+            tunnelId: dashConfig.tunnelId,
+          });
+          return;
+        }
+
         if (parts[1] === 'services') {
           if (req.method === 'GET' && parts.length === 2) {
-            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap);
+            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl, allowedWorkingDirs);
             return;
           }
           if (req.method === 'POST' && parts[2] === 'install') {
@@ -1086,11 +1158,91 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           return;
         }
 
+        // ── Logs API (T021-T022) ────────────────────────────────────
+        if (parts[1] === 'logs') {
+          if (req.method === 'GET' && parts[2] === 'stats') {
+            const stats = await getLogStats(projectPath);
+            json(res, 200, stats);
+            return;
+          }
+          if (req.method === 'GET') {
+            const qUrl = new URL(url, 'http://localhost');
+            const sources = qUrl.searchParams.get('source');
+            const levels = qUrl.searchParams.get('level');
+            const services = qUrl.searchParams.get('service');
+            const since = qUrl.searchParams.get('since') ?? undefined;
+            const until = qUrl.searchParams.get('until') ?? undefined;
+            const search = qUrl.searchParams.get('search') ?? undefined;
+            const limit = parseInt(qUrl.searchParams.get('limit') ?? '100', 10);
+            const offset = parseInt(qUrl.searchParams.get('offset') ?? '0', 10);
+
+            const result = await queryLogs(
+              {
+                sources: sources ? [sources as LogSource] : undefined,
+                levels: levels ? [levels as UnifiedLogLevel] : undefined,
+                services: services ? [services] : undefined,
+                since,
+                until,
+                search,
+                limit: isNaN(limit) ? 100 : limit,
+                offset: isNaN(offset) ? 0 : offset,
+              },
+              projectPath,
+            );
+            json(res, 200, result);
+            return;
+          }
+        }
+
         if (parts[1] === 'apps') {
           if (req.method === 'GET' && parts.length === 2) {
             const apps = await listApps();
+            // Enrich with lastDeployedAt + localUrl (with basePath for Next.js)
+            const history = getDeployHistory();
+            const historyByApp = new Map<string, typeof history[0]>();
+            for (const h of history) { if (h.status === 'success') historyByApp.set(h.appName, h); }
+            // Load boilerplate meta once for frontend URL lookup
+            const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
+            let bpMetaMap = new Map<string, BoilerplateMeta>();
+            if (existsSync(bpMetaPath)) {
+              try {
+                const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+                const metas: BoilerplateMeta[] = Array.isArray(raw) ? raw : [raw];
+                for (const m of metas) bpMetaMap.set(m.stackId, m);
+              } catch { /* ignore parse errors */ }
+            }
+            const enrichedApps = apps.map((a) => {
+              const lastDeploy = historyByApp.get(a.name) ?? null;
+              const qt = dashConfig.quickTunnelUrl;
+              // For non-unified boilerplate stacks, use frontendUrl from meta
+              const bpMeta = a.mode === 'boilerplate' && a.stackId ? bpMetaMap.get(a.stackId) : undefined;
+              const hasFrontend = bpMeta && bpMeta.isUnified === false && bpMeta.frontendUrl;
+              let localUrl: string | null;
+              let externalUrl: string | null;
+              if (hasFrontend) {
+                // Read actual FRONTEND_PORT from .env — meta may have stale default (3000)
+                let frontendPort = 3000;
+                const feEnvPath = join(a.appDir, '.env');
+                if (existsSync(feEnvPath)) {
+                  const feEnvContent = readFileSync(feEnvPath, 'utf-8');
+                  const fePortMatch = feEnvContent.match(/^FRONTEND_PORT=(\d+)/m);
+                  if (fePortMatch) frontendPort = parseInt(fePortMatch[1], 10);
+                }
+                localUrl = `http://127.0.0.1:${frontendPort}`;
+                externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}-ui` : null;
+              } else {
+                // Compute localUrl with basePath (same logic as Dashboard services)
+                localUrl = a.port ? `http://localhost:${a.port}` : null;
+                if (a.appDir) {
+                  const bp = detectBasePath(a.appDir);
+                  if (bp && localUrl) localUrl += bp;
+                }
+                externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null;
+              }
+              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl, externalUrl };
+            });
             logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
-            json(res, 200, { apps });
+            json(res, 200, { apps: enrichedApps });
             return;
           }
           if (req.method === 'GET' && parts[2] === 'boilerplates') {
@@ -1105,6 +1257,31 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               logger.warn('admin-server', `[GET /api/apps/boilerplates] file not found at ${bpPath}`);
               json(res, 200, { boilerplates: [] });
             }
+            return;
+          }
+          // POST /api/apps/boilerplates/:stackId/stop — docker compose down
+          // POST /api/apps/boilerplates/:stackId/start — docker compose up -d
+          if (req.method === 'POST' && parts[2] === 'boilerplates' && parts[3] && (parts[4] === 'stop' || parts[4] === 'start')) {
+            const stackId = decodeURIComponent(parts[3]);
+            const action = parts[4] as 'stop' | 'start';
+            const bpPath = join(projectPath, '.brewnet-boilerplate.json');
+            if (!existsSync(bpPath)) { json(res, 404, { error: 'No boilerplates found' }); return; }
+            const bpRaw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+            const bpMetas: BoilerplateMeta[] = Array.isArray(bpRaw) ? bpRaw : [bpRaw];
+            const meta = bpMetas.find((m) => m.stackId === stackId);
+            if (!meta) { json(res, 404, { error: `Boilerplate "${stackId}" not found` }); return; }
+            const { execa: execaBp } = await import('execa');
+            if (action === 'stop') {
+              await execaBp('docker', ['compose', 'down'], { cwd: meta.appDir });
+              meta.status = 'stopped';
+            } else {
+              await execaBp('docker', ['compose', 'up', '-d'], { cwd: meta.appDir });
+              meta.status = 'running';
+            }
+            // Persist status update back to .brewnet-boilerplate.json
+            const { writeFileSync } = await import('node:fs');
+            writeFileSync(bpPath, JSON.stringify(bpMetas, null, 2), 'utf-8');
+            json(res, 200, { success: true });
             return;
           }
           if (req.method === 'POST' && parts[2] === 'create') {
@@ -1134,9 +1311,197 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             json(res, 200, { success: true });
             return;
           }
+
+          // GET /api/apps/:name — single app detail (enriched with lastDeployedAt + URLs)
+          if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs', 'check-port'].includes(parts[2]) && parts.length === 3) {
+            const apps = await listApps();
+            const found = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
+            if (!found) { json(res, 404, { error: 'App not found' }); return; }
+            const history = getDeployHistory();
+            const lastDeploy = history.filter((h) => h.appName === found.name && h.status === 'success').pop() ?? null;
+            const qt = dashConfig.quickTunnelUrl;
+            const bpMetaSingle = found.mode === 'boilerplate' && found.stackId
+              ? (() => {
+                  const p = join(projectPath, '.brewnet-boilerplate.json');
+                  if (!existsSync(p)) return undefined;
+                  try {
+                    const raw = JSON.parse(readFileSync(p, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+                    const list = Array.isArray(raw) ? raw : [raw];
+                    return list.find((m) => m.stackId === found.stackId);
+                  } catch { return undefined; }
+                })()
+              : undefined;
+            const hasFrontendSingle = bpMetaSingle && bpMetaSingle.isUnified === false;
+            let localUrlSingle: string | null;
+            let externalUrlSingle: string | null;
+            if (hasFrontendSingle) {
+              let frontendPort = 3000;
+              const feEnvPath = join(found.appDir, '.env');
+              if (existsSync(feEnvPath)) {
+                const m = readFileSync(feEnvPath, 'utf-8').match(/^FRONTEND_PORT=(\d+)/m);
+                if (m) frontendPort = parseInt(m[1], 10);
+              }
+              localUrlSingle = `http://127.0.0.1:${frontendPort}`;
+              externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}-ui` : null;
+            } else {
+              localUrlSingle = found.port ? `http://localhost:${found.port}` : null;
+              if (found.appDir) {
+                const bp = detectBasePath(found.appDir);
+                if (bp && localUrlSingle) localUrlSingle += bp;
+              }
+              externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null;
+            }
+            const app = { ...found, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl: localUrlSingle, externalUrl: externalUrlSingle };
+            json(res, 200, { app });
+            return;
+          }
+
+          // GET /api/apps/:name/git
+          if (req.method === 'GET' && parts[3] === 'git' && parts.length === 4) {
+            try {
+              const git = await getAppGitInfo(decodeURIComponent(parts[2] ?? ''));
+              json(res, 200, { git });
+            } catch (err) {
+              json(res, 502, { error: String(err) });
+            }
+            return;
+          }
+
+          // GET /api/apps/:name/deploy/settings
+          if (req.method === 'GET' && parts[3] === 'deploy' && parts[4] === 'settings') {
+            const settings = getDeploySettings(decodeURIComponent(parts[2] ?? ''));
+            json(res, 200, settings);
+            return;
+          }
+
+          // PUT /api/apps/:name/deploy/settings
+          if (req.method === 'PUT' && parts[3] === 'deploy' && parts[4] === 'settings') {
+            const opts = JSON.parse(body) as Partial<DeploySettings>;
+            updateDeploySettings(decodeURIComponent(parts[2] ?? ''), opts);
+            json(res, 200, { success: true });
+            return;
+          }
+
+          // POST /api/apps/:name/deploy — manual deploy trigger
+          if (req.method === 'POST' && parts[3] === 'deploy' && !parts[4]) {
+            const jobId = await deployApp(decodeURIComponent(parts[2] ?? ''));
+            json(res, 202, { jobId });
+            return;
+          }
+
+          // GET /api/apps/:name/logs — SSE stream (auth: X-Admin-Password header or ?token query)
+          if (req.method === 'GET' && parts[3] === 'logs') {
+            const appDir = getAppDir(decodeURIComponent(parts[2] ?? ''));
+            if (!appDir) { json(res, 404, { error: 'App not found' }); return; }
+            // EventSource cannot send custom headers — accept ?token as fallback
+            const reqUrlObj = new URL(req.url ?? '/', 'http://localhost');
+            const tokenParam = reqUrlObj.searchParams.get('token');
+            const authHeader = req.headers['x-admin-password'] as string | undefined;
+            if (password && !authHeader && tokenParam && tokenParam !== password) {
+              json(res, 401, { error: 'Unauthorized' }); return;
+            }
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
+            const { execa: execaLocal } = await import('execa');
+            const proc = execaLocal('docker', ['compose', 'logs', '--follow', '--tail', '50'], {
+              cwd: appDir,
+              reject: false,
+              stdout: 'pipe',
+              stderr: 'pipe',
+            });
+            const sendLine = (line: string) => {
+              if (line.trim()) res.write(`data: ${line.replace(/\r?\n/g, ' ')}\n\n`);
+            };
+            proc.stdout?.on('data', (chunk: Buffer) => {
+              for (const line of chunk.toString().split('\n')) sendLine(line);
+            });
+            proc.stderr?.on('data', (chunk: Buffer) => {
+              for (const line of chunk.toString().split('\n')) sendLine(line);
+            });
+            req.on('close', () => { try { proc.kill(); } catch { /* ignore */ } });
+            return;
+          }
         }
 
-        // ── Deploy history & Git repos ──────────────────────────────
+        // ── Gitea auto-login proxy ──────────────────────────────────
+        // GET /api/gitea/autologin?redirect=<gitea-internal-path>
+        // Server-side: log into Gitea with admin creds, forward session cookie,
+        // redirect browser to the target Gitea page — no plaintext creds in client.
+        if (parts[1] === 'gitea' && parts[2] === 'autologin' && req.method === 'GET') {
+          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
+          const redirectPath = reqUrl.searchParams.get('redirect') ?? '/git';
+          const giteaBase = 'http://localhost/git';
+          const targetUrl = `http://localhost${redirectPath.startsWith('/') ? redirectPath : '/' + redirectPath}`;
+          try {
+            // Step 1: GET login page to obtain CSRF cookie + form token
+            const loginPageRes = await fetch(`${giteaBase}/user/login`, {
+              redirect: 'manual',
+              headers: { 'User-Agent': 'brewnet-admin' },
+              signal: AbortSignal.timeout(5000),
+            });
+            const rawSetCookies: string[] = [];
+            loginPageRes.headers.forEach((val, key) => {
+              if (key.toLowerCase() === 'set-cookie') rawSetCookies.push(val);
+            });
+            const csrfCookieFull = rawSetCookies.find((c) => c.startsWith('_csrf=')) ?? '';
+            const csrfCookieVal = csrfCookieFull.split(';')[0] ?? '';
+            const pageHtml = await loginPageRes.text();
+            const csrfField = pageHtml.match(/name="_csrf"\s+value="([^"]+)"/)?.[1]
+              ?? pageHtml.match(/value="([^"]+)"\s+name="_csrf"/)?.[1]
+              ?? csrfCookieVal.replace('_csrf=', '');
+            if (!csrfField) {
+              // CSRF unavailable — redirect without login (Gitea will show login page)
+              res.writeHead(302, { Location: targetUrl });
+              res.end();
+              return;
+            }
+            // Step 2: POST login form with admin credentials
+            const formBody = new URLSearchParams({
+              _csrf: csrfField,
+              user_name: username,
+              password: password,
+              remember: 'on',
+            });
+            const loginRes = await fetch(`${giteaBase}/user/login`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Cookie': csrfCookieVal,
+                'User-Agent': 'brewnet-admin',
+              },
+              body: formBody.toString(),
+              redirect: 'manual',
+              signal: AbortSignal.timeout(5000),
+            });
+            // Step 3: Extract ALL Gitea cookies from login response and forward them.
+            // Gitea sets cookies with Path=/git (matching its ROOT_URL sub-path).
+            // We must preserve the original Path so the browser sends them to Gitea.
+            const respCookies: string[] = [];
+            loginRes.headers.forEach((val, key) => {
+              if (key.toLowerCase() === 'set-cookie') respCookies.push(val);
+            });
+            // Forward all non-empty, non-delete cookies (skip Max-Age=0 deletion entries)
+            const forwardCookies = respCookies.filter((c) => !c.includes('Max-Age=0') && !c.match(/=;\s/));
+            const responseHeaders: Record<string, string | string[]> = { Location: targetUrl };
+            if (forwardCookies.length > 0) {
+              responseHeaders['Set-Cookie'] = forwardCookies;
+            } else {
+              logger.warn('admin-server', '[gitea/autologin] login POST did not return session cookies');
+            }
+            res.writeHead(302, responseHeaders);
+            res.end();
+          } catch (err) {
+            logger.warn('admin-server', `[gitea/autologin] failed: ${String(err)}`);
+            res.writeHead(302, { Location: targetUrl });
+            res.end();
+          }
+          return;
+        }
+
+        // ── Deploy history, Git repos & Webhook ────────────────────
         if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
           const reqUrl = new URL(req.url ?? '/', 'http://localhost');
           const appFilter = reqUrl.searchParams.get('app') ?? undefined;
@@ -1148,17 +1513,128 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (parts[1] === 'git' && parts[2] === 'repos' && req.method === 'GET') {
           try {
             const repos = await listGiteaRepos();
-            json(res, 200, { repos });
+            const appsForEnrich = await listApps();
+            // Enrich repos: map Gitea field names + attach connected appName
+            const enriched = repos.map((repo) => {
+              const r = repo as unknown as Record<string, unknown>;
+              const connectedApp = appsForEnrich.find((app) =>
+                app.giteaRepoUrl && (
+                  app.giteaRepoUrl.endsWith('/' + repo.name) ||
+                  app.giteaRepoUrl.includes('/' + repo.name + '.')
+                ),
+              );
+              return {
+                ...repo,
+                language: (r['language'] as string | undefined) ?? '',
+                stars: (r['stars_count'] as number | undefined) ?? 0,
+                updatedAt: (r['updated'] as string | undefined) ?? '',
+                appName: connectedApp?.name,
+              };
+            });
+            json(res, 200, { repos: enriched });
           } catch (err) {
             json(res, 502, { success: false, error: String(err) });
           }
           return;
         }
 
+        // POST /api/git/repos/:name/connect — Associate repo with an app
+        if (parts[1] === 'git' && parts[2] === 'repos' && parts[3] && parts[4] === 'connect' && req.method === 'POST') {
+          const repoName = decodeURIComponent(parts[3]);
+          let parsed: { appName?: string } = {};
+          try { parsed = JSON.parse(body); } catch { json(res, 400, { error: 'Invalid JSON' }); return; }
+          const appName = parsed.appName?.trim();
+          if (!appName) { json(res, 400, { error: 'appName required' }); return; }
+          try {
+            const appsPath = join(homedir(), '.brewnet', 'apps.json');
+            let existing = existsSync(appsPath) ? JSON.parse(readFileSync(appsPath, 'utf-8')) : [];
+            const repos = await listGiteaRepos();
+            const repo = repos.find(r => r.name === repoName);
+            if (!repo) { json(res, 404, { error: `Repo '${repoName}' not found in Gitea` }); return; }
+            const repoUrl = repo.clone_url.replace(/\.git$/, '');
+            // Check not already connected to a different app
+            const conflict = Array.isArray(existing) ? existing.find((a: { name: string; giteaRepoUrl?: string }) =>
+              a.name !== appName && a.giteaRepoUrl && (a.giteaRepoUrl.endsWith('/' + repoName) || a.giteaRepoUrl.includes('/' + repoName + '.'))) : null;
+            if (conflict) { json(res, 409, { error: `Repo already connected to app '${conflict.name}'` }); return; }
+            let app = Array.isArray(existing) ? existing.find((a: { name: string }) => a.name === appName) : null;
+            if (!app) {
+              // Auto-create app entry for orphaned containers (e.g. wizard boilerplate
+              // where health check failed but Gitea repo + Docker containers exist)
+              const docker = new (await import('dockerode')).default();
+              const containers = await docker.listContainers({ all: true });
+              const matchedContainer = containers.find((c) => {
+                const svc = c.Labels?.['com.docker.compose.service'] ?? '';
+                const proj = c.Labels?.['com.docker.compose.project'] ?? '';
+                return proj.includes(repoName) || proj.includes(appName) || svc === appName;
+              });
+              const port = matchedContainer
+                ? parseInt(String(matchedContainer.Ports?.[0]?.PublicPort ?? 0), 10) || 8080
+                : 8080;
+              const lang = (repo as unknown as Record<string, unknown>)['language'] as string || '';
+              app = {
+                name: appName,
+                mode: 'boilerplate' as const,
+                appDir: join(projectPath, repoName),
+                lang,
+                port,
+                giteaRepoUrl: repoUrl,
+                status: matchedContainer?.State === 'running' ? 'running' : 'stopped',
+                createdAt: new Date().toISOString(),
+              };
+              if (Array.isArray(existing)) { existing.push(app); } else { existing = [app]; }
+            } else {
+              app.giteaRepoUrl = repoUrl;
+            }
+            writeFileSync(appsPath, JSON.stringify(existing, null, 2));
+            json(res, 200, { ok: true });
+          } catch (err) {
+            json(res, 500, { error: String(err) });
+          }
+          return;
+        }
+
+        // GET /api/apps/check-port?port=N — Check if a local port is available
+        if (parts[1] === 'apps' && parts[2] === 'check-port' && req.method === 'GET') {
+          const reqUrl = new URL(req.url ?? '/', 'http://localhost');
+          const portStr = reqUrl.searchParams.get('port') ?? '';
+          const port = parseInt(portStr, 10);
+          if (!port || port < 1 || port > 65535) {
+            json(res, 400, { error: 'Invalid port' });
+            return;
+          }
+          const available = await new Promise<boolean>(resolve => {
+            const sock = createConnection({ port, host: '127.0.0.1' });
+            sock.once('connect', () => { sock.destroy(); resolve(false); });
+            sock.once('error', () => resolve(true));
+            sock.setTimeout(400, () => { sock.destroy(); resolve(true); });
+          });
+          json(res, 200, { port, available });
+          return;
+        }
+
+        // POST /api/deploy/hook — Gitea push webhook for auto-deploy
+        if (parts[1] === 'deploy' && parts[2] === 'hook' && req.method === 'POST') {
+          try {
+            const payload = JSON.parse(body) as {
+              repository?: { name?: string };
+              ref?: string;
+            };
+            const appName = payload.repository?.name;
+            const branch = (payload.ref ?? '').replace('refs/heads/', '');
+            if (appName) {
+              const settings = getDeploySettings(appName);
+              if (settings.autoDeploy && branch === settings.deployBranch) {
+                void deployApp(appName);
+              }
+            }
+          } catch { /* ignore parse errors */ }
+          json(res, 200, { status: 'accepted' }); // always 200 to Gitea
+          return;
+        }
+
         // ── Domain API (T031-T036) ──────────────────────────────────
         if (parts[1] === 'domain') {
-          if (!checkAdminAuth(req, res, wizardState)) return;
-
+          // GET /api/domain/list — read-only, no auth needed (local admin server)
           if (req.method === 'GET' && parts[2] === 'list') {
             await handleDomainList(res, wizardState);
             return;
@@ -1167,10 +1643,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             handleDomainApps(res, wizardState);
             return;
           }
+          // POST /api/domain/connect — no auth needed (apps-page uses this; server is localhost-only)
           if (req.method === 'POST' && parts[2] === 'connect') {
             await handleDomainConnect(res, body, wizardState);
             return;
           }
+          // Mutating operations that remain auth-gated
+          if (!checkAdminAuth(req, res, wizardState)) return;
           if (req.method === 'DELETE' && parts[2] === 'disconnect' && parts[3]) {
             await handleDomainDisconnect(res, parts[3], wizardState);
             return;
@@ -1271,7 +1750,7 @@ async function handleDomainList(
       try {
         const { getTunnelHealth } = await import('./cloudflare-client.js');
         const health = await getTunnelHealth(cf.apiToken, cf.accountId, cf.tunnelId);
-        tunnel = { ...health, tunnelName: cf.tunnelName };
+        tunnel = { ...health, tunnelName: cf.tunnelName, tunnelId: cf.tunnelId };
       } catch { /* leave null */ }
     }
 
@@ -1424,7 +1903,7 @@ function handleSettingsCloudflareGet(
   }
 
   const cf = state.domain.cloudflare;
-  const mask = (s: string) => s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : s ? '***set***' : 'not set';
+  const mask = (s: string | undefined) => !s ? 'not set' : s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : '***set***';
 
   json(res, 200, {
     configured: !!(cf.apiToken && cf.accountId && cf.zoneId),

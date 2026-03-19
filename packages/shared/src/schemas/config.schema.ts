@@ -15,7 +15,6 @@ import {
   devModeSchema,
   languageSchema,
   frontendTechSchema,
-  tunnelModeSchema,
 } from './wizard-state.schema.js';
 
 // ─── Config Sub-Schemas (export-safe, no secrets) ────────────────────────────
@@ -66,11 +65,6 @@ const configSshServerSchema = z.object({
   sftp: z.boolean(),
 });
 
-const configMailServerSchema = z.object({
-  enabled: z.boolean(),
-  service: z.literal('docker-mailserver'),
-});
-
 const configAppServerSchema = z.object({
   enabled: z.boolean(),
 });
@@ -87,7 +81,6 @@ const configServersSchema = z.object({
   dbServer: configDbServerSchema,
   media: configMediaSchema,
   sshServer: configSshServerSchema,
-  mailServer: configMailServerSchema,
   appServer: configAppServerSchema,
   fileBrowser: configFileBrowserSchema,
 });
@@ -107,7 +100,6 @@ const configBoilerplateSchema = z.object({
 const configCloudflareSchema = z.object({
   enabled: z.boolean(),
   tunnelName: z.string(),
-  tunnelMode: tunnelModeSchema.optional().default('none'),
   // tunnelToken is intentionally excluded from export
 });
 

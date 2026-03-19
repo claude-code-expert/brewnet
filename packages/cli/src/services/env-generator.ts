@@ -129,14 +129,10 @@ const ENV_TO_SECRET_FILE: Record<string, string> = {
   POSTGRES_PASSWORD:              'secrets/db_password',
   MYSQL_ROOT_PASSWORD:            'secrets/db_password',
   MYSQL_PASSWORD:                 'secrets/db_password',
-  REDIS_PASSWORD:                 'secrets/cache_password',
-  VALKEY_PASSWORD:                'secrets/cache_password',
-  KEYDB_PASSWORD:                 'secrets/cache_password',
   'GITEA__security__SECRET_KEY':  'secrets/gitea_secret_key',
   GITEA_ADMIN_PASSWORD:           'secrets/admin_password',
   NEXTCLOUD_ADMIN_PASSWORD:       'secrets/admin_password',
   PGADMIN_DEFAULT_PASSWORD:       'secrets/admin_password',
-  SMTP_RELAY_PASSWORD:            'secrets/smtp_relay_password',
   TRAEFIK_DASHBOARD_AUTH:         'secrets/traefik_dashboard_auth',
   // CLOUDFLARE_TUNNEL_TOKEN stays in .env — cloudflared image does not support _FILE convention
   // MINIO_ROOT_PASSWORD stays in .env (_FILE not supported)
@@ -172,12 +168,9 @@ function serializeEnv(
  *
  * Collects entries from:
  *   1. Admin credentials + credential propagation (credential-manager)
- *   2. Database-specific configuration (PostgreSQL / MySQL)
- *   3. Cache layer passwords (Redis / Valkey / KeyDB)
- *   4. Cloudflare Tunnel token
- *   5. Mail server configuration
- *   6. Domain configuration
- *   7. Generated secret keys (Gitea secret, etc.)
+ *   2. Cloudflare Tunnel token
+ *   3. Domain configuration
+ *   5. Generated secret keys (Gitea secret, etc.)
  *
  * Any PASSWORD/SECRET/TOKEN entry that is empty will be filled with a
  * generated random password.
@@ -189,43 +182,12 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
   const credentialEntries = generateCredentialEnvEntries(state);
   Object.assign(entries, credentialEntries);
 
-  // ── 2. Cache layer passwords ───────────────────────────────────────
-  const { dbServer } = state.servers;
-  if (dbServer.enabled && dbServer.cache) {
-    const cache = dbServer.cache; // 'redis' | 'valkey' | 'keydb'
-    const cachePasswordKey =
-      cache === 'valkey'
-        ? 'VALKEY_PASSWORD'
-        : cache === 'keydb'
-          ? 'KEYDB_PASSWORD'
-          : 'REDIS_PASSWORD';
-
-    if (!entries[cachePasswordKey]) {
-      entries[cachePasswordKey] = generatePassword(16);
-    }
-  }
-
-  // ── 3. Cloudflare Tunnel ───────────────────────────────────────────
+  // ── 2. Cloudflare Tunnel ───────────────────────────────────────────
   if (state.domain.cloudflare.enabled && state.domain.cloudflare.tunnelToken) {
     entries['CLOUDFLARE_TUNNEL_TOKEN'] = state.domain.cloudflare.tunnelToken;
   }
 
-  // ── 4. Mail Server ─────────────────────────────────────────────────
-  if (state.servers.mailServer.enabled) {
-    const domainName = state.domain.name || 'brewnet.local';
-    entries['MAIL_DOMAIN'] = domainName;
-    entries['MAIL_HOSTNAME'] = `mail.${domainName}`;
-    entries['POSTMASTER_ADDRESS'] = `postmaster@${domainName}`;
-    entries['SMTP_PORT'] = '25';
-
-    // SMTP relay credentials (when port 25 is blocked)
-    if (state.servers.mailServer.relayProvider && state.servers.mailServer.relayUser) {
-      entries['SMTP_RELAY_USER'] = state.servers.mailServer.relayUser;
-      entries['SMTP_RELAY_PASSWORD'] = state.servers.mailServer.relayPassword || generatePassword(16);
-    }
-  }
-
-  // ── 5. Traefik Dashboard BasicAuth ─────────────────────────────────
+  // ── 4. Traefik Dashboard BasicAuth ─────────────────────────────────
   // htpasswd format with $$ escaping for docker-compose interpolation.
   // Generated at install time via openssl; falls back to a placeholder.
   entries['TRAEFIK_DASHBOARD_AUTH'] = generateHtpasswd(
@@ -244,12 +206,6 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
   }
 
   // ── Split entries into .env (non-secret) and secret files ──────────
-  // Cache passwords (REDIS_PASSWORD / VALKEY_PASSWORD / KEYDB_PASSWORD) are
-  // dual-written: to .env (for Docker Compose ${VAR} interpolation in Gitea's
-  // redis:// URL) AND to secrets/cache_password (for the Redis container's
-  // --requirepass startup override via Docker secrets).
-  const CACHE_PASSWORD_KEYS = new Set(['REDIS_PASSWORD', 'VALKEY_PASSWORD', 'KEYDB_PASSWORD']);
-
   const envEntries: Record<string, string> = {};
   const secretFileMap = new Map<string, string>(); // relativePath → content
 
@@ -260,11 +216,6 @@ export function generateEnvFiles(state: WizardState): EnvGeneratorResult {
       // (e.g. GITEA_ADMIN_PASSWORD, NEXTCLOUD_ADMIN_PASSWORD → admin_password)
       if (!secretFileMap.has(secretPath)) {
         secretFileMap.set(secretPath, value);
-      }
-      // Cache passwords also go into .env so Docker Compose can interpolate
-      // ${REDIS_PASSWORD} in the Gitea redis:// connection URL.
-      if (CACHE_PASSWORD_KEYS.has(key)) {
-        envEntries[key] = value;
       }
     } else {
       envEntries[key] = value;

@@ -541,7 +541,7 @@ export function getActiveServiceRoutes(state: WizardState): ServiceRoute[] {
   routes.push({ subdomain: 'git', containerName: 'gitea', port: 3000 });
 
   // File server
-  if (state.servers.fileServer.enabled) {
+  if (state.servers.fileServer?.enabled) {
     if (state.servers.fileServer.service === 'nextcloud') {
       routes.push({ subdomain: 'cloud', containerName: 'nextcloud', port: 80 });
     } else if (state.servers.fileServer.service === 'minio') {
@@ -550,13 +550,13 @@ export function getActiveServiceRoutes(state: WizardState): ServiceRoute[] {
   }
 
   // Media
-  if (state.servers.media.enabled && state.servers.media.services.includes('jellyfin')) {
+  if (state.servers.media?.enabled && state.servers.media.services?.includes('jellyfin')) {
     routes.push({ subdomain: 'media', containerName: 'jellyfin', port: 8096 });
   }
 
   // Database admin UI (pgAdmin for PostgreSQL)
   if (
-    state.servers.dbServer.enabled &&
+    state.servers.dbServer?.enabled &&
     state.servers.dbServer.adminUI &&
     state.servers.dbServer.primary === 'postgresql'
   ) {
@@ -564,7 +564,7 @@ export function getActiveServiceRoutes(state: WizardState): ServiceRoute[] {
   }
 
   // FileBrowser
-  if (state.servers.fileBrowser.enabled) {
+  if (state.servers.fileBrowser?.enabled) {
     routes.push({ subdomain: 'files', containerName: 'filebrowser', port: 80 });
   }
 

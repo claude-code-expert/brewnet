@@ -89,26 +89,25 @@ describe('Integration: Resource Estimation with Default States', () => {
   });
 
   it('should count services for default full install state', () => {
-    // Default state: webServer(traefik) + gitea + dbServer(postgresql) + pgAdmin + redis cache
+    // Default state: webServer(traefik) + gitea + dbServer(postgresql) + pgAdmin
     const count = countSelectedServices(defaultState);
 
-    // web(1) + gitea(1) + postgresql(1) + pgadmin(1) + redis cache(1) = 5
-    expect(count).toBe(5);
+    // web(1) + gitea(1) + postgresql(1) + pgadmin(1) = 4
+    expect(count).toBe(4);
   });
 
   it('should estimate RAM/disk for default full install state', () => {
     const estimate = estimateResources(defaultState);
 
-    // traefik(45) + gitea(256) + postgresql(120) + pgadmin(128) + redis(12) = 561 MB RAM
+    // traefik(45) + gitea(256) + postgresql(120) + pgadmin(128)
     const expectedRAM =
       SERVICE_RAM_MAP['traefik'] +
       SERVICE_RAM_MAP['gitea'] +
       SERVICE_RAM_MAP['postgresql'] +
-      SERVICE_RAM_MAP['pgadmin'] +
-      SERVICE_RAM_MAP['redis'];
+      SERVICE_RAM_MAP['pgadmin'];
 
     expect(estimate.ramMB).toBe(expectedRAM);
-    expect(estimate.containers).toBe(5);
+    expect(estimate.containers).toBe(4);
     expect(estimate.diskGB).toBeGreaterThan(0);
   });
 
@@ -119,8 +118,7 @@ describe('Integration: Resource Estimation with Default States', () => {
     expect(services).toContain('gitea');
     expect(services).toContain('postgresql');
     expect(services).toContain('pgadmin');
-    expect(services).toContain('redis');
-    expect(services).toHaveLength(5);
+    expect(services).toHaveLength(4);
   });
 
   it('should list Gitea as default credential target', () => {
@@ -163,9 +161,9 @@ describe('Integration: applyFullInstallDefaults produces consistent estimates', 
     expect(restored.servers.dbServer.primary).toBe('postgresql');
 
     const estimate = estimateResources(restored);
-    // Should include postgresql + pgadmin + redis again
+    // Should include postgresql + pgadmin again
     expect(estimate.ramMB).toBeGreaterThanOrEqual(
-      SERVICE_RAM_MAP['postgresql'] + SERVICE_RAM_MAP['pgadmin'] + SERVICE_RAM_MAP['redis'],
+      SERVICE_RAM_MAP['postgresql'] + SERVICE_RAM_MAP['pgadmin'],
     );
   });
 });
@@ -245,7 +243,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
       passwordAuth: false,
       sftp: true,
     };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
@@ -275,7 +272,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
       passwordAuth: false,
       sftp: true,
     };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
@@ -291,11 +287,9 @@ describe('Integration: Enabling all optional services increases estimates', () =
     expect(services).toContain('gitea');
     expect(services).toContain('postgresql');
     expect(services).toContain('pgadmin');
-    expect(services).toContain('redis');
     expect(services).toContain('nextcloud');
     expect(services).toContain('jellyfin');
     expect(services).toContain('openssh-server');
-    expect(services).toContain('docker-mailserver');
     expect(services).toContain('filebrowser');
     expect(services).toContain('cloudflared');
   });
@@ -311,7 +305,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
       passwordAuth: false,
       sftp: true,
     };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
 
     const targets = getCredentialTargets(state);
@@ -321,7 +314,6 @@ describe('Integration: Enabling all optional services increases estimates', () =
     expect(targets).toContain('pgAdmin');
     expect(targets).toContain('Jellyfin');
     expect(targets).toContain('SSH Server');
-    expect(targets).toContain('Mail Server');
     expect(targets).toContain('FileBrowser');
   });
 });
@@ -348,11 +340,10 @@ describe('Integration: Removing DB server decreases estimates', () => {
     const estimateWithDB = estimateResources(withDB);
     const estimateWithoutDB = estimateResources(withoutDB);
 
-    // Removing DB should lose: postgresql(120) + pgadmin(128) + redis(12) = 260 MB
+    // Removing DB should lose: postgresql(120) + pgadmin(128)
     const expectedDrop =
       SERVICE_RAM_MAP['postgresql'] +
-      SERVICE_RAM_MAP['pgadmin'] +
-      SERVICE_RAM_MAP['redis'];
+      SERVICE_RAM_MAP['pgadmin'];
 
     expect(estimateWithDB.ramMB - estimateWithoutDB.ramMB).toBe(expectedDrop);
   });
@@ -374,8 +365,8 @@ describe('Integration: Removing DB server decreases estimates', () => {
     const countWithDB = countSelectedServices(withDB);
     const countWithoutDB = countSelectedServices(withoutDB);
 
-    // Lose postgresql + pgadmin + redis = 3 containers
-    expect(countWithDB - countWithoutDB).toBe(3);
+    // Lose postgresql + pgadmin = 2 containers
+    expect(countWithDB - countWithoutDB).toBe(2);
   });
 
   it('should decrease disk when DB server is disabled', () => {
@@ -542,30 +533,24 @@ describe('Integration: Multiple component toggles produce additive estimates', (
     expect(bothDelta).toBe(dbDelta + mediaDelta);
   });
 
-  it('should be additive: enabling SSH + mail + filebrowser = sum of individual increases', () => {
+  it('should be additive: enabling SSH + filebrowser = sum of individual increases', () => {
     // SSH only
     const withSSH = cloneState(baseState);
     withSSH.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
     const sshDelta = estimateResources(withSSH).ramMB - baseEstimate.ramMB;
-
-    // Mail only
-    const withMail = cloneState(baseState);
-    withMail.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
-    const mailDelta = estimateResources(withMail).ramMB - baseEstimate.ramMB;
 
     // FileBrowser standalone only
     const withFB = cloneState(baseState);
     withFB.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     const fbDelta = estimateResources(withFB).ramMB - baseEstimate.ramMB;
 
-    // All three
+    // Both
     const withAll = cloneState(baseState);
     withAll.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-    withAll.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     withAll.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     const allDelta = estimateResources(withAll).ramMB - baseEstimate.ramMB;
 
-    expect(allDelta).toBe(sshDelta + mailDelta + fbDelta);
+    expect(allDelta).toBe(sshDelta + fbDelta);
   });
 
   it('should have additive container counts when toggling multiple services', () => {
@@ -628,7 +613,6 @@ describe('Integration: collectAllServices length matches countSelectedServices',
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     // Note: app server is excluded here because collectAllServices does NOT
     // include the generic 'app' container (user-deployed app), while
@@ -675,12 +659,6 @@ describe('Integration: collectAllServices length matches countSelectedServices',
         label: 'sshServer',
         patch: (s) => {
           s.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-        },
-      },
-      {
-        label: 'mailServer',
-        patch: (s) => {
-          s.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
         },
       },
       {
@@ -855,27 +833,22 @@ describe('Integration: Sequential component toggling simulates wizard flow', () 
     ramHistory.push(estimateResources(state).ramMB);
     expect(ramHistory[1]).toBe(ramHistory[0] + SERVICE_RAM_MAP['postgresql']);
 
-    // Step 3: enable Redis cache
-    state.servers.dbServer.cache = 'redis';
-    ramHistory.push(estimateResources(state).ramMB);
-    expect(ramHistory[2]).toBe(ramHistory[1] + SERVICE_RAM_MAP['redis']);
-
-    // Step 4: enable pgAdmin
+    // Step 3: enable pgAdmin
     state.servers.dbServer.adminUI = true;
     ramHistory.push(estimateResources(state).ramMB);
-    expect(ramHistory[3]).toBe(ramHistory[2] + SERVICE_RAM_MAP['pgadmin']);
+    expect(ramHistory[2]).toBe(ramHistory[1] + SERVICE_RAM_MAP['pgadmin']);
 
-    // Step 5: enable Nextcloud file server
+    // Step 4: enable Nextcloud file server
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
     ramHistory.push(estimateResources(state).ramMB);
-    expect(ramHistory[4]).toBe(ramHistory[3] + SERVICE_RAM_MAP['nextcloud']);
+    expect(ramHistory[3]).toBe(ramHistory[2] + SERVICE_RAM_MAP['nextcloud']);
 
-    // Step 6: enable Jellyfin
+    // Step 5: enable Jellyfin
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     ramHistory.push(estimateResources(state).ramMB);
-    expect(ramHistory[5]).toBe(ramHistory[4] + SERVICE_RAM_MAP['jellyfin']);
+    expect(ramHistory[4]).toBe(ramHistory[3] + SERVICE_RAM_MAP['jellyfin']);
 
-    // Step 7: enable SSH
+    // Step 6: enable SSH
     state.servers.sshServer = {
       enabled: true,
       port: 2222,
@@ -883,7 +856,7 @@ describe('Integration: Sequential component toggling simulates wizard flow', () 
       sftp: true,
     };
     ramHistory.push(estimateResources(state).ramMB);
-    expect(ramHistory[6]).toBe(ramHistory[5] + SERVICE_RAM_MAP['openssh-server']);
+    expect(ramHistory[5]).toBe(ramHistory[4] + SERVICE_RAM_MAP['openssh-server']);
 
     // Verify monotonic increase
     for (let i = 1; i < ramHistory.length; i++) {
@@ -913,46 +886,36 @@ describe('Integration: Sequential component toggling simulates wizard flow', () 
     counts.push(countSelectedServices(state));
     expect(counts[1]).toBe(3);
 
-    // +redis
-    state.servers.dbServer.cache = 'redis';
-    counts.push(countSelectedServices(state));
-    expect(counts[2]).toBe(4);
-
     // +pgadmin
     state.servers.dbServer.adminUI = true;
     counts.push(countSelectedServices(state));
-    expect(counts[3]).toBe(5);
+    expect(counts[2]).toBe(4);
 
     // +nextcloud
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
     counts.push(countSelectedServices(state));
-    expect(counts[4]).toBe(6);
+    expect(counts[3]).toBe(5);
 
     // +jellyfin
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     counts.push(countSelectedServices(state));
-    expect(counts[5]).toBe(7);
+    expect(counts[4]).toBe(6);
 
     // +SSH
     state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
     counts.push(countSelectedServices(state));
-    expect(counts[6]).toBe(8);
-
-    // +mail
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
-    counts.push(countSelectedServices(state));
-    expect(counts[7]).toBe(9);
+    expect(counts[5]).toBe(7);
 
     // +filebrowser standalone
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     counts.push(countSelectedServices(state));
-    expect(counts[8]).toBe(10);
+    expect(counts[6]).toBe(8);
 
     // +app server
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
     counts.push(countSelectedServices(state));
-    expect(counts[9]).toBe(11);
+    expect(counts[7]).toBe(9);
   });
 
   it('should decrease RAM when a service is toggled off', () => {
@@ -1008,17 +971,6 @@ describe('Integration: Switching service variants updates estimates', () => {
     expect(pgEstimate.ramMB - mysqlEstimate.ramMB).toBe(expectedDiff);
   });
 
-  it('should reflect different RAM when switching cache from redis to keydb', () => {
-    const state = createDefaultWizardState();
-    const redisEstimate = estimateResources(state);
-
-    state.servers.dbServer.cache = 'keydb';
-    const keydbEstimate = estimateResources(state);
-
-    const expectedDiff = SERVICE_RAM_MAP['redis'] - SERVICE_RAM_MAP['keydb'];
-    expect(redisEstimate.ramMB - keydbEstimate.ramMB).toBe(expectedDiff);
-  });
-
   it('should reflect different RAM when switching file server from nextcloud to minio', () => {
     const state = createDefaultWizardState();
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
@@ -1071,7 +1023,6 @@ describe('Integration: getImageName matches service registry', () => {
     state.servers.fileServer = { enabled: true, service: 'nextcloud' };
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
-    state.servers.mailServer = { enabled: true, service: 'docker-mailserver' };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
     state.domain.cloudflare = { enabled: true, tunnelToken: 'tok', tunnelName: 'tun' };
 
@@ -1315,7 +1266,7 @@ describe('Integration: SQLite DB does not add container or RAM', () => {
     expect(sqliteRAM).toBe(baseRAM);
   });
 
-  it('should add a cache container even when primary is sqlite', () => {
+  it('should not add any container for sqlite db (no cache)', () => {
     const state = applyPartialInstallDefaults(createDefaultWizardState());
     const baseCount = countSelectedServices(state);
 
@@ -1327,11 +1278,11 @@ describe('Integration: SQLite DB does not add container or RAM', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
-      cache: 'redis',
+      cache: '',
     };
 
-    const sqliteCacheCount = countSelectedServices(state);
-    // Only redis cache added (sqlite itself is not a container)
-    expect(sqliteCacheCount).toBe(baseCount + 1);
+    const sqliteCount = countSelectedServices(state);
+    // sqlite itself is not a container, no cache either
+    expect(sqliteCount).toBe(baseCount);
   });
 });

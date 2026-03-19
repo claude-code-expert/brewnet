@@ -53,7 +53,6 @@ function buildState(overrides: {
     dbServer: Partial<WizardState['servers']['dbServer']>;
     media: Partial<WizardState['servers']['media']>;
     sshServer: Partial<WizardState['servers']['sshServer']>;
-    mailServer: Partial<WizardState['servers']['mailServer']>;
     appServer: Partial<WizardState['servers']['appServer']>;
     fileBrowser: Partial<WizardState['servers']['fileBrowser']>;
   }>;
@@ -113,11 +112,10 @@ function buildFullState(): WizardState {
         dbUser: 'brewnet',
         dbPassword: 'DbPass123!',
         adminUI: true,
-        cache: 'redis',
+        cache: '',
       },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: true, service: 'docker-mailserver' },
       appServer: { enabled: true },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
@@ -229,11 +227,10 @@ describe('ComposeGenerator — Web + DB (TC-08-01)', () => {
     expect(config.services['postgresql']!.image).toMatch(/^postgres:\d+-alpine/);
   });
 
-  it('should not include disabled services (nextcloud, jellyfin, ssh, mail)', () => {
+  it('should not include disabled services (nextcloud, jellyfin, ssh)', () => {
     expect(config.services).not.toHaveProperty('nextcloud');
     expect(config.services).not.toHaveProperty('jellyfin');
     expect(config.services).not.toHaveProperty('openssh-server');
-    expect(config.services).not.toHaveProperty('docker-mailserver');
     expect(config.services).not.toHaveProperty('cloudflared');
   });
 
@@ -241,27 +238,6 @@ describe('ComposeGenerator — Web + DB (TC-08-01)', () => {
     expect(config.services).not.toHaveProperty('redis');
     expect(config.services).not.toHaveProperty('valkey');
     expect(config.services).not.toHaveProperty('keydb');
-  });
-
-  it('should include cache service when cache is set', () => {
-    const stateWithCache = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass123!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const configWithCache = generateComposeConfig(stateWithCache);
-
-    expect(configWithCache.services).toHaveProperty('redis');
-    expect(configWithCache.services['redis']!.image).toMatch(/^redis:\d+-alpine/);
   });
 
   it('should include pgadmin when adminUI is true and primary is postgresql', () => {
@@ -312,10 +288,6 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('postgresql');
   });
 
-  it('should include redis (cache)', () => {
-    expect(config.services).toHaveProperty('redis');
-  });
-
   it('should include pgadmin (admin UI for postgresql)', () => {
     expect(config.services).toHaveProperty('pgadmin');
   });
@@ -328,10 +300,6 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('openssh-server');
   });
 
-  it('should include docker-mailserver (mail)', () => {
-    expect(config.services).toHaveProperty('docker-mailserver');
-  });
-
   it('should include cloudflared (tunnel)', () => {
     expect(config.services).toHaveProperty('cloudflared');
   });
@@ -340,10 +308,10 @@ describe('ComposeGenerator — All services (TC-08-02)', () => {
     expect(config.services).toHaveProperty('filebrowser');
   });
 
-  it('should have at least 11 service definitions', () => {
-    // traefik, gitea, nextcloud, postgresql, redis, pgadmin,
-    // jellyfin, openssh-server, docker-mailserver, cloudflared, filebrowser
-    expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(11);
+  it('should have at least 9 service definitions', () => {
+    // traefik, gitea, nextcloud, postgresql, pgadmin,
+    // jellyfin, openssh-server, cloudflared, filebrowser
+    expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(9);
   });
 });
 
@@ -367,7 +335,7 @@ describe('ComposeGenerator — Traefik labels (TC-08-05)', () => {
           dbUser: 'brewnet',
           dbPassword: 'DbPass!',
           adminUI: true,
-          cache: 'redis',
+          cache: '',
         },
         media: { enabled: true, services: ['jellyfin'] },
       },
@@ -491,13 +459,6 @@ describe('ComposeGenerator — Traefik labels (TC-08-05)', () => {
     expect(hasTraefikEnable).toBe(false);
   });
 
-  it('should NOT have traefik labels on cache services', () => {
-    const redisLabels = config.services['redis']!.labels ?? {};
-    const hasTraefikEnable = Object.keys(redisLabels).some((k: string) =>
-      k.startsWith('traefik.'),
-    );
-    expect(hasTraefikEnable).toBe(false);
-  });
 });
 
 // =========================================================================
@@ -730,32 +691,6 @@ describe('ComposeGenerator — depends_on ordering', () => {
     }
   });
 
-  it('should make gitea depend on cache when cache is enabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const giteaDeps = config.services['gitea']!.depends_on;
-
-    expect(giteaDeps).toBeDefined();
-    if (Array.isArray(giteaDeps)) {
-      expect(giteaDeps).toContain('redis');
-    } else {
-      expect(giteaDeps).toHaveProperty('redis');
-    }
-  });
-
   it('should NOT include depends_on for traefik (first to start)', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
@@ -841,28 +776,6 @@ describe('ComposeGenerator — Volume mounts', () => {
     expect(jfVolumes!.length).toBeGreaterThan(0);
   });
 
-  it('should define volumes for redis data persistence', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const redisVolumes = config.services['redis']!.volumes;
-
-    expect(redisVolumes).toBeDefined();
-    expect(redisVolumes!.length).toBeGreaterThan(0);
-  });
-
   it('should define volumes for traefik configuration', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
@@ -937,19 +850,6 @@ describe('ComposeGenerator — Port mappings', () => {
     expect(pgPorts.every((p: string) => !p.includes('0.0.0.0'))).toBe(true);
   });
 
-  it('should expose mail server ports when mail is enabled', () => {
-    const state = buildState({
-      servers: {
-        mailServer: { enabled: true, service: 'docker-mailserver' },
-      },
-      domain: { provider: 'custom', name: 'example.com' },
-    });
-    const config = generateComposeConfig(state);
-    const ports = config.services['docker-mailserver']!.ports ?? [];
-
-    // Mail server needs SMTP (25), submission (587), IMAPS (993)
-    expect(ports.length).toBeGreaterThan(0);
-  });
 });
 
 // =========================================================================
@@ -1008,26 +908,6 @@ describe('ComposeGenerator — Network assignments', () => {
     expect(nets).toContain('brewnet-internal');
   });
 
-  it('should place cache on brewnet-internal network', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const nets = config.services['redis']!.networks ?? [];
-
-    expect(nets).toContain('brewnet-internal');
-  });
 });
 
 // =========================================================================
@@ -1111,56 +991,6 @@ describe('ComposeGenerator — Alternative web servers', () => {
 });
 
 // =========================================================================
-// Alternative cache engines
-// =========================================================================
-
-describe('ComposeGenerator — Alternative cache engines', () => {
-  it('should include valkey when cache is valkey', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'valkey',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-
-    expect(config.services).toHaveProperty('valkey');
-    expect(config.services).not.toHaveProperty('redis');
-    expect(config.services['valkey']!.image).toContain('valkey');
-  });
-
-  it('should include keydb when cache is keydb', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'keydb',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-
-    expect(config.services).toHaveProperty('keydb');
-    expect(config.services).not.toHaveProperty('redis');
-    expect(config.services['keydb']!.image).toContain('keydb');
-  });
-});
-
-// =========================================================================
 // MinIO file server variant
 // =========================================================================
 
@@ -1196,9 +1026,8 @@ describe('ComposeGenerator — Compose config structure', () => {
     const config = generateComposeConfig(state);
 
     expect(config.volumes).toBeDefined();
-    // postgresql, redis, gitea are enabled in buildState() — all use named volumes
+    // postgresql, gitea are enabled in buildState() — all use named volumes
     expect(Object.keys(config.volumes!)).toContain('brewnet_postgres_data');
-    expect(Object.keys(config.volumes!)).toContain('brewnet_redis_data');
     expect(Object.keys(config.volumes!)).toContain('brewnet_gitea_data');
     // All volume values should be null (Docker default config)
     for (const v of Object.values(config.volumes!)) {
@@ -1422,27 +1251,6 @@ describe('ComposeGenerator — Health checks', () => {
     expect(hc).toBeDefined();
   });
 
-  it('should include healthcheck for redis', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'DbPass!',
-          adminUI: false,
-          cache: 'redis',
-        },
-      },
-    });
-    const config = generateComposeConfig(state);
-    const hc = config.services['redis']!.healthcheck;
-
-    expect(hc).toBeDefined();
-  });
-
   it('should include healthcheck for gitea', () => {
     const state = buildState();
     const config = generateComposeConfig(state);
@@ -1544,7 +1352,6 @@ describe('ComposeGenerator — Minimal default state', () => {
     const names = serviceNames(config);
 
     expect(names).toContain('postgresql');
-    expect(names).toContain('redis');
   });
 });
 
@@ -1576,35 +1383,6 @@ describe('ComposeGenerator — Nextcloud with MySQL env', () => {
     // Environment should include mysql connection
     const env = nextcloudService?.environment as Record<string, string> | undefined;
     expect(env?.['MYSQL_HOST']).toBe('mysql');
-  });
-});
-
-// =========================================================================
-// Mail relay env (covers getMailEnv relay branch + env-generator relay)
-// =========================================================================
-
-describe('ComposeGenerator — Mail Server with relay provider', () => {
-  it('should configure relay env when relayProvider is set', () => {
-    const state = buildState({
-      servers: {
-        mailServer: {
-          enabled: true,
-          service: 'docker-mailserver',
-          port25Blocked: true,
-          relayProvider: 'sendgrid',
-          relayHost: 'smtp.sendgrid.net',
-          relayPort: 587,
-          relayUser: 'apikey',
-          relayPassword: 'SG.testtoken',
-        },
-      },
-      domain: { provider: 'tunnel', name: 'test.example.com' },
-    });
-    const config = generateComposeConfig(state);
-    expect(config.services).toHaveProperty('docker-mailserver');
-    const mailService = config.services['docker-mailserver'];
-    const env = mailService?.environment as Record<string, string> | undefined;
-    expect(env?.['DEFAULT_RELAY_HOST']).toContain('smtp.sendgrid.net');
   });
 });
 
@@ -1699,5 +1477,49 @@ describe('ComposeGenerator — portRemapping', () => {
     expect(traefik?.ports).toContain('8080:80');
     expect(traefik?.ports).toContain('8443:443');
     expect(ssh?.ports).toContain('2223:2222');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Docker Logging Configuration (T009 — Centralized Logging)
+// ---------------------------------------------------------------------------
+
+describe('ComposeGenerator — Docker logging configuration', () => {
+  let config: ComposeConfig;
+
+  beforeEach(() => {
+    const state = buildFullState();
+    config = generateComposeConfig(state);
+  });
+
+  it('should add logging config with json-file driver to every service', () => {
+    for (const [id, svc] of Object.entries(config.services)) {
+      expect(svc.logging).toBeDefined();
+      expect(svc.logging!.driver).toBe('json-file');
+      expect(svc.logging!.options['max-size']).toBe('10m');
+      expect(svc.logging!.options['max-file']).toBe('3');
+    }
+  });
+
+  it('should include tag option in logging config', () => {
+    const traefik = config.services['traefik']!;
+    expect(traefik.logging!.options['tag']).toBe('{{.Name}}');
+  });
+
+  it('should add accesslog flags to Traefik command', () => {
+    const traefik = config.services['traefik']!;
+    const cmd = traefik.command as string[];
+    expect(cmd).toContain('--accesslog=true');
+    expect(cmd).toContain('--accesslog.filepath=/logs/access.log');
+    expect(cmd).toContain('--accesslog.format=json');
+    expect(cmd).toContain('--accesslog.bufferingsize=100');
+    expect(cmd).toContain('--accesslog.fields.headers.defaultmode=drop');
+    expect(cmd).toContain('--accesslog.fields.headers.names.User-Agent=keep');
+    expect(cmd).toContain('--accesslog.fields.headers.names.X-Forwarded-For=keep');
+  });
+
+  it('should add ./logs:/logs volume mount to Traefik', () => {
+    const traefik = config.services['traefik']!;
+    expect(traefik.volumes).toContain('./logs:/logs');
   });
 });

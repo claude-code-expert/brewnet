@@ -36,10 +36,8 @@ const { generatePassword } = await import(
 
 const {
   applyComponentRules,
-  isMailServerAvailable,
   shouldAutoSuggestSftp,
   applyDevStackAutoEnables,
-  isCacheSelectionAvailable,
 } = await import(
   '../../../../packages/cli/src/wizard/steps/server-components.js'
 );
@@ -227,156 +225,6 @@ describe('TC-04-08: Media Server enabled → SFTP auto-suggested', () => {
 
     const result = applyComponentRules(state);
     expect(result.servers.sshServer.sftp).toBe(true);
-  });
-});
-
-// ── TC-04-09: Local domain → Mail Server hidden ────────────────────────────
-
-describe('TC-04-09: Local domain → Mail Server hidden', () => {
-  it('isMailServerAvailable returns false when domain.provider is "local"', () => {
-    const state = buildState({
-      domain: { provider: 'local' },
-    });
-    expect(isMailServerAvailable(state)).toBe(false);
-  });
-
-  it('applyComponentRules forces mailServer.enabled = false when domain is local', () => {
-    const state = buildState({
-      domain: { provider: 'local' },
-      servers: { mailServer: { enabled: true, service: 'docker-mailserver' } },
-    });
-
-    const result = applyComponentRules(state);
-    expect(result.servers.mailServer.enabled).toBe(false);
-  });
-
-  it('disables mail server even if user explicitly enabled it with local domain', () => {
-    const state = buildState({
-      domain: { provider: 'local', name: 'brewnet.local' },
-      servers: { mailServer: { enabled: true, service: 'docker-mailserver' } },
-    });
-
-    const result = applyComponentRules(state);
-    expect(result.servers.mailServer.enabled).toBe(false);
-  });
-});
-
-// ── TC-04-10: Non-local domain → Mail Server available ─────────────────────
-
-describe('TC-04-10: Non-local domain → Mail Server available', () => {
-  it('isMailServerAvailable returns true when domain.provider is "tunnel"', () => {
-    const state = buildState({
-      domain: { provider: 'tunnel', name: 'example.com' },
-    });
-    expect(isMailServerAvailable(state)).toBe(true);
-  });
-
-  it('isMailServerAvailable returns true when domain.provider is "tunnel" (free subdomain)', () => {
-    const state = buildState({
-      domain: { provider: 'tunnel', name: 'myserver.example.com' },
-    });
-    expect(isMailServerAvailable(state)).toBe(true);
-  });
-
-  it('applyComponentRules preserves mailServer.enabled = true for tunnel domain', () => {
-    const state = buildState({
-      domain: { provider: 'tunnel', name: 'example.com' },
-      servers: { mailServer: { enabled: true, service: 'docker-mailserver' } },
-    });
-
-    const result = applyComponentRules(state);
-    expect(result.servers.mailServer.enabled).toBe(true);
-  });
-
-  it('applyComponentRules preserves mailServer.enabled = false if user chose not to enable', () => {
-    const state = buildState({
-      domain: { provider: 'tunnel', name: 'example.com' },
-      servers: { mailServer: { enabled: false, service: 'docker-mailserver' } },
-    });
-
-    const result = applyComponentRules(state);
-    expect(result.servers.mailServer.enabled).toBe(false);
-  });
-});
-
-// ── TC-04-11: DB Server enabled → cache layer available ────────────────────
-
-describe('TC-04-11: DB Server enabled → cache selection available', () => {
-  it('isCacheSelectionAvailable returns true when dbServer is enabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'existing',
-          adminUI: true,
-          cache: 'redis',
-        },
-      },
-    });
-    expect(isCacheSelectionAvailable(state)).toBe(true);
-  });
-
-  it('isCacheSelectionAvailable returns false when dbServer is disabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: false,
-          primary: '',
-          primaryVersion: '',
-          dbName: '',
-          dbUser: '',
-          dbPassword: '',
-          adminUI: false,
-          cache: '',
-        },
-      },
-    });
-    expect(isCacheSelectionAvailable(state)).toBe(false);
-  });
-
-  it('preserves cache selection (redis) when DB is enabled', () => {
-    const state = buildState({
-      servers: {
-        dbServer: {
-          enabled: true,
-          primary: 'postgresql',
-          primaryVersion: '17',
-          dbName: 'brewnet_db',
-          dbUser: 'brewnet',
-          dbPassword: 'existing',
-          adminUI: true,
-          cache: 'redis',
-        },
-      },
-    });
-    const result = applyComponentRules(state);
-    expect(result.servers.dbServer.cache).toBe('redis');
-  });
-
-  it('allows different cache options (valkey, keydb)', () => {
-    for (const cache of ['valkey', 'keydb'] as const) {
-      const state = buildState({
-        servers: {
-          dbServer: {
-            enabled: true,
-            primary: 'mysql',
-            primaryVersion: '8.0',
-            dbName: 'brewnet_db',
-            dbUser: 'brewnet',
-            dbPassword: 'existing',
-            adminUI: false,
-            cache,
-          },
-        },
-      });
-      expect(isCacheSelectionAvailable(state)).toBe(true);
-      const result = applyComponentRules(state);
-      expect(result.servers.dbServer.cache).toBe(cache);
-    }
   });
 });
 
@@ -738,13 +586,6 @@ describe('Combined rule application', () => {
     // App server + file browser auto-enabled
     expect(finalState.servers.appServer.enabled).toBe(true);
     expect(finalState.servers.fileBrowser.enabled).toBe(true);
-
-    // Mail server available (custom domain)
-    expect(isMailServerAvailable(finalState)).toBe(true);
-
-    // Cache available (DB enabled)
-    expect(isCacheSelectionAvailable(finalState)).toBe(true);
-    expect(finalState.servers.dbServer.cache).toBe('valkey');
   });
 
   it('minimal state: all defaults, no devStack, local domain', () => {
@@ -766,10 +607,6 @@ describe('Combined rule application', () => {
     // No devStack → appServer and fileBrowser disabled
     expect(finalState.servers.appServer.enabled).toBe(false);
     expect(finalState.servers.fileBrowser.enabled).toBe(false);
-
-    // Mail server not available (local domain)
-    expect(isMailServerAvailable(finalState)).toBe(false);
-    expect(finalState.servers.mailServer.enabled).toBe(false);
   });
 
   it('partial install with tunnel domain and SSH server', () => {
@@ -801,15 +638,10 @@ describe('Combined rule application', () => {
     // No SFTP (no file/media)
     expect(result.servers.sshServer.sftp).toBe(false);
 
-    // Mail available (tunnel domain)
-    expect(isMailServerAvailable(result)).toBe(true);
-
     // No DB password generation (DB disabled)
     expect(result.servers.dbServer.dbPassword).toBe('');
     expect(generatePassword).not.toHaveBeenCalled();
 
-    // Cache not available (DB disabled)
-    expect(isCacheSelectionAvailable(result)).toBe(false);
   });
 });
 
@@ -832,7 +664,6 @@ describe('Edge cases', () => {
         },
         media: { enabled: false, services: [] },
         sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
-        mailServer: { enabled: false, service: 'docker-mailserver' },
         appServer: { enabled: false },
         fileBrowser: { enabled: false, mode: '' },
       },
@@ -847,7 +678,6 @@ describe('Edge cases', () => {
     expect(result.servers.dbServer.enabled).toBe(false);
     expect(result.servers.media.enabled).toBe(false);
     expect(result.servers.sshServer.enabled).toBe(false);
-    expect(result.servers.mailServer.enabled).toBe(false);
     expect(result.servers.appServer.enabled).toBe(false);
     expect(result.servers.fileBrowser.enabled).toBe(false);
   });

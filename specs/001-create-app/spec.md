@@ -148,3 +148,119 @@ A developer accidentally tries to scaffold into a directory that already exists.
 - Port conflicts (8080, 3000, 5433, 3307) on the host machine are treated as a runtime error that the user must resolve; the tool does not attempt automatic port remapping.
 - The `create-app` command creates the project in the current working directory; a `--path` override is out of scope for this feature.
 - Cloudflare tunnel integration and Brewnet admin panel registration after scaffolding are out of scope for the core `create-app` flow (optional follow-up).
+
+---
+
+## Boilerplate FRONTEND_PORT=BACKEND_PORT 충돌 (2번째 재발) — 발견일: 2026-03-19
+
+### 증상
+Admin UI에서 `create-app` API로 non-unified 스택(nodejs-express 등) 생성 시 `BACKEND_PORT`와 `FRONTEND_PORT`가 동일한 포트로 설정되어 프론트엔드 컨테이너가 "port is already allocated" 에러로 시작 실패.
+
+### 근본 원인 (Root Cause)
+`packages/cli/src/services/app-manager.ts`에서 프론트엔드 포트 탐색 시작점을 3000으로 고정:
+
+```typescript
+const fePort = await findFreePortB(3000);  // 버그: 백엔드 포트도 탐색 중이면 충돌
+```
+
+`.env` 파일 작성 시점에 백엔드 컨테이너가 아직 시작되지 않아 백엔드 포트(예: 3002)가 free로 감지됨. 결과적으로 `FRONTEND_PORT=3002 = BACKEND_PORT=3002`.
+
+**1차 발생(2026-03-04)**: `wizard/steps/generate.ts`의 `findFreePort(3000)` 고정값 문제 → `boilerplate-manager.ts` `GenerateEnvOpts.frontendPort` 추가로 해결.
+**2차 발생(2026-03-19)**: `app-manager.ts`의 `findFreePortB(3000)` (boilerplate git-clone 경로)와 `findFreePort(3000)` (new-project 경로)에 동일 문제 잔존.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `packages/cli/src/services/app-manager.ts:819` | `findFreePortB(3000)` → `findFreePortB(port + 1)` |
+| `packages/cli/src/services/app-manager.ts:894` | `findFreePort(3000)` → `findFreePort(port + 1)` |
+
+### 재발 방지 체크리스트
+- [ ] `findFreePort(startFrom)` 호출 시 startFrom은 반드시 이미 할당된 포트보다 큰 값
+- [ ] non-unified 스택의 프론트엔드 포트는 항상 `port + 1` 이상에서 탐색 시작
+- [ ] 새로운 앱 생성 경로 추가 시 프론트엔드 포트 탐색 코드도 동일 패턴 적용
+
+### 관련 코드 (핵심 부분만)
+```typescript
+// Before (버그 — app-manager.ts boilerplate git-clone 경로)
+const fePort = await findFreePortB(3000);
+
+// After
+const fePort = await findFreePortB(port + 1);
+
+// Before (버그 — app-manager.ts new-project 경로)
+const frontendPort = (stackInfo && !stackInfo.isUnified) ? await findFreePort(3000) : undefined;
+
+// After
+const frontendPort = (stackInfo && !stackInfo.isUnified) ? await findFreePort(port + 1) : undefined;
+```
+
+---
+
+## Next.js Unified 스택 테스트에서 appName vs stackId 경로 혼동 — 발견일: 2026-03-19
+
+### 증상
+test-cycle.sh Phase 11에서 nodejs-nextjs (nextjs-app)와 nodejs-nextjs-full (nextjs full-stack) 2종이 health check 404 + 페이지 로드 308로 실패. 나머지 14종은 정상 통과.
+
+```
+⚠ nodejs-nextjs: localhost health → 404 (http://127.0.0.1:21100/apps/nodejs-nextjs/health)
+⚠ nodejs-nextjs-full: localhost health → 404 (http://127.0.0.1:21200/apps/nodejs-nextjs-full/health)
+```
+
+### 근본 원인 (Root Cause)
+`patchNextConfig(projectDir, appName)` — `packages/cli/src/services/boilerplate-manager.ts:316` — 은 basePath를 `stackId`가 아닌 **appName** 기반으로 주입한다:
+
+```typescript
+const basePath = `/apps/${appName}`;  // appName = tc11-node-nx-full
+```
+
+Phase 11 테스트에서 앱명(`tc11-node-nx-app`, `tc11-node-nx-full`)과 스택ID(`nodejs-nextjs`, `nodejs-nextjs-full`)가 달랐음. 테스트는 `S_STACK`(스택ID)으로 health URL을 구성했지만, 실제 basePath는 `S_APP`(앱명) 기반.
+
+기존 wizard 배포 앱(`nodejs-nextjs-full`)은 appName = stackId이므로 Phase 6/8에서는 문제 없었음.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `test-cycle.sh` L1748 | unified health URL: `${S_STACK}` → `${S_APP}` |
+| `test-cycle.sh` L1762 | unified page URL: `${S_STACK}` → `${S_APP}` |
+| `test-cycle.sh` L1767 | 허용 HTTP 코드에 `308` 추가 (Next.js trailing-slash redirect) |
+
+### 재발 방지 체크리스트
+- [ ] unified 스택 테스트에서 basePath 기반 URL은 반드시 `appName` 사용 (stackId 아님)
+- [ ] `patchNextConfig(dir, appName)` 호출 시 appName = 실제 앱 이름임을 명심
+- [ ] Next.js 응답 코드에 308 포함 필수 (trailingSlash:false 기본값 → slash strip = 308)
+
+### 관련 코드 (핵심 부분만)
+```bash
+# Before (버그)
+HC_URL="http://127.0.0.1:${S_ACTUAL_PORT}/apps/${S_STACK}/health"
+PAGE_URL="http://127.0.0.1:${S_ACTUAL_PORT}/apps/${S_STACK}/"
+
+# After (수정)
+HC_URL="http://127.0.0.1:${S_ACTUAL_PORT}/apps/${S_APP}/health"
+PAGE_URL="http://127.0.0.1:${S_ACTUAL_PORT}/apps/${S_APP}/"
+```
+
+---
+
+## Admin UI — Create App 모드 정의 — 추가일: 2026-03-19
+
+Admin UI의 CreateAppModal은 두 가지 생성 모드를 제공한다.
+
+### 📦 Boilerplate 모드
+- 사용자가 언어(6종)와 프레임워크(13종)를 선택하면 Brewnet 공식 카탈로그 GitHub 저장소에서 해당 스택을 클론한다.
+- 서버는 `mode: 'boilerplate'`, `stackId` 를 수신한다.
+- 로컬에 동일 stackId가 설치된 경우(`~/.brewnet-boilerplate.json`) 로컬 복사본을 사용(빠름), 없으면 GitHub에서 신규 클론.
+- 지원 스택 목록: `FRAMEWORK_OPTIONS` (packages/admin-ui/src/components/CreateAppModal.tsx)
+
+### 🔧 New Project 모드
+- 사용자가 직접 Git URL을 입력하면 해당 저장소를 클론한다.
+- 서버는 `mode: 'git-url'`, `gitUrl` 을 수신한다.
+- Docker Compose 파일이 없으면 프로젝트 타입을 자동 감지하여 생성한다.
+- Gitea 저장소 생성 및 push까지 동일하게 진행된다.
+
+### API 필드 매핑
+
+| UI 모드 | 서버 mode | 추가 필드 | 서버 핸들러 |
+|---------|-----------|----------|------------|
+| 📦 Boilerplate | `boilerplate` | `stackId` | `_createModeA` (설치됨) / `_createModeC` (미설치 fallback) |
+| 🔧 New Project | `git-url` | `gitUrl` | `_createModeB` |

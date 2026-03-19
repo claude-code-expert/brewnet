@@ -9,8 +9,6 @@
  *   - Web Server is always enabled (required)
  *   - Git Server is always enabled (required)
  *   - File Server or Media Server enabled → SFTP auto-suggested
- *   - Domain = 'local' → Mail Server hidden / not available
- *   - DB Server enabled → cache selection available
  *   - DB Server enabled + empty dbPassword → auto-generate password
  *   - SSH Server default → passwordAuth = false (key-only)
  *   - Language/frontend selected → App Server auto-enabled
@@ -26,7 +24,6 @@ import type {
   WebServerService,
   FileServerService,
   DbPrimary,
-  CacheService,
 } from '@brewnet/shared';
 import { DB_VERSIONS } from '@brewnet/shared';
 import { generatePassword } from '../../utils/password.js';
@@ -60,29 +57,12 @@ export function applyComponentRules(state: WizardState): WizardState {
     next.servers.sshServer.sftp = true;
   }
 
-  // Mail Server hidden when domain is local
-  if (!isMailServerAvailable(next)) {
-    next.servers.mailServer.enabled = false;
-  }
-
   // DB password auto-generation
   if (next.servers.dbServer.enabled && !next.servers.dbServer.dbPassword) {
     next.servers.dbServer.dbPassword = generatePassword(16);
   }
 
   return next;
-}
-
-/**
- * Check whether the mail server option should be visible / available.
- * Mail requires a real domain (not 'local').
- *
- * @param state - Current wizard state
- * @returns true if mail server can be enabled
- */
-export function isMailServerAvailable(state: WizardState): boolean {
-  // Mail server requires a real domain (not local)
-  return state.domain.provider !== 'local';
 }
 
 /**
@@ -125,16 +105,6 @@ export function applyDevStackAutoEnables(state: WizardState): WizardState {
   return next;
 }
 
-/**
- * Check if cache layer selection is available.
- * Cache is only configurable when DB Server is enabled.
- *
- * @param state - Current wizard state
- * @returns true if cache selection should be shown
- */
-export function isCacheSelectionAvailable(state: WizardState): boolean {
-  return state.servers.dbServer.enabled;
-}
 
 // ---------------------------------------------------------------------------
 // Interactive Step Function (T052-T058)
@@ -153,7 +123,7 @@ export function isCacheSelectionAvailable(state: WizardState): boolean {
  *   3. Web Server (always ON, select service)
  *   4. File Server (toggle, select service)
  *   5. Git Server (always ON, show info)
- *   6. DB Server (toggle, primary, version, cache, password)
+ *   6. DB Server (toggle, primary, version, password)
  *   7. Media (toggle jellyfin)
  *   8. SSH Server (toggle, port, passwordAuth, SFTP auto-suggest)
  *   9. Apply component rules
@@ -183,26 +153,6 @@ export async function runServerComponentsStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // Skip option (entire step)
-  // -------------------------------------------------------------------------
-  const stepAction = await select<'configure' | 'skip'>({
-    message: 'Server Components 설정',
-    choices: [
-      { name: 'Configure — 서버 컴포넌트 직접 설정하기', value: 'configure' },
-      { name: 'Skip — 기본 설정으로 건너뛰기 (Traefik + Git Server만 활성화)', value: 'skip' },
-    ],
-    default: 'configure',
-  });
-  console.log();
-
-  if (stepAction === 'skip') {
-    const defaultState = applyComponentRules(next);
-    console.log(chalk.yellow('  Server Components 건너뜀 — 기본값 적용됨'));
-    console.log();
-    return defaultState;
-  }
-
-  // -------------------------------------------------------------------------
   // 2. Admin Account summary (read-only — configured in Pre-Step)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Admin Account') + chalk.dim(' (configured in Pre-Step)'));
@@ -217,17 +167,16 @@ export async function runServerComponentsStep(
   console.log(chalk.dim('  모든 서비스 앞단에서 HTTPS 처리 및 도메인 라우팅을 담당하는 리버스 프록시'));
   console.log();
 
-  const webService = await select<WebServerService | '__skip__'>({
+  const webService = await select<WebServerService>({
     message: 'Reverse proxy',
     choices: [
       { name: 'Traefik (recommended)', value: 'traefik', description: '자동 SSL 갱신 + Docker 레이블 기반 라우팅. 서비스 추가 시 설정 불필요' },
       { name: 'Nginx', value: 'nginx', description: '업계 표준 웹서버 겸 프록시. 안정적이며 범용 설정 지원' },
       { name: 'Caddy', value: 'caddy', description: '간결한 설정 파일, Let\'s Encrypt 자동화 내장' },
-      { name: 'Skip — 기본값 사용 (Traefik)', value: '__skip__' as const },
     ],
     default: next.servers.webServer.service || 'traefik',
   });
-  next.servers.webServer.service = webService === '__skip__' ? 'traefik' : webService;
+  next.servers.webServer.service = webService;
   console.log();
 
   // -------------------------------------------------------------------------
@@ -244,16 +193,15 @@ export async function runServerComponentsStep(
   next.servers.fileServer.enabled = fileServerEnabled;
 
   if (fileServerEnabled) {
-    const fileService = await select<FileServerService | '__skip__'>({
+    const fileService = await select<FileServerService>({
       message: 'File server service',
       choices: [
         { name: 'Nextcloud', value: 'nextcloud', description: '파일 동기화 + 캘린더·연락처·사진 앱 포함 올인원 협업 Suite' },
         { name: 'MinIO (S3-compatible)', value: 'minio', description: 'AWS S3 호환 오브젝트 스토리지. 대용량 파일·백업·미디어 저장에 최적' },
-        { name: 'Skip — 기본값 사용 (Nextcloud)', value: '__skip__' as const },
       ],
       default: next.servers.fileServer.service || 'nextcloud',
     });
-    next.servers.fileServer.service = fileService === '__skip__' ? 'nextcloud' : fileService;
+    next.servers.fileServer.service = fileService;
   } else {
     next.servers.fileServer.service = '';
   }
@@ -269,7 +217,7 @@ export async function runServerComponentsStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 6. DB Server (toggle + primary + version + cache + password)
+  // 6. DB Server (toggle + primary + version + password)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Database Server'));
   console.log(chalk.dim('  앱 데이터를 영구 저장하는 관계형 DB. 대부분의 서비스에 필수'));
@@ -283,31 +231,27 @@ export async function runServerComponentsStep(
 
   if (dbEnabled) {
     // Primary database
-    const dbPrimary = await select<DbPrimary | '__skip__'>({
+    const dbPrimary = await select<DbPrimary>({
       message: 'Primary database',
       choices: [
         { name: 'PostgreSQL (recommended)', value: 'postgresql', description: '기능이 풍부한 오픈소스 RDBMS. JSON·전문검색 지원, 대규모 서비스에 적합' },
         { name: 'MySQL', value: 'mysql', description: '세계 최다 사용 DB. WordPress·Drupal 등 PHP 생태계와 높은 호환성' },
         { name: 'SQLite (embedded)', value: 'sqlite', description: '파일 기반 경량 DB. 외부 서버 불필요, 소규모·단일 서비스용' },
-        { name: 'Skip — 기본값 사용 (PostgreSQL)', value: '__skip__' as const },
       ],
       default: next.servers.dbServer.primary || 'postgresql',
     });
-    next.servers.dbServer.primary = (dbPrimary === '__skip__' ? 'postgresql' : dbPrimary) as DbPrimary;
+    next.servers.dbServer.primary = dbPrimary;
 
     // Version selection (skip for SQLite — it only has version "3")
     if (dbPrimary !== 'sqlite') {
       const versions = DB_VERSIONS[dbPrimary] ?? [];
       if (versions.length > 0) {
         const dbVersion = await select<string>({
-          message: `${next.servers.dbServer.primary === 'postgresql' ? 'PostgreSQL' : 'MySQL'} version`,
-          choices: [
-            ...versions.map((v) => ({ name: v, value: v })),
-            { name: 'Skip — 기본값 사용 (최신 버전)', value: '__skip__' },
-          ],
+          message: `${dbPrimary === 'postgresql' ? 'PostgreSQL' : 'MySQL'} version`,
+          choices: versions.map((v) => ({ name: v, value: v })),
           default: next.servers.dbServer.primaryVersion || versions[0],
         });
-        next.servers.dbServer.primaryVersion = dbVersion === '__skip__' ? (versions[0] ?? '') : dbVersion;
+        next.servers.dbServer.primaryVersion = dbVersion;
       }
 
       // Admin UI (pgAdmin / phpMyAdmin)
@@ -353,18 +297,7 @@ export async function runServerComponentsStep(
       );
     }
 
-    // Cache layer
-    const cacheChoice = await select<CacheService>({
-      message: 'Cache layer',
-      choices: [
-        { name: 'Redis (recommended)', value: 'redis', description: '인메모리 캐시 + 세션·큐 저장소. 응답 속도를 획기적으로 향상' },
-        { name: 'Valkey', value: 'valkey', description: 'Redis 호환 오픈소스 포크. Redis 7과 API 동일, 완전 무료 라이선스' },
-        { name: 'KeyDB', value: 'keydb', description: '멀티스레드 Redis 호환. 단일 인스턴스에서 더 높은 처리량 제공' },
-        { name: 'None', value: '', description: '캐시 레이어 없이 DB 직접 접근. 소규모·저트래픽 서비스에 적합' },
-      ],
-      default: next.servers.dbServer.cache || 'redis',
-    });
-    next.servers.dbServer.cache = cacheChoice;
+    // Cache layer — removed (no longer offered)
   } else {
     // Reset DB fields when disabled
     next.servers.dbServer.primary = '';

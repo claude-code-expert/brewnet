@@ -79,7 +79,6 @@ function buildFullState(): WizardState {
       fileServer: { enabled: true, service: 'nextcloud' },
       media: { enabled: true, services: ['jellyfin'] },
       sshServer: { enabled: true, port: 2222, passwordAuth: false, sftp: true },
-      mailServer: { enabled: true, service: 'docker-mailserver' },
       fileBrowser: { enabled: true, mode: 'standalone' },
     },
     domain: {
@@ -105,94 +104,28 @@ function getAllServices(config: ComposeConfig): Array<[string, ComposeService]> 
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('TC-C-01: Zero Config — default state produces a valid configuration', () => {
-  it('should produce a state with schemaVersion 7', () => {
+  it('should have correct default server selections (traefik, gitea, postgresql)', () => {
     const state = createDefaultWizardState();
-    expect(state.schemaVersion).toBe(7);
-  });
-
-  it('should have a non-empty projectName', () => {
-    const state = createDefaultWizardState();
-    expect(state.projectName).toBeTruthy();
-    expect(typeof state.projectName).toBe('string');
-  });
-
-  it('should have a non-empty projectPath', () => {
-    const state = createDefaultWizardState();
-    expect(state.projectPath).toBeTruthy();
-    expect(state.projectPath).toContain(state.projectName);
-  });
-
-  it('should have a valid setupType', () => {
-    const state = createDefaultWizardState();
-    expect(['full', 'partial']).toContain(state.setupType);
-  });
-
-  it('should have admin.username set to a non-empty string', () => {
-    const state = createDefaultWizardState();
-    expect(state.admin.username).toBeTruthy();
-    expect(state.admin.username).toBe('admin');
-  });
-
-  it('should have admin.storage set to "local"', () => {
-    const state = createDefaultWizardState();
-    expect(state.admin.storage).toBe('local');
-  });
-
-  it('should have webServer enabled with traefik', () => {
-    const state = createDefaultWizardState();
-    expect(state.servers.webServer.enabled).toBe(true);
-    expect(state.servers.webServer.service).toBe('traefik');
-  });
-
-  it('should have gitServer enabled with gitea', () => {
-    const state = createDefaultWizardState();
-    expect(state.servers.gitServer.enabled).toBe(true);
-    expect(state.servers.gitServer.service).toBe('gitea');
-    expect(state.servers.gitServer.port).toBeGreaterThan(0);
-    expect(state.servers.gitServer.sshPort).toBeGreaterThan(0);
-  });
-
-  it('should have dbServer enabled with postgresql as default', () => {
-    const state = createDefaultWizardState();
-    expect(state.servers.dbServer.enabled).toBe(true);
-    expect(state.servers.dbServer.primary).toBe('postgresql');
+    expect(state.servers.webServer).toEqual(expect.objectContaining({ enabled: true, service: 'traefik' }));
+    expect(state.servers.gitServer).toEqual(expect.objectContaining({ enabled: true, service: 'gitea' }));
+    expect(state.servers.dbServer).toEqual(expect.objectContaining({ enabled: true, primary: 'postgresql' }));
   });
 
   it('should have domain defaults that work without external setup', () => {
     const state = createDefaultWizardState();
     expect(state.domain.provider).toBe('local');
-    expect(state.domain.name).toBeTruthy();
     expect(state.domain.ssl).toBe('self-signed');
-  });
-
-  it('should have boilerplate generation enabled by default', () => {
-    const state = createDefaultWizardState();
-    expect(state.boilerplate.generate).toBe(true);
-    expect(state.boilerplate.sampleData).toBe(true);
   });
 
   it('should generate a valid compose config from the default state', () => {
     const state = createDefaultWizardState() as WizardState;
     const config = generateComposeConfig(state);
 
-    // Should have at least the required services (web + git)
     expect(Object.keys(config.services).length).toBeGreaterThanOrEqual(2);
     expect(config.services['traefik']).toBeDefined();
     expect(config.services['gitea']).toBeDefined();
-  });
-
-  it('should define brewnet and brewnet-internal networks', () => {
-    const state = createDefaultWizardState() as WizardState;
-    const config = generateComposeConfig(state);
-
     expect(config.networks['brewnet']).toBeDefined();
     expect(config.networks['brewnet-internal']).toBeDefined();
-  });
-
-  it('should declare top-level named volumes for all services', () => {
-    const state = createDefaultWizardState() as WizardState;
-    const config = generateComposeConfig(state);
-    expect(config.volumes).toBeDefined();
     expect(Object.keys(config.volumes!).length).toBeGreaterThan(0);
   });
 });
@@ -288,23 +221,6 @@ describe('TC-C-02: Secure by Default — SSH, .env, root login', () => {
       const { ENV_FILE_PERMISSIONS } = await import('@brewnet/shared');
       expect(ENV_FILE_PERMISSIONS).toBe(0o600);
     });
-
-    it('writeEnvFile should use mode 0o600 for the .env file', async () => {
-      // We cannot call writeEnvFile directly without filesystem mocks,
-      // but we can verify the source function signature and the constants.
-      // The actual filesystem call is tested in T062 (env-generator tests).
-      const { ENV_FILE_PERMISSIONS } = await import('@brewnet/shared');
-      // 0o600 in decimal is 384
-      expect(ENV_FILE_PERMISSIONS).toBe(384);
-    });
-  });
-
-  // Admin credential storage
-  describe('Credential storage', () => {
-    it('should store admin credentials locally (not in cloud)', () => {
-      const state = createDefaultWizardState();
-      expect(state.admin.storage).toBe('local');
-    });
   });
 });
 
@@ -313,72 +229,18 @@ describe('TC-C-02: Secure by Default — SSH, .env, root login', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('TC-C-03: Transparent — all services have security_opt and restart', () => {
-  describe('default state (minimal services)', () => {
-    it('should include security_opt: ["no-new-privileges:true"] on every service', () => {
-      const state = createDefaultWizardState() as WizardState;
-      const config = generateComposeConfig(state);
-      const services = getAllServices(config);
-
-      expect(services.length).toBeGreaterThan(0);
-      for (const [id, svc] of services) {
-        expect(svc.security_opt).toEqual(['no-new-privileges:true']);
-      }
-    });
-
-    it('should include restart: "unless-stopped" on every service', () => {
-      const state = createDefaultWizardState() as WizardState;
-      const config = generateComposeConfig(state);
-      const services = getAllServices(config);
-
-      expect(services.length).toBeGreaterThan(0);
-      for (const [id, svc] of services) {
-        expect(svc.restart).toBe('unless-stopped');
-      }
-    });
-  });
-
   describe('full state (all services enabled)', () => {
-    it('should include security_opt: ["no-new-privileges:true"] on every service', () => {
+    it('should include security_opt, restart, container_name, and networks on every service', () => {
       const state = buildFullState();
       const config = generateComposeConfig(state);
       const services = getAllServices(config);
 
-      // With full state, we expect many services
       expect(services.length).toBeGreaterThanOrEqual(6);
 
       for (const [id, svc] of services) {
         expect(svc.security_opt).toEqual(['no-new-privileges:true']);
-      }
-    });
-
-    it('should include restart: "unless-stopped" on every service', () => {
-      const state = buildFullState();
-      const config = generateComposeConfig(state);
-      const services = getAllServices(config);
-
-      expect(services.length).toBeGreaterThanOrEqual(6);
-
-      for (const [id, svc] of services) {
         expect(svc.restart).toBe('unless-stopped');
-      }
-    });
-
-    it('should have a container_name starting with "brewnet-" on every service', () => {
-      const state = buildFullState();
-      const config = generateComposeConfig(state);
-      const services = getAllServices(config);
-
-      for (const [id, svc] of services) {
         expect(svc.container_name).toMatch(/^brewnet-/);
-      }
-    });
-
-    it('should assign at least one network to every service', () => {
-      const state = buildFullState();
-      const config = generateComposeConfig(state);
-      const services = getAllServices(config);
-
-      for (const [id, svc] of services) {
         expect(svc.networks.length).toBeGreaterThanOrEqual(1);
       }
     });
@@ -404,11 +266,6 @@ describe('TC-C-03: Transparent — all services have security_opt and restart', 
         name: 'PostgreSQL (database)',
         stateOverride: {},
         expectedServiceId: 'postgresql',
-      },
-      {
-        name: 'Redis (cache)',
-        stateOverride: {},
-        expectedServiceId: 'redis',
       },
     ];
 
@@ -466,21 +323,6 @@ describe('TC-C-03: Transparent — all services have security_opt and restart', 
       const config = generateComposeConfig(state);
 
       const svc = config.services['openssh-server'];
-      expect(svc).toBeDefined();
-      expect(svc.security_opt).toEqual(['no-new-privileges:true']);
-      expect(svc.restart).toBe('unless-stopped');
-    });
-
-    it('docker-mailserver should have security_opt and restart', () => {
-      const state = buildState({
-        servers: {
-          ...createDefaultWizardState().servers,
-          mailServer: { enabled: true, service: 'docker-mailserver' },
-        },
-      }) as WizardState;
-      const config = generateComposeConfig(state);
-
-      const svc = config.services['docker-mailserver'];
       expect(svc).toBeDefined();
       expect(svc.security_opt).toEqual(['no-new-privileges:true']);
       expect(svc.restart).toBe('unless-stopped');

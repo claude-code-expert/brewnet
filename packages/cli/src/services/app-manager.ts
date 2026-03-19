@@ -1,13 +1,13 @@
 // packages/cli/src/services/app-manager.ts
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { execa } from 'execa';
 import { GiteaClient } from './gitea-client.js';
-import { readApps, addApp, updateApp, removeApp as registryRemoveApp, readDeployHistory } from './app-registry.js';
+import { readApps, addApp, updateApp, removeApp as registryRemoveApp, readDeployHistory, appendDeployHistory } from './app-registry.js';
 import { getLastProject, loadState } from '../wizard/state.js';
-import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry } from '../types/app-entry.js';
+import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry, AppGitInfo, DeploySettings } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,8 +48,53 @@ export function readDotEnvValue(envPath: string, key: string): string {
 // Public API
 // ---------------------------------------------------------------------------
 
+let _boilerplateRegistered = false;
+
 export async function listApps(): Promise<AppEntry[]> {
-  return readApps(resolveAppsJsonPath());
+  const appsJson = resolveAppsJsonPath();
+  const apps = readApps(appsJson);
+
+  // Auto-register wizard boilerplates (once per process lifetime).
+  // This bridges the gap between `brewnet init` (writes .brewnet-boilerplate.json)
+  // and the Apps page (reads apps.json).
+  if (_boilerplateRegistered) return apps;
+  _boilerplateRegistered = true;
+  try {
+    const ctx = resolveContext();
+    const bpPath = join(ctx.projectPath, '.brewnet-boilerplate.json');
+    if (existsSync(bpPath)) {
+      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
+      const bpMetas: Array<{ stackId: string; appDir: string; lang?: string; frameworkId?: string; status?: string; backendUrl?: string }> =
+        Array.isArray(raw) ? raw : [raw];
+      let changed = false;
+      for (const bp of bpMetas) {
+        if (!bp.stackId || !bp.appDir) continue;
+        // Check if already registered by stackId or appDir
+        const exists = apps.some((a) => a.appDir === bp.appDir || a.stackId === bp.stackId);
+        if (!exists) {
+          const port = bp.backendUrl ? parseInt(new URL(bp.backendUrl).port || '8080', 10) : 8080;
+          const entry: AppEntry = {
+            name: bp.stackId,
+            mode: 'boilerplate',
+            stackId: bp.stackId,
+            appDir: bp.appDir,
+            lang: bp.lang,
+            framework: bp.frameworkId,
+            port,
+            status: (bp.status as AppEntry['status']) || 'running',
+            createdAt: new Date().toISOString(),
+          };
+          apps.push(entry);
+          changed = true;
+        }
+      }
+      if (changed) {
+        writeFileSync(appsJson, JSON.stringify(apps, null, 2), 'utf-8');
+      }
+    }
+  } catch { /* non-critical — boilerplate auto-register is best-effort */ }
+
+  return apps;
 }
 
 export function getDeployHistory(appName?: string): DeployHistoryEntry[] {
@@ -66,7 +111,213 @@ export async function listGiteaRepos(): Promise<GitRepoEntry[]> {
     password: ctx.giteaPassword,
     tokenPath: GITEA_TOKEN_PATH,
   });
+  await gitea.prepare(); // validate/refresh token before listing
   return gitea.listRepos();
+}
+
+export function getDeploySettings(appName: string): DeploySettings {
+  const apps = readApps(resolveAppsJsonPath());
+  const app = apps.find((a) => a.name === appName);
+  const settings = (app as (AppEntry & { deploySettings?: DeploySettings }) | undefined)?.deploySettings;
+  return settings ?? { autoDeploy: false, deployBranch: 'main' };
+}
+
+export function updateDeploySettings(appName: string, settings: Partial<DeploySettings>): void {
+  const appsJson = resolveAppsJsonPath();
+  const apps = readApps(appsJson);
+  const app = apps.find((a) => a.name === appName);
+  if (!app) throw new Error(`App "${appName}" not found`);
+  const existing = (app as AppEntry & { deploySettings?: DeploySettings }).deploySettings
+    ?? { autoDeploy: false, deployBranch: 'main' };
+  (app as AppEntry & { deploySettings?: DeploySettings }).deploySettings = { ...existing, ...settings };
+  updateApp(appsJson, appName, app as Partial<AppEntry>);
+}
+
+export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
+  const ctx = resolveContext();
+  const apps = readApps(resolveAppsJsonPath());
+  const app = apps.find((a) => a.name === appName);
+  if (!app) throw new Error(`App "${appName}" not found`);
+
+  const gitea = new GiteaClient({
+    baseUrl: ctx.giteaBaseUrl,
+    username: ctx.giteaUser,
+    password: ctx.giteaPassword,
+    tokenPath: GITEA_TOKEN_PATH,
+  });
+
+  let branch = 'main';
+  let latestCommit: AppGitInfo['latestCommit'] = null;
+  let cloneUrlSsh = `ssh://git@localhost:2222/${ctx.giteaUser}/${appName}.git`;
+
+  try {
+    const repo = await gitea.getRepo(appName);
+    branch = repo.default_branch || 'main';
+    cloneUrlSsh = repo.ssh_url || cloneUrlSsh;
+    // Auto-fix repos created before visibility change (private → public)
+    if (repo.private) {
+      await gitea.makeRepoPublic(appName).catch((e) => {
+        console.warn(`[app-manager] makeRepoPublic failed for ${appName}: ${e instanceof Error ? e.message : String(e)}`);
+      });
+    }
+    latestCommit = await gitea.getLatestCommit(appName, branch);
+  } catch (e) {
+    console.warn(`[app-manager] getAppGitInfo Gitea call failed (${appName}): ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  return {
+    giteaUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}`,
+    cloneUrlHttp: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`,
+    cloneUrlSsh,
+    localPath: app.appDir,
+    branch,
+    latestCommit,
+  };
+}
+
+export async function setupWebhook(appName: string, webhookUrl: string): Promise<void> {
+  const ctx = resolveContext();
+  const settings = getDeploySettings(appName);
+  const secret = settings.webhookSecret ?? randomBytes(16).toString('hex');
+
+  const gitea = new GiteaClient({
+    baseUrl: ctx.giteaBaseUrl,
+    username: ctx.giteaUser,
+    password: ctx.giteaPassword,
+    tokenPath: GITEA_TOKEN_PATH,
+  });
+
+  await gitea.createWebhook(appName, webhookUrl, secret);
+  updateDeploySettings(appName, { webhookSecret: secret });
+}
+
+export async function deployApp(appName: string): Promise<string> {
+  const job = newJob(appName, ['Pull', 'Build & Start', 'Health check']);
+  jobs.set(job.jobId, job);
+  setImmediate(() => void _runDeploy(job, appName));
+  return job.jobId;
+}
+
+async function _runDeploy(job: AppJob, appName: string): Promise<void> {
+  try {
+    const apps = readApps(resolveAppsJsonPath());
+    const app = apps.find((a) => a.name === appName);
+    if (!app) throw new Error(`App "${appName}" not found`);
+    const settings = getDeploySettings(appName);
+
+    setStep(job, 0, 'running');
+    try {
+      const ctx = resolveContext();
+      const gitea = new GiteaClient({
+        baseUrl: ctx.giteaBaseUrl,
+        username: ctx.giteaUser,
+        password: ctx.giteaPassword,
+        tokenPath: GITEA_TOKEN_PATH,
+      });
+      await gitea.prepare();
+      const repoExists = await gitea.repoExists(appName);
+      if (!repoExists) {
+        appendLog(job, '[pull] Gitea repo not found — recreating and pushing local code');
+        const cloneUrl = await gitea.createRepo(appName, `Brewnet app: ${appName}`);
+        const authedUrl = gitea.authedCloneUrl(cloneUrl);
+        await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: app.appDir }).catch(() =>
+          execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: app.appDir }),
+        );
+        await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: app.appDir });
+        appendLog(job, '[pull] Gitea repo recreated and code pushed ✓');
+      } else if (!existsSync(app.appDir)) {
+        // appDir was deleted — re-clone from Gitea
+        appendLog(job, '[pull] appDir missing — cloning from Gitea');
+        const authedUrl = gitea.authedCloneUrl(`${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`);
+        await execa('git', ['clone', authedUrl, app.appDir]);
+        appendLog(job, '[pull] re-cloned from Gitea ✓');
+      } else if (await gitea.repoIsEmpty(appName)) {
+        // Repo exists but was never pushed to (e.g. created during app setup but push was skipped)
+        appendLog(job, '[pull] Gitea repo is empty — pushing local code');
+        const authedUrl = gitea.authedCloneUrl(`${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`);
+        await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: app.appDir }).catch(() =>
+          execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: app.appDir }),
+        );
+        // Boilerplates are cloned --depth 1; unshallow before pushing to empty Gitea repo
+        const isShallow = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: app.appDir })
+          .then((r) => r.stdout.trim() === 'true').catch(() => false);
+        if (isShallow) {
+          appendLog(job, '[pull] shallow clone detected — unshallowing');
+          await execa('git', ['fetch', '--unshallow', 'origin'], { cwd: app.appDir }).catch(async () => {
+            const { reinitGit } = await import('./boilerplate-manager.js');
+            await reinitGit(app.appDir);
+          });
+        }
+        await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: app.appDir });
+        appendLog(job, '[pull] code pushed to Gitea ✓');
+      } else {
+        await execa('git', ['pull', 'brewnet', settings.deployBranch], { cwd: app.appDir }).catch((e) => {
+          appendLog(job, `[pull] git pull failed (non-critical): ${e instanceof Error ? e.message : String(e)}`);
+        });
+      }
+    } catch (e) {
+      appendLog(job, `[pull] Gitea sync failed (non-critical): ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setStep(job, 0, 'done');
+
+    // Check if deployable — must have docker-compose.yml (or auto-scaffold)
+    const hasCompose = existsSync(join(app.appDir, 'docker-compose.yml')) || existsSync(join(app.appDir, 'compose.yml'));
+    if (!hasCompose) {
+      // Try auto-scaffold for known project types
+      const projectType = _detectProjectType(app.appDir);
+      if (projectType) {
+        appendLog(job, `[scaffold] Detected ${projectType} project — generating Docker config`);
+        _scaffoldDockerConfig(app.appDir, appName, app.port, job, projectType);
+      } else {
+        throw new Error(
+          'This project has no docker-compose.yml or Dockerfile. ' +
+          'Add a Dockerfile and docker-compose.yml to deploy, or use a Brewnet boilerplate.',
+        );
+      }
+    }
+
+    // Inject Traefik Quick Tunnel labels (idempotent — safe to call even if labels already present)
+    await _injectQuickTunnelIfNeeded(app.appDir, appName, app.port);
+
+    setStep(job, 1, 'running', 'docker compose up --build');
+    await _dockerComposeUp(app.appDir, job);
+    setStep(job, 1, 'done', 'containers started');
+
+    setStep(job, 2, 'running');
+    const healthUrlDeploy = _buildHealthUrl(app.appDir, app.port);
+    setStep(job, 2, 'running', `polling ${healthUrlDeploy}`);
+    await _pollHealth(healthUrlDeploy, 120_000, job);
+    setStep(job, 2, 'done');
+
+    updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
+    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+      appName,
+      commitHash: '',
+      commitMessage: 'Manual deploy',
+      status: 'success',
+      deployedAt: new Date().toISOString(),
+    });
+
+    job.status = 'done';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err instanceof Error ? err.message : String(err);
+    for (const step of job.steps) {
+      if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
+    }
+    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+      appName,
+      commitHash: '',
+      commitMessage: 'Manual deploy',
+      status: 'failed',
+      deployedAt: new Date().toISOString(),
+    });
+  }
+}
+
+export function getAppDir(appName: string): string | undefined {
+  const apps = readApps(resolveAppsJsonPath());
+  return apps.find((a) => a.name === appName)?.appDir;
 }
 
 export function getJobStatus(jobId: string): AppJob | undefined {
@@ -89,6 +340,13 @@ function newJob(appName: string, stepLabels: string[]): AppJob {
 function setStep(job: AppJob, index: number, status: AppJobStep['status'], message?: string): void {
   const step = job.steps[index];
   if (step) { step.status = status; if (message) step.message = message; }
+}
+
+/** Append a log line to the job's rolling log buffer (max 200 lines). */
+function appendLog(job: AppJob, line: string): void {
+  if (!job.logs) job.logs = [];
+  job.logs.push(line);
+  if (job.logs.length > 200) job.logs.splice(0, job.logs.length - 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -132,26 +390,289 @@ function resolveContext(): AppContext {
   const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
   const envPath = join(projectPath, '.env');
   const giteaUser = readDotEnvValue(envPath, 'GITEA_ADMIN_USER') || (state?.admin as { username?: string } | undefined)?.username || 'admin';
-  const giteaPassword = readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') || (state?.admin as { password?: string } | undefined)?.password || '';
-  // Gitea is behind Traefik on port 80 at /git — port 3000 is internal only
-  const giteaBaseUrl = 'http://localhost/git';
+  // GITEA_ADMIN_PASSWORD is a Docker secret, NOT in .env — read from secrets file first
+  const secretsPath = join(projectPath, 'secrets', 'admin_password');
+  const secretsPassword = existsSync(secretsPath) ? readFileSync(secretsPath, 'utf-8').trim() : '';
+  const giteaPassword = secretsPassword || readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') || (state?.admin as { password?: string } | undefined)?.password || '';
+  // Quick Tunnel: Gitea is path-prefix routed via Traefik (port 80, /git); port 3000 is internal only.
+  // Other modes: Gitea port 3000 is host-exposed — use direct port to avoid subdomain DNS dependency.
+  const tunnelMode = state?.domain?.cloudflare?.tunnelMode ?? '';
+  const gitPort = state?.servers?.gitServer?.port ?? 3000;
+  const giteaBaseUrl = tunnelMode === 'quick' ? 'http://localhost/git' : `http://localhost:${gitPort}`;
   return { projectPath, giteaBaseUrl, giteaUser, giteaPassword };
+}
+
+/** Inject Traefik Quick Tunnel labels if running in quick tunnel mode. */
+async function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: number): Promise<void> {
+  try {
+    const last = getLastProject();
+    const state = loadState(last ?? '');
+    if (state?.domain?.cloudflare?.tunnelMode !== 'quick') return;
+    const { injectTraefikForQuickTunnel } = await import('./boilerplate-manager.js');
+    injectTraefikForQuickTunnel(appDir, appName, port);
+  } catch (err) {
+    // Log but don't fail — external access simply won't work
+    console.error(`[Quick Tunnel] Failed to inject Traefik labels for ${appName}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Internal: simple health poll
 // ---------------------------------------------------------------------------
 
-async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
+/**
+ * Detect project type from files in the directory.
+ */
+function _detectProjectType(dir: string): 'nextjs' | 'nodejs' | 'python' | 'go' | 'rust' | 'java' | 'static' | null {
+  try {
+    if (existsSync(join(dir, 'next.config.ts')) || existsSync(join(dir, 'next.config.mjs')) || existsSync(join(dir, 'next.config.js'))) return 'nextjs';
+    if (existsSync(join(dir, 'package.json'))) return 'nodejs';
+    if (existsSync(join(dir, 'requirements.txt')) || existsSync(join(dir, 'pyproject.toml'))) return 'python';
+    if (existsSync(join(dir, 'go.mod'))) return 'go';
+    if (existsSync(join(dir, 'Cargo.toml'))) return 'rust';
+    if (existsSync(join(dir, 'pom.xml')) || existsSync(join(dir, 'build.gradle')) || existsSync(join(dir, 'build.gradle.kts'))) return 'java';
+    // Static HTML — fallback if index.html exists or any .html files
+    if (existsSync(join(dir, 'index.html'))) return 'static';
+    if (readdirSync(dir).some((f: string) => f.endsWith('.html'))) return 'static';
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Generate Dockerfile + docker-compose.yml for projects that don't have them.
+ */
+function _scaffoldDockerConfig(dir: string, _appName: string, port: number, job?: AppJob, detectedType?: string): void {
+  const type = detectedType || _detectProjectType(dir);
+  if (!type) throw new Error(`Cannot auto-detect project type in ${dir}. Add a Dockerfile and docker-compose.yml manually.`);
+
+  if (job && !detectedType) appendLog(job, `[scaffold] Detected ${type} project — generating Docker config`);
+
+  let dockerfile = '';
+
+  switch (type) {
+    case 'nextjs':
+      // Use simple single-stage build — external Next.js projects may not
+      // have output:'standalone' configured, and modifying their config
+      // can break cached Docker layers. Just npm install + build + start.
+      dockerfile = [
+        'FROM node:22-alpine',
+        'WORKDIR /app',
+        'COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./',
+        'RUN npm install --legacy-peer-deps 2>/dev/null || yarn install 2>/dev/null || true',
+        'COPY . .',
+        'RUN npm run build',
+        'ENV PORT=3000 HOSTNAME=0.0.0.0',
+        'EXPOSE 3000',
+        'CMD ["npm", "start"]',
+      ].join('\n');
+      break;
+    case 'nodejs':
+      dockerfile = [
+        'FROM node:22-alpine',
+        'WORKDIR /app',
+        'COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./',
+        'RUN npm install --legacy-peer-deps || true',
+        'COPY . .',
+        'RUN npm run build 2>/dev/null || true',
+        'EXPOSE ' + port,
+        'CMD ["npm", "start"]',
+      ].join('\n');
+      break;
+    case 'python':
+      dockerfile = [
+        'FROM python:3.13-slim',
+        'WORKDIR /app',
+        'COPY requirements.txt* pyproject.toml* ./',
+        'RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || pip install --no-cache-dir . 2>/dev/null || true',
+        'COPY . .',
+        'EXPOSE ' + port,
+        'CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "' + port + '"]',
+      ].join('\n');
+      break;
+    case 'go':
+      dockerfile = [
+        'FROM golang:1.22-alpine AS builder',
+        'WORKDIR /app',
+        'COPY go.mod go.sum* ./',
+        'RUN go mod download',
+        'COPY . .',
+        'RUN CGO_ENABLED=0 go build -o server .',
+        '',
+        'FROM alpine',
+        'WORKDIR /app',
+        'COPY --from=builder /app/server .',
+        'EXPOSE ' + port,
+        'CMD ["./server"]',
+      ].join('\n');
+      break;
+    case 'rust':
+      dockerfile = [
+        'FROM rust:1.88 AS builder',
+        'WORKDIR /app',
+        'COPY . .',
+        'RUN cargo build --release',
+        '',
+        'FROM debian:bookworm-slim',
+        'WORKDIR /app',
+        'COPY --from=builder /app/target/release/* /app/ 2>/dev/null || true',
+        'EXPOSE ' + port,
+        'CMD ["./app"]',
+      ].join('\n');
+      break;
+    case 'java':
+      dockerfile = [
+        'FROM gradle:8.12-jdk21 AS builder',
+        'WORKDIR /app',
+        'COPY . .',
+        'RUN gradle build -x test 2>/dev/null || ./gradlew build -x test 2>/dev/null || mvn package -DskipTests 2>/dev/null || true',
+        '',
+        'FROM eclipse-temurin:21-jre-alpine',
+        'WORKDIR /app',
+        'COPY --from=builder /app/build/libs/*.jar app.jar 2>/dev/null || true',
+        'COPY --from=builder /app/target/*.jar app.jar 2>/dev/null || true',
+        'EXPOSE ' + port,
+        'CMD ["java", "-jar", "app.jar"]',
+      ].join('\n');
+      break;
+    case 'static':
+      dockerfile = [
+        'FROM nginx:1.27-alpine',
+        'COPY . /usr/share/nginx/html/',
+        'EXPOSE 80',
+      ].join('\n');
+      break;
+  }
+
+  const internalPort = type === 'nextjs' ? 3000 : type === 'static' ? 80 : port;
+  const compose = [
+    'services:',
+    '  backend:',
+    '    build: .',
+    '    ports:',
+    `      - "${port}:${internalPort}"`,
+    '    restart: unless-stopped',
+    '    healthcheck:',
+    `      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${internalPort}/"]`,
+    '      interval: 10s',
+    '      timeout: 5s',
+    '      retries: 5',
+  ].join('\n');
+
+  if (!existsSync(join(dir, 'Dockerfile'))) {
+    writeFileSync(join(dir, 'Dockerfile'), dockerfile, 'utf-8');
+    if (job) appendLog(job, '[scaffold] Generated Dockerfile');
+  }
+  writeFileSync(join(dir, 'docker-compose.yml'), compose, 'utf-8');
+  if (job) appendLog(job, '[scaffold] Generated docker-compose.yml');
+
+  // .dockerignore
+  if (!existsSync(join(dir, '.dockerignore'))) {
+    writeFileSync(join(dir, '.dockerignore'), 'node_modules\n.next\n.git\n*.md\n', 'utf-8');
+  }
+}
+
+/**
+ * Ensure a docker-compose.yml exists in `dir`.
+ * If missing, auto-detect project type and scaffold Dockerfile + compose.
+ */
+function ensureComposeFile(dir: string, appName: string, port: number, job?: AppJob): void {
+  if (existsSync(join(dir, 'docker-compose.yml')) || existsSync(join(dir, 'compose.yml'))) return;
+  _scaffoldDockerConfig(dir, appName, port, job);
+}
+
+/**
+ * Resolve the backend health check port for a given app directory.
+ * Reads BACKEND_PORT from .env (set by generateEnv).
+ * Falls back to the provided port if .env is absent or has no BACKEND_PORT.
+ * This ensures health checks always target the backend, not the frontend nginx.
+ */
+function _resolveBackendPort(appDir: string, fallbackPort: number): number {
+  const envPath = join(appDir, '.env');
+  const val = readDotEnvValue(envPath, 'BACKEND_PORT');
+  const parsed = val ? parseInt(val, 10) : NaN;
+  return isNaN(parsed) ? fallbackPort : parsed;
+}
+
+/**
+ * Detect Next.js basePath from next.config.ts/mjs/js in the app directory.
+ * Returns the basePath string (e.g. '/apps/my-app') or '' if not set.
+ * Next.js bakes basePath at build time — /health becomes /apps/my-app/health.
+ */
+export function detectBasePath(appDir: string): string {
+  for (const name of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
+    const p = join(appDir, name);
+    if (existsSync(p)) {
+      const content = readFileSync(p, 'utf-8');
+      const match = content.match(/basePath\s*:\s*['"`]([^'"`]+)['"`]/);
+      if (match) return match[1]!;
+    }
+  }
+  return '';
+}
+
+/**
+ * Build the health check URL for an app.
+ * - Brewnet boilerplates have /health endpoint → use /health
+ * - Scaffolded/general projects → use / (root)
+ * - Next.js with basePath → prefix accordingly
+ */
+function _buildHealthUrl(appDir: string, fallbackPort: number): string {
+  const healthPort = _resolveBackendPort(appDir, fallbackPort);
+  const basePath = detectBasePath(appDir);
+  // Check if this is a brewnet boilerplate (has .env.example with STACK_LANG)
+  // or has an explicit /health route file
+  const isBoilerplate = existsSync(join(appDir, '.env.example'))
+    && readFileSync(join(appDir, '.env.example'), 'utf-8').includes('STACK_LANG');
+  const hasHealthRoute = existsSync(join(appDir, 'src', 'app', 'health'))
+    || existsSync(join(appDir, 'backend', 'src'));
+  const healthPath = (isBoilerplate || hasHealthRoute) ? '/health' : '/';
+  return `http://127.0.0.1:${healthPort}${basePath}${healthPath}`;
+}
+
+async function _pollHealth(url: string, maxMs = 120_000, job?: AppJob): Promise<void> {
   const deadline = Date.now() + maxMs;
+  let attempt = 0;
   while (Date.now() < deadline) {
+    attempt++;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (res.ok) return;
-    } catch { /* not ready yet */ }
+      if (res.ok) {
+        if (job) appendLog(job, `[health] ✓ ${url} → ${res.status} (attempt ${attempt})`);
+        return;
+      }
+      if (job) appendLog(job, `[health] ${url} → ${res.status} (attempt ${attempt})`);
+    } catch {
+      if (job && attempt % 3 === 1) appendLog(job, `[health] waiting... ${url} (attempt ${attempt})`);
+    }
     await new Promise((r) => setTimeout(r, 3000));
   }
+  if (job) appendLog(job, `[health] ✗ timeout after ${maxMs / 1000}s`);
   throw new Error(`Health check timed out after ${maxMs / 1000}s: ${url}`);
+}
+
+/**
+ * Run `docker compose up -d --build` with stdout/stderr streamed to job logs.
+ */
+async function _dockerComposeUp(cwd: string, job: AppJob): Promise<void> {
+  appendLog(job, `[docker] $ docker compose up -d --build`);
+  appendLog(job, `[docker] cwd: ${cwd}`);
+  const proc = execa('docker', ['compose', 'up', '-d', '--build'], { cwd, reject: false });
+  proc.stdout?.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString().split('\n').filter(Boolean)) {
+      appendLog(job, `[docker] ${line}`);
+    }
+  });
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString().split('\n').filter(Boolean)) {
+      appendLog(job, `[docker] ${line}`);
+    }
+  });
+  const result = await proc;
+  if (result.exitCode !== 0) {
+    appendLog(job, `[docker] ✗ exit code ${result.exitCode}`);
+    throw new Error(`Command failed with exit code ${result.exitCode}: docker compose up -d --build\n${result.stderr}`);
+  }
+  appendLog(job, `[docker] ✓ containers started`);
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +680,7 @@ async function _pollHealth(url: string, maxMs = 120_000): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function createApp(opts: CreateAppOptions): Promise<string> {
-  const job = newJob(opts.appName, ['Validating', 'Gitea repo', 'Git push', 'Docker up', 'Health check']);
+  const job = newJob(opts.appName, ['Validating', 'Gitea setup', 'Gitea repo', 'Git push', 'Docker up', 'Health check']);
   jobs.set(job.jobId, job);
 
   // Run async — caller polls via getJobStatus
@@ -172,18 +693,48 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
   try {
     const ctx = resolveContext();
     const appsJson = resolveAppsJsonPath();
+
+    // Step 0: Validating — mode-specific pre-checks
+    setStep(job, 0, 'running');
+    if (opts.mode === 'boilerplate') {
+      if (!opts.stackId) throw new Error('stackId is required for boilerplate mode');
+      const metas = readBoilerplateMeta(ctx.projectPath);
+      const meta = metas.find((m) => m.stackId === opts.stackId);
+      if (meta) {
+        // Installed locally — use fast local copy path
+        (opts as CreateAppOptions & { _meta?: unknown })._meta = meta;
+      } else {
+        // Not installed locally — fall back to fresh clone from catalog
+        appendLog(job, `[info] Stack "${opts.stackId}" not installed locally — cloning fresh from catalog`);
+        (opts as CreateAppOptions & { _resolvedStackId?: string })._resolvedStackId = opts.stackId;
+      }
+    } else if (opts.mode === 'git-clone') {
+      if (!opts.gitUrl) throw new Error('gitUrl is required for Git Clone mode');
+    } else if (opts.mode === 'new-project') {
+      const { resolveStackId } = await import('../config/frameworks.js');
+      const stackId = resolveStackId(opts.language ?? 'nodejs', opts.frameworkId ?? 'express');
+      if (!stackId) throw new Error(`Unknown stack: ${opts.language}/${opts.frameworkId}`);
+      (opts as CreateAppOptions & { _resolvedStackId?: string })._resolvedStackId = stackId;
+    }
+    setStep(job, 0, 'done');
+
+    // Step 1: Gitea setup — ensure token exists, auto-fix mustChangePassword if needed
+    setStep(job, 1, 'running');
     const gitea = new GiteaClient({
       baseUrl: ctx.giteaBaseUrl,
       username: ctx.giteaUser,
       password: ctx.giteaPassword,
       tokenPath: GITEA_TOKEN_PATH,
     });
+    const giteaPrep = await gitea.prepare();
+    setStep(job, 1, 'done', giteaPrep.message);
 
-    if (opts.mode === 'boilerplate') {
+    if (opts.mode === 'boilerplate' && (opts as CreateAppOptions & { _meta?: unknown })._meta) {
       await _createModeA(job, opts, ctx, gitea, appsJson);
-    } else if (opts.mode === 'git-url') {
+    } else if (opts.mode === 'git-clone') {
       await _createModeB(job, opts, ctx, gitea, appsJson);
     } else {
+      // new-project OR boilerplate fallback (stack not installed locally)
       await _createModeC(job, opts, ctx, gitea, appsJson);
     }
 
@@ -204,16 +755,12 @@ async function _createModeA(
   gitea: GiteaClient,
   appsJson: string,
 ): Promise<void> {
-  // Step 0: Validate
-  setStep(job, 0, 'running');
-  const metas = readBoilerplateMeta(ctx.projectPath);
-  const meta = metas.find((m) => m.stackId === opts.stackId);
-  if (!meta) throw new Error(`Installed boilerplate "${opts.stackId}" not found`);
+  // Step 0 already done in _runCreateApp — retrieve validated meta
+  const meta = (opts as CreateAppOptions & { _meta?: BoilerplateMeta })._meta!;
   const port = opts.port ?? meta.port ?? parseInt(meta.backendUrl.split(':').pop() ?? '8080', 10);
-  setStep(job, 0, 'done');
 
-  // Step 1: Gitea repo
-  setStep(job, 1, 'running');
+  // Step 2: Gitea repo
+  setStep(job, 2, 'running');
   const alreadyExists = await gitea.repoExists(opts.appName);
   let cloneUrl: string;
   if (!alreadyExists) {
@@ -221,10 +768,10 @@ async function _createModeA(
   } else {
     cloneUrl = `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`;
   }
-  setStep(job, 1, 'done');
+  setStep(job, 2, 'done');
 
-  // Step 2: Git remote + push
-  setStep(job, 2, 'running');
+  // Step 3: Git remote + push
+  setStep(job, 3, 'running');
   // Boilerplates are cloned --depth 1; Gitea rejects shallow pushes to empty repos.
   // Unshallow first (try origin), fall back to a fresh git init if origin is unreachable.
   const shallowCheck = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: meta.appDir }).catch(() => ({ stdout: 'false' }));
@@ -239,17 +786,21 @@ async function _createModeA(
     return execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: meta.appDir });
   });
   await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: meta.appDir });
-  setStep(job, 2, 'done');
-
-  // Step 3: Docker up
-  setStep(job, 3, 'running');
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: meta.appDir });
   setStep(job, 3, 'done');
 
-  // Step 4: Health check
-  setStep(job, 4, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`);
-  setStep(job, 4, 'done');
+  // Step 4: Docker up
+  setStep(job, 4, 'running', 'docker compose up --build');
+  ensureComposeFile(meta.appDir, opts.appName, port, job);
+  await _injectQuickTunnelIfNeeded(meta.appDir, opts.appName, port);
+  await _dockerComposeUp(meta.appDir, job);
+  setStep(job, 4, 'done', 'containers started');
+
+  // Step 5: Health check — accounts for Next.js basePath
+  setStep(job, 5, 'running');
+  const healthUrlA = _buildHealthUrl(meta.appDir, port);
+  setStep(job, 5, 'running', `polling ${healthUrlA}`);
+  await _pollHealth(healthUrlA, 120_000, job);
+  setStep(job, 5, 'done');
 
   // Register
   addApp(appsJson, {
@@ -264,6 +815,8 @@ async function _createModeA(
     status: 'running',
     createdAt: new Date().toISOString(),
   });
+  // Register Gitea webhook for auto-deploy (non-blocking — fail silently)
+  await setupWebhook(opts.appName, 'http://localhost:8088/api/deploy/hook').catch(() => {});
 }
 
 async function _createModeB(
@@ -273,46 +826,81 @@ async function _createModeB(
   gitea: GiteaClient,
   appsJson: string,
 ): Promise<void> {
-  if (!opts.gitUrl) throw new Error('gitUrl is required for mode B');
+  // Step 0 already done in _runCreateApp
   const port = opts.port ?? 8080;
   const appDir = join(ctx.projectPath, 'apps', opts.appName);
 
-  // Step 0: Clone + reinit (reinitGit from boilerplate-manager uses rmSync, not shell rm -rf)
-  setStep(job, 0, 'running');
+  // Step 2: Clone external repo + create Gitea repo
+  setStep(job, 2, 'running', 'Cloning external repository...');
   const { reinitGit: reinitGitB } = await import('./boilerplate-manager.js');
-  await execa('git', ['clone', '--depth', '1', opts.gitUrl, appDir]);
+  // Clean existing directory from a previous failed run
+  const { rmSync } = await import('node:fs');
+  if (existsSync(appDir)) {
+    rmSync(appDir, { recursive: true, force: true });
+  }
+  const cloneArgs = ['clone', '--depth', '1'];
+  if (opts.branch) cloneArgs.push('-b', opts.branch);
+  cloneArgs.push(opts.gitUrl!, appDir);
+  await execa('git', cloneArgs);
+  // Inject user-specified ports into .env so docker-compose picks them up
+  // (prevents "port already allocated" when default 8080/3000 are in use)
+  const envExPath = join(appDir, '.env.example');
+  const envPath = join(appDir, '.env');
+  if (existsSync(envExPath)) {
+    const { findFreePort: findFreePortB } = await import('./boilerplate-manager.js');
+    let envContent = readFileSync(envExPath, 'utf-8');
+    envContent = envContent.replace(/^BACKEND_PORT=.*/m, `BACKEND_PORT=${port}`);
+    // Start frontend port search AFTER the backend port to avoid collision
+    const fePort = await findFreePortB(port + 1);
+    envContent = envContent.replace(/^FRONTEND_PORT=.*/m, `FRONTEND_PORT=${fePort}`);
+    writeFileSync(envPath, envContent, 'utf-8');
+  } else if (existsSync(join(appDir, '.env'))) {
+    let envContent = readFileSync(join(appDir, '.env'), 'utf-8');
+    envContent = envContent.replace(/^BACKEND_PORT=.*/m, `BACKEND_PORT=${port}`);
+    writeFileSync(join(appDir, '.env'), envContent, 'utf-8');
+  }
   await reinitGitB(appDir);
-  setStep(job, 0, 'done');
-
-  setStep(job, 1, 'running');
   const alreadyExists = await gitea.repoExists(opts.appName);
   const cloneUrl = alreadyExists
     ? `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`
     : await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
-  setStep(job, 1, 'done');
-
-  setStep(job, 2, 'running');
-  const authedUrl = gitea.authedCloneUrl(cloneUrl);
-  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
-  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 2, 'done');
 
   setStep(job, 3, 'running');
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  const authedUrl = gitea.authedCloneUrl(cloneUrl);
+  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
+  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
-  setStep(job, 4, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`);
-  setStep(job, 4, 'done');
+  // Git Clone mode: skip Docker up + Health check.
+  // Clone + Gitea repo creation is sufficient — user deploys separately.
+  // If docker-compose.yml exists (e.g. brewnet boilerplate), auto-start.
+  const hasCompose = existsSync(join(appDir, 'docker-compose.yml')) || existsSync(join(appDir, 'compose.yml'));
+  if (hasCompose) {
+    setStep(job, 4, 'running', 'docker compose up --build');
+    await _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
+    await _dockerComposeUp(appDir, job);
+    setStep(job, 4, 'done', 'containers started');
+
+    setStep(job, 5, 'running');
+    const healthUrlB = _buildHealthUrl(appDir, port);
+    setStep(job, 5, 'running', `polling ${healthUrlB}`);
+    await _pollHealth(healthUrlB, 120_000, job);
+    setStep(job, 5, 'done');
+  } else {
+    setStep(job, 4, 'done', 'skipped — no docker-compose.yml');
+    setStep(job, 5, 'done', 'skipped — deploy separately');
+    appendLog(job, '[clone] Gitea push completed — no docker-compose.yml, skipping Docker up');
+  }
 
   addApp(appsJson, {
     name: opts.appName,
-    mode: 'git-url',
+    mode: 'git-clone',
     sourceUrl: opts.gitUrl,
     appDir,
     port,
     giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
-    status: 'running',
+    status: hasCompose ? 'running' : 'stopped',
     createdAt: new Date().toISOString(),
   });
 }
@@ -324,38 +912,45 @@ async function _createModeC(
   gitea: GiteaClient,
   appsJson: string,
 ): Promise<void> {
-  const { cloneStack, generateEnv, reinitGit } = await import('./boilerplate-manager.js');
-  const { resolveStackId } = await import('../config/frameworks.js');
+  const { cloneStack, generateEnv, reinitGit, findFreePort } = await import('./boilerplate-manager.js');
+  const { getStackById } = await import('../config/stacks.js');
 
-  // resolveStackId can return null for unknown combos — fail fast
-  const stackId = resolveStackId(opts.language ?? 'nodejs', opts.frameworkId ?? 'express');
-  if (!stackId) throw new Error(`Unknown stack: ${opts.language}/${opts.frameworkId}`);
-  const port = opts.port ?? 8080;
+  // Step 0 already done in _runCreateApp — retrieve resolved stackId
+  const stackId = (opts as CreateAppOptions & { _resolvedStackId?: string })._resolvedStackId!;
+  const requestedPort = opts.port ?? 8080;
   const appDir = join(ctx.projectPath, 'apps', opts.appName);
 
-  setStep(job, 0, 'running');
+  // Clone and scaffold (visible as part of Gitea repo step context)
   await cloneStack(stackId, appDir);
-  generateEnv(appDir, stackId, 'sqlite3', { hostPort: port });
+  // Auto-detect free host port starting from the requested port to prevent
+  // "port already allocated" errors when other apps occupy the requested port.
+  const port = await findFreePort(requestedPort);
+  const stackInfo = getStackById(stackId);
+  const frontendPort = (stackInfo && !stackInfo.isUnified) ? await findFreePort(port + 1) : undefined;
+  generateEnv(appDir, stackId, 'sqlite3', { hostPort: port, frontendPort });
   await reinitGit(appDir);
-  setStep(job, 0, 'done');
-
-  setStep(job, 1, 'running');
-  const cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
-  setStep(job, 1, 'done');
 
   setStep(job, 2, 'running');
-  const authedUrl = gitea.authedCloneUrl(cloneUrl);
-  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
-  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
+  const cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
   setStep(job, 2, 'done');
 
   setStep(job, 3, 'running');
-  await execa('docker', ['compose', 'up', '-d', '--build'], { cwd: appDir });
+  const authedUrl = gitea.authedCloneUrl(cloneUrl);
+  await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: appDir });
+  await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
-  setStep(job, 4, 'running');
-  await _pollHealth(`http://127.0.0.1:${port}/health`, 120_000);
-  setStep(job, 4, 'done');
+  setStep(job, 4, 'running', 'docker compose up --build');
+  ensureComposeFile(appDir, opts.appName, port, job);
+  await _injectQuickTunnelIfNeeded(appDir, opts.appName, port);
+  await _dockerComposeUp(appDir, job);
+  setStep(job, 4, 'done', 'containers started');
+
+  setStep(job, 5, 'running');
+  const healthUrlC = _buildHealthUrl(appDir, port);
+  setStep(job, 5, 'running', `polling ${healthUrlC}`);
+  await _pollHealth(healthUrlC, 120_000, job);
+  setStep(job, 5, 'done');
 
   addApp(appsJson, {
     name: opts.appName,

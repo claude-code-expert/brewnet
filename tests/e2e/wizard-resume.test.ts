@@ -323,7 +323,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       // Step 2: web server only, skip all optional components
       inputQueue = [];
       confirmQueue = [false, false, false, false]; // fileServer=false, db=false, media=false, ssh=false
-      selectQueue = ['configure', 'traefik'];
+      selectQueue = ['traefik'];
 
       state = await runServerComponentsStep(state);
       saveState(state);
@@ -452,7 +452,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       expect(loaded!.servers.webServer.service).toBe('traefik');
       expect(loaded!.servers.gitServer.service).toBe('gitea');
       expect(loaded!.servers.dbServer.primary).toBe('postgresql');
-      expect(loaded!.servers.dbServer.cache).toBe('redis');
+      expect(loaded!.servers.dbServer.cache).toBe('');
       expect(loaded!.servers.sshServer.enabled).toBe(true);
       expect(loaded!.servers.sshServer.sftp).toBe(true);
       expect(loaded!.servers.media.enabled).toBe(true);
@@ -522,10 +522,10 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       // Pre-set admin (done by runAdminSetupStep Pre-Step in real flow)
       state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
 
-      // Step 2: Server Components (fileServer=false, db=postgresql+17+redis, adminUI=false, media=false, ssh=false)
+      // Step 2: Server Components (fileServer=false, db=postgresql+17, adminUI=false, media=false, ssh=false)
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['configure', 'traefik', 'postgresql', '17', 'redis'];
+      selectQueue = ['traefik', 'postgresql', '17'];
 
       state = await runServerComponentsStep(state);
       saveState(state);
@@ -538,7 +538,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       expect(loaded!.admin.username).toBe('admin');
       expect(loaded!.servers.webServer.service).toBe('traefik');
       expect(loaded!.servers.dbServer.primary).toBe('postgresql');
-      expect(loaded!.servers.dbServer.cache).toBe('redis');
+      expect(loaded!.servers.dbServer.cache).toBe('');
     });
   });
 
@@ -762,10 +762,10 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       // Pre-set admin (done by runAdminSetupStep Pre-Step in real flow)
       state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
 
-      // Step 2: fileServer=false, db=postgresql+17+redis, adminUI=false, media=false, ssh=false
+      // Step 2: fileServer=false, db=postgresql+17, adminUI=false, media=false, ssh=false
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['configure', 'traefik', 'postgresql', '17', 'redis'];
+      selectQueue = ['traefik', 'postgresql', '17'];
       state = await runServerComponentsStep(state);
       saveState(state);
 

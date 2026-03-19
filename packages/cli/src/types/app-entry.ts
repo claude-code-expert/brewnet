@@ -1,7 +1,7 @@
 // packages/cli/src/types/app-entry.ts
 
 /** Source mode for a managed app. */
-export type AppMode = 'boilerplate' | 'git-url' | 'new-project';
+export type AppMode = 'boilerplate' | 'git-clone' | 'new-project';
 
 /** Lifecycle status of a managed app. */
 export type AppStatus = 'creating' | 'running' | 'stopped' | 'failed';
@@ -23,6 +23,8 @@ export interface AppJob {
   status: 'running' | 'done' | 'failed';
   steps: AppJobStep[];
   error?: string;
+  /** Rolling log lines from docker compose / health check (last 200 lines). */
+  logs?: string[];
 }
 
 /** Persisted record for one managed app (stored in apps.json). */
@@ -54,6 +56,7 @@ export interface CreateAppOptions {
   stackId?: string;
   // Mode B
   gitUrl?: string;
+  branch?: string;
   // Mode C
   language?: string;
   frameworkId?: string;
@@ -78,4 +81,40 @@ export interface GitRepoEntry {
   html_url: string;
   description: string;
   private: boolean;
+  // Raw Gitea API fields
+  language?: string;
+  stars_count?: number;
+  updated?: string;
+  // Enriched by admin server before returning to client
+  appName?: string;
+  stars?: number;
+  updatedAt?: string;
+}
+
+/** Git + Gitea information for a managed app. */
+export interface AppGitInfo {
+  /** Gitea web URL, e.g. http://localhost/git/admin/my-api */
+  giteaUrl: string;
+  /** HTTP clone URL */
+  cloneUrlHttp: string;
+  /** SSH clone URL */
+  cloneUrlSsh: string;
+  /** Absolute path on disk */
+  localPath: string;
+  /** Current default branch */
+  branch: string;
+  /** Latest commit on the branch, null if repo is empty */
+  latestCommit: {
+    hash: string;
+    shortHash: string;
+    message: string;
+    date: string; // ISO 8601
+  } | null;
+}
+
+/** Per-app deploy settings (stored in apps.json alongside AppEntry). */
+export interface DeploySettings {
+  autoDeploy: boolean;
+  deployBranch: string;
+  webhookSecret?: string;
 }
