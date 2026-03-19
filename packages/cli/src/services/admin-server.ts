@@ -20,7 +20,7 @@ import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
 import { createBackup, listBackups } from './backup-manager.js';
 import { getServiceDefinition, SERVICE_REGISTRY } from '../config/services.js';
-import { SERVICE_DETAIL_MAP } from './status-page.js';
+// SERVICE_DETAIL_MAP inlined from deleted status-page.ts (T044/T045)
 import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
@@ -48,6 +48,7 @@ export interface ServiceStatus {
   url: string | null;
   externalUrl: string | null;
   removable: boolean;
+  stackId?: string;
 }
 
 export interface AdminServerOptions {
@@ -82,19 +83,13 @@ interface DashboardConfig {
   quickTunnelUrl: string;
   zoneName: string;
   tunnelId: string;
-  /** Pre-rendered HTML for the boilerplate Dev Stack App section (empty string when no app) */
-  boilerplateHtml: string;
-  /** JSON-serialised array of BoilerplateMeta for JS embedding */
-  boilerplateStacksJson: string;
-  /** JSON-serialised array of DomainConnection for JS embedding */
-  domainConnectionsJson: string;
 }
 
 // ---------------------------------------------------------------------------
 // Static icon assets — resolved once at module load from public/images/
 // ---------------------------------------------------------------------------
 
-const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../../..');
+const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../..');
 
 // ---------------------------------------------------------------------------
 // Static file serving for React SPA (packages/admin-ui/dist)
@@ -157,10 +152,375 @@ const FAVICON_ICO = (() => {
   return null;
 })();
 
-/** Minimal HTML entity escaping for server-side string injection. */
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// ---------------------------------------------------------------------------
+// Service catalog data — moved from deleted status-page.ts (T044/T045)
+// ---------------------------------------------------------------------------
+
+interface ServiceDetailInfo {
+  description: string;
+  license: string;
+  homepage: string;
+  features: string[];
+  credentials: {
+    method: 'env' | 'wizard' | 'cli' | 'basicauth' | 'none';
+    summary: string;
+    command?: string;
+  };
+  tips: string[];
 }
+
+const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
+  Traefik: {
+    description: 'Go-based open-source reverse proxy and load balancer',
+    license: 'MIT',
+    homepage: 'https://traefik.io/traefik/',
+    features: [
+      'Docker label-based automatic service discovery',
+      'Let\'s Encrypt certificate auto-renewal',
+      'Built-in web dashboard for route monitoring',
+      'Middleware chain: BasicAuth, Rate Limit, IP Whitelist',
+      'HTTP to HTTPS automatic redirect',
+    ],
+    credentials: {
+      method: 'basicauth',
+      summary: 'No login in dev mode (--api.insecure=true). Use BasicAuth middleware for production.',
+      command: 'htpasswd -nb admin YOUR_PASSWORD',
+    },
+    tips: [
+      'Remove --api.insecure=true in production and add BasicAuth or Authelia',
+      'Set exposedbydefault=false and explicitly enable each service with traefik.enable=true',
+      'Add --certificatesresolvers.le.acme.email=YOUR_EMAIL for Let\'s Encrypt',
+    ],
+  },
+  'Traefik Dashboard': {
+    description: 'Built-in Traefik web UI for monitoring routes, services, and middleware',
+    license: 'MIT',
+    homepage: 'https://doc.traefik.io/traefik/operations/dashboard/',
+    features: [
+      'Real-time view of HTTP/TCP routers',
+      'Service health and load balancer status',
+      'Middleware chain visualization',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No authentication in dev mode (--api.insecure=true). Protected by BasicAuth in production.',
+    },
+    tips: [
+      'Dashboard URL requires trailing slash: /dashboard/',
+      'Secure with BasicAuth middleware before exposing externally',
+    ],
+  },
+  Gitea: {
+    description: 'Lightweight self-hosted Git service written in Go',
+    license: 'MIT',
+    homepage: 'https://about.gitea.com/',
+    features: [
+      'GitHub-like web UI with issues, PRs, wiki, project boards',
+      'Gitea Actions — GitHub Actions compatible CI/CD',
+      'Low memory footprint (~200 MB)',
+      'LDAP, OAuth2, SMTP authentication support',
+      'PostgreSQL, MySQL, SQLite backend support',
+    ],
+    credentials: {
+      method: 'wizard',
+      summary: 'First visit shows Installation Wizard. Create admin account in "Administrator Account Settings" section.',
+      command: 'docker exec -it brewnet-gitea gitea admin user create --username admin --password PASSWORD --email admin@brewnet.dev --admin',
+    },
+    tips: [
+      'Set DISABLE_REGISTRATION=true to allow only admin-created accounts',
+      'Set REQUIRE_SIGNIN_VIEW=true to prevent anonymous repo browsing',
+      'SSH port mapped to 3022 to avoid conflict with host SSH (22)',
+    ],
+  },
+  Nextcloud: {
+    description: 'Self-hosted cloud storage platform (Google Drive/Dropbox alternative)',
+    license: 'AGPL-3.0',
+    homepage: 'https://nextcloud.com/',
+    features: [
+      'File sync, sharing, and collaboration',
+      '200+ app extensions: calendar, contacts, notes, office docs',
+      'WebDAV protocol support',
+      'Desktop and mobile clients available',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin credentials set in Pre-Step of brewnet init wizard.',
+      command: 'docker exec -u www-data brewnet-nextcloud php occ user:add USERNAME --display-name="Display Name"',
+    },
+    tips: [
+      'Redis connection recommended for file locking and cache performance',
+      'Add all access domains/IPs to NEXTCLOUD_TRUSTED_DOMAINS',
+      'Switch background jobs to cron: docker exec -u www-data brewnet-nextcloud php occ background:cron',
+    ],
+  },
+  PostgreSQL: {
+    description: 'Advanced open-source relational database',
+    license: 'PostgreSQL (BSD-like)',
+    homepage: 'https://www.postgresql.org/',
+    features: [
+      'Full ACID compliance with MVCC',
+      'Native JSON/JSONB support',
+      'Full-text search, PostGIS, time-series extensions',
+      'Logical and physical replication',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Configured via POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB environment variables.',
+      command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet_db',
+    },
+    tips: [
+      'Internal network only (brewnet-internal) — no host port exposed',
+      'Data persisted in named volume — safe across container restarts',
+      'Use init SQL scripts in docker-entrypoint-initdb.d/ for multi-DB setup',
+    ],
+  },
+  MySQL: {
+    description: 'Popular open-source relational database',
+    license: 'GPL-2.0',
+    homepage: 'https://www.mysql.com/',
+    features: [
+      'InnoDB storage engine with ACID transactions',
+      'JSON support and document store',
+      'Replication and clustering',
+      'Widely supported by web applications',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Configured via MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD environment variables.',
+      command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet_db',
+    },
+    tips: [
+      'Internal network only (brewnet-internal) — no host port exposed',
+      'Root password required at first startup',
+      'Init SQL scripts run once from docker-entrypoint-initdb.d/',
+    ],
+  },
+  Redis: {
+    description: 'In-memory key-value store for caching and message brokering',
+    license: 'BSD-3',
+    homepage: 'https://redis.io/',
+    features: [
+      'Session storage, cache, message queue, Pub/Sub',
+      'Single-threaded event loop — 100K+ ops/sec',
+      'RDB + AOF persistence support',
+      'Used by Nextcloud file locking and Gitea caching',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with --requirepass flag.',
+      command: 'docker exec -it brewnet-redis redis-cli ping',
+    },
+    tips: [
+      'Set --maxmemory and --maxmemory-policy to prevent unbounded memory growth',
+      'Internal network only — no host port exposed',
+      'Redis 6+ supports ACL for multi-user access control',
+    ],
+  },
+  pgAdmin: {
+    description: 'Web-based administration tool for PostgreSQL',
+    license: 'PostgreSQL (BSD-like)',
+    homepage: 'https://www.pgadmin.org/',
+    features: [
+      'SQL editor with query execution and plan visualization',
+      'Table, index, view, and function GUI management',
+      'Backup and restore (pg_dump, pg_restore)',
+      'Multi-server management via server groups',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin credentials set in Pre-Step. Email format: {username}@brewnet.dev. Register the DB server after first login.',
+    },
+    tips: [
+      'Connect to PostgreSQL using hostname "postgresql" (Docker container name), port 5432',
+      'Set PGADMIN_CONFIG_SERVER_MODE=False to skip login in dev mode',
+      'Mount servers.json to auto-register DB servers on startup',
+    ],
+  },
+  Jellyfin: {
+    description: 'Open-source media server (Plex/Emby free alternative)',
+    license: 'GPL-2.0',
+    homepage: 'https://jellyfin.org/',
+    features: [
+      'Movies, TV, music, photos, and live TV/DVR',
+      'Hardware transcoding (Intel QSV, NVIDIA NVENC, VAAPI)',
+      'Clients for web, Android, iOS, Roku, Fire TV, Kodi',
+      'DLNA support',
+    ],
+    credentials: {
+      method: 'wizard',
+      summary: 'First visit shows Setup Wizard. Create admin account in step 2 (User).',
+    },
+    tips: [
+      'Mount media folders as read-only (:ro) for safety',
+      'Add --device=/dev/dri:/dev/dri for Intel GPU hardware transcoding',
+      'DLNA requires --net=host (does not work in Docker bridge mode)',
+    ],
+  },
+  'SSH Server': {
+    description: 'Industry-standard remote access via OpenSSH in Docker',
+    license: 'BSD',
+    homepage: 'https://www.openssh.com/',
+    features: [
+      'Key-based authentication (more secure than passwords)',
+      'Built-in SFTP — no separate FTP server needed',
+      'Port forwarding and tunneling support',
+      'Remote management entry point for Brewnet containers',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin username set in Pre-Step. Password auth enabled (PASSWORD_ACCESS=true); switch to key-only after setup.',
+      command: 'ssh -p 2222 USER@localhost',
+    },
+    tips: [
+      'Switch to key-only auth after initial setup: set PASSWORD_ACCESS=false',
+      'Port 2222 avoids conflict with host SSH (port 22)',
+      'SFTP runs as SSH subsystem — no separate container needed',
+    ],
+  },
+  FileBrowser: {
+    description: 'Lightweight web-based file manager written in Go',
+    license: 'Apache-2.0',
+    homepage: 'https://filebrowser.org/',
+    features: [
+      'Upload, download, edit, and delete files via browser',
+      'Multi-user support with per-user directory scoping',
+      'Built-in code editor for text files',
+      'Share link generation and shell command execution',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'Default user: admin. Random password printed to container logs on first start.',
+      command: 'docker logs brewnet-filebrowser | grep "password"',
+    },
+    tips: [
+      'Initial password is shown only once in logs — change it immediately',
+      'Set per-user Scope to restrict directory access',
+      'All settings and user data stored in filebrowser.db file',
+    ],
+  },
+  'MinIO Console': {
+    description: 'S3-compatible object storage with a web console',
+    license: 'AGPL-3.0',
+    homepage: 'https://min.io/',
+    features: [
+      'Amazon S3-compatible API',
+      'Web console for bucket and object management',
+      'Erasure coding and bitrot protection',
+      'Multi-user IAM with policies',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'Uses admin credentials set in Pre-Step of brewnet init wizard.',
+    },
+    tips: [
+      'Console on port 9001, API on port 9000',
+      'Create IAM users with limited policies for application access',
+      'Use mc (MinIO Client) CLI for scripted bucket management',
+    ],
+  },
+  Cloudflared: {
+    description: 'Cloudflare Tunnel daemon — exposes local services to the internet securely',
+    license: 'Apache-2.0',
+    homepage: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
+    features: [
+      'No port forwarding or public IP required',
+      'Automatic SSL/TLS via Cloudflare',
+      'Quick Tunnel (*.trycloudflare.com) or Named Tunnel with custom domain',
+      'DDoS protection included',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No login. Quick Tunnel needs no account. Named Tunnel uses TUNNEL_TOKEN from Cloudflare API.',
+    },
+    tips: [
+      'Quick Tunnel URL changes on every restart — use Named Tunnel for permanent access',
+      'Check tunnel status: brewnet domain tunnel status',
+      'Audit logs saved to ~/.brewnet/logs/tunnel.log',
+    ],
+  },
+  Nginx: {
+    description: 'High-performance HTTP and reverse proxy server',
+    license: 'BSD-2',
+    homepage: 'https://nginx.org/',
+    features: [
+      'Event-driven architecture — handles 10K+ concurrent connections',
+      'Static file serving and reverse proxy',
+      'Load balancing with multiple algorithms',
+      'SSL/TLS termination',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No built-in authentication. Use auth_basic module or upstream auth for protection.',
+    },
+    tips: [
+      'Default config serves welcome page on port 80',
+      'Use location blocks for path-based routing to upstream services',
+      'Reload config without downtime: nginx -s reload',
+    ],
+  },
+  Caddy: {
+    description: 'Modern web server with automatic HTTPS',
+    license: 'Apache-2.0',
+    homepage: 'https://caddyserver.com/',
+    features: [
+      'Automatic HTTPS with Let\'s Encrypt (zero config)',
+      'HTTP/2 and HTTP/3 support out of the box',
+      'Simple Caddyfile configuration',
+      'Reverse proxy with health checks',
+    ],
+    credentials: {
+      method: 'none',
+      summary: 'No built-in authentication. Use basicauth directive in Caddyfile for protection.',
+    },
+    tips: [
+      'Caddyfile syntax is simpler than Nginx — great for small setups',
+      'Automatic certificate management requires ports 80 and 443',
+      'Use caddy reload for config changes without downtime',
+    ],
+  },
+  Valkey: {
+    description: 'Open-source, high-performance Redis-compatible in-memory data store (Linux Foundation fork)',
+    license: 'BSD-3',
+    homepage: 'https://valkey.io/',
+    features: [
+      'Drop-in Redis replacement — fully API compatible',
+      'Session storage, cache, message queue, Pub/Sub',
+      'RDB + AOF persistence support',
+      'Active community-driven development post Redis license change',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with --requirepass flag.',
+      command: 'docker exec -it brewnet-valkey valkey-cli ping',
+    },
+    tips: [
+      'Set --maxmemory and --maxmemory-policy to prevent unbounded memory growth',
+      'Internal network only — no host port exposed',
+      'Use OBJECT ENCODING to inspect memory layout of individual keys',
+    ],
+  },
+  KeyDB: {
+    description: 'Multithreaded Redis-compatible in-memory database with higher throughput',
+    license: 'BSD-3',
+    homepage: 'https://docs.keydb.dev/',
+    features: [
+      'Multi-threaded architecture — higher throughput than Redis on multi-core CPUs',
+      'Active-Active replication for multi-master setups',
+      'FLASH storage support for large datasets exceeding RAM',
+      'Drop-in Redis replacement — fully API compatible',
+    ],
+    credentials: {
+      method: 'env',
+      summary: 'No traditional user accounts. Optionally secured with requirepass config.',
+      command: 'docker exec -it brewnet-keydb keydb-cli ping',
+    },
+    tips: [
+      'Set server-threads to number of CPU cores for best performance',
+      'Internal network only — no host port exposed',
+      'Use keydb-cli --stat to monitor live throughput',
+    ],
+  },
+};
 
 /**
  * Name alias map: SERVICE_REGISTRY display names → SERVICE_DETAIL_MAP keys.
@@ -172,536 +532,8 @@ const NAME_ALIASES: Record<string, string> = {
   'MinIO': 'MinIO Console',
 };
 
-function generateDashboardHtml(config: DashboardConfig): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Brewnet Admin</title>
-<link rel="icon" type="image/svg+xml" href="/icon.svg"/>
-<link rel="alternate icon" href="/favicon.ico"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#c9d1d9;font-family:'Courier New',monospace;font-size:14px;padding:0}
-#header{height:50px;background:#0c1525;border-bottom:1px solid #1a2d47;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
-#header .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:#c9d1d9}
-#header .logo-text{display:flex;flex-direction:column;line-height:1.25}
-#header .logo-name{font-size:16px;font-weight:800;color:#f5a623}
-#header .logo-tag{font-size:9.5px;color:#3a5070;font-weight:400}
-#header .nav-links{display:flex;align-items:center;gap:10px}
-#header .nav-link{font-size:12px;color:#8b949e;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #30363d;font-family:inherit;transition:all .14s}
-#header .nav-link:hover{color:#c9d1d9;background:#21262d}
-#header .nav-link.active{color:#f5a623;border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.06)}
-.page-body{padding:24px}
-.sub{color:#8b949e;margin-bottom:24px;font-size:12px}
-table{width:100%;border-collapse:collapse;margin-bottom:24px}
-th{text-align:left;padding:8px 12px;background:#161b22;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d}
-td{padding:8px 12px;border-bottom:1px solid #21262d;vertical-align:middle}
-tr:hover td{background:#161b22}
-.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
-.running{background:#1a4731;color:#3fb950}
-.stopped{background:#3d1f1f;color:#f85149}
-.error{background:#3d2b1f;color:#e3b341}
-.btn{padding:4px 10px;border:1px solid;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;background:transparent}
-.btn-start{border-color:#3fb950;color:#3fb950}
-.btn-start:hover{background:#1a4731}
-.btn-stop{border-color:#f85149;color:#f85149}
-.btn-stop:hover{background:#3d1f1f}
-.btn-remove{border-color:#8b949e;color:#8b949e;margin-left:4px}
-.btn-remove:hover{background:#21262d}
-.actions{display:flex;gap:4px;align-items:center}
-#log{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;height:200px;overflow-y:auto;font-size:12px;color:#8b949e;margin-bottom:16px}
-.tab-bar{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid #30363d}
-.tab-btn{padding:8px 16px;cursor:pointer;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;font-family:inherit;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
-.tab-btn.active{color:#f5a623;border-bottom-color:#f5a623}
-.tab-btn:hover{color:#c9d1d9}
-.tab-content{display:none}
-.tab-content.active{display:block}
-.log-filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
-.log-filters select,.log-filters input{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:4px 8px;border-radius:4px;font-family:inherit;font-size:12px}
-.log-level-btn{padding:3px 8px;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-family:inherit;font-size:11px}
-.log-level-btn.active{border-color:#f5a623;color:#f5a623}
-#logs-table{width:100%;border-collapse:collapse;font-size:12px}
-#logs-table td{padding:4px 8px;border-bottom:1px solid #21262d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#logs-table td:last-child{white-space:normal}
-.log-src-cli{color:#58d1ff}.log-src-tunnel{color:#d2a8ff}.log-src-access{color:#79c0ff}.log-src-service{color:#c9d1d9}
-.log-lvl-info{color:#3fb950}.log-lvl-warn{color:#e3b341}.log-lvl-error{color:#f85149}.log-lvl-debug{color:#8b949e}
-.section-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
-.refresh{color:#58a6ff;cursor:pointer;font-size:12px;text-decoration:underline}
-.svc-link{color:#c9d1d9;text-decoration:underline;text-decoration-color:#30363d;cursor:pointer;transition:color .15s}
-.svc-link:hover{color:#58a6ff;text-decoration-color:#58a6ff}
-.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
-.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;max-width:740px;width:90%;max-height:80vh;overflow-y:auto;font-family:'Courier New',monospace;font-size:14px;color:#c9d1d9}
-.modal-titlebar{background:#0d1117;padding:10px 16px;display:flex;align-items:center;gap:8px;border-radius:10px 10px 0 0;position:sticky;top:0;z-index:1}
-.modal-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
-.modal-dot.r{background:#f85149}.modal-dot.y{background:#e3b341}.modal-dot.g{background:#3fb950}
-.modal-title{flex:1;color:#8b949e;font-size:13px;margin-left:4px}
-.modal-close{background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
-.modal-close:hover{color:#c9d1d9}
-.modal-body{padding:16px}
-.modal-desc{color:#8b949e;margin-bottom:4px}
-.modal-license{color:#484f58;font-size:12px;margin-bottom:16px}
-.modal-sh{color:#58a6ff;font-weight:600;margin-bottom:8px;margin-top:16px}
-.modal-sh:first-child{margin-top:0}
-.modal-url{margin-bottom:6px}
-.modal-url-label{color:#8b949e;font-size:13px}
-.modal-url-a{color:#58a6ff;text-decoration:underline;text-decoration-color:#30363d}
-.modal-url-a:hover{text-decoration-color:#58a6ff}
-.modal-bullet{color:#8b949e;padding-left:16px;margin-bottom:4px;position:relative}
-.modal-bullet::before{content:'> ';color:#3fb950;position:absolute;left:0}
-.modal-cmd{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 12px;color:#58a6ff;font-family:monospace;font-size:13px;margin-top:8px;word-break:break-all}
-.modal-cred{margin-top:6px}
-.modal-cred-l{color:#8b949e;font-size:13px}
-.modal-cred-v{color:#c9d1d9;font-family:monospace}
-.modal-tip{color:#8b949e;padding-left:16px;margin-bottom:4px;position:relative}
-.modal-tip::before{content:'! ';color:#e3b341;font-weight:700;position:absolute;left:0}
-</style>
-</head>
-<body>
-<div id="header">
-  <a href="/" class="logo">
-    <svg width="28" height="28" viewBox="0 0 48 48" fill="none" stroke="#f5a623" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26H32V34C32 36.8 29.8 39 27 39H13C10.2 39 8 36.8 8 34V26Z" stroke-width="3.2" fill="none"/><path d="M32 28.5C35.5 28.5 37 30.5 37 32.5C37 34.5 35.5 36.5 32 36.5" stroke-width="3.2" fill="none"/><circle cx="20" cy="30" r="1.8" fill="#f5a623" stroke="none"/><path d="M16.5 20a5 5 0 0 1 7 0" stroke-width="3" fill="none"/><path d="M13.5 15.5a10 10 0 0 1 13 0" stroke-width="3" fill="none"/><path d="M10.5 11a15 15 0 0 1 19 0" stroke-width="3" fill="none"/></svg>
-    <span class="logo-text"><span class="logo-name">Brewnet</span><span class="logo-tag">Your server on tap. Just brew it.</span></span>
-  </a>
-  <div class="nav-links">
-    <a href="/" class="nav-link active">Dashboard</a>
-    <a href="/apps" class="nav-link">Apps</a>
-  </div>
-</div>
-<div class="page-body">
-<div class="sub" id="subtitle" style="margin-bottom:12px">Loading...</div>
-<div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('services')">Services</button>
-  <button class="tab-btn" onclick="switchTab('logs')">Logs</button>
-</div>
-<div id="tab-services" class="tab-content active">
-<div class="section-title">Services</div>
-<table id="svc-table">
-  <thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Local</th><th>External</th><th>Actions</th></tr></thead>
-  <tbody id="svc-body"><tr><td colspan="6" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>
-
-${config.domainProvider === 'tunnel' ? `
-<!-- ── Domains Section (T039) ── -->
-<div class="section-title" style="margin-top:24px;display:flex;justify-content:space-between;align-items:center">
-  External Domains
-  <span style="display:flex;gap:8px;align-items:center">
-    <input id="admin-pw" type="password" placeholder="Admin password" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;color:#c9d1d9;font-family:inherit;font-size:11px;width:140px"/>
-    <span class="btn" style="font-size:11px;border-color:#58a6ff;color:#58a6ff" onclick="showCnameGuide()">CNAME Guide</span>
-  </span>
-</div>
-<table id="domain-table">
-  <thead><tr><th>App</th><th>External URL</th><th>Status</th><th>Connected</th><th>Actions</th></tr></thead>
-  <tbody id="domain-body"><tr><td colspan="5" style="color:#8b949e">Loading...</td></tr></tbody>
-</table>` : ''}
-
-<!-- ── CNAME Guide Modal (T041) ── -->
-<div id="cname-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal-box" style="max-width:600px">
-    <div class="modal-titlebar"><span class="modal-dot" style="background:#ff5f57"></span><span class="modal-dot" style="background:#febc2e"></span><span class="modal-dot" style="background:#28c840"></span><span style="flex:1;text-align:center;color:#8b949e;font-size:13px">CNAME Setup Guide (Scenario C)</span></div>
-    <div style="padding:16px">
-      <p style="color:#c9d1d9;margin-bottom:12px">도메인 네임서버를 Cloudflare로 이전하지 않고, CNAME 레코드만으로 연결하는 방법입니다.</p>
-      <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:12px;margin-bottom:16px">
-        <p style="font-size:11px;color:#8b949e;margin-bottom:4px">CNAME 값 (터널 UUID):</p>
-        <div style="display:flex;align-items:center;gap:8px">
-          <code id="cname-value" style="color:#f5a623;font-size:13px;flex:1;word-break:break-all"></code>
-          <span class="btn" style="border-color:#58a6ff;color:#58a6ff;font-size:11px;white-space:nowrap" onclick="navigator.clipboard.writeText(document.getElementById('cname-value').textContent)">Copy</span>
-        </div>
-      </div>
-      <div style="margin-bottom:16px">
-        <p style="font-weight:bold;color:#c9d1d9;margin-bottom:8px">DNS 제공자별 설정 방법:</p>
-        <table style="width:100%;font-size:12px">
-          <tr><td style="padding:4px 8px;color:#f5a623">GoDaddy</td><td style="padding:4px 8px">DNS 관리 → 레코드 추가 → 유형: CNAME → 이름: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
-          <tr><td style="padding:4px 8px;color:#f5a623">Namecheap</td><td style="padding:4px 8px">고급 DNS → 새 레코드 추가 → Type: CNAME → Host: {subdomain} → Value: {tunnelId}.cfargotunnel.com</td></tr>
-          <tr><td style="padding:4px 8px;color:#f5a623">가비아</td><td style="padding:4px 8px">DNS 관리 → 레코드 추가 → 타입: CNAME → 호스트: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
-          <tr><td style="padding:4px 8px;color:#f5a623">Cafe24</td><td style="padding:4px 8px">DNS 관리 → CNAME 추가 → 호스트: {subdomain} → 값: {tunnelId}.cfargotunnel.com</td></tr>
-        </table>
-      </div>
-      <div style="margin-bottom:16px">
-        <p style="font-weight:bold;color:#c9d1d9;margin-bottom:8px">CLI 명령어:</p>
-        <div style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:8px 12px;font-size:12px">
-          <code style="color:#3fb950">brewnet domain connect &lt;app&gt; --domain &lt;subdomain&gt;.yourdomain.com</code>
-        </div>
-      </div>
-      <span class="btn btn-stop" onclick="document.getElementById('cname-modal').style.display='none'">Close</span>
-    </div>
-  </div>
-</div>
-
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Activity<span style="color:#58a6ff;font-size:11px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0" onclick="document.getElementById('log').innerHTML=''">clear</span></div>
-<div id="log"></div>
-</div><!-- /tab-services -->
-
-<div id="tab-logs" class="tab-content">
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
-  System Logs
-  <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e;text-transform:none;letter-spacing:0;cursor:pointer">
-    <input type="checkbox" id="logs-auto-refresh" checked style="accent-color:#f5a623"/> Auto-refresh (5s)
-  </label>
-</div>
-<div class="log-filters">
-  <select id="log-source" onchange="fetchLogs()">
-    <option value="">All Sources</option>
-    <option value="cli">CLI</option>
-    <option value="tunnel">Tunnel</option>
-    <option value="access">Access</option>
-    <option value="service">Service</option>
-  </select>
-  <select id="log-level" onchange="fetchLogs()">
-    <option value="">All Levels</option>
-    <option value="error">Error</option>
-    <option value="warn">Warn</option>
-    <option value="info">Info</option>
-    <option value="debug">Debug</option>
-  </select>
-  <select id="log-service-filter" onchange="fetchLogs()">
-    <option value="">All Services</option>
-  </select>
-  <input type="text" id="log-search" placeholder="Search..." onkeyup="if(event.key==='Enter')fetchLogs()" style="width:140px"/>
-  <span class="btn btn-start" style="font-size:11px" onclick="fetchLogs()">Search</span>
-</div>
-<div style="overflow-x:auto;max-height:500px;overflow-y:auto;border:1px solid #30363d;border-radius:4px">
-  <table id="logs-table">
-    <tbody id="logs-body"><tr><td colspan="5" style="color:#8b949e;padding:12px">Select the Logs tab to view system logs.</td></tr></tbody>
-  </table>
-</div>
-<div id="logs-stats" style="margin-top:8px;font-size:11px;color:#8b949e"></div>
-</div><!-- /tab-logs -->
-
-<script>
-var SERVICE_DETAILS = ${JSON.stringify(SERVICE_DETAIL_MAP)};
-var ADMIN_CREDS = ${JSON.stringify({ username: config.adminUsername, passwordHint: config.passwordHint })};
-var DOMAIN_CONFIG = ${JSON.stringify({ provider: config.domainProvider, quickTunnelUrl: config.quickTunnelUrl, zoneName: config.zoneName, tunnelId: config.tunnelId })};
-var NAME_ALIASES = ${JSON.stringify(NAME_ALIASES)};
-var BOILERPLATE_STACKS = ${config.boilerplateStacksJson};
-var DOMAIN_CONNECTIONS = ${config.domainConnectionsJson};
-var EXT_PATHS = {traefik:{sub:'',path:''},nginx:{sub:'',path:''},caddy:{sub:'',path:''},gitea:{sub:'git',path:'/git'},nextcloud:{sub:'cloud',path:'/cloud'},pgadmin:{sub:'db',path:'/pgadmin'},jellyfin:{sub:'media',path:'/jellyfin'},filebrowser:{sub:'fb',path:'/files'},minio:{sub:'minio',path:'/minio'}};
-function getExternalUrl(id){
-  var c=DOMAIN_CONFIG;if(c.provider==='local')return null;
-  var e=EXT_PATHS[id];
-  if(!e){
-    var conn=(DOMAIN_CONNECTIONS||[]).find(function(dc){return dc.appName===id;});
-    if(conn)return 'https://'+conn.hostname;
-    if(c.quickTunnelUrl){
-      var NO_QT={"postgresql":1,"mysql":1,"mariadb":1,"openssh-server":1,"traefik":1,"postgres":1,"db":1};
-      if(NO_QT[id])return null;
-      var base=c.quickTunnelUrl.replace(new RegExp('/$'),'');
-      // Map compose service name to Traefik path via BOILERPLATE_STACKS
-      // backend → stackId (e.g. "nodejs-nestjs"), frontend → stackId + "-ui"
-      var bpStacks=typeof BOILERPLATE_STACKS!=='undefined'?BOILERPLATE_STACKS:[];
-      for(var i=0;i<bpStacks.length;i++){
-        var bp=bpStacks[i];if(!bp.stackId||!bp.appDir)continue;
-        // appDir ends with /{stackId}, extract stackId from path
-        var parts=bp.appDir.replace(new RegExp('/$'),'').split('/');
-        var dirName=parts[parts.length-1]||'';
-        // "backend" service in a stack → /apps/{stackId}
-        if(id==='backend'||id==='app'||id==='web'||id==='api'||id==='server'){
-          return base+'/apps/'+dirName;
-        }
-        if(id==='frontend'||id==='ui'){
-          return base+'/apps/'+dirName+'-ui';
-        }
-      }
-      // Fallback: use service id as path
-      return base+'/apps/'+id;
-    }
-    return null;
-  }
-  if(c.quickTunnelUrl){return c.quickTunnelUrl.replace(new RegExp('/$'),'')+e.path;}
-  if(c.zoneName){return e.sub?'https://'+e.sub+'.'+c.zoneName:'https://'+c.zoneName;}
-  return null;
-}
-function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function resolveDetailName(n){return NAME_ALIASES[n]||n;}
-function showServiceModal(name,localUrl,externalUrl){
-  log('['+name+'] info'+(localUrl?' — local: '+localUrl:'')+(externalUrl?' | ext: '+externalUrl:''),'info');
-  var detailName=resolveDetailName(name);
-  var info=SERVICE_DETAILS[detailName];
-  if(!info)return;
-  var ov=document.createElement('div');ov.className='modal-overlay';
-  ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
-  var accessHtml='';
-  if(localUrl&&localUrl.indexOf('http')===0){
-    accessHtml+='<div class="modal-url"><span class="modal-url-label">Local:</span> <a href="'+escapeHtml(localUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(localUrl)+'</a></div>';
-  }else if(localUrl){
-    accessHtml+='<div class="modal-url"><span class="modal-url-label">Local:</span> <span style="color:#8b949e">'+escapeHtml(localUrl)+'</span></div>';
-  }
-  if(externalUrl){
-    accessHtml+='<div class="modal-url"><span class="modal-url-label">External:</span> <a href="'+escapeHtml(externalUrl)+'" target="_blank" class="modal-url-a">'+escapeHtml(externalUrl)+'</a></div>';
-  }
-  var featHtml=info.features.map(function(f){return '<div class="modal-bullet">'+escapeHtml(f)+'</div>';}).join('');
-  var credHtml='<div style="color:#8b949e">'+escapeHtml(info.credentials.summary)+'</div>';
-  if(info.credentials.method==='env'||info.credentials.method==='basicauth'){
-    credHtml+='<div class="modal-cred"><span class="modal-cred-l">Username:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.username)+'</span></div>';
-    credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+'</span></div>';
-  }
-  if(info.credentials.command){credHtml+='<div class="modal-cmd">'+escapeHtml(info.credentials.command)+'</div>';}
-  var tipsHtml=info.tips.map(function(t){return '<div class="modal-tip">'+escapeHtml(t)+'</div>';}).join('');
-  ov.innerHTML='<div class="modal-box">'+
-    '<div class="modal-titlebar">'+
-      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">'+escapeHtml(name)+' \\u2014 service info</span>'+
-      '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
-    '</div>'+
-    '<div class="modal-body">'+
-      '<div class="modal-desc">'+escapeHtml(info.description)+'</div>'+
-      '<div class="modal-license">License: '+escapeHtml(info.license)+'</div>'+
-      (accessHtml?'<div class="modal-sh">$ access</div>'+accessHtml:'')+
-      '<div class="modal-sh">$ features</div>'+featHtml+
-      '<div class="modal-sh">$ credentials</div>'+credHtml+
-      '<div class="modal-sh">$ tips</div>'+tipsHtml+
-      (info.homepage?'<div class="modal-sh">$ homepage</div><div class="modal-url"><a href="'+escapeHtml(info.homepage)+'" target="_blank" class="modal-url-a">'+escapeHtml(info.homepage)+'</a> — Refer to the official documentation for usage manual</div>':'')+
-    '</div></div>';
-  document.body.appendChild(ov);
-  document.addEventListener('keydown',handleModalEsc);
-}
-function closeServiceModal(){var o=document.querySelector('.modal-overlay');if(o)o.remove();document.removeEventListener('keydown',handleModalEsc);}
-function handleModalEsc(e){if(e.key==='Escape')closeServiceModal();}
-function showBoilerplateModal(idx){
-  var s=BOILERPLATE_STACKS[idx];if(!s)return;
-  log('['+s.stackId+'] stack info — '+(s.lang||'')+(s.frameworkId?'/'+s.frameworkId:'')+(s.backendUrl?' | '+s.backendUrl:'')+' | status: '+(s.status||'?'),'info');
-  var repoBase='https://github.com/claude-code-expert/brewnet-boilerplate';
-  var readmeUrl=repoBase+'/tree/'+escapeHtml(s.gitBranch||('stack/'+s.stackId));
-  var ov=document.createElement('div');ov.className='modal-overlay';
-  ov.onclick=function(e){if(e.target===ov)closeServiceModal();};
-  var accessHtml='';
-  var bu=s.backendUrl||'';
-  var fu=s.frontendUrl||'';
-  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Backend:</span> <a href="'+escapeHtml(bu)+'" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'</a></div>';}
-  if(!s.isUnified&&fu&&fu!==bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">Frontend:</span> <a href="'+escapeHtml(fu)+'" target="_blank" class="modal-url-a">'+escapeHtml(fu)+'</a></div>';}
-  if(bu){accessHtml+='<div class="modal-url"><span class="modal-url-label">API Docs:</span> <a href="'+escapeHtml(bu)+'/docs" target="_blank" class="modal-url-a">'+escapeHtml(bu)+'/docs</a></div>';}
-  var stackLabel=(s.lang||'')+(s.frameworkId?' / '+s.frameworkId:'');
-  var dbLabel=(s.dbDriver||'sqlite3')+(s.dbName?' / '+s.dbName:'');
-  var statusCls=s.status==='running'?'running':s.status==='timeout'?'error':'stopped';
-  var credHtml='<div class="modal-cred"><span class="modal-cred-l">DB User:</span> <span class="modal-cred-v">'+escapeHtml(s.dbUser||'brewnet')+'</span></div>';
-  credHtml+='<div class="modal-cred"><span class="modal-cred-l">DB Name:</span> <span class="modal-cred-v">'+escapeHtml(s.dbName||'brewnet_db')+'</span></div>';
-  credHtml+='<div class="modal-cred"><span class="modal-cred-l">Password:</span> <span class="modal-cred-v">'+escapeHtml(ADMIN_CREDS.passwordHint)+' (admin password)</span></div>';
-  var gitHtml='<div class="modal-url"><span class="modal-url-label">Branch:</span> <code style="color:#58a6ff">'+escapeHtml(s.gitBranch||'stack/'+s.stackId)+'</code></div>';
-  gitHtml+='<div class="modal-url"><a href="'+readmeUrl+'" target="_blank" class="modal-url-a">'+readmeUrl+'</a></div>';
-  var cmdBase=s.appDir||'.';
-  var cmdHtml='<div class="modal-cmd">cd '+escapeHtml(cmdBase)+'</div>';
-  cmdHtml+='<div style="margin-top:6px;color:#8b949e;font-size:12px">make logs &nbsp;&nbsp; # 컨테이너 로그 확인</div>';
-  cmdHtml+='<div style="color:#8b949e;font-size:12px">make down &nbsp;&nbsp; # 서비스 중지</div>';
-  cmdHtml+='<div style="color:#8b949e;font-size:12px">make validate # API 엔드포인트 검증</div>';
-  ov.innerHTML='<div class="modal-box">'+
-    '<div class="modal-titlebar">'+
-      '<span class="modal-dot r"></span><span class="modal-dot y"></span><span class="modal-dot g"></span>'+
-      '<span class="modal-title">'+escapeHtml(s.stackId)+' \\u2014 dev stack info</span>'+
-      '<button class="modal-close" onclick="closeServiceModal()">\\u00d7</button>'+
-    '</div>'+
-    '<div class="modal-body">'+
-      '<div class="modal-desc">'+escapeHtml(stackLabel)+' boilerplate stack</div>'+
-      '<div class="modal-license">DB: '+escapeHtml(dbLabel)+' &nbsp;|&nbsp; Status: <span class="badge '+statusCls+'">'+escapeHtml(s.status||'unknown')+'</span></div>'+
-      '<div class="modal-sh">$ access</div>'+accessHtml+
-      '<div class="modal-sh">$ credentials</div>'+credHtml+
-      '<div class="modal-sh">$ git</div>'+gitHtml+
-      '<div class="modal-sh">$ commands</div>'+cmdHtml+
-    '</div></div>';
-  document.body.appendChild(ov);
-  document.addEventListener('keydown',handleModalEsc);
-}
-const LOG_COL={info:'#58a6ff',ok:'#3fb950',warn:'#e3b341',error:'#f85149',dim:'#484f58'};
-const log=(msg,lv)=>{lv=lv||'info';const d=document.getElementById('log');const row=document.createElement('div');row.style.cssText='padding:1px 0;line-height:1.6';row.innerHTML='<span style="color:#30363d;user-select:none">'+new Date().toLocaleTimeString()+'</span> <span style="color:'+(LOG_COL[lv]||LOG_COL.info)+'">'+escapeHtml(String(msg))+'</span>';d.insertBefore(row,d.firstChild);while(d.children.length>80)d.removeChild(d.lastChild);};
-const badge=(s)=>{const c=s==='running'?'running':s==='stopped'?'stopped':'error';return \`<span class="badge \${c}">\${s}</span>\`;}
-const fmt=(s,r)=>\`<button class="btn btn-\${s==='running'?'stop':'start'}" onclick="toggle('\${r.id}','\${s}')">\${s==='running'?'Stop':'Start'}</button><button class="btn btn-remove" onclick="removeSvc('\${r.id}')">Remove</button>\`
-async function loadServices(manual){
-  if(manual)log('Refreshing service list...','dim');
-  const r=await fetch('/api/services').then(r=>r.json()).catch(()=>{log('API error: failed to reach admin server','error');return{services:[]};});
-  const tbody=document.getElementById('svc-body');
-  if(!r.services||r.services.length===0){tbody.innerHTML='<tr><td colspan="6" style="color:#8b949e">No services installed.</td></tr>';return;}
-  tbody.innerHTML=r.services.map(s=>{
-    var ext=s.externalUrl||getExternalUrl(s.id);
-    var detailName=resolveDetailName(s.name);
-    var hasDetail=!!SERVICE_DETAILS[detailName];
-    var localUrl=s.url||null;
-    var isUnifiedSvc=localUrl&&s.id!=='gitea'&&s.id!=='nextcloud'&&(BOILERPLATE_STACKS||[]).some(function(bs){if(!bs.isUnified||!bs.backendUrl)return false;try{return new URL(bs.backendUrl).port===String(s.port);}catch(e){return false;}});
-    var localCell=localUrl?(isUnifiedSvc?\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a><br><a href="\${localUrl}/api/hello" target="_blank" style="color:#8b949e;font-size:11px">/api/hello ↗</a>\`:\`<a href="\${localUrl}" target="_blank" style="color:#58a6ff">\${localUrl}</a>\`):'<span style="color:#8b949e">—</span>';
-    var nameHtml=hasDetail
-      ?\`<b class="svc-link" onclick="showServiceModal('\${s.name.replace(/'/g,"\\\\'")}','\${(localUrl||'').replace(/'/g,"\\\\'")}','\${(ext||'').replace(/'/g,"\\\\'")}')">\${s.name}</b>\`
-      :\`<b>\${s.name}</b>\`;
-    return \`<tr>
-    <td>\${nameHtml}<br><span style="color:#8b949e;font-size:11px">\${s.id}</span></td>
-    <td>\${badge(s.status)}</td>
-    <td>\${s.port??'—'}</td>
-    <td>\${localCell}</td>
-    <td>\${ext?(isUnifiedSvc&&ext.indexOf('/api/')===-1?\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a><br><a href="\${ext}/api/hello" target="_blank" style="color:#8b949e;font-size:11px">/api/hello ↗</a>\`:\`<a href="\${ext}" target="_blank" style="color:#58a6ff">\${ext}</a>\`):'<span style="color:#8b949e">—</span>'}</td>
-    <td class="actions">\${s.removable?fmt(s.status,s):''}</td>
-  </tr>\`;}).join('');
-  const sum=r.summary;
-  document.getElementById('subtitle').textContent=sum?\`\${sum.running}/\${sum.total} running\`:'';
-  if(manual&&r.services){
-    r.services.forEach(function(s){
-      var ext=s.externalUrl||getExternalUrl(s.id);
-      var lv=s.status==='running'?'ok':s.status==='error'?'error':'dim';
-      var detail='['+s.id+'] '+s.status+(s.port?' port='+s.port:'')+(s.url?' — '+s.url:'')+(ext?' | ext: '+ext:'');
-      log(detail,lv);
-    });
-    if(sum)log(sum.running+'/'+sum.total+' services running · cpu: '+(sum.cpu||'—')+' · mem: '+(sum.memory||'—'),'info');
-  }
-}
-async function toggle(id,cur){
-  const action=cur==='running'?'stop':'start';
-  log(\`[\${id}] \${action} requested...\`,'dim');
-  const t0=Date.now();
-  const r=await fetch(\`/api/services/containers/\${id}/\${action}\`,{method:'POST'}).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  const ms=Date.now()-t0;
-  if(r.success){
-    log(\`[\${id}] \${action==='start'?'started ✓':'stopped ✓'} (\${ms}ms)\`+(r.status?' — status: '+r.status:''),'ok');
-  }else{
-    log(\`[\${id}] \${action} failed (\${ms}ms) — \${r.error||'unknown error'}\`,'error');
-  }
-  setTimeout(loadServices,800);
-}
-async function removeSvc(id){
-  if(!confirm(\`Remove \${id}? Data will be preserved (use purge=true to delete).\`))return;
-  log(\`[\${id}] remove requested — stopping container...\`,'warn');
-  const t0=Date.now();
-  const r=await fetch(\`/api/services/containers/\${id}\`,{method:'DELETE'}).then(r=>r.json()).catch(e=>({success:false,error:e.message}));
-  const ms=Date.now()-t0;
-  if(r.success){
-    log(\`[\${id}] removed ✓ (\${ms}ms)\`,'ok');
-  }else{
-    log(\`[\${id}] remove failed (\${ms}ms) — \${r.error||'unknown error'}\`,'error');
-  }
-  setTimeout(loadServices,800);
-}
-log('Brewnet admin panel connected — localhost:8088','ok');
-log('Click a service name for details · Refresh to reload status','dim');
-loadServices(true);
-setInterval(loadServices,15000);
-
-// ── Domain management JS (T042, T044) ──
-function getAdminPw(){return document.getElementById('admin-pw').value||'';}
-function domainFetch(url,opts){
-  var h=Object.assign({'Content-Type':'application/json','X-Admin-Password':getAdminPw()},opts&&opts.headers||{});
-  return fetch(url,Object.assign({},opts,{headers:h}));
-}
-async function loadDomains(){
-  try{
-    var r=await domainFetch('/api/domain/list');
-    var d=await r.json();
-    if(!r.ok){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#f85149">'+((d&&d.message)||'Auth required — enter admin password')+'</td></tr>';return;}
-    var conns=d.connections||[];
-    if(conns.length===0){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">No external domain connections</td></tr>';return;}
-    var rows=conns.map(function(c){
-      var url='https://'+c.hostname;
-      return '<tr><td>'+c.appName+'</td><td><a href="'+url+'" target="_blank" style="color:#58a6ff">'+url+'</a></td><td><span class="badge running">connected</span></td><td style="font-size:11px;color:#8b949e">'+(c.connectedAt||'').slice(0,16).replace('T',' ')+'</td><td><a href="/apps/'+encodeURIComponent(c.appName)+'?tab=domain" style="color:#58a6ff;font-size:11px">Manage \u2192</a></td></tr>';
-    }).join('');
-    document.getElementById('domain-body').innerHTML=rows;
-  }catch(e){document.getElementById('domain-body').innerHTML='<tr><td colspan="5" style="color:#8b949e">Enter admin password to view domains</td></tr>';}
-}
-function showCnameGuide(){
-  document.getElementById('cname-modal').style.display='flex';
-  var tid=DOMAIN_CONFIG.tunnelId||DOMAIN_CONFIG.zoneName||'(configure tunnel first)';
-  document.getElementById('cname-value').textContent=tid+'.cfargotunnel.com';
-}
-async function saveCloudflareSettings(){
-  var token=document.getElementById('cf-token').value.trim();
-  var acct=document.getElementById('cf-account').value.trim();
-  var zone=document.getElementById('cf-zone').value.trim();
-  var tunnel=document.getElementById('cf-tunnel').value.trim();
-  if(!token){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">API Token required</span>';return;}
-  document.getElementById('cf-result').innerHTML='<span style="color:#e3b341">Verifying...</span>';
-  try{
-    var r=await domainFetch('/api/settings/cloudflare',{method:'PUT',body:JSON.stringify({apiToken:token,accountId:acct,zoneId:zone,tunnelId:tunnel})});
-    var d=await r.json();
-    if(d.success){
-      document.getElementById('cf-result').innerHTML='<span style="color:#3fb950">✅ Verified'+(d.email?' ('+d.email+')':'')+(d.zoneName?' — '+d.zoneName:'')+'</span>';
-      log('Cloudflare settings saved ✓','ok');
-      loadDomains();
-    }else{
-      document.getElementById('cf-result').innerHTML='<span style="color:#f85149">❌ '+(d.message||d.error)+'</span>';
-    }
-  }catch(e){document.getElementById('cf-result').innerHTML='<span style="color:#f85149">Error: '+e.message+'</span>';}
-}
-async function loadCloudflareStatus(){
-  try{
-    var r=await domainFetch('/api/settings/cloudflare');
-    var d=await r.json();
-    var el=document.getElementById('cf-status');
-    if(d.configured){el.innerHTML='<span style="color:#3fb950">✅ Configured'+(d.zoneName?' ('+d.zoneName+')':'')+'</span>';}
-    else{el.innerHTML='<span style="color:#e3b341">⚠️ Not configured</span>';}
-  }catch(e){}
-}
-// ── Tab switching ──
-function switchTab(tab){
-  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
-  document.querySelectorAll('.tab-content').forEach(function(c){c.classList.remove('active');});
-  document.getElementById('tab-'+tab).classList.add('active');
-  document.querySelector('.tab-btn[onclick*="'+tab+'"]').classList.add('active');
-  if(tab==='logs'&&!window._logsLoaded){window._logsLoaded=true;fetchLogs();fetchLogStats();}
-}
-// ── Logs tab ──
-var _logsTimer=null;
-function fetchLogs(){
-  var src=document.getElementById('log-source').value;
-  var lvl=document.getElementById('log-level').value;
-  var svc=document.getElementById('log-service-filter').value;
-  var search=document.getElementById('log-search').value.trim();
-  var params=new URLSearchParams();
-  if(src)params.set('source',src);
-  if(lvl)params.set('level',lvl);
-  if(svc)params.set('service',svc);
-  if(search)params.set('search',search);
-  params.set('limit','200');
-  fetch('/api/logs?'+params.toString()).then(function(r){return r.json();}).then(function(d){
-    var body=document.getElementById('logs-body');
-    if(!d.entries||d.entries.length===0){body.innerHTML='<tr><td colspan="5" style="color:#8b949e;padding:12px">No log entries found.</td></tr>';return;}
-    var html='';
-    d.entries.forEach(function(e){
-      var ts=e.timestamp.replace('T',' ').replace(/\\.\\d+Z$/,'').replace('Z','');
-      var srcCls='log-src-'+(e.source||'service');
-      var lvlCls='log-lvl-'+(e.level||'info');
-      html+='<tr><td style="width:155px">'+escapeHtml(ts)+'</td><td class="'+srcCls+'" style="width:65px">'+escapeHtml((e.source||'').toUpperCase())+'</td><td class="'+lvlCls+'" style="width:50px">'+escapeHtml((e.level||'').toUpperCase())+'</td><td style="width:90px">'+escapeHtml(e.service||'')+'</td><td>'+escapeHtml(e.message)+'</td></tr>';
-    });
-    if(d.hasMore)html+='<tr><td colspan="5" style="color:#8b949e;font-style:italic">… '+(d.total-d.entries.length)+' more entries</td></tr>';
-    body.innerHTML=html;
-    // Populate service filter
-    var svcFilter=document.getElementById('log-service-filter');
-    var currentVal=svcFilter.value;
-    var services=new Set();d.entries.forEach(function(e){if(e.service)services.add(e.service);});
-    var opts='<option value="">All Services</option>';
-    Array.from(services).sort().forEach(function(s){var es=escapeHtml(s);opts+='<option value="'+es+'"'+(s===currentVal?' selected':'')+'>'+es+'</option>';});
-    svcFilter.innerHTML=opts;
-  }).catch(function(){
-    document.getElementById('logs-body').innerHTML='<tr><td colspan="5" style="color:#f85149;padding:12px">Failed to fetch logs.</td></tr>';
-  });
-}
-function fetchLogStats(){
-  fetch('/api/logs/stats').then(function(r){return r.json();}).then(function(d){
-    var el=document.getElementById('logs-stats');
-    var parts=['Total: '+d.total];
-    if(d.bySource){Object.keys(d.bySource).forEach(function(k){if(d.bySource[k]>0)parts.push(k+': '+d.bySource[k]);});}
-    if(d.byLevel&&d.byLevel.error>0)parts.push('<span style="color:#f85149">errors: '+d.byLevel.error+'</span>');
-    el.innerHTML=parts.join(' &middot; ');
-  }).catch(function(){});
-}
-// Auto-refresh logs every 5 seconds
-function startLogsAutoRefresh(){
-  if(_logsTimer)clearInterval(_logsTimer);
-  _logsTimer=setInterval(function(){
-    if(document.getElementById('logs-auto-refresh').checked&&document.getElementById('tab-logs').classList.contains('active')){
-      fetchLogs();fetchLogStats();
-    }
-  },5000);
-}
-document.getElementById('logs-auto-refresh').addEventListener('change',function(){
-  if(this.checked)startLogsAutoRefresh();else if(_logsTimer){clearInterval(_logsTimer);_logsTimer=null;}
-});
-startLogsAutoRefresh();
-
-// Auto-load domains and settings status
-setTimeout(function(){loadDomains();loadCloudflareStatus();},500);
-</script>
-</div><!-- /page-body -->
-</body>
-</html>`;
-}
-
 // ---------------------------------------------------------------------------
-// Docker helpers
+// // Docker helpers
 // ---------------------------------------------------------------------------
 
 const docker = new Dockerode();
@@ -773,11 +605,12 @@ async function handleGetServices(
       if (!composeService) continue;
       if (INTERNAL_SERVICES.has(composeService)) continue;
 
+      const workingDir = c.Labels?.['com.docker.compose.project.working_dir'] ?? '';
+
       // Skip containers from unselected boilerplate stacks.
       // A container whose working_dir is under projectPath but NOT in allowedDirs
       // is an unselected boilerplate stack that shouldn't appear in the dashboard.
       if (allowedDirs && allowedDirs.size > 0) {
-        const workingDir = c.Labels?.['com.docker.compose.project.working_dir'] ?? '';
         if (workingDir && workingDir.startsWith(_projectPath) && !allowedDirs.has(workingDir)) {
           continue;
         }
@@ -837,6 +670,11 @@ async function handleGetServices(
         }
       }
 
+      // Extract stackId from working_dir relative to projectPath (e.g. ".../go-gin" → "go-gin")
+      const stackId = (workingDir && workingDir.startsWith(_projectPath))
+        ? workingDir.slice(_projectPath.length).replace(/^[/\\]/, '') || undefined
+        : undefined;
+
       services.push({
         id: composeService,
         name: def?.name ?? composeService,
@@ -855,6 +693,7 @@ async function handleGetServices(
           : null,
         externalUrl,
         removable: !REQUIRED_SERVICES.has(composeService),
+        stackId,
       });
     }
 
@@ -1079,59 +918,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
   const maskPass = (p: string) => (p.length > 1 ? p[0] + '*'.repeat(p.length - 1) : '********');
 
-  // Helper: build the "Dev Stack Apps" HTML section from boilerplate metadata.
-  // Extracted so both the initial load and refreshBoilerplateMeta() can use it.
-  function buildBoilerplateSectionHtml(stacks: BoilerplateMeta[]): string {
-    if (stacks.length === 0) return '';
-    const rows = stacks.map((s, idx) => {
-      const statusCls = s.status === 'running' ? 'running'
-        : s.status === 'timeout' ? 'error' : 'stopped';
-      const nameHtml = `<b class="svc-link" onclick="showBoilerplateModal(${idx})">${escHtml(s.stackId ?? '—')}</b>`;
-      const backendLink = s.backendUrl
-        ? `<a href="${escHtml(s.backendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.backendUrl)}</a>`
-        : '—';
-      const frontendCell = (!s.isUnified && s.frontendUrl && s.frontendUrl !== s.backendUrl)
-        ? `<a href="${escHtml(s.frontendUrl)}" target="_blank" style="color:#58a6ff">${escHtml(s.frontendUrl)}</a>`
-        : (s.isUnified ? '<span style="color:#8b949e">unified</span>' : '—');
-      const docsUrl = s.backendUrl ? `${s.backendUrl}/docs` : '';
-      const docsCell = docsUrl
-        ? `<a href="${escHtml(docsUrl)}" target="_blank" style="color:#58a6ff">${escHtml(docsUrl)}</a>`
-        : '—';
-      return `<tr>
-    <td>${nameHtml}<br><span style="color:#8b949e;font-size:11px">${escHtml(s.lang ?? '')} / ${escHtml(s.frameworkId ?? '')}</span></td>
-    <td><span class="badge ${statusCls}">${escHtml(s.status ?? 'unknown')}</span></td>
-    <td>${backendLink}</td>
-    <td>${frontendCell}</td>
-    <td>${docsCell}</td>
-    <td style="font-size:11px;color:#8b949e">${escHtml(s.appDir ?? '—')}</td>
-  </tr>`;
-    }).join('\n');
-    return `
-<div class="section-title" style="margin-top:24px">Dev Stack Apps</div>
-<table>
-  <thead><tr><th>Stack</th><th>Status</th><th>Backend</th><th>Frontend</th><th>API Docs</th><th>Source</th></tr></thead>
-  <tbody>
-${rows}
-  </tbody>
-</table>`;
-  }
-
-  // Read boilerplate metadata if available (supports both array and legacy single object)
-  let boilerplateHtml = '';
-  let boilerplateStacksJson = '[]';
-  try {
-    const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
-    if (existsSync(bpMetaPath)) {
-      const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
-      // Normalize: legacy single-object → array
-      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
-      if (stacks.length > 0) {
-        boilerplateStacksJson = JSON.stringify(stacks);
-        boilerplateHtml = buildBoilerplateSectionHtml(stacks);
-      }
-    }
-  } catch { /* non-fatal */ }
-
   // Build set of allowed compose working dirs for service filtering.
   // Only containers from these directories are shown in the Services table.
   // This excludes unselected boilerplate stacks (e.g. test deployments of all 16 stacks).
@@ -1164,9 +950,6 @@ ${rows}
     quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
     zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
     tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
-    boilerplateHtml: boilerplateHtml,
-    boilerplateStacksJson: boilerplateStacksJson,
-    domainConnectionsJson: JSON.stringify(wizardState?.domainConnections ?? []),
   };
 
   // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
@@ -1180,8 +963,6 @@ ${rows}
     jellyfin: 'http://localhost:8096/jellyfin/web/',
   };
 
-  // Cache for dashboard HTML (regenerated when Quick Tunnel URL is detected)
-  let dashboardHtml = generateDashboardHtml(dashConfig);
   let quickTunnelDetected = !!dashConfig.quickTunnelUrl;
 
   /**
@@ -1204,7 +985,6 @@ ${rows}
       if (match) {
         dashConfig.quickTunnelUrl = `https://${match[1]}`;
         dashConfig.domainProvider = 'quick-tunnel';
-        dashboardHtml = generateDashboardHtml(dashConfig);
       }
     } catch {
       // Non-critical — just serve without external URLs
@@ -1240,38 +1020,11 @@ ${rows}
       if (u || p) {
         dashConfig.adminUsername = maskUser(u || 'admin');
         dashConfig.passwordHint = maskPass(p);
-        dashboardHtml = generateDashboardHtml(dashConfig);
       }
     } catch {
       // Non-critical — fall through to defaults
     }
   }
-
-  /**
-   * Lazy-load boilerplate metadata from .brewnet-boilerplate.json.
-   * Re-checks on every GET / until the file appears.
-   */
-  let boilerplateLoaded = false;
-  function refreshBoilerplateMeta(): void {
-    if (boilerplateLoaded) return;
-    const bpPath = join(projectPath, '.brewnet-boilerplate.json');
-    if (!existsSync(bpPath)) return;
-    try {
-      const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-      const stacks: BoilerplateMeta[] = Array.isArray(raw) ? raw : (raw.stackId ? [raw] : []);
-      dashConfig.boilerplateStacksJson = JSON.stringify(stacks);
-      dashConfig.boilerplateHtml = buildBoilerplateSectionHtml(stacks);
-      boilerplateLoaded = true;
-      dashboardHtml = generateDashboardHtml(dashConfig);
-      // Update allowed working dirs with newly loaded boilerplate stacks
-      for (const s of stacks) {
-        if (s.appDir) allowedWorkingDirs.add(s.appDir);
-      }
-    } catch {
-      // Non-critical — keep empty array
-    }
-  }
-
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
@@ -1448,15 +1201,45 @@ ${rows}
             const history = getDeployHistory();
             const historyByApp = new Map<string, typeof history[0]>();
             for (const h of history) { if (h.status === 'success') historyByApp.set(h.appName, h); }
+            // Load boilerplate meta once for frontend URL lookup
+            const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
+            let bpMetaMap = new Map<string, BoilerplateMeta>();
+            if (existsSync(bpMetaPath)) {
+              try {
+                const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+                const metas: BoilerplateMeta[] = Array.isArray(raw) ? raw : [raw];
+                for (const m of metas) bpMetaMap.set(m.stackId, m);
+              } catch { /* ignore parse errors */ }
+            }
             const enrichedApps = apps.map((a) => {
               const lastDeploy = historyByApp.get(a.name) ?? null;
-              // Compute localUrl with basePath (same logic as Dashboard services)
-              let localUrl = a.port ? `http://localhost:${a.port}` : null;
-              if (a.appDir) {
-                const bp = detectBasePath(a.appDir);
-                if (bp && localUrl) localUrl += bp;
+              const qt = dashConfig.quickTunnelUrl;
+              // For non-unified boilerplate stacks, use frontendUrl from meta
+              const bpMeta = a.mode === 'boilerplate' && a.stackId ? bpMetaMap.get(a.stackId) : undefined;
+              const hasFrontend = bpMeta && bpMeta.isUnified === false && bpMeta.frontendUrl;
+              let localUrl: string | null;
+              let externalUrl: string | null;
+              if (hasFrontend) {
+                // Read actual FRONTEND_PORT from .env — meta may have stale default (3000)
+                let frontendPort = 3000;
+                const feEnvPath = join(a.appDir, '.env');
+                if (existsSync(feEnvPath)) {
+                  const feEnvContent = readFileSync(feEnvPath, 'utf-8');
+                  const fePortMatch = feEnvContent.match(/^FRONTEND_PORT=(\d+)/m);
+                  if (fePortMatch) frontendPort = parseInt(fePortMatch[1], 10);
+                }
+                localUrl = `http://127.0.0.1:${frontendPort}`;
+                externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}-ui` : null;
+              } else {
+                // Compute localUrl with basePath (same logic as Dashboard services)
+                localUrl = a.port ? `http://localhost:${a.port}` : null;
+                if (a.appDir) {
+                  const bp = detectBasePath(a.appDir);
+                  if (bp && localUrl) localUrl += bp;
+                }
+                externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null;
               }
-              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl };
+              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl, externalUrl };
             });
             logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
             json(res, 200, { apps: enrichedApps });
@@ -1529,11 +1312,46 @@ ${rows}
             return;
           }
 
-          // GET /api/apps/:name — single app detail
+          // GET /api/apps/:name — single app detail (enriched with lastDeployedAt + URLs)
           if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs', 'check-port'].includes(parts[2]) && parts.length === 3) {
             const apps = await listApps();
-            const app = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
-            if (!app) { json(res, 404, { error: 'App not found' }); return; }
+            const found = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
+            if (!found) { json(res, 404, { error: 'App not found' }); return; }
+            const history = getDeployHistory();
+            const lastDeploy = history.filter((h) => h.appName === found.name && h.status === 'success').pop() ?? null;
+            const qt = dashConfig.quickTunnelUrl;
+            const bpMetaSingle = found.mode === 'boilerplate' && found.stackId
+              ? (() => {
+                  const p = join(projectPath, '.brewnet-boilerplate.json');
+                  if (!existsSync(p)) return undefined;
+                  try {
+                    const raw = JSON.parse(readFileSync(p, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+                    const list = Array.isArray(raw) ? raw : [raw];
+                    return list.find((m) => m.stackId === found.stackId);
+                  } catch { return undefined; }
+                })()
+              : undefined;
+            const hasFrontendSingle = bpMetaSingle && bpMetaSingle.isUnified === false;
+            let localUrlSingle: string | null;
+            let externalUrlSingle: string | null;
+            if (hasFrontendSingle) {
+              let frontendPort = 3000;
+              const feEnvPath = join(found.appDir, '.env');
+              if (existsSync(feEnvPath)) {
+                const m = readFileSync(feEnvPath, 'utf-8').match(/^FRONTEND_PORT=(\d+)/m);
+                if (m) frontendPort = parseInt(m[1], 10);
+              }
+              localUrlSingle = `http://127.0.0.1:${frontendPort}`;
+              externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}-ui` : null;
+            } else {
+              localUrlSingle = found.port ? `http://localhost:${found.port}` : null;
+              if (found.appDir) {
+                const bp = detectBasePath(found.appDir);
+                if (bp && localUrlSingle) localUrlSingle += bp;
+              }
+              externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null;
+            }
+            const app = { ...found, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl: localUrlSingle, externalUrl: externalUrlSingle };
             json(res, 200, { app });
             return;
           }
@@ -2085,7 +1903,7 @@ function handleSettingsCloudflareGet(
   }
 
   const cf = state.domain.cloudflare;
-  const mask = (s: string) => s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : s ? '***set***' : 'not set';
+  const mask = (s: string | undefined) => !s ? 'not set' : s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : '***set***';
 
   json(res, 200, {
     configured: !!(cf.apiToken && cf.accountId && cf.zoneId),

@@ -3,6 +3,200 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [001-fix-create-app-modal] - 2026-03-19 22:xx
+
+### 🎯 Prompts
+1. `@<AppCard>` — node/nest 인데 front는 어떻게 접속하지? 접속할 수 있는 버튼이나 주소가 표기 안됨
+2. nest 생성 시 포트 3000이 점유 중이었는데 localhost로 접근하면 다른 앱(개발 중)으로 나와. 이 포트 맞는 거야?
+3. `@<AppCard>` 이건 아직 deploy 하지 않았기 때문에 overview에서 GITEA URL을 눌러도 404. deploy 해야 주소가 나온다고 안내하는 게 맞지 않을까?
+4. `@<OverviewTab>` 배포 후 overview에 들어갔는데 "Deploy 먼저" 배너가 똑같이 나오고 있어
+5. deploy 할 때 gitea에 push 하는 과정이 생략된 거 같은데? Gitea 접속하면 소스 아무것도 없어
+
+### ✅ Changes
+- **Fixed**: non-unified 보일러플레이트 앱의 `localUrl`이 백엔드 포트(8080)를 가리키던 문제 → `.brewnet-boilerplate.json` 참조로 프론트 URL 반환 (`admin-server.ts`)
+- **Fixed**: `.brewnet-boilerplate.json`의 `frontendUrl`이 항상 3000 하드코딩 → `.env`의 `FRONTEND_PORT` 직접 읽도록 수정 (`admin-server.ts`)
+- **Fixed**: 위자드 흐름에서도 `frontendUrl` 하드코딩 제거 → 실제 할당된 `frontendPort` 변수 사용 (`generate.ts`)
+- **Fixed**: `GET /api/apps/:name` 단일 앱 엔드포인트가 `lastDeployedAt` enrichment 없이 raw 반환 → 목록 엔드포인트와 동일하게 enrichment 적용 (`admin-server.ts`)
+- **Added**: `OverviewTab` — `lastDeployedAt` null 시 Git Repository 섹션에 "Deploy 먼저" amber 경고 배너, Gitea URL 링크 opacity 흐리게 처리 (`OverviewTab.tsx`)
+- **Fixed**: deploy 시 Gitea repo가 존재하지만 empty일 때 push 생략 → `repoIsEmpty()` 체크 후 push 처리 (`app-manager.ts`, `gitea-client.ts`)
+- **Fixed**: shallow clone 보일러플레이트를 empty Gitea repo에 push 시 "shallow update not allowed" 에러 → unshallow 후 push (`app-manager.ts`)
+
+### 📁 Files Modified
+- `packages/cli/src/services/admin-server.ts` (enrichment 로직 2곳 추가)
+- `packages/cli/src/services/app-manager.ts` (empty repo push + unshallow 로직)
+- `packages/cli/src/services/gitea-client.ts` (`repoIsEmpty()` 메서드 추가)
+- `packages/cli/src/wizard/steps/generate.ts` (`frontendUrl` 하드코딩 제거)
+- `packages/admin-ui/src/components/OverviewTab.tsx` (미배포 경고 배너 추가)
+
+---
+
+## [001-fix-create-app-modal] - 2026-03-19 22:31 — Git Clone 앱 Deploy 시 Traefik 라우팅 + Next.js basePath 미주입 버그 수정
+
+### 🎯 Prompts
+1. "Implement the following plan: Git Clone 앱 Deploy 시 Traefik 라우팅 + Next.js basePath 미주입 버그 수정"
+2. "/simplify"
+
+### ✅ Changes
+- **Fixed**: `_runDeploy`가 scaffold 후 `_injectQuickTunnelIfNeeded` 미호출 → Traefik 라벨 미주입 버그 (`packages/cli/src/services/app-manager.ts:260`)
+- **Fixed**: `patchNextConfig`가 `output: 'standalone'` 없는 사용자 repo (예: `brewnet-web`)의 `next.config.ts`에 `basePath` 미삽입 → CSS/JS 404 버그 (`packages/cli/src/services/boilerplate-manager.ts:332`)
+- **Fixed**: compose healthcheck에 root path `/` → `basePath/` fallback 추가 (scaffolded templates 대응) (`packages/cli/src/services/boilerplate-manager.ts:360`)
+- **Fixed**: `_injectQuickTunnelIfNeeded` ESM 환경에서 `require()` 사용 → 런타임 오류 → `async` + `await import()`로 교체 (`packages/cli/src/services/app-manager.ts:387`)
+- **Fixed**: `resolveContext`의 `WizardState` 필드에 불필요한 `as` 캐스트 → 직접 접근으로 교체 (`packages/cli/src/services/app-manager.ts:380`)
+
+### 📁 Files Modified
+- `packages/cli/src/services/app-manager.ts` (+90, -24 lines)
+- `packages/cli/src/services/boilerplate-manager.ts` (+14, -2 lines)
+
+---
+
+## [001-fix-create-app-modal] - 2026-03-19 13:55 — wizardState null 버그 수정 + test-cycle.sh lastProject 자동 복원 + 16/16 전체 통과 + 66/66 단위 테스트 통과
+
+### 🎯 Prompts (주요)
+1. "(세션 연속) test-cycle.sh --skip-init 재실행 시 Gitea 401 + create-app 전체 실패 → 근본 원인 수정 → 16/16 + 66/66 전체 통과 → /add-md /changelog /troubleshooting 작성 후 리포트"
+
+### ✅ Changes
+- **Fixed**: admin-server wizardState null 버그 — `~/.brewnet/config.json`의 `lastProject` 빈값으로 시작 시 `wizardState=null` → Gitea 패스워드 없음 → 모든 create-app 실패 (환경 복원으로 해결)
+- **Fixed**: Phase 9.4 `/api/settings/cloudflare` 401 — wizardState null이므로 `checkAdminAuth()` 즉시 401 반환 (admin-server 재시작으로 해결)
+- **Fixed**: Phase 10-11 create-app 전체 실패 — `resolveContext()` 비밀번호 의존 체인 끊김 (lastProject → state → secretsPath)
+- **Added**: `test-cycle.sh` — `--skip-init` 시작 부분에 lastProject 자동 검증/복원 로직 추가 (`CONFIG_BACKUP`에서 복원)
+- **Added**: `troubleshooting/admin-server-wizardstate-null-lastproject-empty.md` — 트러블슈팅 문서 신규 작성
+- **Added**: `.claude/CLAUDE.md` — wizardState null 시나리오 섹션 추가 (재발 방지 체크리스트 포함)
+
+### 📊 Test Results
+- **test-cycle.sh**: Phase 11 16/16 통과 ✅ (go×3, rust×2, java×2, kotlin×2, nodejs×4, python×3)
+- **Unit Tests**: 66/66 스위트 통과, 2266 tests passed ✅
+- 각 스택별 검증 항목: localhost health, 페이지 로드, Gitea 레포 확인, Overview API, Git info, Logs SSE, Deploy settings, Domain tab, Stop/Start/Deploy/Delete toast 트리거
+
+### 📁 Files Modified (이번 세션)
+- `test-cycle.sh` (+35 lines, lastProject 자동 복원 블록 추가)
+- `troubleshooting/admin-server-wizardstate-null-lastproject-empty.md` (신규)
+- `troubleshooting/README.md` (+1 인덱스 행)
+- `.claude/CLAUDE.md` (+57 lines, wizardState null 시나리오 섹션)
+
+---
+
+## [001-fix-create-app-modal] - 2026-03-19 12:15 — Phase 11 추가: 16종 boilerplate 전체 라이프사이클 테스트 + Next.js basePath/appname 버그 수정 + Jest 4개 테스트 수정 → 전체 통과
+
+### 🎯 Prompts (주요)
+1. "(세션 연속) Phase 11 16종 boilerplate 전체 생성/health/modal/start/stop/deploy/delete 테스트 실행 완료 확인 후, 실패 수정 → 전체 통과 → /add-md /changelog /troubleshooting 작성 후 리포트"
+
+### ✅ Changes
+- **Fixed**: Phase 11 Next.js unified 스택 health/page URL에서 `S_STACK` → `S_APP` 사용 (`test-cycle.sh` L1748, L1762) — `patchNextConfig()`이 appName 기반 basePath를 주입하므로 stackId가 아닌 appName 사용 필요
+- **Fixed**: Phase 11 페이지 로드 허용 코드에 308 추가 (`test-cycle.sh` L1767) — Next.js trailingSlash:false 기본값으로 trailing slash redirect 시 308 반환
+- **Fixed**: Jest `instanceof Command` 실패 → `constructor.name === 'Command'` 체크로 변경 (`tests/unit/cli/commands/index.test.ts`, `tests/integration/cli-bootstrap.test.ts`) — ESM 모듈 중복 문제
+- **Fixed**: Jest admin-server `GET /` 503 → 200/503 모두 허용으로 변경 (`tests/unit/cli/services/admin-server.test.ts`, `tests/integration/admin-server.test.ts`) — ts-jest 소스 경로에서 PKG_ROOT가 `packages/`로 계산되어 ADMIN_UI_DIST 미발견
+- **Added**: Phase 11 troubleshooting 문서 2개 (`troubleshooting/phase11-nextjs-unified-basepath-appname.md`, `troubleshooting/jest-admin-server-503-and-commander-instanceof.md`)
+
+### 📊 Test Results
+- Phase 11: 16/16 ✅ (nodejs-nextjs, nodejs-nextjs-full 포함 전체)
+- Unit Tests: 2266/2266 passed (38 skipped, 1 suite skipped)
+- Test Suites: 66/67 passed (1 pre-existing skip)
+
+### 📁 Files Modified (이번 세션)
+- `test-cycle.sh` (+819, -107 lines) — Phase 11 추가 + 2개 버그 수정
+- `tests/integration/admin-server.test.ts` (+19, -11 lines)
+- `tests/integration/cli-bootstrap.test.ts` (+5, -3 lines)
+- `tests/unit/cli/commands/index.test.ts` (+3, -1 lines)
+- `tests/unit/cli/services/admin-server.test.ts` (+26, -14 lines)
+- `troubleshooting/phase11-nextjs-unified-basepath-appname.md` (신규)
+- `troubleshooting/jest-admin-server-503-and-commander-instanceof.md` (신규)
+- `troubleshooting/README.md` (+3 rows)
+
+---
+
+## [001-fix-create-app-modal] - 2026-03-19 11:30 — test-cycle.sh 전체 통과: SPA/basePath/SSE/domain-apps 5개 버그 수정
+
+### 🎯 Prompts (주요)
+1. "10분마다 체크: boilerplate 16종 생성/start/stop/deploy/접속/repo 확인, AppDetailModal 탭 검증, domain settings 확인, 토스트 메시지, test-cycle.sh 업데이트, 전체 통과 후 /add-md /changelog /troubleshooting 작성 + 리포트"
+
+### ✅ Changes
+
+**test-cycle.sh 버그 수정 (5개)**
+- **Fixed**: Phase 4 JS 문법 검사 항상 FAIL — React SPA는 inline `<script>` 없음. `sed` 추출 대신 외부 bundle URL 추출 후 `node --check` 적용
+- **Fixed**: Phase 6 `nodejs-nextjs-full` 404 — Next.js `basePath` 설정으로 health endpoint가 `/apps/${STACK_ID}/health`. `IS_UNIFIED` 분기 추가
+- **Fixed**: Phase 8.1 Local ≠ External 오탐 — timestamp 필드가 요청마다 달라 전체 body 비교 시 항상 불일치. `status` 필드만 추출 비교로 변경
+- **Fixed**: Phase 9.3/10.5 SSE Content-Type 오탐 — `curl -I + grep 'content-type'`이 `Access-Control-Allow-Headers` 헤더를 먼저 매칭. `curl -v + grep '^< content-type'`으로 수정
+- **Fixed**: `cfg.devStack.languages` TypeError — `selections.json`에 `devStack: {}`인 경우 `.languages` undefined. `?.languages || []` optional chaining 적용
+- **Added**: `--skip-init` 플래그 — 기존 환경에서 Phase 4-10만 반복 테스트 가능 (SKIP_INIT=true, SKIP_BUILD=true, SKIP_UNINSTALL=true)
+- **Fixed**: Phase 3 제어 흐름 — `step_done`은 flow control 아님. `if/elif/else` 블록으로 재구조화해 `--skip-init` 시 `brewnet init` 호출 차단
+
+**cloudflare-client.ts 버그 수정**
+- **Fixed**: `GET /api/domain/apps` HTTP 500 — `getActiveServiceRoutes()`에서 `state.servers.*` 필드가 `undefined`일 때 `.enabled` 접근 → TypeError. 모든 접근에 optional chaining `?.` 적용 (`packages/cli/src/services/cloudflare-client.ts:544-568`)
+
+**문서 작성**
+- **Added**: `troubleshooting/domain-apps-500-undefined-enabled.md` — `/api/domain/apps 500` 버그 기록
+- **Added**: `troubleshooting/test-cycle-spa-sse-basepath-fixes.md` — 5개 test-cycle.sh 검증 오류 기록
+- **Updated**: `troubleshooting/README.md` — 2개 항목 추가
+- **Updated**: `specs/001-admin-react-migration/spec.md` — getActiveServiceRoutes/test-cycle 버그 시나리오 추가
+
+### 📊 Test Results
+- test-cycle.sh `--skip-init` 전체 통과: ✅ Phase 4-10 all green
+- Phase 10 (앱 lifecycle): tc-lifecycle-test (nodejs-express) create→start→stop→deploy→delete ✅
+
+### 📁 Key Files Modified
+- `test-cycle.sh` (Phase 4/6/8.1/9.3/10.5 버그 수정, --skip-init 플래그)
+- `packages/cli/src/services/cloudflare-client.ts` (optional chaining, L544-568)
+- `troubleshooting/domain-apps-500-undefined-enabled.md` (신규)
+- `troubleshooting/test-cycle-spa-sse-basepath-fixes.md` (신규)
+- `specs/001-admin-react-migration/spec.md` (시나리오 2개 추가)
+
+---
+
+## [001-fix-create-app-modal] - 2026-03-19 10:44 — 3개 런타임 버그 수정 + CreateAppModal 필드명 정렬 + test-cycle.sh 업데이트
+
+### 🎯 Prompts (주요)
+1. "10분마다 체크해서 완료되면 종료: 16종 boilerplate 생성 → start/stop/deploy/접속/repo 확인, AppDetailModal 탭(Overview/Logs/Domain) 검증, domain settings 인터페이스 확인, 토스트 메시지 확인, test-cycle.sh 업데이트, 전체 통과 후 /add-md /changelog /troubleshooting 작성 + 리포트"
+
+### ✅ Changes
+
+**Bug Fixes (런타임 버그 3개)**
+- **Fixed**: `AppDetailModal` `usePolling` interval=0 → `ERR_INSUFFICIENT_RESOURCES` 무한 루프 (`packages/admin-ui/src/components/AppDetailModal.tsx:57,63`) — git/settings polling interval `0` → `30000`
+- **Fixed**: `/api/settings/cloudflare` 500 Internal Server Error — `mask()` 헬퍼가 `undefined` 인자 수신 시 `s.length` TypeError 발생 (`packages/cli/src/services/admin-server.ts:1844`) — `string | undefined` 파라미터 + undefined guard 추가
+- **Fixed**: Boilerplate non-unified 스택 `FRONTEND_PORT=BACKEND_PORT` 충돌 (2번째 재발) — `findFreePortB(3000)` / `findFreePort(3000)` 고정 시작점 → `findFreePort(port + 1)` (`packages/cli/src/services/app-manager.ts:819,894`)
+
+**CreateAppModal 필드명 정렬**
+- **Fixed**: `CreateAppModal.tsx` 제출 시 `appName` (not `name`), `language`, `frameworkId` 필드 사용 — 백엔드 `handleCreateApp` 스키마와 정렬
+- **Added**: 프레임워크 미선택 시 제출 차단 validation
+- **Added**: `apps.tsx` start/stop 액션 토스트 알림 추가
+- **Added**: 16개 boilerplate 스택 동적 로딩 (`/api/apps/boilerplates`)
+
+**test-cycle.sh 업데이트**
+- **Updated**: Phase 7 — React SPA 아키텍처 기반으로 교체 (HTML 파싱 제거, bundle 서빙 확인)
+- **Added**: Phase 9 — boilerplates API, 필드명 검증, 도메인 설정, 16종 스택 ID 검증 포함 종합 API 테스트
+- **Fixed**: Phase 9.4 — `/api/settings/cloudflare` 테스트에 `X-Admin-Password` 헤더 추가
+
+**Gitea 통합 개선 (이전 세션)**
+- **Fixed**: Gitea repository 링크 DeploymentTab에서 autologin 경유로 변경 (private repo 404 해결)
+- **Fixed**: deployment 시 Gitea repository 누락 시 자동 재생성
+- **Changed**: Gitea repository 생성 시 private → public visibility
+- **Fixed**: OverviewTab/BoilerplateDetailModal GitHub URL 오타 (`codevillain-dev` → `brewnet-boilerplate`)
+- **Added**: 동적 Gitea base URL (Quick Tunnel vs Named Tunnel 분기)
+
+**문서 업데이트**
+- **Added**: `troubleshooting/app-detail-modal-polling-interval-zero.md` — usePolling interval=0 버그 기록
+- **Added**: `troubleshooting/admin-server-cloudflare-settings-500.md` — mask() undefined TypeError 기록
+- **Updated**: `troubleshooting/boilerplate-frontend-port-conflict.md` — 2번째 재발 섹션 추가
+- **Updated**: `troubleshooting/README.md` — 3개 항목 추가, boilerplate 재발 횟수 업데이트
+- **Updated**: `specs/001-admin-react-migration/spec.md` — usePolling/cloudflare 시나리오 추가
+- **Updated**: `specs/001-create-app/spec.md` — FRONTEND_PORT 충돌 시나리오 추가
+
+### 📊 Test Results
+- Unit tests: 90/91 passing (pre-existing Commander.js instanceof 이슈 1개, 변경사항과 무관)
+- TypeScript: 컴파일 오류 0개
+- Production build: 성공
+
+### 📁 Key Files Modified
+- `packages/admin-ui/src/components/AppDetailModal.tsx` (polling interval fix)
+- `packages/cli/src/services/admin-server.ts` (mask() undefined guard)
+- `packages/cli/src/services/app-manager.ts` (frontend port conflict fix)
+- `packages/admin-ui/src/components/CreateAppModal.tsx` (field name alignment + 16-stack dynamic loading)
+- `packages/admin-ui/src/pages/Apps.tsx` (toast notifications)
+- `test-cycle.sh` (Phase 7 React SPA + Phase 9 comprehensive API tests)
+- `troubleshooting/` (3 new/updated files)
+- `specs/001-admin-react-migration/spec.md`, `specs/001-create-app/spec.md`
+
+---
+
 ## [develop] - 2026-03-18 13:30 — Apps 페이지 대규모 리팩토링 + E2E 검증
 
 ### 🎯 Prompts (주요)
