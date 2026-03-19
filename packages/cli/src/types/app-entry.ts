@@ -1,7 +1,7 @@
 // packages/cli/src/types/app-entry.ts
 
 /** Source mode for a managed app. */
-export type AppMode = 'boilerplate' | 'git-url' | 'new-project';
+export type AppMode = 'boilerplate' | 'git-clone' | 'new-project';
 
 /** Lifecycle status of a managed app. */
 export type AppStatus = 'creating' | 'running' | 'stopped' | 'failed';

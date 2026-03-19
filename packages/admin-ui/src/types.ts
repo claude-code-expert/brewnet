@@ -13,6 +13,7 @@ export interface ServiceStatus {
   url: string | null;
   externalUrl: string | null;
   removable: boolean;
+  stackId?: string;
 }
 
 export interface BoilerplateMeta {
@@ -47,7 +48,7 @@ export interface ConfigResponse {
 
 export interface AppEntry {
   name: string;
-  mode: 'boilerplate' | 'git-url' | 'new-project';
+  mode: 'boilerplate' | 'git-clone' | 'new-project';
   stackId?: string;
   sourceUrl?: string;
   appDir: string;

@@ -112,6 +112,59 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+      {/* Git Repository */}
+      {git && (
+        <div className="card" style={{ padding: '16px 20px' }}>
+          <div className="section-title" style={{ marginBottom: 12 }}>Git Repository</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a
+              href={`/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: 13,
+                fontFamily: 'var(--mono)',
+                color: 'var(--teal)',
+                textDecoration: 'none',
+              }}
+            >
+              ⎇ {git.giteaUrl}
+            </a>
+
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>
+                branch: <span style={{ color: 'var(--amber)' }}>{git.branch}</span>
+              </span>
+              {git.latestCommit && (
+                <span style={{ fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>
+                  latest: <span style={{ color: 'var(--txt2)' }}>{git.latestCommit.shortHash}</span>
+                  {' '}<span style={{ color: 'var(--txt3)' }}>{git.latestCommit.message}</span>
+                </span>
+              )}
+            </div>
+
+            <code style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)', background: 'var(--bg0)', border: '1px solid var(--bdr)', borderRadius: 4, padding: '4px 8px', wordBreak: 'break-all' }}>
+              {git.cloneUrlHttp}
+            </code>
+
+            <div style={{
+              fontSize: 11.5,
+              color: 'var(--txt3)',
+              background: 'rgba(232,168,73,0.05)',
+              border: '1px solid rgba(232,168,73,0.12)',
+              borderRadius: 'var(--r)',
+              padding: '8px 12px',
+              lineHeight: 1.6,
+            }}>
+              💡 Gitea 로그인은 brewnet 설치 시 설정한 관리자 계정을 사용하세요.
+              <br />
+              앱 생성 시 이 저장소가 자동으로 만들어지고 코드가 push됩니다.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Deploy Settings */}
       <div className="card" style={{ padding: '20px 24px' }}>
         <div className="section-title" style={{ marginBottom: 16 }}>Deploy Settings</div>

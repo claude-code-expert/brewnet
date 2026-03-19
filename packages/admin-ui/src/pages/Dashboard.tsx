@@ -5,15 +5,7 @@ import { NavHeader } from '../components/NavHeader.js';
 import { ServiceCard } from '../components/ServiceCard.js';
 import { ServiceDetailModal } from '../components/ServiceDetailModal.js';
 import { LogsTab } from '../components/LogsTab.js';
-import { ExternalDomainsSection } from '../components/ExternalDomainsSection.js';
-import { BoilerplateSection } from '../components/BoilerplateSection.js';
-import type {
-  ServiceStatus,
-  ServiceDetail,
-  DomainConnection,
-  BoilerplateMeta,
-  ConfigResponse,
-} from '../types.js';
+import type { ServiceStatus, ServiceDetail, ConfigResponse } from '../types.js';
 
 type Tab = 'services' | 'logs';
 
@@ -26,25 +18,13 @@ interface CatalogResponse {
   aliases: Record<string, string>;
 }
 
-interface DomainListResponse {
-  connections?: DomainConnection[];
-  domainConnections?: DomainConnection[];
-}
-
-interface BoilerplatesResponse {
-  boilerplates: BoilerplateMeta[];
-}
-
 export function Dashboard() {
   const { apiFetch } = useAuth();
   const [tab, setTab] = useState<Tab>('services');
 
-  const [config, setConfig] = useState<ConfigResponse | null>(null);
+  const [quickTunnelUrl, setQuickTunnelUrl] = useState('');
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [catalog, setCatalog] = useState<Record<string, ServiceDetail>>({});
-  const [connections, setConnections] = useState<DomainConnection[]>([]);
-  const [boilerplates, setBoilerplates] = useState<BoilerplateMeta[]>([]);
-
   const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
 
@@ -54,11 +34,9 @@ export function Dashboard() {
 
     const loadAll = async () => {
       try {
-        const [configRes, svcRes, domainRes, bpRes, catalogRes] = await Promise.allSettled([
+        const [configRes, svcRes, catalogRes] = await Promise.allSettled([
           apiFetch('/api/config'),
           apiFetch('/api/services'),
-          apiFetch('/api/domain/list'),
-          apiFetch('/api/apps/boilerplates'),
           apiFetch('/api/services/catalog'),
         ]);
 
@@ -66,22 +44,12 @@ export function Dashboard() {
 
         if (configRes.status === 'fulfilled' && configRes.value.ok) {
           const d = await configRes.value.json() as ConfigResponse;
-          if (!cancelled) setConfig(d);
+          if (!cancelled) setQuickTunnelUrl(d.quickTunnelUrl ?? '');
         }
 
         if (svcRes.status === 'fulfilled' && svcRes.value.ok) {
           const d = await svcRes.value.json() as ServicesResponse;
           if (!cancelled) setServices(d.services ?? []);
-        }
-
-        if (domainRes.status === 'fulfilled' && domainRes.value.ok) {
-          const d = await domainRes.value.json() as DomainListResponse;
-          if (!cancelled) setConnections(d.connections ?? d.domainConnections ?? []);
-        }
-
-        if (bpRes.status === 'fulfilled' && bpRes.value.ok) {
-          const d = await bpRes.value.json() as BoilerplatesResponse;
-          if (!cancelled) setBoilerplates(d.boilerplates ?? []);
         }
 
         if (catalogRes.status === 'fulfilled' && catalogRes.value.ok) {
@@ -116,7 +84,7 @@ export function Dashboard() {
 
       <div id="content">
         {/* Quick Tunnel URL banner */}
-        {config?.quickTunnelUrl && (
+        {quickTunnelUrl && (
           <div
             className="a-info"
             style={{
@@ -131,12 +99,12 @@ export function Dashboard() {
           >
             <span style={{ fontFamily: 'var(--mono)', color: 'var(--txt3)', fontSize: 10 }}>QUICK TUNNEL</span>
             <a
-              href={config.quickTunnelUrl}
+              href={quickTunnelUrl}
               target="_blank"
               rel="noopener noreferrer"
               style={{ fontFamily: 'var(--mono)', color: 'var(--teal)', textDecoration: 'underline' }}
             >
-              {config.quickTunnelUrl}
+              {quickTunnelUrl}
             </a>
           </div>
         )}
@@ -223,16 +191,6 @@ export function Dashboard() {
                 No services found
               </div>
             )}
-
-            {/* External domains */}
-            <ExternalDomainsSection
-              connections={connections}
-              tunnelId={config?.tunnelId ?? ''}
-              zoneName={config?.zoneName ?? ''}
-            />
-
-            {/* Boilerplate stacks */}
-            <BoilerplateSection stacks={boilerplates} />
           </div>
         )}
 

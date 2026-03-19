@@ -25,7 +25,7 @@ Replace the brewnet admin interface's inline HTML generation (template literal a
 **Target Platform**: macOS/Linux local browser (same as current admin server).
 **Project Type**: Web SPA (`packages/admin-ui`) + Node.js HTTP server extension (`packages/cli`).
 **Performance Goals**: All pages load within 2 seconds on local connection (SC-001).
-**Constraints**: Zero CDN dependencies at runtime (SC-005). Bundle ≤ 50MB including all assets (SC-007). No redesign (visual replication only).
+**Constraints**: Zero CDN dependencies at runtime (SC-005). Bundle ≤ 50MB including all assets (no-404 constraint is SC-007). No redesign (visual replication only).
 **Scale/Scope**: Single-user localhost admin tool. 3 pages, ~30 API endpoints consumed.
 
 ---
@@ -98,8 +98,7 @@ brewnet/
 │           │   ├── usePolling.ts    # setInterval + cleanup pattern
 │           │   └── useLogStream.ts  # EventSource + cleanup pattern
 │           └── styles/
-│               ├── global.css       # Body, reset, dark theme variables
-│               └── *.module.css     # Component-scoped styles
+│               └── global.css       # Body, reset, dark theme CSS variables + all component styles
 ├── package.json                     # MODIFY: build script order (admin-ui first)
 └── pnpm-workspace.yaml             # UNCHANGED (packages/* already covers admin-ui)
 ```
@@ -111,6 +110,7 @@ brewnet/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|---|---|
 | 4th workspace package (`packages/admin-ui`) | Constitution mandates `cli`, `shared`, `dashboard`. But `packages/dashboard` is reserved for a future Pro Next.js feature (multi-page, App Router, SSO). The admin UI migration targets the inline HTML admin server only — merging into `packages/dashboard` would conflate two distinct products with different tech stacks and deployment models. | Creating `packages/admin-ui` as a separate package isolates build concerns, prevents dependency pollution of the CLI package, and leaves `packages/dashboard` clean for its intended Pro use case. Using a single `packages/dashboard` for both would require Next.js to serve both the Pro dashboard and the CLI admin UI — creating tight coupling between unrelated features. |
+| No React component tests (`packages/admin-ui`) | Spec SC-006 only requires CLI tests pass. Adding Jest + jsdom/RTL to admin-ui would require ~5 new dev dependencies and significantly expand scope beyond what was specified. | Waived per spec — the visual correctness of the React migration is validated by manual browser verification (SC-001–SC-007). If test coverage for admin-ui is added later, a dedicated test task should be created. |
 
 ---
 

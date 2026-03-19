@@ -1,5 +1,24 @@
 import type { ServiceStatus, ServiceDetail } from '../types.js';
 
+const STACK_LABELS: Record<string, string> = {
+  'go-gin':             'Go / Gin',
+  'go-echo':            'Go / Echo',
+  'go-fiber':           'Go / Fiber',
+  'rust-actix-web':     'Rust / Actix',
+  'rust-axum':          'Rust / Axum',
+  'java-springboot':    'Java / Spring Boot',
+  'java-spring':        'Java / Spring',
+  'kotlin-ktor':        'Kotlin / Ktor',
+  'kotlin-springboot':  'Kotlin / Spring Boot',
+  'nodejs-express':     'Node.js / Express',
+  'nodejs-nestjs':      'Node.js / NestJS',
+  'nodejs-nextjs':      'Node.js / Next.js',
+  'nodejs-nextjs-full': 'Node.js / Next.js Full',
+  'python-fastapi':     'Python / FastAPI',
+  'python-django':      'Python / Django',
+  'python-flask':       'Python / Flask',
+};
+
 interface ServiceCardProps {
   service: ServiceStatus;
   detail?: ServiceDetail;
@@ -62,6 +81,21 @@ export function ServiceCard({ service, detail, onOpenDetail }: ServiceCardProps)
           {statusLabel(service.status)}
         </span>
       </div>
+
+      {service.stackId && (
+        <span style={{
+          fontSize: 11,
+          fontFamily: 'var(--mono)',
+          color: 'var(--teal)',
+          background: 'rgba(61,214,200,0.07)',
+          border: '1px solid rgba(61,214,200,0.18)',
+          borderRadius: 20,
+          padding: '2px 9px',
+          alignSelf: 'flex-start',
+        }}>
+          {STACK_LABELS[service.stackId] ?? service.stackId}
+        </span>
+      )}
 
       {detail?.description && (
         <p style={{ fontSize: 11.5, color: 'var(--txt2)', lineHeight: 1.5, margin: 0 }}>

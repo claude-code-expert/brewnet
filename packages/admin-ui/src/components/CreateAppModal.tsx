@@ -1,17 +1,17 @@
 // T031 — CreateAppModal: multi-step wizard for app creation
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { AppEntry } from '../types.js';
 import { showToast } from './Toast.js';
 
-// CreateAppOptions mirrors what admin-server expects
+// CreateAppOptions mirrors what admin-server expects (packages/cli/src/types/app-entry.ts)
 interface CreateAppOptions {
-  name: string;
+  appName: string;
   mode: AppEntry['mode'];
   stackId?: string;
-  lang?: string;
-  framework?: string;
+  language?: string;
+  frameworkId?: string;
   port: number;
-  sourceUrl?: string;
+  gitUrl?: string;
 }
 
 interface CreateAppModalProps {
@@ -20,22 +20,45 @@ interface CreateAppModalProps {
   onClose: () => void;
 }
 
-const BOILERPLATE_STACKS = [
-  { id: 'nodejs-express',  label: 'Node.js / Express',   lang: 'nodejs',  framework: 'express' },
-  { id: 'nodejs-nextjs',   label: 'Node.js / Next.js',   lang: 'nodejs',  framework: 'nextjs' },
-  { id: 'python-fastapi',  label: 'Python / FastAPI',     lang: 'python',  framework: 'fastapi' },
-  { id: 'golang-gin',      label: 'Go / Gin',             lang: 'golang',  framework: 'gin' },
-  { id: 'rust-actix',      label: 'Rust / Actix',         lang: 'rust',    framework: 'actix' },
+// Language options for boilerplate mode — must match config/frameworks.ts resolveStackId()
+const LANG_OPTIONS = [
+  { id: 'nodejs',  label: 'Node.js' },
+  { id: 'python',  label: 'Python'  },
+  { id: 'go',      label: 'Go'      },
+  { id: 'rust',    label: 'Rust'    },
+  { id: 'java',    label: 'Java'    },
+  { id: 'kotlin',  label: 'Kotlin'  },
 ];
 
-const LANGUAGES = ['nodejs', 'python', 'golang', 'rust', 'java', 'ruby'];
-const FRAMEWORKS: Record<string, string[]> = {
-  nodejs:  ['express', 'nextjs', 'fastify', 'koa'],
-  python:  ['fastapi', 'flask', 'django'],
-  golang:  ['gin', 'echo', 'fiber'],
-  rust:    ['actix', 'axum'],
-  java:    ['spring', 'quarkus'],
-  ruby:    ['rails', 'sinatra'],
+const FRAMEWORK_OPTIONS: Record<string, { id: string; label: string; stackId: string }[]> = {
+  nodejs:  [
+    { id: 'express',    label: 'Express 5',                stackId: 'nodejs-express'      },
+    { id: 'nestjs',     label: 'NestJS 11',                stackId: 'nodejs-nestjs'       },
+    { id: 'nextjs-app', label: 'Next.js 15 (API Routes)',  stackId: 'nodejs-nextjs'       },
+    { id: 'nextjs',     label: 'Next.js 15 (Full-Stack)',  stackId: 'nodejs-nextjs-full'  },
+  ],
+  python:  [
+    { id: 'fastapi', label: 'FastAPI',           stackId: 'python-fastapi' },
+    { id: 'django',  label: 'Django 6',          stackId: 'python-django'  },
+    { id: 'flask',   label: 'Flask 3.1',         stackId: 'python-flask'   },
+  ],
+  go:      [
+    { id: 'gin',   label: 'Gin',     stackId: 'go-gin'   },
+    { id: 'echo',  label: 'Echo v4', stackId: 'go-echo'  },
+    { id: 'fiber', label: 'Fiber v3',stackId: 'go-fiber' },
+  ],
+  rust:    [
+    { id: 'actix-web', label: 'Actix-web 4', stackId: 'rust-actix-web' },
+    { id: 'axum',      label: 'Axum 0.8',    stackId: 'rust-axum'      },
+  ],
+  java:    [
+    { id: 'springboot', label: 'Spring Boot 3.3',      stackId: 'java-springboot' },
+    { id: 'spring',     label: 'Spring Framework 6.2', stackId: 'java-spring'     },
+  ],
+  kotlin:  [
+    { id: 'ktor',          label: 'Ktor 3.1',       stackId: 'kotlin-ktor'       },
+    { id: 'springboot-kt', label: 'Spring Boot 3.4', stackId: 'kotlin-springboot' },
+  ],
 };
 
 function chipStyle(selected: boolean) {
@@ -59,10 +82,49 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
   const [mode, setMode]         = useState<AppEntry['mode']>('boilerplate');
   const [stackId, setStackId]   = useState('');
   const [lang, setLang]         = useState('');
-  const [framework, setFramework] = useState('');
+  const [frameworkId, setFrameworkId] = useState('');
+  const [gitUrl, setGitUrl]     = useState('');
   const [port, setPort]         = useState(3000);
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError]   = useState('');
+  const [portStatus, setPortStatus] = useState<'idle' | 'checking' | 'available' | 'conflict'>('idle');
+  const [suggestedPort, setSuggestedPort] = useState<number | null>(null);
+  const portCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced port conflict check — runs when port value changes on step 3
+  useEffect(() => {
+    if (step !== 3) return;
+    setPortStatus('checking');
+    setSuggestedPort(null);
+    if (portCheckTimer.current) clearTimeout(portCheckTimer.current);
+    portCheckTimer.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`/api/apps/check-port?port=${port}`);
+        if (!res.ok) { setPortStatus('idle'); return; }
+        const data = await res.json() as { available: boolean };
+        if (data.available) {
+          setPortStatus('available');
+        } else {
+          // Find next available port starting from port+1
+          let candidate = port + 1;
+          while (candidate <= 65535) {
+            const r = await apiFetch(`/api/apps/check-port?port=${candidate}`);
+            if (r.ok) {
+              const d = await r.json() as { available: boolean };
+              if (d.available) break;
+            }
+            candidate++;
+          }
+          setSuggestedPort(candidate <= 65535 ? candidate : null);
+          setPortStatus('conflict');
+        }
+      } catch {
+        setPortStatus('idle');
+      }
+    }, 400);
+    return () => { if (portCheckTimer.current) clearTimeout(portCheckTimer.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [port, step]);
 
   // Step 1 → 2
   const goNext1 = () => {
@@ -78,13 +140,12 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
 
   // Step 2 → 3
   const goNext2 = () => {
-    if (mode === 'boilerplate' && !stackId) {
-      showToast('Select a stack to continue');
-      return;
-    }
-    if (mode === 'new-project' && !lang) {
-      showToast('Select a language to continue');
-      return;
+    if (mode === 'boilerplate') {
+      if (!stackId) { showToast('Select a stack to continue'); return; }
+    } else {
+      const trimmedUrl = gitUrl.trim();
+      if (!trimmedUrl) { showToast('Git URL is required'); return; }
+      if (!/^https?:\/\/.+/.test(trimmedUrl)) { showToast('Enter a valid Git URL (https://)'); return; }
     }
     setStep(3);
   };
@@ -93,11 +154,11 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
     setSubmitting(true);
     try {
       const body: CreateAppOptions = {
-        name: appName.trim(),
+        appName: appName.trim(),
         mode,
         port,
         ...(mode === 'boilerplate' ? { stackId } : {}),
-        ...(mode === 'new-project'  ? { lang, framework } : {}),
+        ...(mode === 'git-clone'   ? { gitUrl: gitUrl.trim() } : {}),
       };
       const res = await apiFetch('/api/apps/create', {
         method: 'POST',
@@ -118,9 +179,23 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
     }
   };
 
+  const stackRowStyle = (selected: boolean) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: '10px 14px',
+    borderRadius: 'var(--r)',
+    border: selected ? '1px solid var(--amber)' : '1px solid var(--bdr2)',
+    background: selected ? 'rgba(232,168,73,0.08)' : 'var(--bg3)',
+    cursor: 'pointer' as const,
+    transition: 'all 0.14s',
+    width: '100%',
+    textAlign: 'left' as const,
+  });
+
   return (
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ maxWidth: 520 }}>
+      <div className="modal" style={{ maxWidth: 560 }}>
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -149,11 +224,36 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px 24px', flex: 1, overflowY: 'auto' }}>
+        <div style={{ padding: '20px 24px', flex: 1, overflowY: 'auto', maxHeight: '60vh' }}>
 
-          {/* Step 1: Name + mode */}
+          {/* Step 1: Mode + name */}
           {step === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div>
+                <label className="fl">Mode</label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {(['boilerplate', 'git-clone'] as AppEntry['mode'][]).map((m) => (
+                    <button
+                      key={m}
+                      style={{
+                        ...chipStyle(mode === m),
+                        padding: '10px 20px',
+                        borderRadius: 'var(--r)',
+                        fontSize: 13,
+                      }}
+                      onClick={() => setMode(m)}
+                    >
+                      {m === 'boilerplate' ? '📦 Boilerplate' : '🔗 Git Clone'}
+                    </button>
+                  ))}
+                </div>
+                <div className="fhint" style={{ marginTop: 8 }}>
+                  {mode === 'boilerplate'
+                    ? 'Clone a Brewnet catalog template (language + framework).'
+                    : 'Clone any Git repository and deploy it on brewnet.'}
+                </div>
+              </div>
+
               <div className="fg">
                 <label className="fl">App Name</label>
                 <input
@@ -167,81 +267,22 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
                 {nameError && <div className="fhint" style={{ color: 'var(--red)' }}>{nameError}</div>}
                 <div className="fhint">Lowercase letters, numbers, hyphens. Max 30 chars.</div>
               </div>
-
-              <div>
-                <label className="fl">Mode</label>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {(['boilerplate', 'new-project'] as AppEntry['mode'][]).map((m) => (
-                    <button
-                      key={m}
-                      style={{
-                        ...chipStyle(mode === m),
-                        padding: '10px 20px',
-                        borderRadius: 'var(--r)',
-                        fontSize: 13,
-                      }}
-                      onClick={() => setMode(m)}
-                    >
-                      {m === 'boilerplate' ? '📦 Boilerplate' : '🔧 New Project'}
-                    </button>
-                  ))}
-                </div>
-                <div className="fhint" style={{ marginTop: 8 }}>
-                  {mode === 'boilerplate'
-                    ? 'Clone a ready-to-run template stack from Brewnet boilerplates.'
-                    : 'Start from scratch with a language and framework of your choice.'}
-                </div>
-              </div>
             </div>
           )}
 
-          {/* Step 2: Stack / language selection */}
+          {/* Step 2a: Boilerplate — language + framework picker */}
           {step === 2 && mode === 'boilerplate' && (
-            <div>
-              <label className="fl">Select Stack</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {BOILERPLATE_STACKS.map((s) => (
-                  <button
-                    key={s.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '12px 16px',
-                      borderRadius: 'var(--r)',
-                      border: stackId === s.id ? '1px solid var(--amber)' : '1px solid var(--bdr2)',
-                      background: stackId === s.id ? 'rgba(232,168,73,0.08)' : 'var(--bg3)',
-                      cursor: 'pointer',
-                      transition: 'all 0.14s',
-                      width: '100%',
-                      textAlign: 'left' as const,
-                    }}
-                    onClick={() => setStackId(s.id)}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: 600, color: stackId === s.id ? 'var(--amber)' : 'var(--txt)' }}>
-                      {s.label}
-                    </span>
-                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)', marginLeft: 'auto' }}>
-                      {s.id}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {step === 2 && mode === 'new-project' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div>
                 <label className="fl">Language</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {LANGUAGES.map((l) => (
+                  {LANG_OPTIONS.map((l) => (
                     <button
-                      key={l}
-                      style={chipStyle(lang === l)}
-                      onClick={() => { setLang(l); setFramework(''); }}
+                      key={l.id}
+                      style={chipStyle(lang === l.id)}
+                      onClick={() => { setLang(l.id); setFrameworkId(''); setStackId(''); }}
                     >
-                      {l}
+                      {l.label}
                     </button>
                   ))}
                 </div>
@@ -250,19 +291,40 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
               {lang && (
                 <div>
                   <label className="fl">Framework</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {(FRAMEWORKS[lang] ?? []).map((f) => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {(FRAMEWORK_OPTIONS[lang] ?? []).map((f) => (
                       <button
-                        key={f}
-                        style={chipStyle(framework === f)}
-                        onClick={() => setFramework(f)}
+                        key={f.id}
+                        style={stackRowStyle(frameworkId === f.id)}
+                        onClick={() => { setFrameworkId(f.id); setStackId(f.stackId); }}
                       >
-                        {f}
+                        <span style={{ fontSize: 13, fontWeight: 600, color: frameworkId === f.id ? 'var(--amber)' : 'var(--txt)' }}>
+                          {f.label}
+                        </span>
+                        <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)', marginLeft: 'auto' }}>
+                          {f.stackId}
+                        </span>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Step 2b: Git Clone — repository URL input */}
+          {step === 2 && mode === 'git-clone' && (
+            <div className="fg">
+              <label className="fl">Git Repository URL</label>
+              <input
+                className="fi"
+                value={gitUrl}
+                onChange={(e) => setGitUrl(e.target.value)}
+                placeholder="https://github.com/your-org/your-repo.git"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') goNext2(); }}
+              />
+              <div className="fhint">Clone and deploy any public or private Git repository.</div>
             </div>
           )}
 
@@ -278,8 +340,35 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
                 value={port}
                 onChange={(e) => setPort(Number(e.target.value))}
                 autoFocus
+                style={{ borderColor: portStatus === 'conflict' ? 'var(--red)' : undefined }}
               />
-              <div className="fhint">Container port your app listens on. Default 3000.</div>
+              {portStatus === 'checking' && (
+                <div className="fhint">포트 확인 중…</div>
+              )}
+              {portStatus === 'conflict' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <div className="fhint" style={{ color: 'var(--red)', margin: 0 }}>
+                    ⚠ 포트 {port} 사용 중.
+                  </div>
+                  {suggestedPort && (
+                    <button
+                      className="btn bg bsm"
+                      style={{ fontSize: 11, padding: '3px 10px' }}
+                      onClick={() => setPort(suggestedPort)}
+                    >
+                      {suggestedPort} 사용
+                    </button>
+                  )}
+                </div>
+              )}
+              {portStatus === 'available' && (
+                <div className="fhint">Container port your app listens on. Default 3000.</div>
+              )}
+              {(mode === 'boilerplate' && lang === 'rust') && (
+                <div className="fhint" style={{ color: 'var(--amber)', marginTop: 6 }}>
+                  ⚠ Rust stacks require longer build time (~10–20 min).
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -302,6 +391,7 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
               <button
                 className="btn bp"
                 onClick={step === 1 ? goNext1 : goNext2}
+                disabled={step === 2 && (mode === 'boilerplate' ? !frameworkId : !gitUrl.trim())}
               >
                 Next →
               </button>

@@ -73,7 +73,8 @@ async function runCLI(args: string[]): Promise<ParseResult> {
 describe('createProgram()', () => {
   it('returns a Commander Command instance', () => {
     const program = createProgram();
-    expect(program).toBeInstanceOf(Command);
+    // Use constructor name check to avoid ESM module duplication instanceof issues
+    expect(program?.constructor?.name).toBe('Command');
   });
 
   it('has program name set to "brewnet"', () => {

@@ -337,3 +337,58 @@ When completing a task, always end with a Korean summary:
 - 무엇을 변경했는지
 - 왜 그렇게 했는지
 - 주의할 점이 있는지
+
+---
+
+## admin-server wizardState null — lastProject 빈값 — 발견일: 2026-03-19
+
+### 증상
+`test-cycle.sh --skip-init` 재실행 시 Phase 9.4 `/api/settings/cloudflare` → 401, `/api/git/repos` → Gitea 401, Phase 10-11 모든 create-app 작업 ~5초만에 `status=failed`.
+
+### 근본 원인 (Root Cause)
+`admin-server.ts:898-912`에서 서버 시작 시 `getLastProject()`로 wizardState를 한 번만 로드한다. `~/.brewnet/config.json`의 `lastProject`가 `""` (빈 문자열)이면 `wizardState = null`, `password = ''`이 된다.
+
+- `checkAdminAuth()`: `state?.admin?.password` = undefined → 즉시 401 ("Admin password not configured")
+- `resolveContext()` in `app-manager.ts:357-375`: `loadState(undefined)` → null, `projectPath = process.cwd()`, secrets 파일 없음 → `giteaPassword = ''` → Gitea 인증 실패
+- `GiteaClient.prepare()` 실패 → `~/.brewnet/gitea-token` 미생성 → 이후 모든 Gitea 의존 작업 실패
+
+`lastProject`가 비워지는 경우: `~/.brewnet/projects/` 디렉토리 삭제 (uninstall, 수동 정리) 후에도 `config.json`의 `lastProject`가 `""` 상태 유지.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `test-cycle.sh` | `--skip-init` 시작 부분에 lastProject 자동 복원 로직 추가 |
+| `troubleshooting/admin-server-wizardstate-null-lastproject-empty.md` | 트러블슈팅 문서 신규 작성 |
+
+### 재발 방지 체크리스트
+- [ ] `test-cycle.sh --skip-init` 실행 전: `cat ~/.brewnet/config.json` 으로 `lastProject` 값 확인
+- [ ] `~/.brewnet/projects/<name>/selections.json` 존재 여부 확인
+- [ ] admin-server 재시작이 필요한 경우 lastProject 복원 후 재시작
+- [ ] test-cycle.sh `--skip-init` 시 자동 복원 로직 동작 확인 (warn 메시지 확인)
+
+### 관련 코드
+```typescript
+// admin-server.ts:898-912 — wizardState는 서버 시작 시 한 번만 로드됨
+let wizardState: WizardState | null = null;
+const last = getLastProject();  // "" → undefined
+if (last) {
+  const state = loadState(last);
+  if (state) wizardState = state;
+}
+const password = wizardState?.admin?.password ?? '';  // "" → 모든 인증 실패
+```
+
+```bash
+# 빠른 복구 방법
+mkdir -p ~/.brewnet/projects/my-homeserver
+cp /tmp/brewnet-test-config.json ~/.brewnet/projects/my-homeserver/selections.json
+node -e "
+  const fs=require('fs'),path=require('path'),os=require('os');
+  const cfg=path.join(os.homedir(),'.brewnet','config.json');
+  const d=JSON.parse(fs.readFileSync(cfg,'utf8'));
+  d.lastProject='my-homeserver';
+  fs.writeFileSync(cfg,JSON.stringify(d,null,'\t'));
+"
+lsof -ti :8088 | xargs kill -9 && sleep 2
+node packages/cli/dist/index.js admin --foreground --no-open &
+```

@@ -1,10 +1,10 @@
 // T029 — AppCard component
-import { Link } from 'react-router-dom';
 import type { AppEntry } from '../types.js';
 import { showToast } from './Toast.js';
 
 interface AppCardProps {
   app: AppEntry;
+  onOpenDetail: () => void;
   onStart: () => void;
   onStop: () => void;
   onDeploy: () => void;
@@ -34,7 +34,7 @@ function formatDate(iso: string | null | undefined): string {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export function AppCard({ app, onStart, onStop, onDeploy, onDelete }: AppCardProps) {
+export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete }: AppCardProps) {
   const handleStart = () => {
     if (!app.lastDeployedAt) {
       showToast('⚠️ Deploy first before starting');
@@ -55,18 +55,24 @@ export function AppCard({ app, onStart, onStop, onDeploy, onDelete }: AppCardPro
     }}>
       {/* Top row: name + status */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Link
-          to={`/apps/${app.name}`}
+        <button
+          onClick={onOpenDetail}
           style={{
             fontSize: 15,
             fontWeight: 700,
             color: 'var(--amber)',
             fontFamily: 'var(--mono)',
-            textDecoration: 'none',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            textDecorationStyle: 'dotted',
+            textUnderlineOffset: 3,
           }}
         >
           {app.name}
-        </Link>
+        </button>
         <span className={statusBadgeClass(app.status)}>
           {statusDot(app.status)}
           {app.status}
@@ -126,8 +132,57 @@ export function AppCard({ app, onStart, onStop, onDeploy, onDelete }: AppCardPro
         )}
       </div>
 
+      {/* Access links */}
+      {(app.localUrl || app.externalUrl || app.giteaRepoUrl) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {app.localUrl && (
+            <a
+              href={app.localUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="domain-link"
+              style={{ fontSize: 11 }}
+            >
+              ↗ Local
+            </a>
+          )}
+          {app.externalUrl && (
+            <a
+              href={app.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="domain-link"
+              style={{
+                fontSize: 11,
+                background: 'rgba(232,168,73,0.07)',
+                borderColor: 'rgba(232,168,73,0.18)',
+                color: 'var(--amber)',
+              }}
+            >
+              ↗ External
+            </a>
+          )}
+          {app.giteaRepoUrl && (
+            <a
+              href={app.giteaRepoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="domain-link"
+              style={{
+                fontSize: 11,
+                background: 'rgba(61,214,200,0.07)',
+                borderColor: 'rgba(61,214,200,0.18)',
+                color: 'var(--teal)',
+              }}
+            >
+              ⎇ Gitea
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
         <button
           className="btn bgrn bsm"
           onClick={handleStart}
@@ -147,7 +202,7 @@ export function AppCard({ app, onStart, onStop, onDeploy, onDelete }: AppCardPro
         <button className="btn bt bsm" onClick={onDeploy}>
           ↑ Deploy
         </button>
-        <button className="btn br bsm" onClick={onDelete} style={{ marginLeft: 'auto' }}>
+        <button className="btn br bsm" onClick={onDelete}>
           ✕ Delete
         </button>
       </div>
