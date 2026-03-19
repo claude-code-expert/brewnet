@@ -147,17 +147,40 @@ export class GiteaClient {
     return res.status === 200;
   }
 
+  /** Returns true if the repo exists but has no commits (empty: true from Gitea API). */
+  async repoIsEmpty(name: string): Promise<boolean> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(
+      `${baseUrl}/api/v1/repos/${username}/${name}`,
+      { headers: await this.authHeaders() },
+    );
+    if (res.status !== 200) return false;
+    const data = await res.json() as { empty?: boolean };
+    return data.empty === true;
+  }
+
   /** Creates a private repo and returns the clone URL. */
   async createRepo(name: string, description = ''): Promise<string> {
     const { baseUrl } = this.config;
     const res = await fetch(`${baseUrl}/api/v1/user/repos`, {
       method: 'POST',
       headers: await this.authHeaders(),
-      body: JSON.stringify({ name, description, private: true, auto_init: false }),
+      body: JSON.stringify({ name, description, private: false, auto_init: false }),
     });
 
     if (!res.ok) {
       const body = await res.text();
+      // 409 "repository already exists" — previous partial creation left the repo.
+      // Fetch the existing repo's clone_url and continue.
+      if (res.status === 409) {
+        const existing = await fetch(`${baseUrl}/api/v1/repos/${this.config.username}/${name}`, {
+          headers: await this.authHeaders(),
+        });
+        if (existing.ok) {
+          const data = (await existing.json()) as { clone_url: string };
+          return data.clone_url;
+        }
+      }
       // Gitea 500 "repository files already exist" — DB record was deleted
       // (e.g. by uninstall) but bare git files remain on disk in the volume.
       // Delete the orphan files and retry once.
@@ -166,7 +189,7 @@ export class GiteaClient {
         const retry = await fetch(`${baseUrl}/api/v1/user/repos`, {
           method: 'POST',
           headers: await this.authHeaders(),
-          body: JSON.stringify({ name, description, private: true, auto_init: false }),
+          body: JSON.stringify({ name, description, private: false, auto_init: false }),
         });
         if (!retry.ok) {
           throw new Error(`Gitea createRepo retry failed: ${retry.status} ${await retry.text()}`);
@@ -179,6 +202,17 @@ export class GiteaClient {
 
     const data = (await res.json()) as { clone_url: string };
     return data.clone_url;
+  }
+
+  /** Patch a repo from private to public visibility. No-op if already public. */
+  async makeRepoPublic(name: string): Promise<void> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(`${baseUrl}/api/v1/repos/${username}/${name}`, {
+      method: 'PATCH',
+      headers: await this.authHeaders(),
+      body: JSON.stringify({ private: false }),
+    });
+    if (!res.ok) throw new Error(`Gitea makeRepoPublic failed: ${res.status} ${await res.text()}`);
   }
 
   async deleteRepo(name: string): Promise<void> {

@@ -951,7 +951,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         stackId,
         appDir,
         backendUrl: baseUrl,
-        frontendUrl: isUnified ? baseUrl : 'http://127.0.0.1:3000',
+        frontendUrl: isUnified ? baseUrl : `http://127.0.0.1:${frontendPort ?? 3000}`,
         isUnified,
         lang,
         frameworkId,

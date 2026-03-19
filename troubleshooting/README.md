@@ -24,14 +24,23 @@
 | [wizard-boilerplate-generate-missing-call.md](./wizard-boilerplate-generate-missing-call.md) | Configuration / Runtime | 2026-03-03 | ✅ 해결됨 | 1 |
 | [gitea-db-auth-install-lock-missing.md](./gitea-db-auth-install-lock-missing.md) | Configuration / Docker | 2026-03-03 | ✅ 해결됨 | 1 |
 | [gitea-docker-exec-root-rejection.md](./gitea-docker-exec-root-rejection.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
-| [boilerplate-frontend-port-conflict.md](./boilerplate-frontend-port-conflict.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [boilerplate-frontend-port-conflict.md](./boilerplate-frontend-port-conflict.md) | Docker / Configuration | 2026-03-19 | ✅ 해결됨 | 2 |
 | [uninstall-orphaned-docker-resources.md](./uninstall-orphaned-docker-resources.md) | Docker / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
+| [app-detail-modal-polling-interval-zero.md](./app-detail-modal-polling-interval-zero.md) | Runtime / Configuration | 2026-03-19 | ✅ 해결됨 | 1 |
+| [admin-server-cloudflare-settings-500.md](./admin-server-cloudflare-settings-500.md) | Runtime / Configuration | 2026-03-19 | ✅ 해결됨 | 1 |
 | [gitea-password-bash-history-expansion.md](./gitea-password-bash-history-expansion.md) | Runtime / Configuration | 2026-03-04 | ✅ 해결됨 | 1 |
 | [traefik-port-443-browser-https-upgrade.md](./traefik-port-443-browser-https-upgrade.md) | Configuration / Docker / Network | 2026-03-04 | ✅ 해결됨 | 1 |
 | [admin-services-table-url-blank.md](./admin-services-table-url-blank.md) | Configuration / Runtime / Network | 2026-03-17 | ✅ 해결됨 | 4 |
 | [template-literal-regex-js-parse-failure.md](./template-literal-regex-js-parse-failure.md) | Build / Runtime | 2026-03-17 | ✅ 해결됨 | 1 |
 | [boilerplate-compose-array-labels-corruption.md](./boilerplate-compose-array-labels-corruption.md) | Configuration / Docker | 2026-03-17 | ✅ 해결됨 | 1 |
 | [vite-spa-trailing-slash-blank-screen.md](./vite-spa-trailing-slash-blank-screen.md) | Configuration / Network | 2026-03-17 | ✅ 해결됨 | 2 |
+| [domain-apps-500-undefined-enabled.md](./domain-apps-500-undefined-enabled.md) | Runtime / Configuration | 2026-03-19 | ✅ 해결됨 | 1 |
+| [test-cycle-spa-sse-basepath-fixes.md](./test-cycle-spa-sse-basepath-fixes.md) | Configuration / Runtime | 2026-03-19 | ✅ 해결됨 | 1 |
+| [phase11-nextjs-unified-basepath-appname.md](./phase11-nextjs-unified-basepath-appname.md) | Configuration / Runtime | 2026-03-19 | ✅ 해결됨 | 1 |
+| [jest-admin-server-503-and-commander-instanceof.md](./jest-admin-server-503-and-commander-instanceof.md) | Build / Runtime / Configuration | 2026-03-19 | ✅ 해결됨 | 1 |
+| [admin-server-wizardstate-null-lastproject-empty.md](./admin-server-wizardstate-null-lastproject-empty.md) | Runtime / Configuration | 2026-03-19 | ✅ 해결됨 | 1 |
+| [boilerplate-frontend-url-wrong-port.md](./boilerplate-frontend-url-wrong-port.md) | Configuration / Runtime | 2026-03-19 | ✅ 해결됨 | 1 |
+| [deploy-gitea-empty-repo-push-skipped.md](./deploy-gitea-empty-repo-push-skipped.md) | Git / Runtime | 2026-03-19 | ✅ 해결됨 | 1 |
 
 ## 에러 타입별 분류
 
