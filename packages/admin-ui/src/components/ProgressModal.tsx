@@ -1,10 +1,24 @@
 // T032 — ProgressModal: polls job status and renders step list + logs
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppJob } from '../types.js';
+import { showToast } from './Toast.js';
+
+function useElapsed(running: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!running) { startRef.current = null; setElapsed(0); return; }
+    if (startRef.current === null) startRef.current = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current!) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  return elapsed;
+}
 
 interface ProgressModalProps {
   jobId: string;
   appName: string;
+  jobType?: 'create' | 'deploy';
   apiFetch: (url: string, init?: RequestInit) => Promise<Response>;
   onClose: () => void;
   onComplete?: () => void;
@@ -33,11 +47,18 @@ function StepIcon({ status }: { status: AppJob['steps'][number]['status'] }) {
   return <span style={{ color: 'var(--txt3)', width: 16, display: 'inline-block', textAlign: 'center' }}>○</span>;
 }
 
-export function ProgressModal({ jobId, appName, apiFetch, onClose, onComplete }: ProgressModalProps) {
+export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, onClose, onComplete }: ProgressModalProps) {
   const [job, setJob] = useState<AppJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const doneRef = useRef(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const lastLogCountRef = useRef(0);
+  const lastLogChangeTimeRef = useRef(Date.now());
+  const [logStaleSeconds, setLogStaleSeconds] = useState(0);
+
+  const runningStep = job?.steps.findIndex((s) => s.status === 'running') ?? -1;
+  const isStepRunning = runningStep !== -1 && job?.status === 'running';
+  const stepElapsed = useElapsed(isStepRunning);
 
   const poll = useCallback(async () => {
     try {
@@ -48,8 +69,17 @@ export function ProgressModal({ jobId, appName, apiFetch, onClose, onComplete }:
       }
       const data = await res.json() as AppJob;
       setJob(data);
+      const logCount = data.logs?.length ?? 0;
+      if (logCount !== lastLogCountRef.current) {
+        lastLogCountRef.current = logCount;
+        lastLogChangeTimeRef.current = Date.now();
+        setLogStaleSeconds(0);
+      } else if (data.status === 'running') {
+        setLogStaleSeconds(Math.floor((Date.now() - lastLogChangeTimeRef.current) / 1000));
+      }
       if (data.status === 'done' && !doneRef.current) {
         doneRef.current = true;
+        showToast(jobType === 'deploy' ? 'Deploy가 성공적으로 수행되었습니다.' : '앱이 성공적으로 생성되었습니다.');
         onComplete?.();
         return false; // stop polling
       }
@@ -146,18 +176,32 @@ export function ProgressModal({ jobId, appName, apiFetch, onClose, onComplete }:
                 }}>
                   <StepIcon status={s.status} />
                   <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: 13,
-                      color: s.status === 'done' ? 'var(--txt2)'
-                           : s.status === 'running' ? 'var(--amber)'
-                           : s.status === 'failed'  ? 'var(--red)'
-                           : 'var(--txt3)',
-                    }}>
-                      {s.label}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        fontSize: 13,
+                        color: s.status === 'done' ? 'var(--txt2)'
+                             : s.status === 'running' ? 'var(--amber)'
+                             : s.status === 'failed'  ? 'var(--red)'
+                             : 'var(--txt3)',
+                      }}>
+                        {s.label}
+                      </span>
+                      {s.status === 'running' && stepElapsed > 0 && (
+                        <span style={{ fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>
+                          {stepElapsed >= 60
+                            ? `${Math.floor(stepElapsed / 60)}m ${stepElapsed % 60}s`
+                            : `${stepElapsed}s`}
+                        </span>
+                      )}
                     </div>
                     {s.message && (
                       <div style={{ fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'var(--mono)', marginTop: 2 }}>
                         {s.message}
+                      </div>
+                    )}
+                    {s.status === 'running' && logStaleSeconds >= 10 && (
+                      <div style={{ fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'var(--mono)', marginTop: 4 }}>
+                        {'⌛ No new output for '}{logStaleSeconds}{'s — container may be starting up…'}
                       </div>
                     )}
                   </div>
@@ -221,7 +265,7 @@ export function ProgressModal({ jobId, appName, apiFetch, onClose, onComplete }:
           display: 'flex',
           justifyContent: 'flex-end',
         }}>
-          <button className="btn bg" onClick={onClose}>
+          <button className={job?.status === 'done' ? 'btn bp' : 'btn bg'} onClick={onClose}>
             {job?.status === 'done' ? 'Close' : job?.status === 'failed' ? 'Dismiss' : 'Close (keep running)'}
           </button>
         </div>

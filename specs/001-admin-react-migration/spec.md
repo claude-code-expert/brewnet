@@ -128,7 +128,7 @@ All inter-page links work: clicking an app name navigates to its detail page, ba
 - **FR-001**: The admin UI MUST be served as a single-page application from the same port (8800) as the REST API, maintaining all current routes (`/`, `/apps`, `/apps/:name`).
 - **FR-002**: The admin HTTP server MUST serve the compiled React build's static files from a local directory with no external CDN dependencies at runtime. The React UI MUST replicate the existing visual design (colors, layout, component styles) with no redesign.
 - **FR-003**: All existing REST API endpoints MUST remain unchanged in method, path, request/response format.
-- **FR-004**: The CLI package commands, wizard steps, and service modules MUST NOT be modified except to update the static file serving path in `admin-server.ts`.
+- **FR-004**: The CLI package commands, wizard steps, and service modules MUST NOT be modified except for the following changes in `admin-server.ts`: (a) adding static file serving for the React SPA build, (b) adding `GET /api/config` and `GET /api/services/catalog` endpoints to expose data previously embedded in HTML, (c) adding `?token` query string auth fallback to the SSE log stream handler, and (d) removing legacy HTML generation functions (`generateDashboardHtml`, `buildBoilerplateSectionHtml`, `escHtml`, `refreshBoilerplateMeta`) and their associated source files (`apps-page.ts`, `status-page.ts`). Unit tests for `admin-server.ts` MAY be updated to reflect the new SPA fallback behavior.
 - **FR-005**: The admin server MUST serve `index.html` for all non-API, non-asset GET requests so SPA routing works on browser refresh.
 
 **Feature parity:**
@@ -167,7 +167,7 @@ All inter-page links work: clicking an app name navigates to its detail page, ba
 - **SC-003**: `npm run build` completes without errors and produces a working admin UI bundle served by the admin server.
 - **SC-004**: No spurious error toasts appear on page load when Gitea is unreachable.
 - **SC-005**: The React bundle has zero runtime CDN dependencies — all assets served from localhost:8800.
-- **SC-006**: `npm test` continues to pass without modification (CLI tests unaffected).
+- **SC-006**: `npm test` continues to pass. CLI unit tests for `admin-server.ts` MAY be updated to reflect the SPA fallback behavior change (replacing HTML content assertions with SPA fallback assertions), but all tests must remain green.
 - **SC-007**: Browser refresh on any route (`/`, `/apps`, `/apps/:name`) loads the correct page with no 404.
 
 ---
@@ -180,3 +180,144 @@ All inter-page links work: clicking an app name navigates to its detail page, ba
 4. **`SERVICE_DETAIL_MAP`** is moved to a new `GET /api/services/catalog` endpoint (same data, now fetchable). No HTML embedding.
 5. **Boilerplate stacks endpoint** (`GET /api/apps/boilerplates`) already exists and can be reused for the React dashboard.
 6. **Visual design**: Existing CSS styles (dark theme, card layout, toast styles, color palette) are replicated as-is in React. No redesign, no new design system. Visual changes are out of scope for this migration.
+
+---
+
+## AppDetailModal usePolling interval=0 무한 루프 — 발견일: 2026-03-19
+
+### 증상
+AppDetailModal을 열면 브라우저 콘솔에 즉각적으로 수백~수천 개의 `net::ERR_INSUFFICIENT_RESOURCES` 에러가 발생. `/api/apps/:name/git`과 `/api/apps/:name/deploy/settings`에 대한 fetch가 무한 루프처럼 반복 요청됨.
+
+### 근본 원인 (Root Cause)
+`packages/admin-ui/src/components/AppDetailModal.tsx`의 `usePolling` 훅 호출 시 interval을 `0`으로 전달:
+
+```typescript
+usePolling(`/api/apps/${appName}/git`, 0, silentFetch, ...);
+usePolling(`/api/apps/${appName}/deploy/settings`, 0, silentFetch, ...);
+```
+
+`usePolling` 내부에서 `setInterval(poll, 0)`이 실행되면 브라우저 최소 타이머 간격(~4ms)으로 동작 → 초당 250회 이상 fetch 요청 → 브라우저 네트워크 자원 고갈.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `packages/admin-ui/src/components/AppDetailModal.tsx:57` | git polling interval `0` → `30000` |
+| `packages/admin-ui/src/components/AppDetailModal.tsx:63` | settings polling interval `0` → `30000` |
+
+### 재발 방지 체크리스트
+- [ ] `usePolling` 훅에 interval=0 guard 추가 고려: 0이면 최초 1회만 fetch하고 interval 없이 종료
+- [ ] 새 컴포넌트에서 `usePolling` 사용 시 반드시 양수 interval(최소 1000ms) 명시
+- [ ] git/settings처럼 자주 변경되지 않는 데이터는 30000ms(30초) 이상 interval 사용
+
+### 관련 코드 (핵심 부분만)
+```typescript
+// Before (버그)
+usePolling(`/api/apps/${appName}/git`, 0, silentFetch, ...);
+
+// After
+usePolling(`/api/apps/${appName}/git`, 30000, silentFetch, ...);
+```
+
+---
+
+## Admin Server `/api/settings/cloudflare` 500 에러 — 발견일: 2026-03-19
+
+### 증상
+Domain Setting 모달 오픈 시 "Failed to load: 500" 메시지 표시. GET `/api/settings/cloudflare`가 500을 반환하여 Cloudflare 설정 값 로드 불가.
+
+### 근본 원인 (Root Cause)
+`packages/cli/src/services/admin-server.ts`의 `handleSettingsCloudflareGet` 함수에서 `mask()` 헬퍼가 `string` 타입만 기대하지만, `selections.json`에 cloudflare 필드가 없으면 `undefined`가 전달되어 `s.length` 접근 시 TypeError 발생:
+
+```typescript
+// 버그: s가 undefined이면 TypeError
+const mask = (s: string) => s.length > 6 ? ... : s ? '***set***' : 'not set';
+```
+
+`CloudflareConfig` 타입에는 `accountId: string`이 required로 정의되어 있으나, 직접 작성한 `selections.json`이나 incomplete wizard state에서 필드가 누락될 수 있음.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `packages/cli/src/services/admin-server.ts:1844` | `mask(s: string)` → `mask(s: string \| undefined)`, undefined guard 추가 |
+
+### 재발 방지 체크리스트
+- [ ] WizardState 기반 핸들러는 모든 중첩 필드를 optional로 처리
+- [ ] `mask()` 같은 포맷팅 헬퍼는 항상 falsy 입력을 처리하도록 작성
+- [ ] `selections.json` 생성 시 `createDefaultWizardState()` 사용 또는 모든 required 필드 포함 확인
+
+### 관련 코드 (핵심 부분만)
+```typescript
+// Before (버그)
+const mask = (s: string) => s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : s ? '***set***' : 'not set';
+
+// After
+const mask = (s: string | undefined) => !s ? 'not set' : s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : '***set***';
+```
+
+---
+
+## getActiveServiceRoutes undefined → /api/domain/apps 500 — 발견일: 2026-03-19
+
+### 증상
+Admin UI에서 `/api/domain/apps` 호출 시 HTTP 500 오류 반환:
+```json
+{"success":false,"error":"TypeError: Cannot read properties of undefined (reading 'enabled')"}
+```
+Domain Settings 모달에서 도메인 연결 가능한 앱 목록을 불러오지 못함.
+
+### 근본 원인 (Root Cause)
+`packages/cli/src/services/cloudflare-client.ts:544`의 `getActiveServiceRoutes()` 함수에서 `state.servers.fileServer`, `state.servers.media`, `state.servers.dbServer`, `state.servers.fileBrowser` 접근 시 optional chaining 미적용.
+
+`selections.json`에 해당 서버가 설정되지 않은 경우 (Git 서버만 활성화) 이 필드들은 `undefined`이고, `.enabled` 접근 시 TypeError 발생.
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `packages/cli/src/services/cloudflare-client.ts:544-568` | `state.servers.fileServer.enabled` → `state.servers.fileServer?.enabled` 등 optional chaining 적용 |
+
+### 재발 방지 체크리스트
+- [ ] `WizardState.servers.*` 접근 시 반드시 optional chaining (`?.`) 사용
+- [ ] `selections.json`에 일부 서버만 설정된 미니멀 환경에서도 모든 API 핸들러가 동작하는지 확인
+- [ ] 새 서버 타입을 `getActiveServiceRoutes()`에 추가할 때 항상 `?.enabled` 사용
+
+### 관련 코드 (핵심 부분만)
+```typescript
+// Before (버그 — cloudflare-client.ts)
+if (state.servers.fileServer.enabled) { ... }
+if (state.servers.media.enabled && state.servers.media.services.includes('jellyfin')) { ... }
+
+// After
+if (state.servers.fileServer?.enabled) { ... }
+if (state.servers.media?.enabled && state.servers.media.services?.includes('jellyfin')) { ... }
+```
+
+---
+
+## test-cycle.sh SPA/SSE/basePath 검증 오류 — 발견일: 2026-03-19
+
+### 증상
+1. **Phase 4 JS 문법 검사 실패**: React SPA 도입 후 inline `<script>` 없어 `node --check /dev/stdin`이 항상 "FAIL" 반환
+2. **Phase 6 nodejs-nextjs-full backend 404**: Next.js basePath `/apps/{stackId}` 때문에 `/health` 직접 접근 시 404
+3. **Phase 8.1 Local ≠ External 오탐**: health endpoint 응답의 timestamp 필드가 요청마다 달라 전체 body 비교 실패
+4. **Logs SSE Content-Type 오탐**: `grep -i 'content-type'`이 `Access-Control-Allow-Headers: Content-Type` 줄도 매칭
+
+### 근본 원인 (Root Cause)
+- Phase 4: 이전엔 inline script를 검사했지만 React SPA 전환 후 모든 JS가 external bundle
+- Phase 6: `test-cycle.sh:901` 헬스체크 URL이 `/health` 고정, unified 스택의 basePath 미적용
+- Phase 8.1: timestamp 포함 전체 body 비교 → status 필드만 비교해야 함
+- Logs SSE: `curl -I` (HEAD) 응답에서 `grep -i 'content-type'`이 CORS 헤더 먼저 매칭
+
+### 수정 내용
+| 파일 | 변경 내용 |
+|------|----------|
+| `test-cycle.sh` Phase 4 | inline script 검사 → external bundle URL 추출 후 검사 |
+| `test-cycle.sh` Phase 6:901 | `/health` → unified 스택은 `/apps/${STACK_ID}/health` |
+| `test-cycle.sh` Phase 6:926 | Image URL도 unified 스택은 `/apps/${STACK_ID}/brewnet-site-banner.png` |
+| `test-cycle.sh` Phase 8.1 | body 전체 비교 → `status` 필드만 추출해 비교 |
+| `test-cycle.sh` Phase 9.3/10.5 | `curl -I + grep 'content-type'` → `curl -v + grep '^< content-type'` |
+
+### 재발 방지 체크리스트
+- [ ] unified 스택 (Next.js) 테스트 시 basePath `/apps/{stackId}` 반드시 포함
+- [ ] SSE Content-Type 검증은 `curl -v` verbose GET으로 `^< content-type` 패턴 사용
+- [ ] health 응답 비교 시 timestamp/date 같은 동적 필드는 제외하고 비교
+- [ ] React SPA 전환 후 JS 문법 검사는 external bundle 파일 URL 기준으로 작성

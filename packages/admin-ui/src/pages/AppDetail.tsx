@@ -1,5 +1,5 @@
 // T035 — AppDetail: 4-tab detail page for a deployed app
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../auth-context.js';
 import { usePolling } from '../hooks/usePolling.js';
@@ -9,7 +9,7 @@ import { OverviewTab } from '../components/OverviewTab.js';
 import { DeploymentTab } from '../components/DeploymentTab.js';
 import { AppLogsTab } from '../components/AppLogsTab.js';
 import { DomainTab } from '../components/DomainTab.js';
-import type { AppEntry, AppGitInfo, DeploySettings } from '../types.js';
+import type { AppEntry, AppGitInfo, DeploySettings, BoilerplateMeta } from '../types.js';
 
 type Tab = 'overview' | 'deployment' | 'logs' | 'domain';
 
@@ -17,11 +17,12 @@ export function AppDetail() {
   const { name } = useParams<{ name: string }>();
   const { apiFetch } = useAuth();
 
-  const [app, setApp]             = useState<AppEntry | null>(null);
-  const [git, setGit]             = useState<AppGitInfo | null>(null);
-  const [settings, setSettings]   = useState<DeploySettings | null>(null);
-  const [notFound, setNotFound]   = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const [app, setApp]               = useState<AppEntry | null>(null);
+  const [git, setGit]               = useState<AppGitInfo | null>(null);
+  const [settings, setSettings]     = useState<DeploySettings | null>(null);
+  const [boilerplate, setBoilerplate] = useState<BoilerplateMeta | null>(null);
+  const [notFound, setNotFound]     = useState(false);
+  const [activeTab, setActiveTab]   = useState<Tab>('overview');
 
   // Deploy progress modal state
   const [progressJob, setProgressJob] = useState<{ jobId: string; appName: string } | null>(null);
@@ -53,6 +54,24 @@ export function AppDetail() {
   // Poll app info every 5s (uses 404-aware fetch)
   const appUrl = name ? `/api/apps/${encodeURIComponent(name)}` : '';
   usePolling(appUrl, 5000, appAwareFetch, handleAppData, !!name);
+
+  // Fetch boilerplate metadata once the app's stackId is known (stable after first poll)
+  useEffect(() => {
+    if (!name || !app) return;
+    apiFetch('/api/apps/boilerplates')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: unknown) => {
+        const list = (d as { boilerplates?: BoilerplateMeta[] })?.boilerplates ?? [];
+        // match by appDir first (unique per app), fallback to stackId
+        const matched =
+          list.find((bp) => bp.appDir && app.appDir && bp.appDir === app.appDir) ??
+          list.find((bp) => bp.stackId === app.stackId) ??
+          null;
+        setBoilerplate(matched);
+      })
+      .catch(() => null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, app?.stackId]);
 
   // Fetch git info once on mount (silently fail on 502 / non-ok)
   const gitFetch = useCallback(
@@ -205,7 +224,7 @@ export function AppDetail() {
 
             {/* Tab content */}
             {activeTab === 'overview' && (
-              <OverviewTab app={app} git={git} />
+              <OverviewTab app={app} git={git} boilerplate={boilerplate} />
             )}
 
             {activeTab === 'deployment' && (

@@ -1,14 +1,13 @@
 import type { BoilerplateMeta } from '../types.js';
+import { BOILERPLATE_GITHUB_BASE } from '../lib/constants.js';
 
 interface BoilerplateDetailModalProps {
   stack: BoilerplateMeta;
   onClose: () => void;
 }
 
-const GITHUB_BASE = 'https://github.com/codevillain-dev/brewnet-boilerplates/tree/main';
-
 export function BoilerplateDetailModal({ stack, onClose }: BoilerplateDetailModalProps) {
-  const githubUrl = `${GITHUB_BASE}/${stack.stackId}`;
+  const githubUrl = `${BOILERPLATE_GITHUB_BASE}/${stack.stackId}`;
 
   return (
     <div className="overlay" onClick={onClose}>

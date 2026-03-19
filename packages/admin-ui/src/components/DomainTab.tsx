@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { DomainConnection } from '../types.js';
 import { showToast } from './Toast.js';
+import { ConfirmModal } from './ConfirmModal.js';
 
 type ApiFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -16,6 +17,7 @@ export function DomainTab({ appName, apiFetch }: DomainTabProps) {
   const [hostname, setHostname]           = useState('');
   const [connecting, setConnecting]       = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   const loadDomainList = useCallback(async () => {
     setLoadingList(true);
@@ -70,9 +72,9 @@ export function DomainTab({ appName, apiFetch }: DomainTabProps) {
     }
   };
 
-  const handleDisconnect = async () => {
+  const doDisconnect = async () => {
     if (!connectedDomain) return;
-    if (!window.confirm(`Disconnect domain "${connectedDomain.hostname}" from "${appName}"?`)) return;
+    setConfirmDisconnect(false);
     setDisconnecting(true);
     try {
       const res = await apiFetch(`/api/domain/disconnect/${encodeURIComponent(appName)}`, {
@@ -120,7 +122,7 @@ export function DomainTab({ appName, apiFetch }: DomainTabProps) {
             </div>
             <button
               className="btn br bsm"
-              onClick={handleDisconnect}
+              onClick={() => setConfirmDisconnect(true)}
               disabled={disconnecting}
               style={{ opacity: disconnecting ? 0.6 : 1 }}
             >
@@ -216,6 +218,15 @@ export function DomainTab({ appName, apiFetch }: DomainTabProps) {
             </table>
           </div>
         </div>
+      )}
+      {confirmDisconnect && connectedDomain && (
+        <ConfirmModal
+          message={`"${connectedDomain.hostname}" 도메인을 "${appName}"에서 연결 해제하시겠습니까?`}
+          confirmLabel="Disconnect"
+          danger
+          onConfirm={doDisconnect}
+          onCancel={() => setConfirmDisconnect(false)}
+        />
       )}
     </div>
   );

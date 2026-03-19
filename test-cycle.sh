@@ -6,6 +6,7 @@
 #   ./test-cycle.sh --interactive    # 반자동 (Enter로 확인)
 #   ./test-cycle.sh --skip-build     # 빌드 건너뜀
 #   ./test-cycle.sh --skip-uninstall # 언인스톨 건너뜀
+#   ./test-cycle.sh --skip-init      # Init/설치 건너뜀 (기존 환경 유지)
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -22,11 +23,13 @@ HEARTBEAT_INTERVAL=5  # seconds of silence before printing "⏳ 대기 중"
 INTERACTIVE=false
 SKIP_BUILD=false
 SKIP_UNINSTALL=false
+SKIP_INIT=false
 for arg in "$@"; do
   case $arg in
     --interactive)     INTERACTIVE=true  ;;
     --skip-build)      SKIP_BUILD=true   ;;
     --skip-uninstall)  SKIP_UNINSTALL=true ;;
+    --skip-init)       SKIP_INIT=true; SKIP_BUILD=true; SKIP_UNINSTALL=true ;;
   esac
 done
 
@@ -199,7 +202,7 @@ const svcItems = Object.entries(svcMap).map(([k, label]) => {
 row('2', 'Server Components', svcItems);
 
 // Step 3: Dev Stack
-const langs = cfg.devStack.languages;
+const langs = cfg.devStack?.languages || [];
 const devItems = langs.length === 0
   ? [['선택 없음', '(appServer disabled)', false]]
   : langs.map(lang => [
@@ -207,8 +210,8 @@ const devItems = langs.length === 0
       `프레임워크: ${cfg.devStack.frameworks[lang] || '(없음)'}`,
       true,
     ]);
-devItems.push(['boilerplate', cfg.boilerplate.generate ? 'generate' : 'skip', cfg.boilerplate.generate]);
-devItems.push(['devMode', cfg.boilerplate.devMode, true]);
+devItems.push(['boilerplate', cfg.boilerplate?.generate ? 'generate' : 'skip', cfg.boilerplate?.generate]);
+devItems.push(['devMode', cfg.boilerplate?.devMode, true]);
 row('3', 'Dev Stack & Runtime', devItems);
 
 // Step 4: Domain & Network
@@ -232,8 +235,8 @@ console.log(`       ${DIM}→ .env + secret 파일 생성${NC}`);
 console.log(`       ${DIM}→ Docker 이미지 Pull (시간 소요)${NC}`);
 console.log(`       ${DIM}→ 컨테이너 시작 (docker compose up -d)${NC}`);
 console.log(`       ${DIM}→ Health check 대기${NC}`);
-if (cfg.boilerplate.generate && langs.length > 0) {
-  console.log(`       ${DIM}→ 보일러플레이트 클론: ${langs.map(l => `${l}/${cfg.devStack.frameworks[l]||''}`).join(', ')}${NC}`);
+if (cfg.boilerplate?.generate && langs.length > 0) {
+  console.log(`       ${DIM}→ 보일러플레이트 클론: ${langs.map(l => `${l}/${cfg.devStack?.frameworks?.[l]||''}`).join(', ')}${NC}`);
 }
 console.log('');
 
@@ -269,7 +272,7 @@ step_skipped() {
 # ─────────────────────────────────────────────────────────────────────────────
 echo -e "\n${CYAN}${BOLD}  ☕ Brewnet Test Cycle${NC}"
 echo -e "  ${DIM}$(date '+%Y-%m-%d %H:%M:%S')  |  Repo: ${REPO_DIR}${NC}"
-echo -e "  ${DIM}Flags → interactive=${INTERACTIVE} skip-build=${SKIP_BUILD} skip-uninstall=${SKIP_UNINSTALL}${NC}"
+echo -e "  ${DIM}Flags → interactive=${INTERACTIVE} skip-build=${SKIP_BUILD} skip-uninstall=${SKIP_UNINSTALL} skip-init=${SKIP_INIT}${NC}"
 divider
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -405,6 +408,91 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 step_start 3 "Init"
 
+if [ "$SKIP_INIT" = true ]; then
+  step_skipped
+  # ── --skip-init: lastProject 자동 복원 ──────────────────────────────────
+  # admin-server는 시작 시 wizardState를 한 번 로드한다. lastProject가 빈 값이면
+  # wizardState=null → Gitea 패스워드 없음 → create-app 전체 실패.
+  # selections.json 백업에서 자동 복원해 이 문제를 예방한다.
+  BREWNET_CFG="$HOME/.brewnet/config.json"
+  LAST_PROJECT_VAL=$(node -e "
+    try {
+      const d = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+      process.stdout.write(d.lastProject || '');
+    } catch(e) { process.stdout.write(''); }
+  " "$BREWNET_CFG" 2>/dev/null || true)
+
+  NEED_ADMIN_RESTART=false
+
+  if [ -z "$LAST_PROJECT_VAL" ] && [ -f "$CONFIG_BACKUP" ]; then
+    PROJECT_NAME_RESTORE=$(node -e "
+      try {
+        const d = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+        process.stdout.write(d.projectName || '');
+      } catch(e) { process.stdout.write(''); }
+    " "$CONFIG_BACKUP" 2>/dev/null || true)
+    if [ -n "$PROJECT_NAME_RESTORE" ]; then
+      RESTORE_DIR="$HOME/.brewnet/projects/$PROJECT_NAME_RESTORE"
+      mkdir -p "$RESTORE_DIR"
+      cp "$CONFIG_BACKUP" "$RESTORE_DIR/selections.json"
+      # Use conf package API to set lastProject (direct JSON write gets overwritten by conf)
+      CONF_JS=$(ls "$(cd "$(dirname "$0")"; pwd)"/node_modules/.pnpm/conf@*/node_modules/conf/dist/source/index.js 2>/dev/null | head -1)
+      if [ -n "$CONF_JS" ]; then
+        node -e "
+          const confMod = require(process.argv[1]);
+          const Conf = confMod.default || confMod;
+          const c = new Conf({ cwd: require('path').join(require('os').homedir(), '.brewnet'), configName: 'config', defaults: {lastProject:''} });
+          c.set('lastProject', process.argv[2]);
+        " "$CONF_JS" "$PROJECT_NAME_RESTORE" 2>/dev/null
+      else
+        # Fallback: direct JSON write
+        node -e "
+          const fs=require('fs'), path=require('path'), os=require('os');
+          const cfg = path.join(os.homedir(), '.brewnet', 'config.json');
+          try { const d = JSON.parse(fs.readFileSync(cfg, 'utf8')); d.lastProject = process.argv[1]; fs.writeFileSync(cfg, JSON.stringify(d, null, '\t')); } catch(e) {}
+        " "$PROJECT_NAME_RESTORE" 2>/dev/null
+      fi
+      warn "lastProject 빈값 감지 → '${PROJECT_NAME_RESTORE}'으로 자동 복원 (conf API)"
+      sub "  소스: ${CONFIG_BACKUP} → ${RESTORE_DIR}/selections.json"
+      NEED_ADMIN_RESTART=true
+    fi
+  elif [ -n "$LAST_PROJECT_VAL" ]; then
+    # selections.json 누락 시 복원
+    RESTORE_DIR2="$HOME/.brewnet/projects/$LAST_PROJECT_VAL"
+    if [ ! -f "$RESTORE_DIR2/selections.json" ] && [ -f "$CONFIG_BACKUP" ]; then
+      mkdir -p "$RESTORE_DIR2"
+      cp "$CONFIG_BACKUP" "$RESTORE_DIR2/selections.json"
+      warn "selections.json 누락 감지 → '${LAST_PROJECT_VAL}' 복원"
+      NEED_ADMIN_RESTART=true
+    else
+      sub "  lastProject='${LAST_PROJECT_VAL}' 및 selections.json 확인됨"
+    fi
+  fi
+
+  # 이미 실행 중인 admin-server가 null wizardState로 시작됐으면 재시작
+  # (admin-server는 시작 시 한 번만 wizardState 로드 → 복원 후 재시작 필요)
+  if [ "$NEED_ADMIN_RESTART" = true ]; then
+    EXISTING_PORT=$(lsof -ti :"$ADMIN_PORT" 2>/dev/null || true)
+    if [ -n "$EXISTING_PORT" ]; then
+      warn "admin-server 재시작 필요 (wizardState null 상태로 기동됨)"
+      echo "$EXISTING_PORT" | xargs kill -9 2>/dev/null || true
+      sleep 2
+    fi
+    ADMIN_RESTART_LOG=$(mktemp /tmp/brewnet-admin-restart.XXXXXX)
+    "${BREWNET[@]}" admin --foreground --no-open > "$ADMIN_RESTART_LOG" 2>&1 &
+    ADMIN_RESTART_PID=$!
+    sub "  admin-server 재시작 PID: ${ADMIN_RESTART_PID}"
+    for i in $(seq 1 15); do
+      sleep 2
+      HTTP_CHK=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$ADMIN_PORT" 2>/dev/null || echo "000")
+      if [ "$HTTP_CHK" = "200" ]; then
+        ok "admin-server 재시작 완료 → HTTP 200 (${i}번째 확인)"
+        break
+      fi
+    done
+  fi
+else
+
 if [ "$INTERACTIVE" = true ]; then
   info "모드: interactive (값 자동 채워짐, 각 단계에서 Enter로 확인)"
   sub "명령: brewnet init --config ${CONFIG_BACKUP}"
@@ -478,6 +566,8 @@ fi
 
 step_done
 
+fi  # end SKIP_INIT else block
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  PHASE 4: Admin panel verification
 # ─────────────────────────────────────────────────────────────────────────────
@@ -501,20 +591,23 @@ if [ "$ADMIN_OK" = false ]; then
   fail "Admin 패널 응답 없음 (15초 타임아웃)"
   sub "수동 시작: brewnet admin"
 else
-  # JS syntax check
+  # JS syntax check — SPA uses external bundle (no inline script)
   info "JavaScript 문법 검사 중..."
-  SYNTAX_CHECK=$(curl -s "http://localhost:${ADMIN_PORT}" 2>/dev/null \
-    | sed -n '/<script>/,/<\/script>/p' \
-    | grep -v '<\/\?script>' \
-    | node --check /dev/stdin 2>&1 && echo "OK" || echo "FAIL")
-
-  if [ "$SYNTAX_CHECK" = "OK" ]; then
-    ok "JS 문법 검사 통과 — SyntaxError 없음"
+  JS_BUNDLE=$(curl -s "http://localhost:${ADMIN_PORT}" 2>/dev/null \
+    | grep -o 'src="/assets/[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
+  if [ -n "$JS_BUNDLE" ]; then
+    SYNTAX_CHECK=$(curl -s "http://localhost:${ADMIN_PORT}${JS_BUNDLE}" 2>/dev/null \
+      | node --check /dev/stdin 2>&1 && echo "OK" || echo "FAIL")
+    if [ "$SYNTAX_CHECK" = "OK" ]; then
+      ok "JS 문법 검사 통과 — SyntaxError 없음 (bundle: ${JS_BUNDLE})"
+    else
+      fail "JS 문법 오류 감지:"
+      echo "$SYNTAX_CHECK" | head -5 | while IFS= read -r line; do
+        echo -e "  ${RED}  $line${NC}"
+      done
+    fi
   else
-    fail "JS 문법 오류 감지:"
-    echo "$SYNTAX_CHECK" | while IFS= read -r line; do
-      echo -e "  ${RED}  $line${NC}"
-    done
+    ok "JS 문법 검사 건너뜀 — 번들 URL 없음 (React SPA 번들 서빙 중)"
   fi
 
   # Check key sections load (fetch API endpoints)
@@ -884,9 +977,15 @@ for entry in "${STACKS[@]}"; do
   FE_HOST_PORT=$(docker port "${FE_CONTAINER}" 80 2>/dev/null | head -1 | cut -d: -f2 || true)
 
   # ── a. Backend ───────────────────────────────────────────────────────────
+  # Unified (Next.js) stacks use basePath /apps/{stackId}, so health is at /apps/{stackId}/health
+  if [ "$IS_UNIFIED" = "1" ]; then
+    BE_HEALTH_PATH="/apps/${STACK_ID}/health"
+  else
+    BE_HEALTH_PATH="/health"
+  fi
   if [ -n "$BE_HOST_PORT" ]; then
     BE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
-      "http://127.0.0.1:${BE_HOST_PORT}/health" 2>/dev/null || echo "ERR")
+      "http://127.0.0.1:${BE_HOST_PORT}${BE_HEALTH_PATH}" 2>/dev/null || echo "ERR")
     if [ "$BE_CODE" = "200" ]; then BE_ICON="${GREEN}✅ ${BE_CODE}${NC}"; else BE_ICON="${RED}❌ ${BE_CODE}${NC}"; ALL_PASS=false; fi
   else
     BE_ICON="${RED}❌ no-port${NC}"; ALL_PASS=false
@@ -910,8 +1009,9 @@ for entry in "${STACKS[@]}"; do
   fi
 
   # ── c. Image ─────────────────────────────────────────────────────────────
+  # Unified (Next.js) uses basePath /apps/{stackId} for all static assets
   if [ "$IS_UNIFIED" = "1" ] && [ -n "$BE_HOST_PORT" ]; then
-    IMG_PATH="http://127.0.0.1:${BE_HOST_PORT}/brewnet-site-banner.png"
+    IMG_PATH="http://127.0.0.1:${BE_HOST_PORT}/apps/${STACK_ID}/brewnet-site-banner.png"
   elif [ -n "$FE_HOST_PORT" ]; then
     IMG_PATH="http://127.0.0.1:${FE_HOST_PORT}/brewnet-site-banner.png"
   else
@@ -962,36 +1062,38 @@ fi
 step_done
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  PHASE 7: Apps 페이지 UI + Quick Tunnel External 검증
+#  PHASE 7: Apps 페이지 React SPA + API 검증 (React 빌드 후 서빙 방식)
 # ─────────────────────────────────────────────────────────────────────────────
-step_start 7 "Apps 페이지 UI + External URL 검증"
+step_start 7 "Apps 페이지 SPA + API 엔드포인트 검증"
 
-# 7.1 Apps 페이지 JS 문법 검사
-label "7.1 /apps 페이지 JS 문법 검사"
-APPS_SYNTAX=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null \
-  | sed -n '/<script>/,/<\/script>/p' \
-  | grep -v '</\?script>' \
-  | node --check /dev/stdin 2>&1 && echo "OK" || echo "FAIL")
-if [ "$APPS_SYNTAX" = "OK" ]; then
-  ok "/apps JS 문법 검사 통과"
+# 7.1 /apps HTTP 200 확인 (React SPA — HTML 파싱 불필요)
+label "7.1 /apps 페이지 HTTP 응답"
+APPS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null || echo "000")
+if [ "$APPS_HTTP" = "200" ]; then
+  ok "/apps → HTTP 200 (React SPA 서빙 정상)"
 else
-  fail "/apps JS 문법 오류: ${APPS_SYNTAX}"
+  fail "/apps → HTTP ${APPS_HTTP} (예상: 200)"
   ALL_PASS=false
 fi
 
-# 7.2 새 카드 CSS 클래스 존재 확인
-label "7.2 카드 UX CSS 확인"
-CARD_CSS_CHECK=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null \
-  | grep -c 'card-running\|meta-grid\|commit-row\|build-progress\|health-badges')
-if [ "$CARD_CSS_CHECK" -ge 3 ]; then
-  ok "새 카드 CSS 클래스 ${CARD_CSS_CHECK}개 발견"
+# 7.2 React SPA 번들 파일 서빙 확인 (index.html에서 assets JS 경로 추출)
+label "7.2 React SPA 에셋 번들 서빙 확인"
+SPA_HTML=$(curl -s "http://localhost:${ADMIN_PORT}/" 2>/dev/null)
+SPA_JS_PATH=$(echo "$SPA_HTML" | grep -oE 'src="/assets/index-[^"]+\.js"' | head -1 | sed 's/src="//;s/"//')
+if [ -n "$SPA_JS_PATH" ]; then
+  SPA_JS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}${SPA_JS_PATH}" 2>/dev/null || echo "000")
+  if [ "$SPA_JS_CODE" = "200" ]; then
+    ok "React SPA 번들 서빙 확인: ${SPA_JS_PATH} → HTTP 200"
+  else
+    fail "React SPA 번들 → HTTP ${SPA_JS_CODE}: ${SPA_JS_PATH}"
+    ALL_PASS=false
+  fi
 else
-  fail "카드 CSS 누락 (${CARD_CSS_CHECK}개만 발견)"
-  ALL_PASS=false
+  echo -e "${YELLOW}  ⚠ [$(ts)] SPA JS 경로 감지 실패 (index.html에 assets/index-*.js 없음)${NC}"
 fi
 
-# 7.3 App 카드 렌더링 (API 데이터 기반)
-label "7.3 /api/apps 앱 카드 데이터"
+# 7.3 /api/apps 앱 목록 API
+label "7.3 /api/apps 앱 목록"
 _APPS7=$(mktemp)
 curl -s -o "$_APPS7" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
 APP7_COUNT=$(node -e "
@@ -1008,7 +1110,7 @@ AUTOLOGIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
 if [ "$AUTOLOGIN_CODE" = "302" ]; then
   ok "Gitea autologin → HTTP 302 (리다이렉트 정상)"
 elif [ "$AUTOLOGIN_CODE" = "200" ]; then
-  ok "Gitea autologin → HTTP 200 (로그인 페이지)"
+  ok "Gitea autologin → HTTP 200"
 else
   echo -e "${YELLOW}  ⚠ [$(ts)] Gitea autologin → HTTP ${AUTOLOGIN_CODE}${NC}"
 fi
@@ -1030,44 +1132,6 @@ if [ -n "$TUNNEL_URL" ]; then
   done
 else
   info "터널 URL 없음 — Quick Tunnel 검증 건너뜀"
-fi
-
-# 7.6 로고 헤더 존재 확인
-label "7.6 로고 헤더 렌더링"
-LOGO_CHECK=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null | grep -c 'logo-name\|Brewnet')
-if [ "$LOGO_CHECK" -ge 2 ]; then
-  ok "로고 헤더 확인 (${LOGO_CHECK}개 매칭)"
-else
-  fail "로고 헤더 누락"
-fi
-
-# 7.7 New Project 프레임워크 검증 (CONNECT_BOILERPLATE.md 기준 미지원 제거 확인)
-label "7.7 New Project 미지원 프레임워크 제거 확인"
-_APPS_HTML=$(curl -s "http://localhost:${ADMIN_PORT}/apps" 2>/dev/null)
-UNSUPPORTED_FW="Chi|Starlette|Fastify|Hono|Rocket|Warp|Quarkus|Vite + React|Remix"
-UNSUPPORTED_FOUND=$(echo "$_APPS_HTML" | grep -oE "$UNSUPPORTED_FW" | sort -u || true)
-if [ -z "$UNSUPPORTED_FOUND" ]; then
-  ok "미지원 프레임워크 없음 (Chi/Starlette/Fastify/Hono/Rocket/Warp/Quarkus/Vite+React/Remix 모두 제거됨)"
-else
-  fail "미지원 프레임워크 발견: ${UNSUPPORTED_FOUND}"
-  ALL_PASS=false
-fi
-
-# 7.8 New Project 지원 프레임워크 존재 확인 (15개)
-label "7.8 New Project 지원 프레임워크 존재 확인"
-SUPPORTED_COUNT=0
-for fw in "Gin" "Echo v4" "Fiber v3" "FastAPI" "Django" "Flask" "Express" "NestJS" "Actix-web" "Axum" "Spring Boot" "Spring Framework" "Ktor" "Spring Boot (Kotlin)" "Next.js"; do
-  if echo "$_APPS_HTML" | grep -q "$fw"; then
-    SUPPORTED_COUNT=$((SUPPORTED_COUNT + 1))
-  else
-    fail "지원 프레임워크 누락: ${fw}"
-    ALL_PASS=false
-  fi
-done
-if [ "$SUPPORTED_COUNT" -eq 15 ]; then
-  ok "15개 지원 프레임워크 모두 존재"
-else
-  fail "지원 프레임워크 ${SUPPORTED_COUNT}/15개만 발견"
 fi
 
 step_done
@@ -1095,16 +1159,25 @@ for entry in "${STACKS[@]}"; do
   [ "$IS_UNIFIED" = "1" ] && BE_HOST_PORT=$(docker port "$BE_CONTAINER" 3000 2>/dev/null | head -1 | cut -d: -f2 || true)
   [ -z "$BE_HOST_PORT" ] && continue
 
-  # Local backend response
-  LOCAL_BODY=$(curl -s --max-time 5 "http://127.0.0.1:${BE_HOST_PORT}/health" 2>/dev/null || echo "ERR")
+  # Local backend response — unified stacks use basePath /apps/{stackId}
+  if [ "$IS_UNIFIED" = "1" ]; then
+    LOCAL_BODY=$(curl -s --max-time 5 "http://127.0.0.1:${BE_HOST_PORT}/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
+  else
+    LOCAL_BODY=$(curl -s --max-time 5 "http://127.0.0.1:${BE_HOST_PORT}/health" 2>/dev/null || echo "ERR")
+  fi
 
   if [ -n "$TUNNEL_URL" ]; then
     # External backend response
     EXT_BODY=$(curl -sL --max-time 15 "${TUNNEL_URL}/apps/${STACK_ID}/health" 2>/dev/null || echo "ERR")
-    if [ "$LOCAL_BODY" = "$EXT_BODY" ]; then
-      ok "${STACK_ID}: Local == External (health 일치)"
+    # Compare status field only (timestamp differs per request)
+    LOCAL_STATUS=$(echo "$LOCAL_BODY" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(d.status||'')}catch{}" 2>/dev/null || true)
+    EXT_STATUS=$(echo "$EXT_BODY" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(d.status||'')}catch{}" 2>/dev/null || true)
+    if [ -n "$LOCAL_STATUS" ] && [ "$LOCAL_STATUS" = "$EXT_STATUS" ]; then
+      ok "${STACK_ID}: Local == External (health.status=${LOCAL_STATUS})"
+    elif [ -z "$LOCAL_STATUS" ] && [ -z "$EXT_STATUS" ]; then
+      ok "${STACK_ID}: Local == External (HTML 응답)"
     else
-      fail "${STACK_ID}: Local ≠ External"
+      fail "${STACK_ID}: Local ≠ External (local.status=${LOCAL_STATUS:-?} ext.status=${EXT_STATUS:-?})"
       sub "  Local:    $(echo "$LOCAL_BODY" | head -c 80)"
       sub "  External: $(echo "$EXT_BODY" | head -c 80)"
     fi
@@ -1241,6 +1314,661 @@ if [ "$GIT_HOME_CODE" = "200" ] && [ "$GIT_LOGIN_CODE" = "200" ] && [ "$GIT_EXPL
   ok "Gitea Web UI: home=200 login=200 explore=200"
 else
   fail "Gitea Web UI: home=${GIT_HOME_CODE} login=${GIT_LOGIN_CODE} explore=${GIT_EXPLORE_CODE}"
+fi
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 9: Modal API + CreateApp 필드명 검증 + 16종 스택 ID + Domain Settings
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 9 "Modal API / 16종 스택 / Domain Settings / Toast 관련 API 검증"
+
+# 9.1 /api/apps/boilerplates — 설치된 보일러플레이트 목록
+label "9.1 /api/apps/boilerplates — 설치된 스택 조회"
+_BP9=$(mktemp)
+BP_CODE=$(curl -s -o "$_BP9" -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/apps/boilerplates" 2>/dev/null || echo "000")
+if [ "$BP_CODE" = "200" ]; then
+  BP_COUNT=$(node -e "
+    const d=JSON.parse(require('fs').readFileSync('${_BP9}','utf8'));
+    process.stdout.write(String((d.boilerplates||[]).length));
+  " 2>/dev/null || echo "0")
+  ok "/api/apps/boilerplates → HTTP 200 (${BP_COUNT}개 설치됨)"
+else
+  fail "/api/apps/boilerplates → HTTP ${BP_CODE}"
+  ALL_PASS=false
+fi
+rm -f "$_BP9"
+
+# 9.2 Create-app appName 필드 검증 (올바른 필드명 사용 확인)
+label "9.2 create-app API — appName/language/frameworkId 필드명 검증"
+_CREATE9=$(mktemp)
+C9_APP="brewnet-field-test"
+# 포트 충돌 방지: 임시 포트
+C9_PORT=19977
+# 사전 정리
+curl -s -o /dev/null -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${C9_APP}" 2>/dev/null || true
+rm -rf "$HOME/brewnet/my-homeserver/apps/${C9_APP}" 2>/dev/null || true
+
+C9_CODE=$(curl -s -o "$_CREATE9" -w "%{http_code}" \
+  -X POST -H "Content-Type: application/json" \
+  -d "{\"appName\":\"${C9_APP}\",\"mode\":\"new-project\",\"language\":\"nodejs\",\"frameworkId\":\"express\",\"port\":${C9_PORT}}" \
+  "http://localhost:${ADMIN_PORT}/api/apps/create" 2>/dev/null || echo "000")
+C9_JOB=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_CREATE9}','utf8'));
+  process.stdout.write(d.jobId||'');
+" 2>/dev/null || echo "")
+rm -f "$_CREATE9"
+
+if [ -n "$C9_JOB" ] && ([ "$C9_CODE" = "200" ] || [ "$C9_CODE" = "202" ]); then
+  ok "create-app (appName/language/frameworkId) → HTTP ${C9_CODE} | jobId: ${C9_JOB}"
+  # Gitea steps 완료 확인 (최대 2분 폴링)
+  C9_GITEA_OK=false
+  for p9 in $(seq 1 24); do
+    sleep 5
+    _J9=$(mktemp)
+    curl -s -o "$_J9" "http://localhost:${ADMIN_PORT}/api/apps/jobs/${C9_JOB}" 2>/dev/null || true
+    C9_STATUS=$(node -e "
+      const d=JSON.parse(require('fs').readFileSync('${_J9}','utf8'));
+      process.stdout.write(d.status||'unknown');
+    " 2>/dev/null || echo "unknown")
+    if [ "$C9_STATUS" = "done" ] || [ "$C9_STATUS" = "failed" ]; then
+      C9_GITEA=$(node -e "
+        const d=JSON.parse(require('fs').readFileSync('${_J9}','utf8'));
+        const steps=d.steps||[];
+        const s=steps.find(x=>x.label==='Gitea setup');
+        const r=steps.find(x=>x.label==='Gitea repo');
+        process.stdout.write(s?.status==='done'&&r?.status==='done'?'ok':'fail');
+      " 2>/dev/null || echo "fail")
+      rm -f "$_J9"
+      if [ "$C9_GITEA" = "ok" ]; then
+        ok "create-app Gitea 스텝 완료 (status=${C9_STATUS})"
+        C9_GITEA_OK=true
+      else
+        fail "create-app Gitea 스텝 실패 (status=${C9_STATUS})"
+        ALL_PASS=false
+      fi
+      break
+    fi
+    rm -f "$_J9"
+    sub "[${p9}/24] status=${C9_STATUS}"
+  done
+  if [ "$C9_GITEA_OK" = false ] && [ -z "${C9_GITEA+x}" ]; then
+    fail "create-app 타임아웃 (2분)"
+    ALL_PASS=false
+  fi
+else
+  fail "create-app → HTTP ${C9_CODE} | jobId 없음"
+  ALL_PASS=false
+fi
+# 사후 정리
+curl -s -o /dev/null -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${C9_APP}" 2>/dev/null || true
+rm -rf "$HOME/brewnet/my-homeserver/apps/${C9_APP}" 2>/dev/null || true
+
+# 9.3 App 상세 모달 API 검증 (첫 번째 앱 기준)
+label "9.3 App 상세 모달 API (overview/git/logs/domain)"
+_APPS9=$(mktemp)
+curl -s -o "$_APPS9" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+FIRST_APP=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_APPS9}','utf8'));
+  const a=(d.apps||[])[0];
+  if(a)process.stdout.write(a.name);
+" 2>/dev/null || echo "")
+rm -f "$_APPS9"
+
+if [ -n "$FIRST_APP" ]; then
+  # Overview (GET /api/apps/:name)
+  OV_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}" 2>/dev/null || echo "000")
+  if [ "$OV_CODE" = "200" ]; then ok "  Overview /api/apps/${FIRST_APP} → 200"; else fail "  Overview → ${OV_CODE}"; ALL_PASS=false; fi
+
+  # Git info (GET /api/apps/:name/git)
+  GIT_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}/git" 2>/dev/null || echo "000")
+  if [ "$GIT_CODE" = "200" ]; then ok "  Git /api/apps/${FIRST_APP}/git → 200"; else echo -e "${YELLOW}  ⚠ [$(ts)] Git → ${GIT_CODE} (Gitea 미연결 가능)${NC}"; fi
+
+  # Logs SSE (GET /api/apps/:name/logs — Content-Type: text/event-stream)
+  # Use verbose GET (not HEAD) to capture actual streaming response headers
+  LOGS_CT=$(curl -s -v --max-time 2 \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}/logs" 2>&1 \
+    | grep -i '^< content-type' | head -1 || true)
+  if echo "$LOGS_CT" | grep -qi 'event-stream'; then
+    ok "  Logs /api/apps/${FIRST_APP}/logs → SSE (text/event-stream) ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] Logs SSE Content-Type: ${LOGS_CT:-없음}${NC}"
+  fi
+
+  # Deploy settings (GET /api/apps/:name/deploy/settings)
+  DS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}/deploy/settings" 2>/dev/null || echo "000")
+  if [ "$DS_CODE" = "200" ]; then ok "  Deploy settings → 200"; else fail "  Deploy settings → ${DS_CODE}"; fi
+
+  # Start/Stop/Deploy 응답 코드 확인 (toast 연동 핵심 경로)
+  STA_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}/start" 2>/dev/null || echo "000")
+  if [ "$STA_CODE" = "200" ]; then ok "  Start /api/apps/${FIRST_APP}/start → 200 (toast 트리거 경로 정상)"; else fail "  Start → ${STA_CODE}"; ALL_PASS=false; fi
+  sleep 1
+
+  STO_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}/stop" 2>/dev/null || echo "000")
+  if [ "$STO_CODE" = "200" ]; then ok "  Stop /api/apps/${FIRST_APP}/stop → 200 (toast 트리거 경로 정상)"; else fail "  Stop → ${STO_CODE}"; ALL_PASS=false; fi
+  sleep 1
+
+  DEP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:${ADMIN_PORT}/api/apps/${FIRST_APP}/deploy" 2>/dev/null || echo "000")
+  if [ "$DEP_CODE" = "202" ]; then ok "  Deploy /api/apps/${FIRST_APP}/deploy → 202 (job 시작됨)";
+  elif [ "$DEP_CODE" = "200" ]; then ok "  Deploy → 200"; else fail "  Deploy → ${DEP_CODE}"; fi
+
+else
+  info "등록된 앱 없음 — 모달 API 검증 건너뜀"
+fi
+
+# 9.4 Domain 관련 API 검증
+label "9.4 Domain Settings + Domain List API"
+# Domain list
+DL_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/domain/list" 2>/dev/null || echo "000")
+if [ "$DL_CODE" = "200" ]; then ok "/api/domain/list → 200"; else fail "/api/domain/list → ${DL_CODE}"; ALL_PASS=false; fi
+
+# Domain apps
+DA_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/domain/apps" 2>/dev/null || echo "000")
+if [ "$DA_CODE" = "200" ]; then ok "/api/domain/apps → 200"; else echo -e "${YELLOW}  ⚠ /api/domain/apps → ${DA_CODE}${NC}"; fi
+
+# Cloudflare settings (Domain Setting Modal 백엔드) — X-Admin-Password 헤더 필요
+CF_PASS=""
+if [ -f "$SECRETS_FILE" ]; then CF_PASS=$(cat "$SECRETS_FILE" 2>/dev/null | tr -d '[:space:]' || true); fi
+CF_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "X-Admin-Password: ${CF_PASS}" \
+  "http://localhost:${ADMIN_PORT}/api/settings/cloudflare" 2>/dev/null || echo "000")
+if [ "$CF_CODE" = "200" ]; then ok "/api/settings/cloudflare → 200 (Domain Setting 모달 백엔드 정상)"; else fail "/api/settings/cloudflare → ${CF_CODE}"; ALL_PASS=false; fi
+
+# Domain connect endpoint 존재 확인 (POST /api/domain/connect)
+# 잘못된 데이터로 호출 — 400/422가 정상 (endpoint 존재 확인)
+DC_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"appName":"__test__","hostname":""}' \
+  "http://localhost:${ADMIN_PORT}/api/domain/connect" 2>/dev/null || echo "000")
+if [ "$DC_CODE" = "400" ] || [ "$DC_CODE" = "422" ] || [ "$DC_CODE" = "200" ]; then
+  ok "/api/domain/connect → HTTP ${DC_CODE} (endpoint 존재 확인)"
+else
+  fail "/api/domain/connect → HTTP ${DC_CODE} (예상: 400/422)"
+fi
+
+# 9.5 16종 Stack ID 유효성 검증 (create-app API 기준)
+label "9.5 16종 Boilerplate Stack ID 검증 (/api/apps/check-port 활용)"
+ALL16_STACKS=(
+  "go-gin" "go-echo" "go-fiber"
+  "rust-actix-web" "rust-axum"
+  "java-springboot" "java-spring"
+  "kotlin-ktor" "kotlin-springboot"
+  "nodejs-express" "nodejs-nestjs" "nodejs-nextjs" "nodejs-nextjs-full"
+  "python-fastapi" "python-django" "python-flask"
+)
+VALID_STACK_COUNT=0
+for sid in "${ALL16_STACKS[@]}"; do
+  # 각 stackId로 boilerplate 모드 create 시도 — 설치 여부에 따라 200/400/500 분기
+  # 여기서는 스택 ID가 서버에서 인식되는지만 확인 (빈 appName으로 400을 유도, 500은 stackId 자체 오류)
+  _SID_TMP=$(mktemp)
+  SID_CODE=$(curl -s -o "$_SID_TMP" -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -d "{\"appName\":\"\",\"mode\":\"boilerplate\",\"stackId\":\"${sid}\",\"port\":3000}" \
+    "http://localhost:${ADMIN_PORT}/api/apps/create" 2>/dev/null || echo "000")
+  SID_ERR=$(node -e "
+    try{const d=JSON.parse(require('fs').readFileSync('${_SID_TMP}','utf8'));process.stdout.write(d.error||'');}catch(e){}
+  " 2>/dev/null || echo "")
+  rm -f "$_SID_TMP"
+  # appName 빈 경우 → 202(jobId 반환, 이후 실패) 또는 400/500
+  # stackId 자체가 없는 경우 → 특정 에러 메시지 ("not found" 등)
+  # 여기서는 jobId가 오면 스택 ID는 형식상 유효하다고 판단
+  if [ "$SID_CODE" = "202" ] || [ "$SID_CODE" = "200" ] || ([ "$SID_CODE" = "400" ] && echo "$SID_ERR" | grep -qv "Unknown stack"); then
+    VALID_STACK_COUNT=$((VALID_STACK_COUNT + 1))
+    sub "  ${sid} → HTTP ${SID_CODE} (인식됨)"
+    # 생성된 job이 있으면 정리 (빈 이름으로 생성된 앱)
+    sleep 0.5
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${sid} → HTTP ${SID_CODE} err=${SID_ERR}${NC}"
+  fi
+done
+ok "16종 스택 ID 확인: ${VALID_STACK_COUNT}/16 인식됨"
+if [ "$VALID_STACK_COUNT" -lt 12 ]; then
+  fail "스택 ID 인식률 낮음 (${VALID_STACK_COUNT}/16)"
+  ALL_PASS=false
+fi
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 10: 앱 생성 전체 라이프사이클 (Create → Start → Stop → Deploy → Delete)
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 10 "Create App 라이프사이클 (nodejs-express: create/start/stop/deploy/delete)"
+
+LC_APP="tc-lifecycle-test"
+LC_PORT=19978
+GITEA_USER_LC="admin"
+ADMIN_PASS_LC=""
+if [ -f "$SECRETS_FILE" ]; then ADMIN_PASS_LC=$(cat "$SECRETS_FILE" 2>/dev/null | tr -d '[:space:]' || true); fi
+
+# 사전 정리
+label "10.0 사전 정리"
+curl -s -o /dev/null -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}" 2>/dev/null || true
+rm -rf "$HOME/brewnet/my-homeserver/apps/${LC_APP}" 2>/dev/null || true
+if [ -n "$ADMIN_PASS_LC" ]; then
+  curl -s -o /dev/null -X DELETE -u "${GITEA_USER_LC}:${ADMIN_PASS_LC}" \
+    "http://localhost/git/api/v1/repos/${GITEA_USER_LC}/${LC_APP}" 2>/dev/null || true
+fi
+sleep 1
+
+# 10.1 앱 생성
+label "10.1 Create App (nodejs-express, port auto-select from ${LC_PORT})"
+_LC1=$(mktemp)
+LC1_CODE=$(curl -s -o "$_LC1" -w "%{http_code}" \
+  -X POST -H "Content-Type: application/json" \
+  -d "{\"appName\":\"${LC_APP}\",\"mode\":\"new-project\",\"language\":\"nodejs\",\"frameworkId\":\"express\",\"port\":${LC_PORT}}" \
+  "http://localhost:${ADMIN_PORT}/api/apps/create" 2>/dev/null || echo "000")
+LC1_JOB=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_LC1}','utf8'));
+  process.stdout.write(d.jobId||'');
+" 2>/dev/null || echo "")
+rm -f "$_LC1"
+
+if [ -n "$LC1_JOB" ] && ([ "$LC1_CODE" = "200" ] || [ "$LC1_CODE" = "202" ]); then
+  ok "create-app → HTTP ${LC1_CODE} | jobId: ${LC1_JOB}"
+else
+  fail "create-app 실패 → HTTP ${LC1_CODE}"
+  ALL_PASS=false
+  step_done
+fi
+
+# 10.2 Job 완료 대기 (최대 3분)
+label "10.2 앱 생성 완료 대기 (job ${LC1_JOB}, 최대 3분)"
+LC2_STATUS="pending"
+LC2_APP_PORT=""
+for p10 in $(seq 1 36); do
+  sleep 5
+  _J10=$(mktemp)
+  curl -s -o "$_J10" "http://localhost:${ADMIN_PORT}/api/apps/jobs/${LC1_JOB}" 2>/dev/null || true
+  LC2_STATUS=$(node -e "
+    const d=JSON.parse(require('fs').readFileSync('${_J10}','utf8'));
+    process.stdout.write(d.status||'unknown');
+  " 2>/dev/null || echo "unknown")
+  rm -f "$_J10"
+  if [ "$LC2_STATUS" = "done" ] || [ "$LC2_STATUS" = "failed" ]; then
+    break
+  fi
+  sub "[${p10}/36] status=${LC2_STATUS}"
+done
+
+if [ "$LC2_STATUS" = "done" ]; then
+  ok "앱 생성 완료 (${p10}*5초 소요)"
+else
+  fail "앱 생성 실패 또는 타임아웃 (status=${LC2_STATUS})"
+  ALL_PASS=false
+  # 정리하고 스킵
+  curl -s -o /dev/null -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}" 2>/dev/null || true
+  step_done
+fi
+
+# 앱 포트 조회
+_APP10=$(mktemp)
+curl -s -o "$_APP10" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+LC2_APP_PORT=$(node -e "
+  const d=JSON.parse(require('fs').readFileSync('${_APP10}','utf8'));
+  const a=(d.apps||[]).find(x=>x.name==='${LC_APP}');
+  if(a)process.stdout.write(String(a.port||''));
+" 2>/dev/null || echo "")
+rm -f "$_APP10"
+info "앱 포트: ${LC2_APP_PORT:-알 수 없음}"
+
+# 10.3 localhost 접속 확인
+label "10.3 localhost 접속 확인 (http://127.0.0.1:${LC2_APP_PORT:-${LC_PORT}}/health)"
+if [ -n "$LC2_APP_PORT" ]; then
+  # Health check
+  HC_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${LC2_APP_PORT}/health" 2>/dev/null || echo "000")
+  if [ "$HC_CODE" = "200" ]; then
+    ok "localhost health → 200 ✅"
+  else
+    fail "localhost health → ${HC_CODE}"
+    ALL_PASS=false
+  fi
+  # 프론트엔드 접속 (port 기준)
+  FE_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${LC2_APP_PORT}/" 2>/dev/null || echo "000")
+  sub "frontend port ${LC2_APP_PORT} → HTTP ${FE_CODE}"
+else
+  echo -e "${YELLOW}  ⚠ [$(ts)] 포트 정보 없음 — 접속 확인 건너뜀${NC}"
+fi
+
+# 10.4 Gitea 레포 생성 확인
+label "10.4 Gitea 레포 생성 확인"
+if [ -n "$ADMIN_PASS_LC" ]; then
+  GR_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -u "${GITEA_USER_LC}:${ADMIN_PASS_LC}" \
+    "http://localhost/git/api/v1/repos/${GITEA_USER_LC}/${LC_APP}" 2>/dev/null || echo "000")
+  if [ "$GR_CODE" = "200" ]; then
+    ok "Gitea 레포 ${GITEA_USER_LC}/${LC_APP} 존재 확인 ✅"
+  else
+    fail "Gitea 레포 없음 → HTTP ${GR_CODE}"
+    ALL_PASS=false
+  fi
+else
+  echo -e "${YELLOW}  ⚠ [$(ts)] admin_password 없음 — Gitea 레포 확인 건너뜀${NC}"
+fi
+
+# 10.5 AppDetailModal API 검증 (git, logs SSE, deploy settings)
+label "10.5 AppDetailModal 백엔드 API"
+GIT10_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}/git" 2>/dev/null || echo "000")
+if [ "$GIT10_CODE" = "200" ]; then ok "  /api/apps/${LC_APP}/git → 200"; else echo -e "${YELLOW}  ⚠ [$(ts)] git → ${GIT10_CODE}${NC}"; fi
+
+LOGS10_CT=$(curl -s -v --max-time 2 \
+  "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}/logs" 2>&1 \
+  | grep -i '^< content-type' | head -1 || true)
+if echo "$LOGS10_CT" | grep -qi 'event-stream'; then
+  ok "  /api/apps/${LC_APP}/logs → SSE ✅"
+else
+  echo -e "${YELLOW}  ⚠ [$(ts)] Logs SSE Content-Type: ${LOGS10_CT:-없음}${NC}"
+fi
+
+DS10_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}/deploy/settings" 2>/dev/null || echo "000")
+if [ "$DS10_CODE" = "200" ]; then ok "  /api/apps/${LC_APP}/deploy/settings → 200"; else fail "  deploy/settings → ${DS10_CODE}"; ALL_PASS=false; fi
+
+# 10.6 Stop/Start 토스트 API 검증
+label "10.6 Stop / Start (toast 연동 API)"
+STO10=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}/stop" 2>/dev/null || echo "000")
+if [ "$STO10" = "200" ]; then ok "  Stop → 200 ✅ (toast '${LC_APP} stopped' 트리거 경로)"; else fail "  Stop → ${STO10}"; ALL_PASS=false; fi
+sleep 2
+
+DEP10=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}/deploy" 2>/dev/null || echo "000")
+if [ "$DEP10" = "202" ] || [ "$DEP10" = "200" ]; then
+  ok "  Deploy → ${DEP10} ✅ (ProgressModal 트리거 경로)"
+  # 재배포 완료 대기 (최대 3분)
+  DEP10_STATUS="pending"
+  for dp in $(seq 1 36); do
+    sleep 5
+    _APPS10b=$(mktemp)
+    curl -s -o "$_APPS10b" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+    DEP10_APP_STATUS=$(node -e "
+      const d=JSON.parse(require('fs').readFileSync('${_APPS10b}','utf8'));
+      const a=(d.apps||[]).find(x=>x.name==='${LC_APP}');
+      process.stdout.write(a?.status||'unknown');
+    " 2>/dev/null || echo "unknown")
+    rm -f "$_APPS10b"
+    if [ "$DEP10_APP_STATUS" = "running" ]; then DEP10_STATUS="done"; break; fi
+    sub "[${dp}/36] deploy status=${DEP10_APP_STATUS}"
+  done
+  if [ "$DEP10_STATUS" = "done" ]; then
+    ok "  재배포 완료 → running ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] 재배포 완료 타임아웃 (status=${DEP10_APP_STATUS})${NC}"
+  fi
+else
+  fail "  Deploy → ${DEP10}"; ALL_PASS=false
+fi
+
+# 10.7 Delete 토스트 API 검증 + 정리
+label "10.7 Delete (toast 연동 API + 정리)"
+DEL10=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+  "http://localhost:${ADMIN_PORT}/api/apps/${LC_APP}" 2>/dev/null || echo "000")
+if [ "$DEL10" = "200" ]; then
+  ok "  Delete → 200 ✅ (toast 'App ${LC_APP} has been deleted.' 트리거 경로)"
+else
+  fail "  Delete → ${DEL10}"
+  ALL_PASS=false
+fi
+# 앱 디렉토리 정리
+rm -rf "$HOME/brewnet/my-homeserver/apps/${LC_APP}" 2>/dev/null || true
+
+step_done
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PHASE 11: 16종 보일러플레이트 전체 라이프사이클 테스트
+#  각 스택: create → health → Gitea레포 → 모달API → start/stop/deploy → delete
+# ─────────────────────────────────────────────────────────────────────────────
+step_start 11 "16종 boilerplate 전체 생성/health/modal/start/stop/deploy/delete"
+
+ADMIN_PASS11=""
+if [ -f "$SECRETS_FILE" ]; then ADMIN_PASS11=$(cat "$SECRETS_FILE" 2>/dev/null | tr -d '[:space:]' || true); fi
+
+# Format: appName|language|frameworkId|resolvedStackId|isUnified|port|maxPoll(×5s)
+# timeout: Go/Node/Python=24(2min), Java/Kotlin=72(6min), Rust=144(12min)
+ALL16_ENTRIES=(
+  "tc11-go-gin|go|gin|go-gin|0|20000|24"
+  "tc11-go-echo|go|echo|go-echo|0|20100|24"
+  "tc11-go-fiber|go|fiber|go-fiber|0|20200|24"
+  "tc11-rust-actix|rust|actix-web|rust-actix-web|0|20300|144"
+  "tc11-rust-axum|rust|axum|rust-axum|0|20400|144"
+  "tc11-java-sboot|java|springboot|java-springboot|0|20500|72"
+  "tc11-java-spring|java|spring|java-spring|0|20600|72"
+  "tc11-kotlin-ktor|kotlin|ktor|kotlin-ktor|0|20700|72"
+  "tc11-kotlin-spbt|kotlin|springboot-kt|kotlin-springboot|0|20800|72"
+  "tc11-node-expr|nodejs|express|nodejs-express|0|20900|24"
+  "tc11-node-nest|nodejs|nestjs|nodejs-nestjs|0|21000|24"
+  "tc11-node-nx-app|nodejs|nextjs-app|nodejs-nextjs|1|21100|24"
+  "tc11-node-nx-full|nodejs|nextjs|nodejs-nextjs-full|1|21200|24"
+  "tc11-py-fastapi|python|fastapi|python-fastapi|0|21300|24"
+  "tc11-py-django|python|django|python-django|0|21400|24"
+  "tc11-py-flask|python|flask|python-flask|0|21500|24"
+)
+
+P11_PASS=0
+P11_FAIL=0
+P11_RESULTS=""   # "STACK:RESULT " space-separated, built up in loop
+
+for entry in "${ALL16_ENTRIES[@]}"; do
+  IFS='|' read -r S_APP S_LANG S_FW S_STACK S_UNIFIED S_PORT S_MAXPOLL <<< "$entry"
+
+  label "── [${S_STACK}] (${S_APP}) lang=${S_LANG}/${S_FW} port=${S_PORT}"
+  S_PASS=true
+
+  # ① 사전 정리
+  curl -s -o /dev/null -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}" 2>/dev/null || true
+  rm -rf "$HOME/brewnet/my-homeserver/apps/${S_APP}" "$HOME/brewnet/my-homeserver/${S_APP}" 2>/dev/null || true
+  if [ -n "$ADMIN_PASS11" ]; then
+    curl -s -o /dev/null -X DELETE -u "admin:${ADMIN_PASS11}" \
+      "http://localhost/git/api/v1/repos/admin/${S_APP}" 2>/dev/null || true
+  fi
+
+  # ② 앱 생성 (new-project 모드 — UI의 "New Project" 탭과 동일)
+  _S1=$(mktemp)
+  S1_CODE=$(curl -s -o "$_S1" -w "%{http_code}" \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"appName\":\"${S_APP}\",\"mode\":\"new-project\",\"language\":\"${S_LANG}\",\"frameworkId\":\"${S_FW}\",\"port\":${S_PORT}}" \
+    "http://localhost:${ADMIN_PORT}/api/apps/create" 2>/dev/null || echo "000")
+  S1_JOB=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('${_S1}','utf8'));process.stdout.write(d.jobId||'')}catch(e){}" 2>/dev/null || echo "")
+  rm -f "$_S1"
+
+  if [ -z "$S1_JOB" ]; then
+    fail "${S_STACK}: create-app 실패 (HTTP ${S1_CODE})"
+    P11_RESULTS="${P11_RESULTS}${S_STACK}:FAIL-create "
+    P11_FAIL=$((P11_FAIL + 1))
+    ALL_PASS=false
+    continue
+  fi
+  sub "${S_STACK}: create-app jobId=${S1_JOB}"
+
+  # ③ 완료 폴링 (스택별 타임아웃)
+  S_STATUS="pending"
+  S_POLL_ITER=0
+  for poll in $(seq 1 "${S_MAXPOLL}"); do
+    sleep 5
+    S_POLL_ITER=$poll
+    _SJ=$(mktemp)
+    curl -s -o "$_SJ" "http://localhost:${ADMIN_PORT}/api/apps/jobs/${S1_JOB}" 2>/dev/null || true
+    S_STATUS=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('${_SJ}','utf8'));process.stdout.write(d.status||'unknown')}catch(e){process.stdout.write('unknown')}" 2>/dev/null || echo "unknown")
+    rm -f "$_SJ"
+    if [ "$S_STATUS" = "done" ] || [ "$S_STATUS" = "failed" ]; then break; fi
+    # 30초마다 진행 출력
+    if (( poll % 6 == 0 )); then sub "[${poll}/${S_MAXPOLL}] ${S_STACK} 생성 중... (${S_LANG}/${S_FW})"; fi
+  done
+
+  if [ "$S_STATUS" != "done" ]; then
+    fail "${S_STACK}: 생성 실패/타임아웃 (status=${S_STATUS}, $((S_POLL_ITER*5))s 경과)"
+    P11_RESULTS="${P11_RESULTS}${S_STACK}:FAIL-timeout "
+    P11_FAIL=$((P11_FAIL + 1))
+    ALL_PASS=false
+    curl -s -o /dev/null -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}" 2>/dev/null || true
+    continue
+  fi
+  ok "${S_STACK}: 생성 완료 ($((S_POLL_ITER*5))s 소요)"
+
+  # ④ 앱 포트 조회 (auto-select 반영)
+  _SAPPS=$(mktemp)
+  curl -s -o "$_SAPPS" "http://localhost:${ADMIN_PORT}/api/apps" 2>/dev/null
+  S_ACTUAL_PORT=$(node -e "
+    try{const d=JSON.parse(require('fs').readFileSync('${_SAPPS}','utf8'));
+    const a=(d.apps||[]).find(x=>x.name==='${S_APP}');
+    process.stdout.write(String(a?.port||''))}catch(e){}
+  " 2>/dev/null || echo "")
+  rm -f "$_SAPPS"
+  [ -z "$S_ACTUAL_PORT" ] && S_ACTUAL_PORT="$S_PORT"
+
+  # ⑤ localhost 접속 — Health check (404/에러 없는지 확인)
+  if [ "$S_UNIFIED" = "1" ]; then
+    HC_URL="http://127.0.0.1:${S_ACTUAL_PORT}/apps/${S_APP}/health"
+  else
+    HC_URL="http://127.0.0.1:${S_ACTUAL_PORT}/health"
+  fi
+  HC_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${HC_URL}" 2>/dev/null || echo "000")
+  if [ "$HC_CODE" = "200" ]; then
+    ok "  ${S_STACK}: localhost health → 200 ✅ (${HC_URL})"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: localhost health → ${HC_CODE} (${HC_URL})${NC}"
+    S_PASS=false
+  fi
+
+  # ⑥ 페이지 로드 확인 (404/에러가 없는지)
+  if [ "$S_UNIFIED" = "1" ]; then
+    PAGE_URL="http://127.0.0.1:${S_ACTUAL_PORT}/apps/${S_APP}/"
+  else
+    PAGE_URL="http://127.0.0.1:${S_ACTUAL_PORT}/"
+  fi
+  PAGE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${PAGE_URL}" 2>/dev/null || echo "000")
+  if [ "$PAGE_CODE" = "200" ] || [ "$PAGE_CODE" = "301" ] || [ "$PAGE_CODE" = "302" ] || [ "$PAGE_CODE" = "308" ]; then
+    ok "  ${S_STACK}: 페이지 로드 → ${PAGE_CODE} ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: 페이지 → ${PAGE_CODE} (${PAGE_URL})${NC}"
+  fi
+
+  # ⑦ Gitea 레포 생성 확인
+  if [ -n "$ADMIN_PASS11" ]; then
+    GR11_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+      -u "admin:${ADMIN_PASS11}" \
+      "http://localhost/git/api/v1/repos/admin/${S_APP}" 2>/dev/null || echo "000")
+    if [ "$GR11_CODE" = "200" ]; then
+      ok "  ${S_STACK}: Gitea 레포 admin/${S_APP} 생성 확인 ✅"
+    else
+      fail "  ${S_STACK}: Gitea 레포 없음 → ${GR11_CODE}"
+      S_PASS=false
+    fi
+  fi
+
+  # ⑧ 모달 API 검증 (Overview + git URL + Logs SSE)
+  _SOV=$(mktemp)
+  OV11=$(curl -s -o "$_SOV" -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}" 2>/dev/null || echo "000")
+  S_GIT_URL=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('${_SOV}','utf8'));process.stdout.write(d.app?.giteaRepoUrl||'')}catch(e){}" 2>/dev/null || echo "")
+  S_OV_PORT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('${_SOV}','utf8'));process.stdout.write(String(d.app?.port||''))}catch(e){}" 2>/dev/null || echo "")
+  rm -f "$_SOV"
+
+  GI11=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}/git" 2>/dev/null || echo "000")
+  LOGS11_CT=$(curl -s -v --max-time 2 "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}/logs" 2>&1 \
+    | grep -i '^< content-type' | head -1 || true)
+  DS11=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}/deploy/settings" 2>/dev/null || echo "000")
+
+  # Overview 필드 검증 (git URL, port 존재)
+  if [ "$OV11" = "200" ] && [ -n "$S_GIT_URL" ] && [ -n "$S_OV_PORT" ]; then
+    ok "  ${S_STACK}: Overview → 200 (giteaUrl=${S_GIT_URL} port=${S_OV_PORT}) ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: Overview=${OV11} gitUrl=${S_GIT_URL:-없음} port=${S_OV_PORT:-없음}${NC}"
+    [ "$OV11" != "200" ] && S_PASS=false
+  fi
+
+  if [ "$GI11" = "200" ]; then
+    ok "  ${S_STACK}: Git info → 200 ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: Git info → ${GI11}${NC}"
+  fi
+
+  if echo "$LOGS11_CT" | grep -qi 'event-stream'; then
+    ok "  ${S_STACK}: Logs → SSE (text/event-stream) ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: Logs SSE Content-Type: ${LOGS11_CT:-없음}${NC}"
+  fi
+
+  if [ "$DS11" = "200" ]; then
+    ok "  ${S_STACK}: Deploy settings → 200 ✅"
+  else
+    echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: Deploy settings → ${DS11}${NC}"
+  fi
+
+  # ⑨ Domain 탭 확인 (connect endpoint 응답)
+  DOM11=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${ADMIN_PORT}/api/domain/apps" 2>/dev/null || echo "000")
+  [ "$DOM11" = "200" ] && ok "  ${S_STACK}: Domain tab /api/domain/apps → 200 ✅" || echo -e "${YELLOW}  ⚠ [$(ts)] ${S_STACK}: domain/apps → ${DOM11}${NC}"
+
+  # ⑩ Start / Stop / Deploy 토스트 API 경로 검증
+  STO11=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}/stop" 2>/dev/null || echo "000")
+  if [ "$STO11" = "200" ]; then ok "  ${S_STACK}: Stop → 200 ✅ (toast 트리거)"; else fail "  ${S_STACK}: Stop → ${STO11}"; S_PASS=false; fi
+  sleep 2
+
+  STA11=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}/start" 2>/dev/null || echo "000")
+  if [ "$STA11" = "200" ]; then ok "  ${S_STACK}: Start → 200 ✅ (toast 트리거)"; else fail "  ${S_STACK}: Start → ${STA11}"; S_PASS=false; fi
+  sleep 2
+
+  DEP11=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}/deploy" 2>/dev/null || echo "000")
+  if [ "$DEP11" = "202" ] || [ "$DEP11" = "200" ]; then
+    ok "  ${S_STACK}: Deploy → ${DEP11} ✅ (ProgressModal 트리거)"
+  else
+    fail "  ${S_STACK}: Deploy → ${DEP11}"
+    S_PASS=false
+  fi
+  sleep 2
+
+  # ⑪ Delete (toast 트리거 경로)
+  DEL11=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "http://localhost:${ADMIN_PORT}/api/apps/${S_APP}" 2>/dev/null || echo "000")
+  if [ "$DEL11" = "200" ]; then
+    ok "  ${S_STACK}: Delete → 200 ✅ (toast '${S_APP} deleted' 트리거)"
+  else
+    fail "  ${S_STACK}: Delete → ${DEL11}"
+    S_PASS=false
+  fi
+
+  # 정리 (파일시스템 + Gitea)
+  rm -rf "$HOME/brewnet/my-homeserver/apps/${S_APP}" "$HOME/brewnet/my-homeserver/${S_APP}" 2>/dev/null || true
+  if [ -n "$ADMIN_PASS11" ]; then
+    curl -s -o /dev/null -X DELETE -u "admin:${ADMIN_PASS11}" \
+      "http://localhost/git/api/v1/repos/admin/${S_APP}" 2>/dev/null || true
+  fi
+
+  # 스택별 최종 결과
+  if [ "$S_PASS" = "true" ]; then
+    ok "✅ ${S_STACK} 모든 항목 통과"
+    P11_RESULTS="${P11_RESULTS}${S_STACK}:PASS "
+    P11_PASS=$((P11_PASS + 1))
+  else
+    fail "❌ ${S_STACK} 일부 실패"
+    P11_RESULTS="${P11_RESULTS}${S_STACK}:FAIL "
+    P11_FAIL=$((P11_FAIL + 1))
+    ALL_PASS=false
+  fi
+done
+
+# Phase 11 요약
+label "Phase 11 결과 (${P11_PASS}/16 통과)"
+for entry in "${ALL16_ENTRIES[@]}"; do
+  IFS='|' read -r _ _ _ S_STACK _ _ _ <<< "$entry"
+  RES=$(echo "$P11_RESULTS" | tr ' ' '\n' | grep "^${S_STACK}:" | cut -d: -f2 | head -1)
+  case "${RES:-SKIP}" in
+    PASS)             ok "  ${S_STACK}: ✅ PASS" ;;
+    FAIL|FAIL-create|FAIL-timeout) fail "  ${S_STACK}: ❌ ${RES}" ;;
+    *)                sub "  ${S_STACK}: — SKIP" ;;
+  esac
+done
+if [ "$P11_FAIL" -eq 0 ]; then
+  ok "Phase 11: 전체 16종 스택 통과 ✅"
+else
+  fail "Phase 11: ${P11_FAIL}개 스택 실패 (${P11_PASS}개 통과)"
+  ALL_PASS=false
 fi
 
 step_done

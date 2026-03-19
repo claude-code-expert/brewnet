@@ -126,6 +126,26 @@ describe('GiteaClient', () => {
     });
   });
 
+  describe('makeRepoPublic', () => {
+    it('sends PATCH request with private:false', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+      mockFetch.mockResolvedValueOnce(jsonResponse({}, 200));
+      const client = makeClient();
+      await client.makeRepoPublic('my-app');
+      const [url, opts] = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe('http://localhost:3000/api/v1/repos/admin/my-app');
+      expect((opts as { method: string }).method).toBe('PATCH');
+      expect(JSON.parse(opts.body as string)).toMatchObject({ private: false });
+    });
+
+    it('throws on non-2xx response', async () => {
+      fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
+      mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'not found' }, 404));
+      const client = makeClient();
+      await expect(client.makeRepoPublic('missing')).rejects.toThrow('makeRepoPublic failed');
+    });
+  });
+
   describe('listRepos', () => {
     it('returns array of repo entries on success', async () => {
       fsContent['/home/user/.brewnet/gitea-token'] = 'tk';

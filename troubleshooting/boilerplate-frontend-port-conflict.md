@@ -1,8 +1,70 @@
 # Boilerplate Frontend Port Conflict Troubleshooting
 
-> Non-unified 스택(nodejs-express 등) 실행 시 프론트엔드 컨테이너가 port 3000 충돌로 시작 실패
+> Non-unified 스택(nodejs-express 등) 실행 시 프론트엔드 컨테이너가 port 충돌로 시작 실패
 
 ---
+
+## 재발 기록 — 2026-03-19 (2번째)
+
+## 메타데이터
+
+| 항목 | 내용 |
+|------|------|
+| **날짜** | 2026-03-19 |
+| **상태** | ✅ 해결됨 |
+| **에러 타입** | Docker / Configuration |
+| **브랜치** | 001-fix-create-app-modal |
+| **재발 여부** | 재발 (2번째) |
+
+## 문제 요약
+
+`create-app` API로 new-project 앱 생성 시 `BACKEND_PORT`와 `FRONTEND_PORT`가 동일한 포트로 설정되어 프론트엔드 컨테이너가 "port is already allocated" 에러로 시작 실패.
+
+## 에러 상세
+
+```
+Error response from daemon: failed to set up container networking:
+driver failed programming external connectivity on endpoint test-express-frontend-1:
+Bind for 0.0.0.0:3002 failed: port is already allocated
+```
+
+## 근본 원인
+
+`app-manager.ts`의 boilerplate 클론 후 `.env` 주입 로직에서:
+1. `BACKEND_PORT=${port}` (사용자 지정값, e.g. 3002)
+2. `FRONTEND_PORT=$(findFreePortB(3000))` → 포트 3000부터 스캔
+
+`.env` 파일 작성 시점에 백엔드 컨테이너가 아직 시작되지 않아 포트 3002가 free로 감지됨. 결과적으로 `FRONTEND_PORT=3002 = BACKEND_PORT=3002`.
+
+`new-project` 경로의 `boilerplate-manager.ts` `findFreePort(3000)` 호출도 동일 문제.
+
+## 해결 방안
+
+프론트엔드 포트 탐색 시작점을 백엔드 포트+1로 변경:
+
+```typescript
+// app-manager.ts — boilerplate git-clone 경로
+const fePort = await findFreePortB(port + 1);  // 이전: findFreePortB(3000)
+
+// app-manager.ts — new-project 경로
+const frontendPort = (stackInfo && !stackInfo.isUnified) ? await findFreePort(port + 1) : undefined;
+```
+
+### 코드 변경
+
+| 파일 | 변경 내용 |
+|------|-----------|
+| `packages/cli/src/services/app-manager.ts:819` | `findFreePortB(3000)` → `findFreePortB(port + 1)` |
+| `packages/cli/src/services/app-manager.ts:894` | `findFreePort(3000)` → `findFreePort(port + 1)` |
+
+## 예방 방법
+
+- `findFreePort` 호출 시 이미 할당된 포트를 exclude 파라미터로 전달하는 방식 고려
+- 포트 탐색 범위를 사용자 지정 포트 이후부터 시작하도록 일관성 유지
+
+---
+
+## 최초 발생 — 2026-03-04 (1번째)
 
 ## 메타데이터
 

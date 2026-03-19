@@ -329,6 +329,14 @@ export function patchNextConfig(projectDir: string, appName: string): void {
     `output: 'standalone',\n    basePath: '${basePath}',\n    images: { unoptimized: true }`,
   );
 
+  // Fallback: non-standalone configs (user-owned repos without output: 'standalone')
+  if (!content.includes('basePath')) {
+    content = content.replace(
+      /((?:const|let|var)\s+\w+(?:\s*:\s*[\w<>, |&]+)?\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s+\{)/,
+      `$1\n  basePath: '${basePath}',`,
+    );
+  }
+
   writeFileSync(configPath, content, 'utf-8');
 
   // Re-patch image paths to include basePath prefix.
@@ -348,8 +356,14 @@ export function patchNextConfig(projectDir: string, appName: string): void {
     const newHealthPath = `http://127.0.0.1:3000${basePath}/health`;
     if (compose.includes(oldHealthPath) && !compose.includes(newHealthPath)) {
       compose = compose.replaceAll(oldHealthPath, newHealthPath);
-      writeFileSync(composePath, compose, 'utf-8');
     }
+    // Fallback: scaffolded templates use root path (/) instead of /health
+    const oldRootPath = 'http://127.0.0.1:3000/';
+    const newRootPath = `http://127.0.0.1:3000${basePath}/`;
+    if (compose.includes(oldRootPath) && !compose.includes(newRootPath)) {
+      compose = compose.replaceAll(oldRootPath, newRootPath);
+    }
+    writeFileSync(composePath, compose, 'utf-8');
   }
 }
 
