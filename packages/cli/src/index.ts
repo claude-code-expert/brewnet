@@ -9,6 +9,8 @@
  */
 
 import { Command } from 'commander';
+
+declare const __CLI_VERSION__: string;
 import { registerInitCommand } from './commands/init.js';
 import { registerStatusCommand } from './commands/status.js';
 import { registerAddCommand } from './commands/add.js';
@@ -37,7 +39,7 @@ export function createProgram(): Command {
   program
     .name('brewnet')
     .description('Your Home Server, Brewed Fresh')
-    .version('1.0.1')
+    .version(__CLI_VERSION__)
     .showHelpAfterError('(run "brewnet --help" for usage information)');
 
   // Register all subcommands

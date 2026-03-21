@@ -156,3 +156,54 @@ export function applyPartialInstallDefaults(state: WizardState): WizardState {
     },
   };
 }
+
+/**
+ * Minimal Install defaults.
+ *
+ * Enables only: Web Server (Traefik) + Git Server (Gitea) + Quick Tunnel.
+ * No database, no boilerplate cloning. Fastest path to a running server.
+ */
+export function applyMinimalInstallDefaults(state: WizardState): WizardState {
+  return {
+    ...state,
+    setupType: 'minimal',
+    servers: {
+      ...state.servers,
+      webServer: { enabled: true, service: 'traefik' },
+      fileServer: { enabled: false, service: '' },
+      gitServer: { enabled: true, service: 'gitea', port: 3000, sshPort: 3022 },
+      dbServer: {
+        enabled: false,
+        primary: '',
+        primaryVersion: '',
+        dbName: '',
+        dbUser: '',
+        dbPassword: '',
+        adminUI: false,
+        pgadminEmail: '',
+        cache: '',
+      },
+      media: { enabled: false, services: [] },
+      sshServer: { enabled: false, port: 2222, passwordAuth: false, sftp: false },
+      appServer: { enabled: false },
+      fileBrowser: { enabled: false, mode: '' },
+    },
+    domain: {
+      ...state.domain,
+      provider: 'local',
+      cloudflare: {
+        ...state.domain.cloudflare,
+        enabled: true,
+        tunnelMode: 'quick',
+      },
+    },
+    boilerplate: {
+      ...state.boilerplate,
+      generate: false,
+    },
+    devStack: {
+      ...state.devStack,
+      languages: [],
+    },
+  };
+}

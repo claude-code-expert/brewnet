@@ -8,7 +8,7 @@ import { ProgressModal } from '../components/ProgressModal.js';
 import { OverviewTab } from '../components/OverviewTab.js';
 import { DeploymentTab } from '../components/DeploymentTab.js';
 import { AppLogsTab } from '../components/AppLogsTab.js';
-import { DomainTab } from '../components/DomainTab.js';
+import { AppDomainTab } from '../features/domain/index.js';
 import type { AppEntry, AppGitInfo, DeploySettings, BoilerplateMeta } from '../types.js';
 
 type Tab = 'overview' | 'deployment' | 'logs' | 'domain';
@@ -242,7 +242,7 @@ export function AppDetail() {
             )}
 
             {activeTab === 'domain' && (
-              <DomainTab appName={name} apiFetch={apiFetch} />
+              <AppDomainTab appName={name ?? ''} apiFetch={apiFetch} appStatus={app.status} />
             )}
           </>
         )}

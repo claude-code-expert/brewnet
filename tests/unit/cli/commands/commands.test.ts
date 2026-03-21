@@ -44,6 +44,20 @@ jest.unstable_mockModule('execa', () => ({
   execa: mockExeca,
 }));
 
+const mockOraInstance = {
+  start: jest.fn().mockReturnThis(),
+  succeed: jest.fn().mockReturnThis(),
+  fail: jest.fn().mockReturnThis(),
+  stop: jest.fn().mockReturnThis(),
+  info: jest.fn().mockReturnThis(),
+  warn: jest.fn().mockReturnThis(),
+  text: '',
+};
+
+jest.unstable_mockModule('ora', () => ({
+  default: jest.fn(() => mockOraInstance),
+}));
+
 const mockConfirm = jest.fn<() => Promise<boolean>>();
 
 jest.unstable_mockModule('@inquirer/prompts', () => ({

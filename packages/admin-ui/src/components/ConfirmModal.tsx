@@ -25,7 +25,7 @@ export function ConfirmModal({
   const canConfirm = !requiredInput || inputValue === requiredInput;
 
   return (
-    <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="overlay">
       <div className="modal" style={{ maxWidth: 420 }}>
         <div style={{ padding: '24px 24px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Warning icon + title */}

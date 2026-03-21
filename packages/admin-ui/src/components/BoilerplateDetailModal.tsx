@@ -10,7 +10,7 @@ export function BoilerplateDetailModal({ stack, onClose }: BoilerplateDetailModa
   const githubUrl = `${BOILERPLATE_GITHUB_BASE}/${stack.stackId}`;
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay">
       <div
         className="modal"
         style={{ maxWidth: 500 }}

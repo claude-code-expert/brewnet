@@ -21,6 +21,8 @@ README.md.bak
 # OS files
 .DS_Store
 
+troubleshooting/
+
 Thumbs.db
 *.tmp
 *.swp

@@ -19,7 +19,7 @@ export type DomainProvider = 'local' | 'tunnel' | 'quick-tunnel';
 
 export type SslMode = 'self-signed' | 'letsencrypt' | 'cloudflare';
 
-export type SetupType = 'full' | 'partial';
+export type SetupType = 'full' | 'partial' | 'minimal';
 
 export type FileBrowserMode = 'directory' | 'standalone' | '';
 

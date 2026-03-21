@@ -3,6 +3,74 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [006-domain-settings] - 2026-03-21 — Cloudflare Tunnel 도메인 설정 UI + App Domain 연결 기능 완성
+
+### 🎯 Prompts
+1. "006 feature - CloudflareTunnelModal 다단계 위자드 + AppDomainTab 구현"
+2. "zone 로드가 안돼 — admin password 입력 후에도 빈 상태 유지"
+3. "accountId를 getAccounts API가 실패하면 zones 응답에서 fallback으로 추출해줘"
+4. "create-app으로 만든 앱 도메인 연결이 500 에러"
+5. "cloudflared container가 named tunnel로 안 바뀜 — 아직도 quick tunnel로 동작"
+6. "tunnel ingress에 create-app 앱 라우팅이 없어"
+7. "AppDomainTab 서브도메인 입력 필드 border가 안 보임"
+8. "modal 바깥 클릭하면 닫혀버려 — 실수로 닫히는 경우 있음"
+9. "Disconnect 버튼 빨간색으로, 오른쪽 정렬"
+10. "현재 프로젝트 오늘 완료된 것, changelog와 troubleshooting 작성해"
+
+### ✅ Changes
+
+#### 신규 기능 — Cloudflare Tunnel 설정 위자드
+- **Added**: `CloudflareTunnelModal` — 4단계 위자드 (token → zone → tunnel → complete) 구현 (`packages/admin-ui/src/features/domain/components/CloudflareTunnelModal.tsx`)
+- **Added**: `TokenStep` — API 토큰 입력 및 검증 단계 (`features/domain/components/TokenStep.tsx`)
+- **Added**: `ZoneStep` — Cloudflare 존 목록 드롭다운 선택 단계 (`features/domain/components/ZoneStep.tsx`)
+- **Added**: `TunnelStep` — 터널 이름 입력 + 생성 상태 표시 + 에러 재시도 UI (`features/domain/components/TunnelStep.tsx`)
+- **Added**: `useCloudflareSetup` 훅 — 위자드 상태 머신, 단계별 API 호출 조율 (`features/domain/hooks/useCloudflareSetup.ts`)
+- **Added**: `domain-api.ts` — 도메인 설정 REST API 래퍼 (getSettings, saveToken, saveZone, listZones, createTunnel, connect, disconnect) (`features/domain/api/domain-api.ts`)
+
+#### 신규 기능 — App Domain 연결 탭
+- **Added**: `AppDomainTab` — App Detail 내 도메인 연결/해제 탭 (서브도메인 입력, CNAME 생성, tunnel ingress 등록) (`features/domain/components/AppDomainTab.tsx`)
+- **Added**: `backendUrl`, `backendInternalUrl` 필드를 `AppEntry` 타입에 추가 (`packages/admin-ui/src/types.ts`)
+- **Added**: admin-server `GET /api/apps` 응답에 `backendUrl`/`backendInternalUrl` 생성 — split-stack 앱(프론트+백 분리)의 백엔드 포트 자동 감지 (`packages/cli/src/services/admin-server.ts`)
+
+#### 신규 기능 — Cloudflare 자동화
+- **Added**: `patchCloudflaredToNamedTunnel()` — named tunnel 설정 완료 후 docker-compose.yml의 cloudflared 컨테이너를 quick-tunnel → named-tunnel로 자동 패치 + docker-compose re-up (`packages/cli/src/services/compose-generator.ts`)
+- **Added**: `accountId` zones 응답 fallback 추출 — `getAccounts()` API 실패 시 zones listing 응답의 `account.id`에서 자동 추출 (`packages/cli/src/services/cloudflare-client.ts`, `packages/cli/src/services/admin-server.ts`)
+- **Added**: `handleCloudflareZones`에서 zones 로딩 시 proactive accountId 추출 및 저장 (`packages/cli/src/services/admin-server.ts`)
+- **Added**: project-specific 기본 터널 이름 — 프로젝트 이름 기반 자동 생성 (`features/domain/types.ts`)
+
+#### 신규 기능 — UI/UX
+- **Added**: 커스텀 styled `<select>` — SVG 셰브론 아이콘 포함 드롭다운 (`packages/admin-ui/src/styles/global.css`)
+- **Added**: TunnelStep 에러 박스 스타일링 — 경고 색상 배경, 재시작 버튼 우측 정렬 (`features/domain/components/TunnelStep.tsx`)
+- **Added**: TunnelStep docker-compose + cloudflared 재시작 상태 실시간 표시 (`features/domain/components/TunnelStep.tsx`)
+- **Added**: CloudflareTunnelModal 완료 화면에 docker 작업 상태 표시 (`features/domain/components/CloudflareTunnelModal.tsx`)
+
+#### 버그 수정
+- **Fixed**: admin password 입력 후 zone 목록이 빈 상태 — `useCloudflareSetup`이 비동기 상태 업데이트 완료 전 zone 로드 시도 → 패스워드를 직접 전달하도록 수정 (`features/domain/hooks/useCloudflareSetup.ts`)
+- **Fixed**: create-app으로 생성한 앱 도메인 연결 500 에러 — `domain-manager.ts`에서 앱 이름 해석 오류 → 정확한 이름 매핑으로 수정 (`packages/cli/src/services/domain-manager.ts`)
+- **Fixed**: create-app 앱의 Cloudflare tunnel ingress 라우팅 누락 — `configureTunnelIngress()`에서 서비스명 불일치 → apps registry 기반 lookup으로 수정 (`packages/cli/src/services/domain-manager.ts`)
+- **Fixed**: cloudflared 컨테이너가 named tunnel 설정 후에도 quick tunnel로 계속 동작 — compose file 패치 없이 cloudflared가 재시작됨 → `patchCloudflaredToNamedTunnel()` 자동 호출 추가 (`packages/cli/src/services/compose-generator.ts`)
+- **Fixed**: AppDomainTab 서브도메인 입력 필드 border 미표시 — CSS 클래스 누락 → 글로벌 input 스타일 적용 (`features/domain/components/AppDomainTab.tsx`)
+- **Fixed**: Modal 배경 클릭 시 실수로 닫힘 — `AppDetailModal`, `ConfirmModal`, `CloudflareTunnelModal` 모두 overlay click handler 제거 (`packages/admin-ui/src/components/AppDetailModal.tsx`)
+- **Fixed**: non-unified split-stack 앱 프론트엔드 포트 감지 — domain 연결 시 백엔드 포트 대신 프론트엔드 포트로 라우팅 (`packages/cli/src/services/domain-manager.ts`)
+
+#### UI 레이아웃 개선
+- **Changed**: AppDomainTab 서브도메인 폼 레이아웃 — 수직 → 단일 행 수평 배치, 입력/존명/버튼 그룹화 후 flex-end 우측 정렬
+- **Changed**: Disconnect 버튼 텍스트 빨간색 처리 (위험 액션 표시)
+- **Changed**: 존 이름 표시 너비 250px 고정
+
+### 📁 Files Modified
+- `packages/admin-ui/src/features/domain/` — 신규 디렉토리 전체 (components, hooks, api, types)
+- `packages/admin-ui/src/types.ts` (+2 필드)
+- `packages/admin-ui/src/styles/global.css` (+28 lines — styled select)
+- `packages/admin-ui/src/pages/AppDetail.tsx` (Domain 탭 통합)
+- `packages/admin-ui/src/components/AppDetailModal.tsx` (overlay click 제거)
+- `packages/cli/src/services/admin-server.ts` (+452, -0 — 도메인 API 엔드포인트 전체 + backendUrl 생성)
+- `packages/cli/src/services/domain-manager.ts` (+86, -0 — create-app 지원 + 프론트 포트 감지)
+- `packages/cli/src/services/compose-generator.ts` (+42 — patchCloudflaredToNamedTunnel)
+- `packages/cli/src/services/cloudflare-client.ts` (+11 — accountId 추출)
+
+---
+
 ## [001-fix-create-app-modal] - 2026-03-19 22:xx
 
 ### 🎯 Prompts

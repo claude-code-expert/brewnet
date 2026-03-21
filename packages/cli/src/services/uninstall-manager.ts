@@ -377,6 +377,38 @@ export async function runUninstall(options: UninstallOptions = {}): Promise<Unin
     }
   }
 
+  // --- 1c. Remove orphan containers whose working_dir is under projectPath
+  //          but were not covered by the manifest (e.g. test-cycle leftovers).
+  if (projectPath && !options.keepConfig) {
+    try {
+      const { default: Dockerode } = await import('dockerode');
+      const docker = new Dockerode();
+      const allContainers = await docker.listContainers({ all: true });
+      const orphanProjects = new Map<string, string>(); // workingDir → composeFile
+      for (const c of allContainers) {
+        const wdir = c.Labels?.['com.docker.compose.project.working_dir'] ?? '';
+        if (wdir && wdir.startsWith(projectPath) && wdir !== projectPath) {
+          const composeFile = c.Labels?.['com.docker.compose.config.files'] ?? DOCKER_COMPOSE_FILENAME;
+          orphanProjects.set(wdir, composeFile.split(',')[0] ?? DOCKER_COMPOSE_FILENAME);
+        }
+      }
+      for (const [wdir, composeFile] of orphanProjects) {
+        try {
+          const downArgs = ['compose', '-f', composeFile, 'down'];
+          if (!options.keepData) downArgs.push('--volumes', '--rmi', 'all');
+          await execa('docker', downArgs, { cwd: wdir, env: augmentedEnv(), reject: false });
+          result.removed.push(`Orphan containers in ${wdir}`);
+          logger.info('uninstall', 'Orphan compose project stopped', { wdir });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          result.errors.push(`docker compose down (orphan ${wdir}): ${msg}`);
+        }
+      }
+    } catch {
+      // non-fatal — docker may not be accessible
+    }
+  }
+
   // --- 2. docker network rm (all brewnet-* networks, including project-prefixed ones) ---
   try {
     const netList = await execa('docker', ['network', 'ls', '--filter', 'name=brewnet', '-q'], {

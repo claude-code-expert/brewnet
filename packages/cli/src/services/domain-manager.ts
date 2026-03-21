@@ -25,6 +25,8 @@ import {
 } from './cloudflare-client.js';
 import { addExternalLabels, removeExternalLabels } from './compose-generator.js';
 import { loadState, saveState } from '../wizard/state.js';
+import { readApps } from './app-registry.js';
+import { getStackById } from '../config/stacks.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +37,8 @@ export interface ConnectOptions {
   force?: boolean;
   /** Scenario override (auto-detected if omitted) */
   scenario?: DomainScenario;
+  /** Optional line-by-line progress logger (e.g. to push into SSE stream) */
+  onLog?: (line: string) => void;
 }
 
 export interface StepResult {
@@ -122,47 +126,63 @@ export class DomainManager {
     const hostname = `${subdomain}.${domain}`;
     const steps: StepResult[] = [];
     const cf = this.state.domain.cloudflare;
+    const log = (msg: string) => options.onLog?.(`[domain-connect] ${msg}`);
+
+    log(`start: app=${appName} subdomain=${subdomain} domain=${domain}`);
+    log(`cf state: tunnelId=${cf.tunnelId || '(empty)'} apiToken=${cf.apiToken ? '***' : '(empty)'} accountId=${cf.accountId || '(empty)'} zoneId=${cf.zoneId || '(empty)'}`);
 
     if (!cf.tunnelId || !cf.apiToken) {
+      const err = 'Cloudflare credentials not configured. Set API token and tunnel ID first.';
+      log(`FAIL: ${err}`);
       return {
         success: false,
         hostname,
         externalUrl: `https://${hostname}`,
         steps,
-        error: 'Cloudflare credentials not configured. Set API token and tunnel ID first.',
+        error: err,
       };
     }
 
     // Determine container port for the app
     const containerPort = this.resolveContainerPort(appName);
+    log(`resolveContainerPort(${appName}) → ${containerPort ?? 'null'}`);
     if (!containerPort) {
+      const err = `Cannot determine container port for app "${appName}".`;
+      log(`FAIL: ${err}`);
       return {
         success: false,
         hostname,
         externalUrl: `https://${hostname}`,
         steps,
-        error: `Cannot determine container port for app "${appName}".`,
+        error: err,
       };
     }
 
     // Determine scenario
     const scenario = options.scenario ?? this.detectScenario();
+    log(`scenario: ${scenario}`);
 
     // Step 1: Health check (local)
+    log(`step 1/6: health check → http://127.0.0.1:${containerPort}/`);
     const healthStart = Date.now();
     try {
       const healthy = await this.checkLocalHealth(appName, containerPort);
       if (!healthy) {
-        steps.push({ step: 'health_check', status: 'failed', error: `App "${appName}" not responding on port ${containerPort}` });
+        const err = `App "${appName}" not responding on port ${containerPort}`;
+        log(`FAIL step 1: ${err}`);
+        steps.push({ step: 'health_check', status: 'failed', error: err });
         return { success: false, hostname, externalUrl: `https://${hostname}`, steps, error: `APP_NOT_RUNNING: Local health check failed for ${appName} on port ${containerPort}` };
       }
       steps.push({ step: 'health_check', status: 'completed', durationMs: Date.now() - healthStart });
+      log(`step 1 OK (${Date.now() - healthStart}ms)`);
     } catch (err) {
+      log(`FAIL step 1 exception: ${err}`);
       steps.push({ step: 'health_check', status: 'failed', error: String(err) });
       return { success: false, hostname, externalUrl: `https://${hostname}`, steps, error: `Health check failed: ${err}` };
     }
 
     // Step 2: Update tunnel ingress
+    log(`step 2/6: configure tunnel ingress (accountId=${cf.accountId || '(empty)'}, tunnelId=${cf.tunnelId})`);
     const ingressStart = Date.now();
     let previousIngress: ServiceRoute[] | null = null;
     try {
@@ -174,23 +194,30 @@ export class DomainManager {
         .map((c) => ({ subdomain: c.subdomain, containerName: this.resolveContainerName(c.appName), port: c.containerPort, domain: c.domain }));
       const newRoute: ServiceRoute = { subdomain, containerName: this.resolveContainerName(appName), port: containerPort, domain };
       const allRoutes = [...builtinRoutes, ...existingExtRoutes, newRoute];
+      log(`ingress routes: ${JSON.stringify(allRoutes.map((r) => `${r.subdomain} → ${r.containerName}:${r.port}`))}`);
       await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, domain, allRoutes);
       steps.push({ step: 'ingress_update', status: 'completed', durationMs: Date.now() - ingressStart });
+      log(`step 2 OK (${Date.now() - ingressStart}ms)`);
     } catch (err) {
+      log(`FAIL step 2: ${err}`);
       steps.push({ step: 'ingress_update', status: 'failed', error: String(err) });
       return { success: false, hostname, externalUrl: `https://${hostname}`, steps, error: `Ingress update failed: ${err}` };
     }
 
     // Step 3: Create DNS CNAME record
+    log(`step 3/6: DNS CNAME check/create for ${hostname} (zoneId=${cf.zoneId || '(empty)'})`);
     const dnsStart = Date.now();
     let cnameRecordId = '';
     try {
       // Check for existing CNAME
       const existing = await getDnsRecords(cf.apiToken, cf.zoneId, hostname);
+      log(`existing DNS records for ${hostname}: ${existing.length}`);
       if (existing.length > 0 && !options.force) {
         // Rollback ingress
         await this.rollbackIngress(cf, previousIngress, domain);
-        steps.push({ step: 'dns_creation', status: 'failed', error: `CNAME_CONFLICT: A CNAME record already exists for ${hostname}` });
+        const err = `CNAME_CONFLICT: A CNAME record already exists for ${hostname}`;
+        log(`FAIL step 3: ${err}`);
+        steps.push({ step: 'dns_creation', status: 'failed', error: err });
         return { success: false, hostname, externalUrl: `https://${hostname}`, steps, error: `CNAME_CONFLICT` };
       }
       if (existing.length > 0 && options.force) {
@@ -198,32 +225,41 @@ export class DomainManager {
         for (const rec of existing) {
           await deleteDnsRecord(cf.apiToken, cf.zoneId, rec.id);
         }
+        log(`deleted ${existing.length} existing CNAME record(s)`);
       }
       await createDnsRecord(cf.apiToken, cf.zoneId, cf.tunnelId, subdomain, domain);
       // Fetch the record ID for future deletion
       const created = await getDnsRecords(cf.apiToken, cf.zoneId, hostname);
       cnameRecordId = created[0]?.id ?? '';
       steps.push({ step: 'dns_creation', status: 'completed', durationMs: Date.now() - dnsStart });
+      log(`step 3 OK — cnameRecordId=${cnameRecordId} (${Date.now() - dnsStart}ms)`);
     } catch (err) {
       // Rollback ingress
       await this.rollbackIngress(cf, previousIngress, domain);
+      log(`FAIL step 3: ${err}`);
       steps.push({ step: 'dns_creation', status: 'failed', error: String(err) });
       return { success: false, hostname, externalUrl: `https://${hostname}`, steps, error: `DNS creation failed: ${err}` };
     }
 
     // Step 4: Add Traefik external labels
+    log(`step 4/6: Traefik labels for ${appName}`);
     try {
       const composePath = this.getComposePath();
       if (fs.existsSync(composePath)) {
         addExternalLabels(composePath, appName, hostname, containerPort);
+        log(`step 4 OK — labels added to ${composePath}`);
+      } else {
+        log(`step 4 SKIP — compose file not found at ${composePath}`);
       }
       steps.push({ step: 'traefik_labels', status: 'completed' });
     } catch (err) {
       // Non-fatal — labels can be added manually
+      log(`step 4 WARN (non-fatal): ${err}`);
       steps.push({ step: 'traefik_labels', status: 'failed', error: String(err) });
     }
 
     // Step 5: Persist connection to state
+    log(`step 5/6: persist connection to state`);
     const connection: DomainConnection = {
       appName,
       subdomain,
@@ -243,16 +279,21 @@ export class DomainManager {
     this.state.domainConnections = this.state.domainConnections.filter((c) => c.appName !== appName);
     this.state.domainConnections.push(connection);
     saveState(this.state);
+    log(`step 5 OK`);
 
     // Step 6: Poll DNS propagation
+    log(`step 6/6: poll DNS propagation for ${hostname} (timeout 30s)`);
     const pollStart = Date.now();
     try {
       await this.pollDnsPropagation(hostname, 30_000);
       steps.push({ step: 'dns_propagation', status: 'completed', durationMs: Date.now() - pollStart });
+      log(`step 6 OK (${Date.now() - pollStart}ms)`);
     } catch {
       steps.push({ step: 'dns_propagation', status: 'skipped', durationMs: Date.now() - pollStart });
+      log(`step 6 SKIP — DNS not yet propagated (${Date.now() - pollStart}ms)`);
     }
 
+    log(`SUCCESS: https://${hostname}`);
     return {
       success: true,
       hostname,
@@ -472,13 +513,44 @@ export class DomainManager {
   private resolveContainerPort(appName: string): number | null {
     const routes = getActiveServiceRoutes(this.state);
     const route = routes.find((r) => r.subdomain === appName || r.containerName === appName);
-    return route?.port ?? null;
+    if (route) return route.port;
+
+    // Fallback: look up custom app created via `brewnet create-app`
+    const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
+    const apps = readApps(appsJsonPath);
+    const found = apps.find((a) => a.name === appName);
+    if (!found) return null;
+
+    // Non-unified (split-stack) apps: connect to frontend port, not backend.
+    // Frontend port is stored in appDir/.env as FRONTEND_PORT (default 3000).
+    const stackEntry = found.stackId ? getStackById(found.stackId) : null;
+    if (stackEntry?.isUnified === false && found.appDir) {
+      let frontendPort = 3000;
+      const envPath = path.join(found.appDir, '.env');
+      try {
+        const envContent = fs.readFileSync(envPath, 'utf-8');
+        const match = envContent.match(/^FRONTEND_PORT=(\d+)/m);
+        if (match) frontendPort = parseInt(match[1]!, 10);
+      } catch { /* use default 3000 */ }
+      return frontendPort;
+    }
+
+    return found.port;
   }
 
   private resolveContainerName(appName: string): string {
     const routes = getActiveServiceRoutes(this.state);
     const route = routes.find((r) => r.subdomain === appName || r.containerName === appName);
-    return route?.containerName ?? appName;
+    if (route) return route.containerName;
+
+    // Custom create-app apps run in their own docker-compose network.
+    // cloudflared reaches them via the host-mapped port using host.docker.internal.
+    const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
+    const apps = readApps(appsJsonPath);
+    const found = apps.find((a) => a.name === appName);
+    if (found) return 'host.docker.internal';
+
+    return appName;
   }
 
   private getComposePath(): string {
@@ -488,7 +560,7 @@ export class DomainManager {
     return path.join(projectPath, 'docker-compose.yml');
   }
 
-  private async checkLocalHealth(appName: string, port: number): Promise<boolean> {
+  private async checkLocalHealth(_appName: string, port: number): Promise<boolean> {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5_000);

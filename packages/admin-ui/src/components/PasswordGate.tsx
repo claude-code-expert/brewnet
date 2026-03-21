@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LogIn, Loader } from 'lucide-react';
 import { useAuth } from '../auth-context.js';
 
 export function PasswordGate({ children }: { children: React.ReactNode }) {
@@ -46,8 +47,8 @@ export function PasswordGate({ children }: { children: React.ReactNode }) {
             disabled={loading}
           />
           {error && <p className="password-gate-error">{error}</p>}
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? '확인 중...' : '입장'}
+          <button className="btn bp" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center', opacity: loading ? 0.6 : 1 }}>
+            {loading ? <><Loader size={14} className="spin" /> 확인 중…</> : <><LogIn size={14} /> 확인</>}
           </button>
         </form>
       </div>

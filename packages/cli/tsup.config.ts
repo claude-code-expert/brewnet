@@ -1,4 +1,7 @@
 import { defineConfig } from 'tsup';
+import { readFileSync } from 'fs';
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
 export default defineConfig({
   entry: ['src/index.ts', 'src/services/admin-daemon.ts'],
@@ -12,4 +15,7 @@ export default defineConfig({
     js: '#!/usr/bin/env node',
   },
   external: ['@brewnet/shared'],
+  define: {
+    __CLI_VERSION__: JSON.stringify(version),
+  },
 });

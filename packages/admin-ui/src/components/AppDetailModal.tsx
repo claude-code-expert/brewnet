@@ -5,7 +5,7 @@ import { ProgressModal } from './ProgressModal.js';
 import { OverviewTab } from './OverviewTab.js';
 import { DeploymentTab } from './DeploymentTab.js';
 import { AppLogsTab } from './AppLogsTab.js';
-import { DomainTab } from './DomainTab.js';
+import { AppDomainTab } from '../features/domain/index.js';
 import type { AppEntry, AppGitInfo, DeploySettings, BoilerplateMeta } from '../types.js';
 
 type Tab = 'overview' | 'deployment' | 'logs' | 'domain';
@@ -13,9 +13,10 @@ type Tab = 'overview' | 'deployment' | 'logs' | 'domain';
 interface AppDetailModalProps {
   appName: string;
   onClose: () => void;
+  onOpenDomainSettings?: () => void;
 }
 
-export function AppDetailModal({ appName, onClose }: AppDetailModalProps) {
+export function AppDetailModal({ appName, onClose, onOpenDomainSettings }: AppDetailModalProps) {
   const { apiFetch } = useAuth();
 
   const [app, setApp]                 = useState<AppEntry | null>(null);
@@ -98,10 +99,10 @@ export function AppDetailModal({ appName, onClose }: AppDetailModalProps) {
 
   return (
     <>
-      <div className="overlay" onClick={onClose}>
+      <div className="overlay">
         <div
           className="modal"
-          style={{ maxWidth: 740, width: '92vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}
+          style={{ maxWidth: 840, width: 840, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -182,7 +183,7 @@ export function AppDetailModal({ appName, onClose }: AppDetailModalProps) {
                   <AppLogsTab appName={appName} />
                 )}
                 {activeTab === 'domain' && (
-                  <DomainTab appName={appName} apiFetch={apiFetch} />
+                  <AppDomainTab appName={appName} apiFetch={apiFetch} appStatus={app.status} onOpenDomainSettings={onOpenDomainSettings} />
                 )}
               </>
             )}

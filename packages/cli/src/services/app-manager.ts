@@ -175,6 +175,73 @@ export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
   };
 }
 
+export async function rollbackApp(appName: string, commitHash: string): Promise<string> {
+  const job = newJob(appName, ['Checkout', 'Build & Start', 'Health check']);
+  jobs.set(job.jobId, job);
+  setImmediate(() => void _runRollback(job, appName, commitHash));
+  return job.jobId;
+}
+
+async function _runRollback(job: AppJob, appName: string, commitHash: string): Promise<void> {
+  try {
+    const apps = readApps(resolveAppsJsonPath());
+    const app = apps.find((a) => a.name === appName);
+    if (!app) throw new Error(`App "${appName}" not found`);
+
+    const target = commitHash || 'HEAD~1';
+    setStep(job, 0, 'running', `git checkout ${target.slice(0, 7)}`);
+    await execa('git', ['checkout', target], { cwd: app.appDir });
+    setStep(job, 0, 'done');
+
+    await _injectQuickTunnelIfNeeded(app.appDir, appName, app.port);
+
+    setStep(job, 1, 'running', 'docker compose up --build');
+    await _dockerComposeUp(app.appDir, job);
+    setStep(job, 1, 'done', 'containers started');
+
+    setStep(job, 2, 'running');
+    const healthUrl = _buildHealthUrl(app.appDir, app.port);
+    setStep(job, 2, 'running', `polling ${healthUrl}`);
+    await _pollHealth(healthUrl, 120_000, job);
+    setStep(job, 2, 'done');
+
+    updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
+    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+      appName,
+      commitHash,
+      commitMessage: `Rollback to ${commitHash.slice(0, 7)}`,
+      status: 'success',
+      deployedAt: new Date().toISOString(),
+    });
+
+    job.status = 'done';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err instanceof Error ? err.message : String(err);
+    for (const step of job.steps) {
+      if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
+    }
+    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+      appName,
+      commitHash,
+      commitMessage: `Rollback to ${commitHash.slice(0, 7)}`,
+      status: 'failed',
+      deployedAt: new Date().toISOString(),
+    });
+  }
+}
+
+export async function getAppBranches(appName: string): Promise<string[]> {
+  const ctx = resolveContext();
+  const gitea = new GiteaClient({
+    baseUrl: ctx.giteaBaseUrl,
+    username: ctx.giteaUser,
+    password: ctx.giteaPassword,
+    tokenPath: GITEA_TOKEN_PATH,
+  });
+  return gitea.listBranches(appName);
+}
+
 export async function setupWebhook(appName: string, webhookUrl: string): Promise<void> {
   const ctx = resolveContext();
   const settings = getDeploySettings(appName);
@@ -199,10 +266,10 @@ export async function deployApp(appName: string): Promise<string> {
 }
 
 async function _runDeploy(job: AppJob, appName: string): Promise<void> {
+  const apps = readApps(resolveAppsJsonPath());
+  const app = apps.find((a) => a.name === appName);
+  if (!app) { job.status = 'failed'; job.error = `App "${appName}" not found`; return; }
   try {
-    const apps = readApps(resolveAppsJsonPath());
-    const app = apps.find((a) => a.name === appName);
-    if (!app) throw new Error(`App "${appName}" not found`);
     const settings = getDeploySettings(appName);
 
     setStep(job, 0, 'running');
@@ -234,11 +301,8 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
       } else if (await gitea.repoIsEmpty(appName)) {
         // Repo exists but was never pushed to (e.g. created during app setup but push was skipped)
         appendLog(job, '[pull] Gitea repo is empty — pushing local code');
-        const authedUrl = gitea.authedCloneUrl(`${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`);
-        await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: app.appDir }).catch(() =>
-          execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: app.appDir }),
-        );
-        // Boilerplates are cloned --depth 1; unshallow before pushing to empty Gitea repo
+        // Boilerplates are cloned --depth 1; unshallow before pushing to empty Gitea repo.
+        // reinitGit wipes .git, so remote must be added AFTER this step (same order as _createModeA).
         const isShallow = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: app.appDir })
           .then((r) => r.stdout.trim() === 'true').catch(() => false);
         if (isShallow) {
@@ -248,6 +312,10 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
             await reinitGit(app.appDir);
           });
         }
+        const authedUrl = gitea.authedCloneUrl(`${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`);
+        await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: app.appDir }).catch(() =>
+          execa('git', ['remote', 'set-url', 'brewnet', authedUrl], { cwd: app.appDir }),
+        );
         await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: app.appDir });
         appendLog(job, '[pull] code pushed to Gitea ✓');
       } else {
@@ -290,10 +358,14 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     setStep(job, 2, 'done');
 
     updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
+    const headHash = await execa('git', ['rev-parse', 'HEAD'], { cwd: app.appDir })
+      .then((r) => r.stdout.trim()).catch(() => '');
+    const headMsg = await execa('git', ['log', '-1', '--format=%s'], { cwd: app.appDir })
+      .then((r) => r.stdout.trim()).catch(() => 'Manual deploy');
     appendDeployHistory(DEPLOY_HISTORY_PATH, {
       appName,
-      commitHash: '',
-      commitMessage: 'Manual deploy',
+      commitHash: headHash,
+      commitMessage: headMsg,
       status: 'success',
       deployedAt: new Date().toISOString(),
     });
@@ -305,9 +377,11 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     for (const step of job.steps) {
       if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
     }
+    const headHashFail = await execa('git', ['rev-parse', 'HEAD'], { cwd: app.appDir })
+      .then((r) => r.stdout.trim()).catch(() => '');
     appendDeployHistory(DEPLOY_HISTORY_PATH, {
       appName,
-      commitHash: '',
+      commitHash: headHashFail,
       commitMessage: 'Manual deploy',
       status: 'failed',
       deployedAt: new Date().toISOString(),
@@ -760,10 +834,11 @@ async function _createModeA(
   const port = opts.port ?? meta.port ?? parseInt(meta.backendUrl.split(':').pop() ?? '8080', 10);
 
   // Step 2: Gitea repo
-  setStep(job, 2, 'running');
+  setStep(job, 2, 'running', `checking ${ctx.giteaUser}/${opts.appName}`);
   const alreadyExists = await gitea.repoExists(opts.appName);
   let cloneUrl: string;
   if (!alreadyExists) {
+    setStep(job, 2, 'running', `creating ${ctx.giteaUser}/${opts.appName}`);
     cloneUrl = await gitea.createRepo(opts.appName, `Brewnet app: ${opts.appName}`);
   } else {
     cloneUrl = `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`;
@@ -771,7 +846,7 @@ async function _createModeA(
   setStep(job, 2, 'done');
 
   // Step 3: Git remote + push
-  setStep(job, 3, 'running');
+  setStep(job, 3, 'running', `pushing HEAD:main → ${ctx.giteaUser}/${opts.appName}`);
   // Boilerplates are cloned --depth 1; Gitea rejects shallow pushes to empty repos.
   // Unshallow first (try origin), fall back to a fresh git init if origin is unreachable.
   const shallowCheck = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: meta.appDir }).catch(() => ({ stdout: 'false' }));
@@ -815,8 +890,10 @@ async function _createModeA(
     status: 'running',
     createdAt: new Date().toISOString(),
   });
-  // Register Gitea webhook for auto-deploy (non-blocking — fail silently)
-  await setupWebhook(opts.appName, 'http://localhost:8088/api/deploy/hook').catch(() => {});
+  // Register Gitea webhook for auto-deploy (non-blocking)
+  await setupWebhook(opts.appName, 'http://localhost:8088/api/deploy/hook').catch((e: unknown) => {
+    console.warn('[webhook] registration failed (non-critical):', e instanceof Error ? e.message : String(e));
+  });
 }
 
 async function _createModeB(
@@ -954,11 +1031,11 @@ async function _createModeC(
 
   addApp(appsJson, {
     name: opts.appName,
-    mode: 'new-project',
+    mode: opts.mode === 'boilerplate' ? 'boilerplate' : 'new-project',
     stackId,
     appDir,
-    lang: opts.language,
-    framework: opts.frameworkId,
+    lang: opts.language ?? stackInfo?.language,
+    framework: opts.frameworkId ?? stackInfo?.framework,
     port,
     giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: 'running',
@@ -989,6 +1066,8 @@ export async function removeApp(appName: string): Promise<void> {
   const apps = readApps(appsJson);
   const app = apps.find((a) => a.name === appName);
   if (!app) throw new Error(`App "${appName}" not found`);
-  await execa('docker', ['compose', 'down', '--volumes'], { cwd: app.appDir }).catch(() => {});
+  await execa('docker', ['compose', 'down', '--volumes'], { cwd: app.appDir }).catch((e: unknown) => {
+    console.warn('[removeApp] docker compose down failed:', e instanceof Error ? e.message : String(e));
+  });
   registryRemoveApp(appsJson, appName);
 }

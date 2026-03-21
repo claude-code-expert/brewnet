@@ -113,9 +113,9 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
         <span style={{
           fontSize: 11,
           fontFamily: 'var(--mono)',
-          color: 'var(--txt3)',
+          color: 'var(--txt2)',
           background: 'rgba(255,255,255,0.03)',
-          border: '1px solid var(--bdr)',
+          border: '1px solid var(--bdr3)',
           borderRadius: 20,
           padding: '2px 9px',
         }}>
@@ -199,7 +199,10 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
         >
           ■ Stop
         </button>
-        <button className="btn bt bsm" onClick={onDeploy}>
+        <button
+          className={`btn bt bsm${!app.lastDeployedAt ? ' btn-pulse-deploy' : ''}`}
+          onClick={onDeploy}
+        >
           ↑ Deploy
         </button>
         <button className="btn br bsm" onClick={onDelete}>
