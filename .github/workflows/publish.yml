@@ -29,7 +29,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
+      - name: Build shared
+        run: pnpm --filter @brewnet/shared build
+
+      - name: Build CLI
         run: pnpm --filter @brewnet/cli build
 
       - name: Publish
