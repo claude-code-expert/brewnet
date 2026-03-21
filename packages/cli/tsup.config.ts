@@ -14,7 +14,6 @@ export default defineConfig({
   banner: {
     js: '#!/usr/bin/env node',
   },
-  external: ['@brewnet/shared'],
   define: {
     __CLI_VERSION__: JSON.stringify(version),
   },
