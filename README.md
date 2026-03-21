@@ -44,7 +44,11 @@ A fully self-hosted home server management platform. Set up and manage a persona
 ### Quick Start
 
 ```bash
+# Option A — curl (recommended)
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+
+# Option B — npm
+npm install -g @brewnet/cli
 ```
 
 ```bash
@@ -65,10 +69,20 @@ brewnet init
 
 ### Installation
 
+**Option A — curl (recommended)**
+
 The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. No shell reload needed afterward.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+brewnet --version
+brewnet init
+```
+
+**Option B — npm**
+
+```bash
+npm install -g @brewnet/cli
 brewnet --version
 brewnet init
 ```
@@ -228,7 +242,11 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 ### 빠른 시작
 
 ```bash
+# 방법 A — curl (권장)
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+
+# 방법 B — npm
+npm install -g @brewnet/cli
 ```
 
 ```bash
@@ -249,10 +267,20 @@ brewnet init
 
 ### 설치
 
+**방법 A — curl (권장)**
+
 설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 셸 재로드(`source ~/.zshrc`) 없이 바로 사용 가능합니다.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+brewnet --version
+brewnet init
+```
+
+**방법 B — npm**
+
+```bash
+npm install -g @brewnet/cli
 brewnet --version
 brewnet init
 ```
