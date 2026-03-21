@@ -49,9 +49,12 @@ const mockGetRepo = jest.fn<(...args: any[]) => Promise<unknown>>();
 const mockGetLatestCommit = jest.fn<(...args: any[]) => Promise<unknown>>().mockResolvedValue(null);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockMakeRepoPublic = jest.fn<(...args: any[]) => Promise<void>>().mockResolvedValue(undefined);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockRepoIsEmpty = jest.fn<(...args: any[]) => Promise<boolean>>().mockResolvedValue(false);
 const MockGiteaClient = jest.fn().mockImplementation(() => ({
   createRepo: mockCreateRepo,
   repoExists: mockRepoExists,
+  repoIsEmpty: mockRepoIsEmpty,
   authedCloneUrl: mockAuthedCloneUrl,
   listRepos: mockListRepos,
   prepare: mockPrepare,
@@ -459,6 +462,7 @@ describe('deployApp', () => {
     mockReadApps.mockReturnValue([{
       name: 'nodejs-express', appDir: '/proj/nodejs-express', port: 3000, status: 'running',
     }]);
+    fsContent['/proj/nodejs-express'] = '';
     fsContent['/proj/nodejs-express/docker-compose.yml'] = 'version: "3"';
     mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as never);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as unknown as Response);

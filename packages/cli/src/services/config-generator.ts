@@ -258,6 +258,21 @@ export function generateTraefikConfig(state: WizardState): GeneratedFile {
     '',
   ];
 
+  if (state.domain.ssl === 'letsencrypt') {
+    const email = `admin@${state.domain.name ?? 'example.com'}`;
+    lines.push(
+      '# ACME Certificate Resolver (Let\'s Encrypt)',
+      'certificatesResolvers:',
+      '  letsencrypt:',
+      '    acme:',
+      `      email: ${email}`,
+      '      storage: /letsencrypt/acme.json',
+      '      httpChallenge:',
+      '        entryPoint: web',
+      '',
+    );
+  }
+
   return {
     path: 'infrastructure/traefik/traefik.yml',
     content: lines.join('\n'),
