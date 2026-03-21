@@ -28,9 +28,10 @@ import { verifyToken } from './cloudflare-client.js';
 import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, getAppGitInfo, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
+import { getStackById } from '../config/stacks.js';
 
 // ---------------------------------------------------------------------------
 // Types (per admin-api.md)
@@ -159,7 +160,7 @@ const FAVICON_ICO = (() => {
 interface ServiceDetailInfo {
   description: string;
   license: string;
-  homepage: string;
+  docs: string;
   features: string[];
   credentials: {
     method: 'env' | 'wizard' | 'cli' | 'basicauth' | 'none';
@@ -173,7 +174,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Traefik: {
     description: 'Go-based open-source reverse proxy and load balancer',
     license: 'MIT',
-    homepage: 'https://traefik.io/traefik/',
+    docs: 'https://traefik.io/traefik/',
     features: [
       'Docker label-based automatic service discovery',
       'Let\'s Encrypt certificate auto-renewal',
@@ -195,7 +196,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'Traefik Dashboard': {
     description: 'Built-in Traefik web UI for monitoring routes, services, and middleware',
     license: 'MIT',
-    homepage: 'https://doc.traefik.io/traefik/operations/dashboard/',
+    docs: 'https://doc.traefik.io/traefik/operations/dashboard/',
     features: [
       'Real-time view of HTTP/TCP routers',
       'Service health and load balancer status',
@@ -213,7 +214,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Gitea: {
     description: 'Lightweight self-hosted Git service written in Go',
     license: 'MIT',
-    homepage: 'https://about.gitea.com/',
+    docs: 'https://about.gitea.com/',
     features: [
       'GitHub-like web UI with issues, PRs, wiki, project boards',
       'Gitea Actions — GitHub Actions compatible CI/CD',
@@ -235,7 +236,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Nextcloud: {
     description: 'Self-hosted cloud storage platform (Google Drive/Dropbox alternative)',
     license: 'AGPL-3.0',
-    homepage: 'https://nextcloud.com/',
+    docs: 'https://nextcloud.com/',
     features: [
       'File sync, sharing, and collaboration',
       '200+ app extensions: calendar, contacts, notes, office docs',
@@ -256,7 +257,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   PostgreSQL: {
     description: 'Advanced open-source relational database',
     license: 'PostgreSQL (BSD-like)',
-    homepage: 'https://www.postgresql.org/',
+    docs: 'https://www.postgresql.org/',
     features: [
       'Full ACID compliance with MVCC',
       'Native JSON/JSONB support',
@@ -277,7 +278,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   MySQL: {
     description: 'Popular open-source relational database',
     license: 'GPL-2.0',
-    homepage: 'https://www.mysql.com/',
+    docs: 'https://www.mysql.com/',
     features: [
       'InnoDB storage engine with ACID transactions',
       'JSON support and document store',
@@ -298,7 +299,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Redis: {
     description: 'In-memory key-value store for caching and message brokering',
     license: 'BSD-3',
-    homepage: 'https://redis.io/',
+    docs: 'https://redis.io/',
     features: [
       'Session storage, cache, message queue, Pub/Sub',
       'Single-threaded event loop — 100K+ ops/sec',
@@ -319,7 +320,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   pgAdmin: {
     description: 'Web-based administration tool for PostgreSQL',
     license: 'PostgreSQL (BSD-like)',
-    homepage: 'https://www.pgadmin.org/',
+    docs: 'https://www.pgadmin.org/',
     features: [
       'SQL editor with query execution and plan visualization',
       'Table, index, view, and function GUI management',
@@ -339,7 +340,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Jellyfin: {
     description: 'Open-source media server (Plex/Emby free alternative)',
     license: 'GPL-2.0',
-    homepage: 'https://jellyfin.org/',
+    docs: 'https://jellyfin.org/',
     features: [
       'Movies, TV, music, photos, and live TV/DVR',
       'Hardware transcoding (Intel QSV, NVIDIA NVENC, VAAPI)',
@@ -359,7 +360,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'SSH Server': {
     description: 'Industry-standard remote access via OpenSSH in Docker',
     license: 'BSD',
-    homepage: 'https://www.openssh.com/',
+    docs: 'https://www.openssh.com/',
     features: [
       'Key-based authentication (more secure than passwords)',
       'Built-in SFTP — no separate FTP server needed',
@@ -380,7 +381,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   FileBrowser: {
     description: 'Lightweight web-based file manager written in Go',
     license: 'Apache-2.0',
-    homepage: 'https://filebrowser.org/',
+    docs: 'https://filebrowser.org/',
     features: [
       'Upload, download, edit, and delete files via browser',
       'Multi-user support with per-user directory scoping',
@@ -401,7 +402,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   'MinIO Console': {
     description: 'S3-compatible object storage with a web console',
     license: 'AGPL-3.0',
-    homepage: 'https://min.io/',
+    docs: 'https://min.io/',
     features: [
       'Amazon S3-compatible API',
       'Web console for bucket and object management',
@@ -421,7 +422,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Cloudflared: {
     description: 'Cloudflare Tunnel daemon — exposes local services to the internet securely',
     license: 'Apache-2.0',
-    homepage: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
+    docs: 'https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/',
     features: [
       'No port forwarding or public IP required',
       'Automatic SSL/TLS via Cloudflare',
@@ -441,7 +442,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Nginx: {
     description: 'High-performance HTTP and reverse proxy server',
     license: 'BSD-2',
-    homepage: 'https://nginx.org/',
+    docs: 'https://nginx.org/',
     features: [
       'Event-driven architecture — handles 10K+ concurrent connections',
       'Static file serving and reverse proxy',
@@ -461,7 +462,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Caddy: {
     description: 'Modern web server with automatic HTTPS',
     license: 'Apache-2.0',
-    homepage: 'https://caddyserver.com/',
+    docs: 'https://caddyserver.com/',
     features: [
       'Automatic HTTPS with Let\'s Encrypt (zero config)',
       'HTTP/2 and HTTP/3 support out of the box',
@@ -481,7 +482,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   Valkey: {
     description: 'Open-source, high-performance Redis-compatible in-memory data store (Linux Foundation fork)',
     license: 'BSD-3',
-    homepage: 'https://valkey.io/',
+    docs: 'https://valkey.io/',
     features: [
       'Drop-in Redis replacement — fully API compatible',
       'Session storage, cache, message queue, Pub/Sub',
@@ -502,7 +503,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
   KeyDB: {
     description: 'Multithreaded Redis-compatible in-memory database with higher throughput',
     license: 'BSD-3',
-    homepage: 'https://docs.keydb.dev/',
+    docs: 'https://docs.keydb.dev/',
     features: [
       'Multi-threaded architecture — higher throughput than Redis on multi-core CPUs',
       'Active-Active replication for multi-master setups',
@@ -675,9 +676,19 @@ async function handleGetServices(
         ? workingDir.slice(_projectPath.length).replace(/^[/\\]/, '') || undefined
         : undefined;
 
+      // For generic boilerplate service names (frontend/backend), prefix with the
+      // compose project name so cards read "nodejs-express-front" instead of just "frontend".
+      const GENERIC_BOILERPLATE_SERVICES = new Set(['frontend', 'backend']);
+      const composeProject = c.Labels?.['com.docker.compose.project'] ?? '';
+      const isGeneric = GENERIC_BOILERPLATE_SERVICES.has(composeService) && !!composeProject;
+      const serviceId   = isGeneric ? `${composeProject}-${composeService}` : composeService;
+      const serviceName = isGeneric
+        ? `${composeProject}-${composeService === 'frontend' ? 'front' : 'back'}`
+        : (def?.name ?? composeService);
+
       services.push({
-        id: composeService,
-        name: def?.name ?? composeService,
+        id: serviceId,
+        name: serviceName,
         type: def ? inferType(composeService) : 'unknown',
         status,
         cpu: '—',
@@ -878,6 +889,26 @@ async function handleBackup(
   } catch (err) {
     json(res, 500, { success: false, error: String(err) });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Per-app domain operation log buffer (feeds into SSE /logs stream)
+// ---------------------------------------------------------------------------
+
+/** In-memory ring buffer: appName → last 200 domain op log lines */
+const domainOpLogs = new Map<string, Array<{ line: string; ts: number }>>();
+
+/** Live listeners: SSE clients currently tailing logs for an app */
+const domainOpListeners = new Map<string, Set<(line: string) => void>>();
+
+function writeDomainLog(appName: string, line: string): void {
+  const tagged = `[domain-connect] ${line}`;
+  logger.info('domain', `[${appName}] ${line}`);
+  if (!domainOpLogs.has(appName)) domainOpLogs.set(appName, []);
+  const buf = domainOpLogs.get(appName)!;
+  buf.push({ line: tagged, ts: Date.now() });
+  if (buf.length > 200) buf.shift();
+  domainOpListeners.get(appName)?.forEach((fn) => fn(tagged));
 }
 
 // ---------------------------------------------------------------------------
@@ -1102,6 +1133,15 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (parts[0] === 'api') {
       try {
         if (parts[1] === 'health' && req.method === 'GET') {
+          // When a password is configured, validate it so PasswordGate can
+          // use this endpoint as the real auth check.
+          if (wizardState?.admin?.password) {
+            const provided = req.headers['x-admin-password'] as string | undefined;
+            if (!provided || provided !== wizardState.admin.password) {
+              json(res, 401, { error: 'Unauthorized', message: 'Admin password required' });
+              return;
+            }
+          }
           json(res, 200, { status: 'ok', version: '1.0.1' });
           return;
         }
@@ -1214,12 +1254,16 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             const enrichedApps = apps.map((a) => {
               const lastDeploy = historyByApp.get(a.name) ?? null;
               const qt = dashConfig.quickTunnelUrl;
-              // For non-unified boilerplate stacks, use frontendUrl from meta
+              // Non-unified: bpMeta says so, or fall back to stack catalog (for create-app apps)
               const bpMeta = a.mode === 'boilerplate' && a.stackId ? bpMetaMap.get(a.stackId) : undefined;
-              const hasFrontend = bpMeta && bpMeta.isUnified === false && bpMeta.frontendUrl;
+              const isNonUnified = bpMeta
+                ? bpMeta.isUnified === false
+                : !!(a.stackId && getStackById(a.stackId)?.isUnified === false);
               let localUrl: string | null;
               let externalUrl: string | null;
-              if (hasFrontend) {
+              let backendLocalUrl: string | null = null;
+              let backendExternalUrl: string | null = null;
+              if (isNonUnified) {
                 // Read actual FRONTEND_PORT from .env — meta may have stale default (3000)
                 let frontendPort = 3000;
                 const feEnvPath = join(a.appDir, '.env');
@@ -1230,6 +1274,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                 }
                 localUrl = `http://127.0.0.1:${frontendPort}`;
                 externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}-ui` : null;
+                backendLocalUrl = a.port ? `http://127.0.0.1:${a.port}` : null;
+                backendExternalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null;
               } else {
                 // Compute localUrl with basePath (same logic as Dashboard services)
                 localUrl = a.port ? `http://localhost:${a.port}` : null;
@@ -1239,7 +1285,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                 }
                 externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null;
               }
-              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl, externalUrl };
+              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl, externalUrl, backendLocalUrl, backendExternalUrl };
             });
             logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
             json(res, 200, { apps: enrichedApps });
@@ -1247,16 +1293,51 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
           if (req.method === 'GET' && parts[2] === 'boilerplates') {
             const bpPath = join(projectPath, '.brewnet-boilerplate.json');
-            logger.info('admin-server', `[GET /api/apps/boilerplates] projectPath=${projectPath} bpPath=${bpPath} exists=${existsSync(bpPath)}`);
+            const metas: BoilerplateMeta[] = [];
+            // Wizard-era boilerplates (from .brewnet-boilerplate.json)
             if (existsSync(bpPath)) {
-              const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
-              const metas = Array.isArray(raw) ? raw : [raw];
-              logger.info('admin-server', `[GET /api/apps/boilerplates] returning ${metas.length} boilerplate(s)`);
-              json(res, 200, { boilerplates: metas });
-            } else {
-              logger.warn('admin-server', `[GET /api/apps/boilerplates] file not found at ${bpPath}`);
-              json(res, 200, { boilerplates: [] });
+              const raw = JSON.parse(readFileSync(bpPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
+              const wizardMetas = Array.isArray(raw) ? raw : [raw];
+              metas.push(...wizardMetas);
             }
+            // create-app boilerplate apps (from apps.json)
+            const allApps = await listApps();
+            for (const app of allApps) {
+              if (app.mode !== 'boilerplate' || !app.stackId) continue;
+              // Skip if already covered by wizard .brewnet-boilerplate.json (same appDir)
+              if (metas.some((m) => m.appDir && app.appDir && m.appDir === app.appDir)) continue;
+              const envPath = join(app.appDir, '.env');
+              let frontendPort: number | undefined;
+              let dbDriver: string | undefined;
+              let dbUser: string | undefined;
+              let dbName: string | undefined;
+              if (existsSync(envPath)) {
+                const envContent = readFileSync(envPath, 'utf-8');
+                const fpMatch = envContent.match(/^FRONTEND_PORT=(\d+)/m);
+                if (fpMatch) frontendPort = parseInt(fpMatch[1]!, 10);
+                const ddMatch = envContent.match(/^DB_DRIVER=(.+)/m);
+                if (ddMatch) dbDriver = ddMatch[1]!.trim();
+                const duMatch = envContent.match(/^DB_USER=(.+)/m);
+                if (duMatch) dbUser = duMatch[1]!.trim();
+                const dnMatch = envContent.match(/^DB_NAME=(.+)/m);
+                if (dnMatch) dbName = dnMatch[1]!.trim();
+              }
+              const stackEntry = getStackById(app.stackId);
+              metas.push({
+                stackId: app.stackId,
+                appDir: app.appDir,
+                backendUrl: `http://127.0.0.1:${app.port}`,
+                frontendUrl: frontendPort ? `http://127.0.0.1:${frontendPort}` : undefined,
+                isUnified: stackEntry?.isUnified ?? false,
+                lang: app.lang,
+                dbDriver,
+                dbUser,
+                dbName,
+                status: app.status,
+              });
+            }
+            logger.info('admin-server', `[GET /api/apps/boilerplates] returning ${metas.length} boilerplate(s) (wizard=${metas.length - allApps.filter((a) => a.mode === 'boilerplate' && a.stackId).length}, create-app=${allApps.filter((a) => a.mode === 'boilerplate' && a.stackId).length})`);
+            json(res, 200, { boilerplates: metas });
             return;
           }
           // POST /api/apps/boilerplates/:stackId/stop — docker compose down
@@ -1331,10 +1412,15 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                   } catch { return undefined; }
                 })()
               : undefined;
-            const hasFrontendSingle = bpMetaSingle && bpMetaSingle.isUnified === false;
+            // Non-unified: bpMeta says so, or fall back to stack catalog (for create-app apps)
+            const isNonUnified = bpMetaSingle
+              ? bpMetaSingle.isUnified === false
+              : !!(found.stackId && getStackById(found.stackId)?.isUnified === false);
             let localUrlSingle: string | null;
             let externalUrlSingle: string | null;
-            if (hasFrontendSingle) {
+            let backendLocalUrlSingle: string | null = null;
+            let backendExternalUrlSingle: string | null = null;
+            if (isNonUnified) {
               let frontendPort = 3000;
               const feEnvPath = join(found.appDir, '.env');
               if (existsSync(feEnvPath)) {
@@ -1343,6 +1429,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               }
               localUrlSingle = `http://127.0.0.1:${frontendPort}`;
               externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}-ui` : null;
+              backendLocalUrlSingle = found.port ? `http://127.0.0.1:${found.port}` : null;
+              backendExternalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null;
             } else {
               localUrlSingle = found.port ? `http://localhost:${found.port}` : null;
               if (found.appDir) {
@@ -1351,7 +1439,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               }
               externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null;
             }
-            const app = { ...found, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl: localUrlSingle, externalUrl: externalUrlSingle };
+            const app = { ...found, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl: localUrlSingle, externalUrl: externalUrlSingle, backendLocalUrl: backendLocalUrlSingle, backendExternalUrl: backendExternalUrlSingle };
             json(res, 200, { app });
             return;
           }
@@ -1363,6 +1451,17 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               json(res, 200, { git });
             } catch (err) {
               json(res, 502, { error: String(err) });
+            }
+            return;
+          }
+
+          // GET /api/apps/:name/branches
+          if (req.method === 'GET' && parts[3] === 'branches' && parts.length === 4) {
+            try {
+              const branches = await getAppBranches(decodeURIComponent(parts[2] ?? ''));
+              json(res, 200, { branches });
+            } catch (err) {
+              json(res, 200, { branches: [] });
             }
             return;
           }
@@ -1389,22 +1488,30 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             return;
           }
 
+          // POST /api/apps/:name/rollback — rollback to a specific commit
+          if (req.method === 'POST' && parts[3] === 'rollback' && !parts[4]) {
+            let parsed: { commitHash?: string } = {};
+            try { parsed = JSON.parse(body); } catch { json(res, 400, { error: 'Invalid JSON' }); return; }
+            if (!parsed.commitHash) { json(res, 400, { error: 'commitHash is required' }); return; }
+            const jobId = await rollbackApp(decodeURIComponent(parts[2] ?? ''), parsed.commitHash);
+            json(res, 202, { jobId });
+            return;
+          }
+
           // GET /api/apps/:name/logs — SSE stream (auth: X-Admin-Password header or ?token query)
           if (req.method === 'GET' && parts[3] === 'logs') {
             const appDir = getAppDir(decodeURIComponent(parts[2] ?? ''));
             if (!appDir) { json(res, 404, { error: 'App not found' }); return; }
-            // EventSource cannot send custom headers — accept ?token as fallback
-            const reqUrlObj = new URL(req.url ?? '/', 'http://localhost');
-            const tokenParam = reqUrlObj.searchParams.get('token');
-            const authHeader = req.headers['x-admin-password'] as string | undefined;
-            if (password && !authHeader && tokenParam && tokenParam !== password) {
-              json(res, 401, { error: 'Unauthorized' }); return;
-            }
+            // SSE: EventSource cannot send custom headers so this endpoint is
+            // intentionally unauthenticated (log data is read-only, non-sensitive).
             res.writeHead(200, {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
               'Connection': 'keep-alive',
             });
+            // Flush headers immediately so EventSource fires 'open' even before
+            // docker compose logs produces its first output line.
+            res.flushHeaders();
             const { execa: execaLocal } = await import('execa');
             const proc = execaLocal('docker', ['compose', 'logs', '--follow', '--tail', '50'], {
               cwd: appDir,
@@ -1421,7 +1528,19 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             proc.stderr?.on('data', (chunk: Buffer) => {
               for (const line of chunk.toString().split('\n')) sendLine(line);
             });
-            req.on('close', () => { try { proc.kill(); } catch { /* ignore */ } });
+
+            // Also stream domain operation logs (domain connect/disconnect events)
+            const sseAppName = decodeURIComponent(parts[2] ?? '');
+            const domainListener = (line: string) => sendLine(line);
+            if (!domainOpListeners.has(sseAppName)) domainOpListeners.set(sseAppName, new Set());
+            domainOpListeners.get(sseAppName)!.add(domainListener);
+            // Flush recent domain op logs on connect
+            for (const entry of domainOpLogs.get(sseAppName) ?? []) sendLine(entry.line);
+
+            req.on('close', () => {
+              try { proc.kill(); } catch { /* ignore */ }
+              domainOpListeners.get(sseAppName)?.delete(domainListener);
+            });
             return;
           }
         }
@@ -1660,6 +1779,19 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
         }
 
+        // ── Cloudflare API (006-domain-settings) ───────────────────
+        if (parts[1] === 'cloudflare') {
+          if (!checkAdminAuth(req, res, wizardState)) return;
+          if (req.method === 'GET' && parts[2] === 'zones') {
+            await handleCloudflareZones(res, wizardState);
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'tunnel') {
+            await handleCreateTunnel(res, body, wizardState, projectPath);
+            return;
+          }
+        }
+
         // ── Settings API (T037-T038) ────────────────────────────────
         if (parts[1] === 'settings') {
           if (!checkAdminAuth(req, res, wizardState)) return;
@@ -1810,14 +1942,38 @@ async function handleDomainConnect(
     return;
   }
 
+  // Phase 1: local conflict check — fast, no API call needed
+  const localConflict = (state.domainConnections ?? []).find(
+    (c) => c.subdomain === subdomain && c.domain === domain && c.appName !== appName,
+  );
+  if (localConflict) {
+    json(res, 409, {
+      success: false,
+      error: 'SUBDOMAIN_CONFLICT_LOCAL',
+      message: `Subdomain "${subdomain}.${domain}" is already connected to app "${localConflict.appName}"`,
+      conflictingApp: localConflict.appName,
+    });
+    return;
+  }
+
   try {
     const mgr = new DomainManager(state.projectName);
-    const result = await mgr.connect(appName, subdomain, domain);
+    const result = await mgr.connect(appName, subdomain, domain, {
+      onLog: (line) => writeDomainLog(appName, line.replace('[domain-connect] ', '')),
+    });
 
     if (!result.success) {
-      const statusCode = result.error === 'CNAME_CONFLICT' ? 409
-        : result.error?.startsWith('APP_NOT_RUNNING') ? 503
-        : 400;
+      // Map CNAME_CONFLICT (from Cloudflare DNS check) to SUBDOMAIN_CONFLICT_EXTERNAL
+      if (result.error === 'CNAME_CONFLICT') {
+        json(res, 409, {
+          success: false,
+          error: 'SUBDOMAIN_CONFLICT_EXTERNAL',
+          message: `Subdomain "${subdomain}.${domain}" already has a DNS record in Cloudflare (not created by Brewnet)`,
+          steps: result.steps,
+        });
+        return;
+      }
+      const statusCode = result.error?.startsWith('APP_NOT_RUNNING') ? 503 : 400;
       json(res, statusCode, { success: false, error: result.error, message: result.error, steps: result.steps });
       return;
     }
@@ -1890,6 +2046,166 @@ async function handleDomainStatus(
 }
 
 // ---------------------------------------------------------------------------
+// Cloudflare API handlers (006-domain-settings)
+// ---------------------------------------------------------------------------
+
+async function handleCloudflareZones(
+  res: ServerResponse,
+  state: WizardState | null,
+): Promise<void> {
+  if (!state) {
+    json(res, 400, { success: false, error: 'NO_TOKEN', message: 'Cloudflare API token not configured. Complete Step 1 first.' });
+    return;
+  }
+
+  const apiToken = state.domain.cloudflare.apiToken;
+  if (!apiToken) {
+    json(res, 400, { success: false, error: 'NO_TOKEN', message: 'Cloudflare API token not configured. Complete Step 1 first.' });
+    return;
+  }
+
+  try {
+    const { getZones } = await import('./cloudflare-client.js');
+    const zones = await getZones(apiToken);
+
+    // Extract accountId from the first zone (requires only Zone:Read).
+    // This ensures accountId is set before tunnel creation even when
+    // Account:Read permission is absent and getAccounts() returns [].
+    if (!state.domain.cloudflare.accountId && zones.length > 0) {
+      const firstAccountId = zones[0]?.accountId;
+      if (firstAccountId) {
+        state.domain.cloudflare.accountId = firstAccountId;
+        const { saveState: save } = await import('../wizard/state.js');
+        save(state);
+      }
+    }
+
+    if (zones.length === 0) {
+      json(res, 200, {
+        success: true,
+        zones: [],
+        warning: 'No domains found. Ensure the token has Zone:Read permission and at least one domain is registered in your Cloudflare account.',
+      });
+      return;
+    }
+
+    json(res, 200, { success: true, zones });
+  } catch (err) {
+    json(res, 400, {
+      success: false,
+      error: 'TOKEN_INVALID',
+      message: 'Stored API token is no longer valid. Please re-enter your token.',
+    });
+  }
+}
+
+async function handleCreateTunnel(
+  res: ServerResponse,
+  body: string,
+  state: WizardState | null,
+  projectPath: string,
+): Promise<void> {
+  if (!state) {
+    json(res, 400, { success: false, error: 'CREDENTIALS_INCOMPLETE', message: 'API token and zone must be configured before creating a tunnel.' });
+    return;
+  }
+
+  let parsed: { tunnelName?: string };
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    json(res, 400, { success: false, error: 'INVALID_JSON', message: 'Request body must be valid JSON' });
+    return;
+  }
+
+  const { tunnelName } = parsed;
+  if (!tunnelName || !tunnelName.trim()) {
+    json(res, 400, { success: false, error: 'MISSING_TUNNEL_NAME', message: 'tunnelName is required' });
+    return;
+  }
+
+  const cf = state.domain.cloudflare;
+  if (!cf.apiToken || !cf.accountId || !cf.zoneId) {
+    json(res, 400, { success: false, error: 'CREDENTIALS_INCOMPLETE', message: 'API token and zone must be configured before creating a tunnel.' });
+    return;
+  }
+
+  try {
+    const { createTunnel: cfCreateTunnel } = await import('./cloudflare-client.js');
+    const result = await cfCreateTunnel(cf.apiToken, cf.accountId, tunnelName.trim());
+
+    const { saveState: save } = await import('../wizard/state.js');
+    state.domain.cloudflare.tunnelId = result.tunnelId;
+    state.domain.cloudflare.tunnelToken = result.tunnelToken;
+    state.domain.cloudflare.tunnelName = tunnelName.trim();
+    state.domain.cloudflare.tunnelMode = 'named';
+    state.domain.cloudflare.enabled = true;
+    save(state);
+
+    // Auto-patch docker-compose.yml and recreate cloudflared container so the
+    // new named tunnel takes effect without manual intervention.
+    let composeUpdated = false;
+    let containerRestarted = false;
+
+    const composePath = join(projectPath, 'docker-compose.yml');
+    const { existsSync: fsExists } = await import('node:fs');
+    if (fsExists(composePath)) {
+      try {
+        const { patchCloudflaredToNamedTunnel } = await import('./compose-generator.js');
+        composeUpdated = patchCloudflaredToNamedTunnel(composePath, result.tunnelToken);
+        logger.info('tunnel', `[${tunnelName}] compose patch: composeUpdated=${composeUpdated}`);
+      } catch (e) {
+        logger.warn('tunnel', `[${tunnelName}] compose patch failed: ${e instanceof Error ? e.message : e}`);
+      }
+
+      if (composeUpdated) {
+        try {
+          const { execa: execaTunnel } = await import('execa');
+          const up = await execaTunnel(
+            'docker',
+            ['compose', '-f', composePath, 'up', '-d', '--force-recreate', 'cloudflared'],
+            { cwd: projectPath, reject: false },
+          );
+          containerRestarted = up.exitCode === 0;
+          if (!containerRestarted) {
+            logger.warn('tunnel', `[${tunnelName}] cloudflared recreate failed (exit ${up.exitCode}): ${up.stderr}`);
+          } else {
+            logger.info('tunnel', `[${tunnelName}] cloudflared container recreated`);
+          }
+        } catch (e) {
+          logger.warn('tunnel', `[${tunnelName}] cloudflared recreate exception: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+    } else {
+      logger.warn('tunnel', `[${tunnelName}] compose file not found at ${composePath} — cloudflared must be updated manually`);
+    }
+
+    json(res, 200, {
+      success: true,
+      tunnelId: result.tunnelId,
+      tunnelName: tunnelName.trim(),
+      composeUpdated,
+      containerRestarted,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.toLowerCase().includes('already exists')) {
+      json(res, 400, {
+        success: false,
+        error: 'TUNNEL_NAME_CONFLICT',
+        message: `A tunnel named "${tunnelName}" already exists in your Cloudflare account. Choose a different name.`,
+      });
+    } else {
+      json(res, 400, {
+        success: false,
+        error: 'TUNNEL_CREATE_FAILED',
+        message: msg,
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Settings API handlers (T037-T038)
 // ---------------------------------------------------------------------------
 
@@ -1914,6 +2230,7 @@ function handleSettingsCloudflareGet(
     tunnelName: cf.tunnelName || '',
     apiTokenSet: !!cf.apiToken,
     apiTokenValid: !!cf.apiToken, // Validated on save, assumed valid if set
+    projectName: state.projectName || '',
   });
 }
 
@@ -1935,7 +2252,9 @@ async function handleSettingsCloudflarePut(
     return;
   }
 
-  const { apiToken, accountId, zoneId, tunnelId } = parsed;
+  const { accountId, zoneId, tunnelId } = parsed;
+  // Allow zone/tunnel saves without re-sending the token when it's already stored in memory
+  const apiToken = parsed.apiToken || state.domain.cloudflare.apiToken;
   if (!apiToken) {
     json(res, 400, { success: false, error: 'MISSING_TOKEN', message: 'apiToken is required' });
     return;
@@ -1953,29 +2272,38 @@ async function handleSettingsCloudflarePut(
       return;
     }
 
-    // Update state
+    // Update state in-place so in-memory wizardState is also updated immediately
     const { saveState: save } = await import('../wizard/state.js');
-    const updated = structuredClone(state);
-    updated.domain.cloudflare.apiToken = apiToken;
-    if (accountId) updated.domain.cloudflare.accountId = accountId;
-    if (zoneId) updated.domain.cloudflare.zoneId = zoneId;
-    if (tunnelId) updated.domain.cloudflare.tunnelId = tunnelId;
-    save(updated);
+    state.domain.cloudflare.apiToken = apiToken;
 
-    // Get zone name for response
-    let zoneName = updated.domain.cloudflare.zoneName;
-    if (zoneId && !zoneName) {
+    // Prefer explicit accountId param, then existing stored value, then getAccounts() (requires Account:Read)
+    let resolvedAccountId = accountId || state.domain.cloudflare.accountId
+      || await (await import('./cloudflare-client.js')).getAccounts(apiToken)
+          .then((a) => a[0]?.id ?? '').catch(() => '');
+
+    if (zoneId) state.domain.cloudflare.zoneId = zoneId;
+    if (tunnelId) state.domain.cloudflare.tunnelId = tunnelId;
+
+    // Get zone name for response and extract accountId from zone when getAccounts() returned nothing
+    let zoneName = state.domain.cloudflare.zoneName;
+    if (zoneId) {
       try {
         const { getZones } = await import('./cloudflare-client.js');
         const zones = await getZones(apiToken);
         const found = zones.find((z) => z.id === zoneId);
         if (found) {
           zoneName = found.name;
-          updated.domain.cloudflare.zoneName = zoneName;
-          save(updated);
+          state.domain.cloudflare.zoneName = zoneName;
+          // accountId from zone (requires only Zone:Read — always works)
+          if (!resolvedAccountId && found.accountId) {
+            resolvedAccountId = found.accountId;
+          }
         }
       } catch { /* non-critical */ }
     }
+
+    if (resolvedAccountId) state.domain.cloudflare.accountId = resolvedAccountId;
+    save(state);
 
     json(res, 200, {
       success: true,

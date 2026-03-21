@@ -238,18 +238,23 @@ export async function getAccounts(
  */
 export async function getZones(
   apiToken: string,
-): Promise<Array<{ id: string; name: string; status: string }>> {
+): Promise<Array<{ id: string; name: string; status: string; accountId?: string }>> {
   const response = await fetch(`${CF_BASE}/zones`, {
     headers: cfHeaders(apiToken),
   });
 
   const data = (await response.json()) as {
     success: boolean;
-    result?: Array<{ id: string; name: string; status: string }>;
+    result?: Array<{ id: string; name: string; status: string; account?: { id: string } }>;
   };
 
   if (!response.ok || !data.success) return [];
-  return data.result ?? [];
+  return (data.result ?? []).map((z) => ({
+    id: z.id,
+    name: z.name,
+    status: z.status,
+    accountId: z.account?.id,
+  }));
 }
 
 // ---------------------------------------------------------------------------

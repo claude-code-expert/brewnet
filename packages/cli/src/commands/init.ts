@@ -24,6 +24,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import chalk from 'chalk';
+import { select } from '@inquirer/prompts';
 import { runAdminSetupStep } from '../wizard/steps/admin-setup.js';
 import { runSystemCheckStep } from '../wizard/steps/system-check.js';
 import { runProjectSetupStep } from '../wizard/steps/project-setup.js';
@@ -35,6 +36,7 @@ import { runGenerateStep } from '../wizard/steps/generate.js';
 import type { GenerateResult } from '../wizard/steps/generate.js';
 import { cleanupForRestart } from '../services/uninstall-manager.js';
 import { runCompleteStep } from '../wizard/steps/complete.js';
+import { runMinimalInstall } from '../wizard/run-minimal-install.js';
 import {
   WizardNavigation,
   WizardStep,
@@ -181,6 +183,29 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
       await runCompleteStep(state, { noOpen: options.open === false });
     }
     return;
+  }
+
+  // -----------------------------------------------------------------------
+  // 2c. Install type selection (skipped when --config or --non-interactive)
+  // -----------------------------------------------------------------------
+  if (!options.config && !options.nonInteractive) {
+    const installType = await select({
+      message: 'Select install type',
+      choices: [
+        {
+          name: 'Full Install  — Configure all services interactively',
+          value: 'full',
+        },
+        {
+          name: 'Minimal Install — Traefik + Gitea + Quick Tunnel only',
+          value: 'minimal',
+        },
+      ],
+    });
+
+    if (installType === 'minimal') {
+      return runMinimalInstall({ noOpen: options.open === false });
+    }
   }
 
   // -----------------------------------------------------------------------

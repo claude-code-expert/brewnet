@@ -7,7 +7,7 @@ import { NavHeader } from '../components/NavHeader.js';
 import { AppCard } from '../components/AppCard.js';
 import { CreateAppModal } from '../components/CreateAppModal.js';
 import { ProgressModal } from '../components/ProgressModal.js';
-import { DomainSettingModal } from '../components/DomainSettingModal.js';
+import { CloudflareTunnelModal } from '../features/domain/index.js';
 import { AppDetailModal } from '../components/AppDetailModal.js';
 import { ExternalDomainsSection } from '../components/ExternalDomainsSection.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
@@ -154,7 +154,7 @@ export function Apps() {
       </div>
 
       <div id="content">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 32, minHeight: 'calc(100% - 50px)' }}>
           {/* App cards */}
           {apps.length === 0 ? (
             <div style={{
@@ -196,6 +196,31 @@ export function Apps() {
             zoneName={zoneName}
           />
         </div>
+
+        {/* Footer */}
+        <div style={{
+          height: 50,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          background: '#0c1525',
+          borderTop: '1px solid var(--bdr)',
+          marginTop: 32,
+          fontSize: 12.5,
+          color: 'var(--txt3)',
+        }}>
+          <a
+            href="https://github.com/claude-code-expert/brewnet"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--txt2)', textDecoration: 'none', fontFamily: 'var(--mono)', fontWeight: 600 }}
+          >
+            https://github.com/claude-code-expert/brewnet
+          </a>
+          <span>—</span>
+          <span>Clicking ⭐ means a lot to the developer!</span>
+        </div>
       </div>
 
       {/* Modals */}
@@ -208,7 +233,7 @@ export function Apps() {
       )}
 
       {showDomainSetting && (
-        <DomainSettingModal
+        <CloudflareTunnelModal
           apiFetch={apiFetch}
           onClose={() => setShowDomainSetting(false)}
         />
@@ -218,6 +243,7 @@ export function Apps() {
         <AppDetailModal
           appName={selectedApp}
           onClose={() => setSelectedApp(null)}
+          onOpenDomainSettings={() => { setSelectedApp(null); setShowDomainSetting(true); }}
         />
       )}
 

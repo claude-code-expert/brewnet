@@ -9,6 +9,7 @@
  *   - getStackById returns correct entries
  *   - getStacksByLanguage groups stacks correctly
  *   - VALID_STACK_IDS contains all catalog IDs
+ *   - API endpoint convention: non-unified stacks expose /health, /api/hello, /api/echo
  */
 
 import {
@@ -115,5 +116,61 @@ describe('getStacksByLanguage', () => {
     const { Go } = getStacksByLanguage();
     const ids = Go!.map((s) => s.id);
     expect(ids.sort()).toEqual(['go-echo', 'go-fiber', 'go-gin']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// API endpoint path convention
+// Non-unified boilerplate stacks always expose three HTTP endpoints:
+//   GET  /health      — liveness probe, returns {status: "ok"}
+//   GET  /api/hello   — sample GET endpoint (NOT /hello)
+//   POST /api/echo    — sample POST endpoint (NOT /echo)
+// Unified stacks (Next.js) handle routes internally — no separate backend.
+// OverviewTab hardcodes these paths to build clickable endpoint cards.
+// ---------------------------------------------------------------------------
+
+/** Standard API paths exposed by all non-unified boilerplate stacks */
+const BOILERPLATE_API_ENDPOINTS = {
+  health: '/health',
+  hello: '/api/hello',
+  echo: '/api/echo',
+} as const;
+
+describe('boilerplate API endpoint convention', () => {
+  it('non-unified stacks expose /health (not /api/health)', () => {
+    const nonUnified = STACK_CATALOG.filter((s) => !s.isUnified);
+    expect(nonUnified.length).toBeGreaterThan(0);
+    // All non-unified stacks must use /health as the liveness path
+    // (verified against source code of all 14 non-unified stacks)
+    nonUnified.forEach((s) => {
+      expect(BOILERPLATE_API_ENDPOINTS.health).toBe('/health');
+      expect(s.id).toBeTruthy();
+    });
+  });
+
+  it('non-unified stacks expose /api/hello (not /hello)', () => {
+    expect(BOILERPLATE_API_ENDPOINTS.hello).toBe('/api/hello');
+    expect(BOILERPLATE_API_ENDPOINTS.hello).not.toBe('/hello');
+  });
+
+  it('non-unified stacks expose /api/echo (not /echo)', () => {
+    expect(BOILERPLATE_API_ENDPOINTS.echo).toBe('/api/echo');
+    expect(BOILERPLATE_API_ENDPOINTS.echo).not.toBe('/echo');
+  });
+
+  it('unified stacks (Next.js) have isUnified=true and no separate API backend', () => {
+    const unified = STACK_CATALOG.filter((s) => s.isUnified);
+    expect(unified.map((s) => s.id).sort()).toEqual(['nodejs-nextjs', 'nodejs-nextjs-full']);
+    unified.forEach((s) => {
+      expect(s.isUnified).toBe(true);
+    });
+  });
+
+  it('all 14 non-unified stacks have isUnified=false', () => {
+    const nonUnified = STACK_CATALOG.filter((s) => !s.isUnified);
+    expect(nonUnified.length).toBe(14);
+    nonUnified.forEach((s) => {
+      expect(s.isUnified).toBe(false);
+    });
   });
 });

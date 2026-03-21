@@ -8,7 +8,7 @@
  * @module services/compose-generator
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import yaml from 'js-yaml';
 import type { WizardState } from '@brewnet/shared';
 import { DOCKER_LOG_MAX_SIZE, DOCKER_LOG_MAX_FILES } from '@brewnet/shared';
@@ -1283,6 +1283,46 @@ export function addQuickTunnelAppLabels(
     forceQuotes: false,
   });
   writeFileSync(composePath, output, 'utf-8');
+}
+
+/**
+ * Patch an existing docker-compose.yml to switch cloudflared from Quick Tunnel
+ * to Named Tunnel mode.
+ *
+ * Reads the compose file, updates the cloudflared service:
+ *   - command: ['tunnel', '--no-autoupdate', 'run']  (removes --url flag)
+ *   - environment.TUNNEL_TOKEN: tunnelToken
+ *
+ * Returns true if the file was updated, false if cloudflared service was not
+ * found (caller should warn the user to update manually).
+ */
+export function patchCloudflaredToNamedTunnel(
+  composePath: string,
+  tunnelToken: string,
+): boolean {
+  const raw = readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services?.['cloudflared']) return false;
+
+  const svc = services['cloudflared'] as Record<string, unknown>;
+
+  // Switch to named tunnel command (replaces quick-tunnel --url form)
+  svc['command'] = ['tunnel', '--no-autoupdate', 'run'];
+
+  // Set TUNNEL_TOKEN in environment
+  const env = (svc['environment'] as Record<string, string> | undefined) ?? {};
+  env['TUNNEL_TOKEN'] = tunnelToken;
+  svc['environment'] = env;
+
+  const output = yaml.dump(doc, {
+    indent: 2,
+    lineWidth: 120,
+    noRefs: true,
+    sortKeys: false,
+  });
+  writeFileSync(composePath, output, 'utf-8');
+  return true;
 }
 
 /**

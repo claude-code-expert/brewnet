@@ -290,6 +290,18 @@ export class GiteaClient {
     if (!res.ok) throw new Error(`Gitea createWebhook failed: ${res.status} ${await res.text()}`);
   }
 
+  /** Returns branch names for a repo. Falls back to empty array on error. */
+  async listBranches(repoName: string): Promise<string[]> {
+    const { baseUrl, username } = this.config;
+    const res = await fetch(
+      `${baseUrl}/api/v1/repos/${username}/${repoName}/branches?limit=50`,
+      { headers: await this.authHeaders(), signal: AbortSignal.timeout(8000) },
+    );
+    if (!res.ok) return [];
+    const data = await res.json() as Array<{ name: string }>;
+    return data.map((b) => b.name);
+  }
+
   /** URL suitable for git remote add — includes credentials in URL (stored in .git/config which is chmod 600). */
   authedCloneUrl(cloneUrl: string): string {
     const { username, password } = this.config;
