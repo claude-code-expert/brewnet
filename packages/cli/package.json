@@ -35,6 +35,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@brewnet/shared": "workspace:*",
     "@types/better-sqlite3": "^7.6.0",
     "@types/js-yaml": "^4.0.0",
     "@types/dockerode": "^3.3.0",
