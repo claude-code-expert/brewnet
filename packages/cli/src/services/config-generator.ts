@@ -223,8 +223,7 @@ export function generateFileBrowserConfig(
  * @returns GeneratedFile with traefik.yml content
  */
 export function generateTraefikConfig(state: WizardState): GeneratedFile {
-  const domain = state.domain.name;
-  const ssl = state.domain.ssl;
+  const isQuickTunnel = state.domain.cloudflare.tunnelMode === 'quick';
 
   const lines: string[] = [
     '# Brewnet Traefik Configuration',
@@ -250,26 +249,14 @@ export function generateTraefikConfig(state: WizardState): GeneratedFile {
     '# API / Dashboard',
     'api:',
     '  dashboard: true',
-    '  insecure: true',
+    // insecure mode only in Quick Tunnel (local-only). Named Tunnel / SSL exposes host externally.
+    ...(isQuickTunnel ? ['  insecure: true'] : []),
     '',
     '# Logging',
     'log:',
     '  level: INFO',
     '',
   ];
-
-  // Certificate resolver for non-local SSL
-  if (ssl === 'letsencrypt') {
-    lines.push('# Certificate Resolvers');
-    lines.push('certificatesResolvers:');
-    lines.push('  letsencrypt:');
-    lines.push('    acme:');
-    lines.push(`      email: admin@${domain}`);
-    lines.push('      storage: /letsencrypt/acme.json');
-    lines.push('      httpChallenge:');
-    lines.push('        entryPoint: web');
-    lines.push('');
-  }
 
   return {
     path: 'infrastructure/traefik/traefik.yml',

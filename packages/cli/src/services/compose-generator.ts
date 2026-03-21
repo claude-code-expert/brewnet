@@ -682,7 +682,6 @@ function buildComposeService(
       '--providers.docker.exposedbydefault=false',
       '--providers.docker.network=brewnet',
       '--entrypoints.web.address=:80',
-      '--api.insecure=true',
     ];
     // Websecure entrypoint (HTTPS) is only needed when a real SSL cert is in use.
     // Quick Tunnel: Cloudflare terminates HTTPS; exposing port 443 locally causes
@@ -691,18 +690,15 @@ function buildComposeService(
       cmds.push('--entrypoints.websecure.address=:443');
     }
     if (isQuickTunnel) {
+      // Expose Traefik API/dashboard without auth only in Quick Tunnel mode
+      // (local-only access). Named Tunnel and SSL modes expose the host externally,
+      // so the dashboard must not be accessible without authentication.
+      cmds.push('--api.insecure=true');
       // Preserve X-Forwarded-Proto from cloudflared so services behind Traefik
       // (e.g. Nextcloud) can detect the original protocol without hardcoding
       // OVERWRITEPROTOCOL.  cloudflared sets X-Forwarded-Proto: https for
       // tunnel traffic; local access gets http from the entrypoint.
       cmds.push('--entrypoints.web.forwardedHeaders.insecure=true');
-    }
-    if (!isQuickTunnel && state.domain.ssl === 'letsencrypt') {
-      cmds.push(
-        '--certificatesresolvers.letsencrypt.acme.tlschallenge=true',
-        '--certificatesresolvers.letsencrypt.acme.email=admin@brewnet.local',
-        '--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json',
-      );
     }
     // Access log — JSON format, buffered writes, minimal header retention
     cmds.push(

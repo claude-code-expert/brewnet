@@ -890,8 +890,10 @@ async function _createModeA(
     status: 'running',
     createdAt: new Date().toISOString(),
   });
-  // Register Gitea webhook for auto-deploy (non-blocking — fail silently)
-  await setupWebhook(opts.appName, 'http://localhost:8088/api/deploy/hook').catch(() => {});
+  // Register Gitea webhook for auto-deploy (non-blocking)
+  await setupWebhook(opts.appName, 'http://localhost:8088/api/deploy/hook').catch((e: unknown) => {
+    console.warn('[webhook] registration failed (non-critical):', e instanceof Error ? e.message : String(e));
+  });
 }
 
 async function _createModeB(
@@ -1064,6 +1066,8 @@ export async function removeApp(appName: string): Promise<void> {
   const apps = readApps(appsJson);
   const app = apps.find((a) => a.name === appName);
   if (!app) throw new Error(`App "${appName}" not found`);
-  await execa('docker', ['compose', 'down', '--volumes'], { cwd: app.appDir }).catch(() => {});
+  await execa('docker', ['compose', 'down', '--volumes'], { cwd: app.appDir }).catch((e: unknown) => {
+    console.warn('[removeApp] docker compose down failed:', e instanceof Error ? e.message : String(e));
+  });
   registryRemoveApp(appsJson, appName);
 }

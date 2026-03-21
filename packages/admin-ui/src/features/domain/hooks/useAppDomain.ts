@@ -95,11 +95,9 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
       return;
     }
 
-    console.log(`[domain-connect] request: app=${appName} subdomain=${subdomain} zone=${zoneName}`);
     setConnecting(true);
     try {
       const result = await connectDomain(apiFetch, appName, subdomain, zoneName);
-      console.log('[domain-connect] response:', JSON.stringify(result, null, 2));
       if (result.success) {
         showToast('Domain connected');
         await load();
