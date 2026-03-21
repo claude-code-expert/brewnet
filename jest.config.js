@@ -1,6 +1,9 @@
 /** @type {import('jest').Config} */
 export default {
   preset: 'ts-jest/presets/default-esm',
+  globals: {
+    __CLI_VERSION__: '1.0.1',
+  },
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
