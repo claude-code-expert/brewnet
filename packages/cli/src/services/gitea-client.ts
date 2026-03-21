@@ -304,10 +304,15 @@ export class GiteaClient {
 
   /** URL suitable for git remote add — includes credentials in URL (stored in .git/config which is chmod 600). */
   authedCloneUrl(cloneUrl: string): string {
-    const { username, password } = this.config;
-    // Percent-encode special chars so git URL parser handles them correctly
+    const { username, password, tokenPath } = this.config;
+    // Prefer cached API token over admin password — the token is verified to work
+    // (prepare() always creates/validates it before any git operation).
+    // Gitea accepts API tokens as HTTP Basic Auth password.
+    const credential = existsSync(tokenPath)
+      ? readFileSync(tokenPath, 'utf-8').trim()
+      : password;
     const encUser = encodeURIComponent(username);
-    const encPass = encodeURIComponent(password);
-    return cloneUrl.replace('http://', `http://${encUser}:${encPass}@`);
+    const encCred = encodeURIComponent(credential);
+    return cloneUrl.replace('http://', `http://${encUser}:${encCred}@`);
   }
 }
