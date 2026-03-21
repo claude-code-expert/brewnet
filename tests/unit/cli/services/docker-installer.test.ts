@@ -51,7 +51,11 @@ function makeExecaFailure(exitCode = 1) {
     stdout: '',
     stderr: 'error',
   });
-  return Promise.reject(err);
+  // Attach a no-op catch to prevent Node.js 22 unhandled rejection detection
+  // when the promise is stored in a mock before being awaited.
+  const p = Promise.reject(err);
+  p.catch(() => {});
+  return p;
 }
 
 // ---------------------------------------------------------------------------
