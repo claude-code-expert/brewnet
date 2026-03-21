@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - 001-cli-init-wizard
   pull_request:
     branches:
       - main

@@ -651,7 +651,7 @@ describe('runGenerateStep', () => {
       const proc: Record<string, unknown> = {
         stdout: { on: jest.fn() },
         stderr: { on: jest.fn() },
-        on: jest.fn((event: string, handler: Function) => {
+        on: jest.fn((event: string, handler: (err: Error) => void) => {
           if (event === 'error') {
             queueMicrotask(() => handler(error));
           }

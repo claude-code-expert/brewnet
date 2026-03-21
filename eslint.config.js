@@ -1,4 +1,5 @@
 import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
@@ -29,6 +30,9 @@ export default tseslint.config(
   {
     files: ['packages/admin-ui/src/**/*.{ts,tsx}'],
     extends: [...tseslint.configs.recommended],
+    plugins: {
+      'react-hooks': reactHooks,
+    },
     languageOptions: {
       parserOptions: {
         project: './packages/admin-ui/tsconfig.json',
@@ -37,6 +41,7 @@ export default tseslint.config(
       },
     },
     rules: {
+      ...reactHooks.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_' },

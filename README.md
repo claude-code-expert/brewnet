@@ -23,10 +23,10 @@ A fully self-hosted home server management platform. Set up and manage a persona
 <td width="50%">
 
 **CLI Tool** 🖥️
-- One-command setup wizard (7 steps)
+- 8-step interactive setup wizard
 - Docker auto-install (macOS + Linux)
 - Local Git, DB, file, media services
-- Open source (MIT)
+- Open source (Apache 2.0)
 
 </td>
 <td width="50%">
@@ -73,18 +73,18 @@ brewnet --version
 brewnet init
 ```
 
-### Init Wizard — 7 Steps
+### Init Wizard — 8 Steps
 
 | Step | Description |
 |------|-------------|
 | **Step 0** | System check — OS, Docker, ports 80/443, disk/RAM |
 | **Step 1** | Project setup — name, path, Full / Partial install |
-| **Step 2** | Server components — Web server, File server, DB, Media, SSH |
-| **Step 3** | Dev stack — backend language + framework, frontend tech *(optional)* |
+| **Step 2** | Admin account + server components — Web server, File server, DB, Media, SSH |
+| **Step 3** | Dev stack — runtime + framework selection *(only shown when App Server is enabled in Step 2)* |
 | **Step 4** | Domain & network — Local (LAN) or Cloudflare Tunnel (external) |
 | **Step 5** | Review & confirm |
-| **Step 6** | Generate config, pull images, start services |
-| **Step 7** | Done — endpoints, credentials, status page |
+| **Step 6** | Generate config, pull images, start services, health check |
+| **Step 7** | Done — endpoints, credentials, external access verification |
 
 #### Cloudflare Tunnel Setup (Step 4)
 
@@ -105,12 +105,48 @@ brewnet status              # Show service status table
 brewnet up                  # Start all services
 brewnet down                # Stop all services (data preserved)
 brewnet logs [service]      # View logs (-f for follow)
-brewnet add <service>       # Add a service (e.g. jellyfin, nextcloud)
-brewnet remove <service>    # Remove a service
+brewnet add <app-name>      # Add an app (creates Gitea repo + Docker service)
+brewnet remove <app-name>   # Remove an app
+brewnet deploy <app-name>   # Deploy an app (git pull → docker compose up)
 brewnet backup              # Create backup (tar.gz)
 brewnet restore <id>        # Restore from backup
 brewnet admin               # Open local admin panel (http://localhost:8088)
 ```
+
+### Admin Dashboard
+
+`brewnet admin` starts a background HTTP server at `http://localhost:8088` — a React SPA.
+
+**Dashboard tab** — Service status table with container name, status, port, and External URL.
+
+**Apps tab** — App list with App Detail Modal (4 tabs):
+- **Overview** — Status, port, External URL
+- **Deploy** — Deployment history, manual deploy button
+- **Logs** — Real-time container logs
+- **Domain** — Connect / disconnect a Cloudflare Tunnel domain
+
+**Cloudflare Tunnel modes (configurable per app):**
+- **Quick Tunnel** — Temporary URL, no account required
+- **Named Tunnel** — Fixed subdomain (e.g. `myapp.yourdomain.com`)
+
+### App Scaffolding
+
+```bash
+brewnet create-app <name>   # Generate a new app project with Docker + Git + routing
+```
+
+Creates a full project: Gitea repository, Docker Compose service, Traefik routing, and boilerplate source code.
+
+**Supported stacks (16):**
+
+| Language | Frameworks |
+|----------|------------|
+| Node.js | Express, Fastify, Next.js (App Router), Next.js (Pages) |
+| Go | Gin, Echo, Fiber |
+| Rust | Actix-web, Axum |
+| Python | FastAPI, Flask |
+| Kotlin | Spring Boot |
+| Java | Spring Boot |
 
 ### Stopping Services
 
@@ -171,10 +207,10 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 <td width="50%">
 
 **CLI Tool** 🖥️
-- 7단계 원커맨드 설정 위저드
+- 8단계 대화형 설정 위저드
 - Docker 자동 설치 (macOS + Linux)
 - Git / DB / 파일 / 미디어 서비스
-- 오픈소스 (MIT)
+- 오픈소스 (Apache 2.0)
 
 </td>
 <td width="50%">
@@ -221,18 +257,18 @@ brewnet --version
 brewnet init
 ```
 
-### 초기 설정 위저드 — 7단계
+### 초기 설정 위저드 — 8단계
 
 | 단계 | 내용 |
 |------|------|
 | **Step 0** | 시스템 체크 — OS, Docker, 포트 80/443, 디스크/RAM |
 | **Step 1** | 프로젝트 설정 — 이름, 경로, Full / Partial 설치 유형 |
-| **Step 2** | 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어, SSH |
-| **Step 3** | 개발 스택 — 백엔드 언어 + 프레임워크, 프론트엔드 *(선택)* |
+| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어, SSH |
+| **Step 3** | 개발 스택 — 런타임 + 프레임워크 선택 *(Step 2에서 App Server 활성화 시만 표시)* |
 | **Step 4** | 도메인 & 네트워크 — 로컬(LAN) 또는 Cloudflare Tunnel(외부 접속) |
 | **Step 5** | 검토 및 확인 |
-| **Step 6** | 설정 파일 생성, 이미지 pull, 서비스 시작 |
-| **Step 7** | 완료 — 접속 URL, 계정 정보, 상태 페이지 |
+| **Step 6** | 설정 파일 생성, 이미지 pull, 서비스 시작, 헬스 체크 |
+| **Step 7** | 완료 — 접속 URL, 계정 정보, 외부 접근 검증 |
 
 #### Step 2 — 서버 컴포넌트 선택지
 
@@ -277,12 +313,48 @@ brewnet status              # 서비스 상태 테이블 확인
 brewnet up                  # 모든 서비스 시작
 brewnet down                # 모든 서비스 중지 (데이터 유지)
 brewnet logs [service]      # 로그 확인 (-f 옵션으로 실시간)
-brewnet add <service>       # 서비스 추가 (예: jellyfin, nextcloud)
-brewnet remove <service>    # 서비스 제거
+brewnet add <app-name>      # 앱 추가 (Gitea 저장소 + Docker 서비스 생성)
+brewnet remove <app-name>   # 앱 제거
+brewnet deploy <app-name>   # 앱 배포 (git pull → docker compose up)
 brewnet backup              # 백업 생성 (tar.gz)
 brewnet restore <id>        # 백업으로 복원
 brewnet admin               # 로컬 관리 패널 열기 (http://localhost:8088)
 ```
+
+### 어드민 대시보드
+
+`brewnet admin`은 `http://localhost:8088`에서 React SPA 대시보드를 백그라운드로 실행합니다.
+
+**Dashboard 탭** — 컨테이너명, 상태, 포트, External URL을 포함한 서비스 상태 테이블.
+
+**Apps 탭** — 앱 목록 + App Detail Modal (4탭):
+- **Overview** — 상태, 포트, External URL
+- **Deploy** — 배포 히스토리, 수동 배포 버튼
+- **Logs** — 실시간 컨테이너 로그
+- **Domain** — Cloudflare Tunnel 도메인 연결/해제
+
+**Cloudflare Tunnel 모드 (앱별 설정):**
+- **Quick Tunnel** — 임시 URL, 별도 계정 불필요
+- **Named Tunnel** — 고정 서브도메인 (예: `myapp.yourdomain.com`)
+
+### 앱 스캐폴딩
+
+```bash
+brewnet create-app <name>   # Docker + Git + 라우팅이 포함된 앱 프로젝트 생성
+```
+
+Gitea 저장소, Docker Compose 서비스, Traefik 라우팅, 보일러플레이트 소스코드를 한 번에 생성합니다.
+
+**지원 스택 (16개):**
+
+| 언어 | 프레임워크 |
+|------|-----------|
+| Node.js | Express, Fastify, Next.js (App Router), Next.js (Pages) |
+| Go | Gin, Echo, Fiber |
+| Rust | Actix-web, Axum |
+| Python | FastAPI, Flask |
+| Kotlin | Spring Boot |
+| Java | Spring Boot |
 
 ### 서비스 종료
 

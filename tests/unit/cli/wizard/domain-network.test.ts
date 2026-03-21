@@ -42,7 +42,6 @@ const {
 
 import type {
   WizardState,
-  DomainConfig,
   SslMode,
 } from '@brewnet/shared';
 

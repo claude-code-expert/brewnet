@@ -12,8 +12,6 @@
  * Tests will fail with import errors until implementation is done.
  */
 
-import { jest } from '@jest/globals';
-
 // ---------------------------------------------------------------------------
 // Imports — TDD targets (not yet implemented)
 // ---------------------------------------------------------------------------
@@ -41,7 +39,6 @@ const { createDefaultWizardState } = await import(
 
 import type {
   WizardState,
-  DevStackConfig,
   Language,
   FrontendTech,
 } from '@brewnet/shared';
