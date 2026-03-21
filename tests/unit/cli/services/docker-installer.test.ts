@@ -21,12 +21,18 @@ jest.unstable_mockModule('execa', () => ({
 // Imports (after mock setup)
 // ---------------------------------------------------------------------------
 
-const {
-  isDockerInstalled,
-  isDaemonRunning,
-  waitForDockerDaemon,
-  installDocker,
-} = await import('../../../../packages/cli/src/services/docker-installer.js');
+let isDockerInstalled: () => Promise<boolean>;
+let isDaemonRunning: () => Promise<boolean>;
+let waitForDockerDaemon: (timeoutMs: number, intervalMs?: number) => Promise<boolean>;
+let installDocker: () => Promise<{ success: boolean; message: string }>;
+
+beforeAll(async () => {
+  const mod = await import('../../../../packages/cli/src/services/docker-installer.js');
+  isDockerInstalled = mod.isDockerInstalled;
+  isDaemonRunning = mod.isDaemonRunning;
+  waitForDockerDaemon = mod.waitForDockerDaemon;
+  installDocker = mod.installDocker;
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
