@@ -1,21 +1,25 @@
 import { useState, useEffect } from 'react';
 
+export interface LogEntry {
+  line: string;
+  receivedAt: number; // Date.now()
+}
+
 interface LogStreamState {
-  logs: string[];
+  logs: LogEntry[];
   connected: boolean;
   error: string | null;
 }
 
 export function useLogStream(appName: string, active: boolean): LogStreamState {
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!active || !appName) return;
 
-    const token = sessionStorage.getItem('adminPassword') ?? '';
-    const url = `/api/apps/${encodeURIComponent(appName)}/logs${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const url = `/api/apps/${encodeURIComponent(appName)}/logs`;
     const es = new EventSource(url);
 
     es.addEventListener('open', () => {
@@ -24,7 +28,8 @@ export function useLogStream(appName: string, active: boolean): LogStreamState {
     });
 
     es.addEventListener('message', (e: MessageEvent<string>) => {
-      setLogs((prev) => [...prev.slice(-500), e.data]);
+      const entry: LogEntry = { line: e.data, receivedAt: Date.now() };
+      setLogs((prev) => [...prev.slice(-500), entry]);
     });
 
     es.addEventListener('error', () => {

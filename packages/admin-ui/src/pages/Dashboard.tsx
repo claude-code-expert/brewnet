@@ -198,6 +198,31 @@ export function Dashboard() {
         {!loadingInitial && tab === 'logs' && (
           <LogsTab apiFetch={apiFetch} />
         )}
+
+        {/* Footer */}
+        <div style={{
+          height: 50,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          background: '#0c1525',
+          borderTop: '1px solid var(--bdr)',
+          marginTop: 32,
+          fontSize: 12.5,
+          color: 'var(--txt3)',
+        }}>
+          <a
+            href="https://github.com/claude-code-expert/brewnet"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: 'var(--txt2)', textDecoration: 'none', fontFamily: 'var(--mono)', fontWeight: 600 }}
+          >
+            https://github.com/claude-code-expert/brewnet
+          </a>
+          <span>—</span>
+          <span>If you like it, a star would mean a lot!</span>
+        </div>
       </div>
 
       {/* Service detail modal */}

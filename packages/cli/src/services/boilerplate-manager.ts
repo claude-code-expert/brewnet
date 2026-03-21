@@ -35,8 +35,12 @@ import type { StackHealthResult } from '@brewnet/shared';
  *
  * @param start - Preferred port (e.g. 3000 or 8080)
  */
+/** Ports reserved for system services — never assigned to app containers. */
+const RESERVED_PORTS = new Set([8088]); // admin server
+
 export async function findFreePort(start: number): Promise<number> {
-  for (let port = start; port < start + 20; port++) {
+  for (let port = start; port < start + 40; port++) {
+    if (RESERVED_PORTS.has(port)) continue;
     const free = await new Promise<boolean>((resolve) => {
       const srv = createServer();
       srv.once('error', () => resolve(false));

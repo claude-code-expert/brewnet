@@ -251,6 +251,24 @@ a { color: inherit; text-decoration: none; }
 
 .fi:focus { border-color: var(--amber); }
 .fi::placeholder { color: var(--txt3); }
+
+select.fi {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a93be' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+select.fi:focus {
+  border-color: var(--amber);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23e8a849' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+}
+select.fi option {
+  background: var(--bg3);
+  color: var(--txt);
+}
 .fhint { font-size: 11px; color: var(--txt3); font-family: var(--mono); margin-top: 5px; }
 
 /* ── Modal / Overlay ─────────────────────────────────────────── */
@@ -469,7 +487,7 @@ a { color: inherit; text-decoration: none; }
 /* ── Section Title ───────────────────────────────────────────── */
 .section-title {
   font-size: 10px;
-  color: var(--txt3);
+  color: var(--amber);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   font-family: var(--mono);
@@ -514,5 +532,13 @@ a { color: inherit; text-decoration: none; }
 /* ── Animations ──────────────────────────────────────────────── */
 @keyframes bpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @keyframes spin    { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; }
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mUp     { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes borderPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232,168,73,0.7), 0 0 0 0 rgba(232,168,73,0.3); border-color: rgba(232,168,73,0.9); }
+  50%       { box-shadow: 0 0 0 4px rgba(232,168,73,0.25), 0 0 12px 2px rgba(232,168,73,0.2); border-color: rgba(232,168,73,0.5); }
+}
+.btn-pulse-deploy {
+  animation: borderPulse 1.6s ease-in-out infinite;
+}

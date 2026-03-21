@@ -62,6 +62,8 @@ export interface AppEntry {
   lastDeployedAt?: string | null;
   localUrl?: string | null;
   externalUrl?: string | null;
+  backendLocalUrl?: string | null;
+  backendExternalUrl?: string | null;
 }
 
 export interface AppJob {

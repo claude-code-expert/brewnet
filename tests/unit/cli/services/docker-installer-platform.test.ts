@@ -23,8 +23,12 @@ jest.unstable_mockModule('node:os', () => ({
     platform: mockPlatform,
     homedir: () => '/home/test',
     tmpdir: () => '/tmp',
+    constants: { signals: {}, errno: {}, priority: {} },
   },
   platform: mockPlatform,
+  homedir: () => '/home/test',
+  tmpdir: () => '/tmp',
+  constants: { signals: {}, errno: {}, priority: {} },
 }));
 
 // ---------------------------------------------------------------------------
@@ -61,7 +65,10 @@ function makeFailure(exitCode = 1) {
     stdout: '',
     stderr: 'error',
   });
-  return Promise.reject(err);
+  const p = Promise.reject(err);
+  // Suppress Node.js v22 unhandledRejection when stored in mockReturnValueOnce
+  p.catch(() => {});
+  return p;
 }
 
 // ---------------------------------------------------------------------------

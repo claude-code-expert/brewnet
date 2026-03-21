@@ -44,7 +44,7 @@ function StepIcon({ status }: { status: AppJob['steps'][number]['status'] }) {
     return <span style={{ color: 'var(--red)', fontWeight: 700, width: 16, display: 'inline-block', textAlign: 'center' }}>✗</span>;
   }
   // pending
-  return <span style={{ color: 'var(--txt3)', width: 16, display: 'inline-block', textAlign: 'center' }}>○</span>;
+  return <span style={{ color: 'var(--txt2)', width: 16, display: 'inline-block', textAlign: 'center' }}>○</span>;
 }
 
 export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, onClose, onComplete }: ProgressModalProps) {
@@ -124,10 +124,10 @@ export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, on
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [job?.logs]);
 
-  const logs = job?.logs?.slice(-50) ?? [];
+  const logs = job?.logs ?? [];
 
   return (
-    <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="overlay">
       <div className="modal" style={{ maxWidth: 580 }}>
         {/* Header */}
         <div style={{
@@ -138,12 +138,12 @@ export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, on
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
               {job?.status === 'done'
-                ? '✓ App Created'
+                ? jobType === 'deploy' ? '✓ Deploy Complete' : '✓ App Created'
                 : job?.status === 'failed'
-                  ? '✗ Creation Failed'
-                  : 'Creating App…'}
+                  ? jobType === 'deploy' ? '✗ Deploy Failed' : '✗ Creation Failed'
+                  : jobType === 'deploy' ? 'Deploying…' : 'Creating App…'}
             </div>
-            <div style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--txt3)', marginTop: 3 }}>
+            <div style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--txt2)', marginTop: 3 }}>
               {appName} — job {jobId.slice(0, 8)}
             </div>
           </div>
@@ -182,12 +182,12 @@ export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, on
                         color: s.status === 'done' ? 'var(--txt2)'
                              : s.status === 'running' ? 'var(--amber)'
                              : s.status === 'failed'  ? 'var(--red)'
-                             : 'var(--txt3)',
+                             : 'var(--txt2)',
                       }}>
                         {s.label}
                       </span>
                       {s.status === 'running' && stepElapsed > 0 && (
-                        <span style={{ fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>
+                        <span style={{ fontSize: 11, color: 'var(--txt2)', fontFamily: 'var(--mono)' }}>
                           {stepElapsed >= 60
                             ? `${Math.floor(stepElapsed / 60)}m ${stepElapsed % 60}s`
                             : `${stepElapsed}s`}
@@ -195,12 +195,12 @@ export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, on
                       )}
                     </div>
                     {s.message && (
-                      <div style={{ fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'var(--mono)', marginTop: 2 }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--txt2)', fontFamily: 'var(--mono)', marginTop: 2 }}>
                         {s.message}
                       </div>
                     )}
                     {s.status === 'running' && logStaleSeconds >= 10 && (
-                      <div style={{ fontSize: 11.5, color: 'var(--txt3)', fontFamily: 'var(--mono)', marginTop: 4 }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--amber)', fontFamily: 'var(--mono)', marginTop: 4 }}>
                         {'⌛ No new output for '}{logStaleSeconds}{'s — container may be starting up…'}
                       </div>
                     )}
@@ -237,7 +237,7 @@ export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, on
                 fontFamily: 'var(--mono)',
                 fontSize: 11.5,
                 color: 'var(--txt2)',
-                maxHeight: 200,
+                maxHeight: 320,
                 overflowY: 'auto',
                 lineHeight: 1.7,
               }}>

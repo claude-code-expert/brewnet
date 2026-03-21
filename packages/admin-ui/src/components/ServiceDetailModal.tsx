@@ -8,7 +8,7 @@ interface ServiceDetailModalProps {
 
 export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailModalProps) {
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay">
       <div
         className="modal"
         style={{ maxWidth: 520 }}

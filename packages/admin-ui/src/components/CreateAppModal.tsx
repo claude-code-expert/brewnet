@@ -194,7 +194,7 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
   });
 
   return (
-    <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="overlay">
       <div className="modal" style={{ maxWidth: 560 }}>
         {/* Header */}
         <div style={{
