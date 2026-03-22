@@ -229,18 +229,11 @@ export async function runServerComponentsStep(
     });
     next.servers.dbServer.primary = dbPrimary;
 
-    // Version selection (skip for SQLite — it only has version "3")
-    if (dbPrimary !== 'sqlite') {
-      const versions = DB_VERSIONS[dbPrimary] ?? [];
-      if (versions.length > 0) {
-        const dbVersion = await select<string>({
-          message: `${dbPrimary === 'postgresql' ? 'PostgreSQL' : 'MySQL'} version`,
-          choices: versions.map((v) => ({ name: v, value: v })),
-          default: next.servers.dbServer.primaryVersion || versions[0],
-        });
-        next.servers.dbServer.primaryVersion = dbVersion;
-      }
+    // Auto-assign latest version
+    const versions = DB_VERSIONS[dbPrimary] ?? [];
+    next.servers.dbServer.primaryVersion = versions[0] ?? '';
 
+    if (dbPrimary !== 'sqlite') {
       // Admin UI (pgAdmin / phpMyAdmin)
       const adminUILabel = dbPrimary === 'postgresql' ? 'pgAdmin' : 'phpMyAdmin';
       const adminUI = await confirm({

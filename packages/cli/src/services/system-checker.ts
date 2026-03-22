@@ -9,7 +9,7 @@
  *   - Node.js version (>= 20)
  *   - Available disk space
  *   - Available system memory (RAM)
- *   - Port availability (80, 443, 2222)
+ *   - Port availability (80, 443)
  *   - Git installation
  *
  * Every individual check function catches its own errors and returns a
@@ -448,7 +448,6 @@ export async function checkGit(): Promise<CheckResult> {
 const DEFAULT_PORTS: Array<{ port: number; service: string }> = [
   { port: 80, service: 'Traefik (Web Server)' },
   { port: 443, service: 'Traefik (HTTPS)' },
-  { port: 2222, service: 'SSH Server' },
 ];
 
 export async function runAllChecks(): Promise<RunAllChecksResult> {

@@ -178,13 +178,25 @@ spinner_stop 0 "Dependencies installed"
 # ─── Step 7: Build ─────────────────────────────────────────────────────────────
 step 7 "Building Brewnet CLI..."
 
-spinner_start "Compiling TypeScript"
-pnpm --dir "$BREWNET_SOURCE" build 2>&1
+echo ""
+info "Building admin-ui..."
+pnpm --dir "$BREWNET_SOURCE" --filter @brewnet/admin-ui build 2>&1
+if [ ! -f "$BREWNET_SOURCE/packages/admin-ui/dist/index.html" ]; then
+  warn "admin-ui build failed — dashboard will not be available"
+  warn "This is non-critical. CLI will still work."
+  echo ""
+else
+  success "admin-ui built"
+fi
+
+info "Building CLI..."
+pnpm --dir "$BREWNET_SOURCE" --filter @brewnet/shared build 2>&1
+pnpm --dir "$BREWNET_SOURCE" --filter @brewnet/cli build 2>&1
 if [ ! -f "$BREWNET_SOURCE/packages/cli/dist/index.js" ]; then
-  spinner_stop 1 "Build failed: dist/index.js not found"
+  error "Build failed: dist/index.js not found"
   exit 1
 fi
-spinner_stop 0 "Build complete"
+success "Build complete"
 
 # Resolve version from package.json after build
 BREWNET_VERSION="$(node -e "process.stdout.write(require('$BREWNET_SOURCE/packages/cli/package.json').version)" 2>/dev/null || echo "unknown")"

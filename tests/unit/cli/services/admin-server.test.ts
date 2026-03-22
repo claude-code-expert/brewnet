@@ -163,7 +163,7 @@ describe('GET /', () => {
       expect(res.headers['content-type']).toMatch(/text\/html/);
       expect(res.body.toLowerCase()).toContain('<!doctype html');
     } else {
-      expect(res.body).toContain('Admin UI not built');
+      expect(res.body).toContain('Admin UI not found');
     }
   });
 

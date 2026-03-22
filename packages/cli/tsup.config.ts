@@ -1,6 +1,12 @@
 import { defineConfig } from 'tsup';
 import { readFileSync, cpSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Support both CJS (__dirname) and ESM (import.meta.url) contexts
+const _dir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : dirname(fileURLToPath(import.meta.url));
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -20,11 +26,15 @@ export default defineConfig({
   },
   onSuccess: async () => {
     // Bundle admin-ui dist into cli dist so npm installs include the dashboard
-    const adminUiDist = resolve(__dirname, '../admin-ui/dist');
-    const target = resolve(__dirname, 'dist/admin-ui');
+    const adminUiDist = resolve(_dir, '../admin-ui/dist');
+    const target = resolve(_dir, 'dist/admin-ui');
+    console.log(`[tsup] admin-ui source: ${adminUiDist} (exists: ${existsSync(adminUiDist)})`);
     if (existsSync(adminUiDist)) {
       cpSync(adminUiDist, target, { recursive: true });
-      console.log('✔ admin-ui bundled into dist/admin-ui');
+      const hasIndex = existsSync(resolve(target, 'index.html'));
+      console.log(`✔ admin-ui bundled into dist/admin-ui (index.html: ${hasIndex})`);
+    } else {
+      console.warn('⚠ admin-ui/dist not found — npm package will not include dashboard');
     }
   },
 });

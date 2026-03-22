@@ -98,8 +98,8 @@ export const SERVICE_IMAGES = {
 // ─── Database Versions ───────────────────────────────────────────────────────
 
 export const DB_VERSIONS: Record<string, string[]> = {
-  postgresql: ['18.3', '17.9', '16.13'],
-  mysql: ['8.4', '8.0', '5.7'],
+  postgresql: ['18.3'],
+  mysql: ['8.4'],
   sqlite: ['3'],
 };
 

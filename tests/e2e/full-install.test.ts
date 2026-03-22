@@ -333,7 +333,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       state = { ...state, admin: { ...state.admin, username: 'admin', password: 'test-password-12345' } };
       inputQueue = ['brewnet_db', 'brewnet'];
       confirmQueue = [false, true, false, false, false]; // fileServer=false, db=true, adminUI=false, media=false, ssh=false
-      selectQueue = ['traefik', 'postgresql', '18.3'];
+      selectQueue = ['traefik', 'postgresql'];
 
       state = await runServerComponentsStep(state);
 

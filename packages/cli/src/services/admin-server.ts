@@ -96,13 +96,18 @@ const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../..');
 // Static file serving for React SPA (packages/admin-ui/dist)
 // ---------------------------------------------------------------------------
 
-// 1st: bundled inside cli dist (npm install path)
-// 2nd: monorepo sibling (source/curl install path)
-const ADMIN_UI_BUNDLED = join(fileURLToPath(import.meta.url), '../../admin-ui');
+// Resolve admin-ui dist directory:
+//   import.meta.url → dist/admin-server-XXXX.js
+//   ../admin-ui     → dist/admin-ui/  (bundled by tsup onSuccess for npm installs)
+//   PKG_ROOT/packages/admin-ui/dist   (monorepo / curl install path)
+const ADMIN_UI_BUNDLED = join(fileURLToPath(import.meta.url), '../admin-ui');
 const ADMIN_UI_MONOREPO = join(PKG_ROOT, 'packages/admin-ui/dist');
 const ADMIN_UI_DIST = existsSync(join(ADMIN_UI_BUNDLED, 'index.html'))
   ? ADMIN_UI_BUNDLED
   : ADMIN_UI_MONOREPO;
+
+// Debug: log resolved admin-ui path on startup
+console.log(`[admin] UI path: ${ADMIN_UI_DIST} (exists: ${existsSync(join(ADMIN_UI_DIST, 'index.html'))})`);
 
 const MIME_TYPES: Record<string, string> = {
   '.html':  'text/html; charset=utf-8',
@@ -1180,7 +1185,14 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       }
       // admin-ui not built yet
       res.writeHead(503, { 'Content-Type': 'text/plain' });
-      res.end('Admin UI not built. Run: pnpm --filter @brewnet/admin-ui build');
+      res.end(
+        `Admin UI not found.\n\n` +
+        `Checked paths:\n` +
+        `  bundled: ${ADMIN_UI_BUNDLED} (exists: ${existsSync(join(ADMIN_UI_BUNDLED, 'index.html'))})\n` +
+        `  monorepo: ${ADMIN_UI_MONOREPO} (exists: ${existsSync(join(ADMIN_UI_MONOREPO, 'index.html'))})\n\n` +
+        `If installed via npm, try: npm update -g @brewnet/cli\n` +
+        `If installed via curl, try: curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash`,
+      );
       return;
     }
 

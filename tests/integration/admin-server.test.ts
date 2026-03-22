@@ -168,7 +168,7 @@ describe('GET /', () => {
       expect(typeof data).toBe('string');
       expect((data as string).toLowerCase()).toContain('<!doctype html');
     } else {
-      expect(data as string).toContain('Admin UI not built');
+      expect(data as string).toContain('Admin UI not found');
     }
   });
 
