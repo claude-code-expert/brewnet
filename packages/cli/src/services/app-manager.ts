@@ -324,7 +324,9 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
         });
       }
     } catch (e) {
-      appendLog(job, `[pull] Gitea sync failed (non-critical): ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      appendLog(job, `[pull] Gitea sync failed (non-critical): ${msg}`);
+      console.warn(`[app-manager] Gitea sync failed for "${appName}": ${msg}`);
     }
     setStep(job, 0, 'done');
 
