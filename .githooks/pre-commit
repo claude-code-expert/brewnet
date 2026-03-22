@@ -20,4 +20,30 @@ if [ -n "$HAS_SRC" ]; then
   echo "✅ All tests passed."
 fi
 
+# Install integrity checks — when install-related files are staged
+INSTALL_PATTERN="install\.sh|packages/cli/tsup\.config|packages/cli/package\.json|packages/cli/src/index\.ts|packages/cli/src/services/admin-server\.ts|\.github/workflows/publish\.yml"
+HAS_INSTALL=$(echo "$STAGED" | grep -E "$INSTALL_PATTERN" | head -1)
+
+if [ -n "$HAS_INSTALL" ]; then
+  echo "🔧 Install-related files changed — running install integrity tests..."
+
+  if [ -f "tests/install/install-sh.test.sh" ]; then
+    bash tests/install/install-sh.test.sh
+    if [ $? -ne 0 ]; then
+      echo "❌ install.sh integrity test failed — commit aborted."
+      exit 1
+    fi
+  fi
+
+  if [ -f "tests/install/cli-dist.test.sh" ] && [ -f "packages/cli/dist/index.js" ]; then
+    bash tests/install/cli-dist.test.sh
+    if [ $? -ne 0 ]; then
+      echo "❌ CLI dist integrity test failed — commit aborted."
+      exit 1
+    fi
+  fi
+
+  echo "✅ Install integrity checks passed."
+fi
+
 exit 0

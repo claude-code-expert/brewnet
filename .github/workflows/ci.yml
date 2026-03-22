@@ -51,8 +51,15 @@ jobs:
         env:
           NODE_OPTIONS: --experimental-vm-modules
 
-      - name: Verify install.sh syntax
-        run: bash -n install.sh
+      - name: Install integrity — install.sh
+        run: bash tests/install/install-sh.test.sh
+
+      - name: Install integrity — CLI dist
+        run: bash tests/install/cli-dist.test.sh
+
+      - name: Install integrity — npm simulation
+        if: matrix.node-version == '20'
+        run: bash tests/install/npm-install.test.sh
 
       - name: Upload coverage report
         if: matrix.node-version == '20'
