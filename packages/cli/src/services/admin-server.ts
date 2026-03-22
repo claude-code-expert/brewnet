@@ -96,7 +96,13 @@ const PKG_ROOT = join(fileURLToPath(import.meta.url), '../../../..');
 // Static file serving for React SPA (packages/admin-ui/dist)
 // ---------------------------------------------------------------------------
 
-const ADMIN_UI_DIST = join(PKG_ROOT, 'packages/admin-ui/dist');
+// 1st: bundled inside cli dist (npm install path)
+// 2nd: monorepo sibling (source/curl install path)
+const ADMIN_UI_BUNDLED = join(fileURLToPath(import.meta.url), '../../admin-ui');
+const ADMIN_UI_MONOREPO = join(PKG_ROOT, 'packages/admin-ui/dist');
+const ADMIN_UI_DIST = existsSync(join(ADMIN_UI_BUNDLED, 'index.html'))
+  ? ADMIN_UI_BUNDLED
+  : ADMIN_UI_MONOREPO;
 
 const MIME_TYPES: Record<string, string> = {
   '.html':  'text/html; charset=utf-8',
