@@ -316,6 +316,16 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
       const repoExists = await gitea.repoExists(appName);
       if (!repoExists) {
         appendLog(job, '[pull] Gitea repo not found — recreating and pushing local code');
+        // Boilerplates are cloned --depth 1; unshallow before pushing to empty Gitea repo.
+        const isShallowNew = await execa('git', ['rev-parse', '--is-shallow-repository'], { cwd: app.appDir })
+          .then((r) => r.stdout.trim() === 'true').catch(() => false);
+        if (isShallowNew) {
+          appendLog(job, '[pull] shallow clone detected — unshallowing');
+          await execa('git', ['fetch', '--unshallow', 'origin'], { cwd: app.appDir }).catch(async () => {
+            const { reinitGit } = await import('./boilerplate-manager.js');
+            await reinitGit(app.appDir);
+          });
+        }
         const cloneUrl = await gitea.createRepo(appName, `Brewnet app: ${appName}`);
         const authedUrl = gitea.authedCloneUrl(cloneUrl);
         await execa('git', ['remote', 'add', 'brewnet', authedUrl], { cwd: app.appDir }).catch(() =>
