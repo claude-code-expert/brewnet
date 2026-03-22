@@ -289,17 +289,22 @@ fi
 printf "\n"
 printf "  ${GREEN}${BOLD}✓ Brewnet v${BREWNET_VERSION} installation complete!${RESET}\n"
 printf "\n"
-printf "  ${BOLD}Get started:${RESET}\n"
-printf "    ${GREEN}brewnet init${RESET}\n"
-printf "\n"
-if [ -n "$CONFIGURED_PROFILE" ]; then
-  printf "  ${YELLOW}Note:${RESET} Reload your shell first:\n"
-  printf "    source %s\n" "$CONFIGURED_PROFILE"
-  printf "\n"
-fi
 printf "  ${DIM}Source:  %s${RESET}\n" "$BREWNET_SOURCE"
 printf "  ${DIM}Data:    %s${RESET}\n" "$BREWNET_DATA_DIR"
 printf "  ${DIM}Binary:  %s${RESET}\n" "$WRAPPER"
 printf "\n"
 printf "  ${DIM}To update: curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash${RESET}\n"
 printf "\n"
+
+# Fresh install → auto-start setup wizard
+if [ -z "$(ls -A "${BREWNET_DATA_DIR}/projects/" 2>/dev/null)" ]; then
+  if [ -n "$CONFIGURED_PROFILE" ]; then
+    # PATH was just added — source profile so brewnet is available
+    . "$CONFIGURED_PROFILE" 2>/dev/null || true
+  fi
+  printf "  ${BOLD}Starting setup wizard...${RESET}\n\n"
+  exec brewnet init
+else
+  printf "  ${DIM}Run ${RESET}${GREEN}brewnet init${RESET}${DIM} to set up a new project${RESET}\n"
+  printf "\n"
+fi

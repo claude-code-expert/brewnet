@@ -75,6 +75,17 @@ const isTestEnv =
    process.env['VITEST'] !== undefined);
 
 if (!isTestEnv) {
-  const program = createProgram();
-  program.parse(process.argv);
+  (async () => {
+    const program = createProgram();
+    // No subcommand + fresh install → auto-start init wizard
+    const userArgs = process.argv.slice(2);
+    if (userArgs.length === 0) {
+      const { getLastProject } = await import('./wizard/state.js');
+      const last = getLastProject();
+      if (!last) {
+        process.argv.push('init');
+      }
+    }
+    await program.parseAsync(process.argv);
+  })();
 }

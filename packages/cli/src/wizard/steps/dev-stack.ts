@@ -17,7 +17,7 @@
  * @module wizard/steps/dev-stack
  */
 
-import { select, confirm } from '@inquirer/prompts';
+import { select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import type {
   WizardState,
@@ -330,13 +330,10 @@ export async function runDevStackStep(
   console.log(chalk.dim(`  Templates: ${BOILERPLATE_REPO_URL}`));
   console.log();
 
-  const generateBoilerplate = await confirm({
-    message: 'Generate boilerplate project files?',
-    default: next.boilerplate.generate,
-  });
-  next.boilerplate.generate = generateBoilerplate;
+  // Tech stack selected → boilerplate generation is implied
+  next.boilerplate.generate = true;
 
-  if (generateBoilerplate) {
+  {
     next.boilerplate.sampleData = false;
 
     const devMode = await select<DevMode>({
@@ -354,9 +351,6 @@ export async function runDevStackStep(
       default: next.boilerplate.devMode || 'hot-reload',
     });
     next.boilerplate.devMode = devMode;
-  } else {
-    next.boilerplate.sampleData = false;
-    next.boilerplate.devMode = 'hot-reload';
   }
 
   console.log();
