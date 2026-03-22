@@ -1,5 +1,5 @@
 #!/bin/bash
-# Brewnet Install Script v1.0.1
+# Brewnet Install Script
 # Usage: curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 #
 # What this script does:
@@ -12,7 +12,7 @@
 #
 set -e
 
-BREWNET_VERSION="1.0.1"
+BREWNET_VERSION=""  # resolved after build from packages/cli/package.json
 REPO_URL="https://github.com/claude-code-expert/brewnet.git"
 BREWNET_SOURCE="$HOME/.brewnet/source"
 BREWNET_BIN_DIR="$HOME/.local/bin"
@@ -81,7 +81,7 @@ trap 'spinner_stop 1 "Installation interrupted" 2>/dev/null; exit 1' INT TERM
 
 # ─── Banner ────────────────────────────────────────────────────────────────────
 printf "\n"
-printf "  ${BOLD}Brewnet v${BREWNET_VERSION}${RESET} — Your Home Server, Brewed Fresh\n"
+printf "  ${BOLD}Brewnet${RESET} — Your Home Server, Brewed Fresh\n"
 printf "  ${DIM}%s${RESET}\n" "$REPO_URL"
 printf "\n"
 
@@ -186,6 +186,9 @@ if [ ! -f "$BREWNET_SOURCE/packages/cli/dist/index.js" ]; then
 fi
 spinner_stop 0 "Build complete"
 
+# Resolve version from package.json after build
+BREWNET_VERSION="$(node -e "process.stdout.write(require('$BREWNET_SOURCE/packages/cli/package.json').version)" 2>/dev/null || echo "unknown")"
+
 # ─── Step 8: Install global wrapper ───────────────────────────────────────────
 step 8 "Installing brewnet command..."
 
@@ -205,6 +208,7 @@ elif command -v sudo >/dev/null 2>&1; then
   INSTALL_DIR="/usr/local/bin"
   WRAPPER="$INSTALL_DIR/brewnet"
   printf "\n  ${YELLOW}sudo 권한이 필요합니다 — /usr/local/bin 에 설치합니다.${RESET}\n"
+  sudo mkdir -p "$INSTALL_DIR"
   printf '%s' "$WRAPPER_CONTENT" | sudo tee "$WRAPPER" > /dev/null
   sudo chmod +x "$WRAPPER"
 
