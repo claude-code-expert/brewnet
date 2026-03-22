@@ -303,7 +303,7 @@ if [ -z "$(ls -A "${BREWNET_DATA_DIR}/projects/" 2>/dev/null)" ]; then
     . "$CONFIGURED_PROFILE" 2>/dev/null || true
   fi
   printf "  ${BOLD}Starting setup wizard...${RESET}\n\n"
-  exec brewnet init
+  exec brewnet init < /dev/tty
 else
   printf "  ${DIM}Run ${RESET}${GREEN}brewnet init${RESET}${DIM} to set up a new project${RESET}\n"
   printf "\n"
