@@ -67,7 +67,9 @@ The installer sets up the CLI and automatically starts the setup wizard.
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
-The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. On fresh installs, the setup wizard starts automatically after installation.
+The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. After installation, run `brewnet init` to start the setup wizard.
+
+<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/install.png" alt="Brewnet installation wizard" width="700">
 
 ### Init Wizard — 8 Steps
 
@@ -112,6 +114,8 @@ brewnet admin               # Open local admin panel (http://localhost:8088)
 ### Admin Dashboard
 
 `brewnet admin` starts a background HTTP server at `http://localhost:8088` — a React SPA.
+
+<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/dashboard.png" alt="Brewnet admin dashboard" width="700">
 
 **Dashboard tab** — Service status table with container name, status, port, and External URL.
 
@@ -247,7 +251,9 @@ curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/ins
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
-설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 신규 설치 시 완료 후 자동으로 설정 위저드가 시작됩니다.
+설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 설치 완료 후 `brewnet init`으로 설정 위저드를 시작합니다.
+
+<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/install.png" alt="Brewnet 설치 화면" width="700">
 
 ### 초기 설정 위저드 — 8단계
 
@@ -315,6 +321,8 @@ brewnet admin               # 로컬 관리 패널 열기 (http://localhost:8088
 ### 어드민 대시보드
 
 `brewnet admin`은 `http://localhost:8088`에서 React SPA 대시보드를 백그라운드로 실행합니다.
+
+<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/dashboard.png" alt="Brewnet 어드민 대시보드" width="700">
 
 **Dashboard 탭** — 컨테이너명, 상태, 포트, External URL을 포함한 서비스 상태 테이블.
 
