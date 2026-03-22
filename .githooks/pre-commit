@@ -3,4 +3,21 @@
 git diff --cached --name-only | grep -E '^(docs/phase|docs/spec|docs/license|public/demo)/' | while read file; do
   git restore --staged "$file"
 done
+
+# Run tests before commit — only when source/test files are staged
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+HAS_SRC=$(echo "$STAGED" | grep -E '\.(ts|tsx)$' | head -1)
+
+if [ -n "$HAS_SRC" ]; then
+  echo "🧪 Running tests before commit..."
+  pnpm test 2>&1
+  TEST_EXIT=$?
+  if [ $TEST_EXIT -ne 0 ]; then
+    echo ""
+    echo "❌ Tests failed — commit aborted. Fix the failures and try again."
+    exit 1
+  fi
+  echo "✅ All tests passed."
+fi
+
 exit 0
