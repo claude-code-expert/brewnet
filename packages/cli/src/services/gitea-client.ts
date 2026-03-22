@@ -91,6 +91,28 @@ export class GiteaClient {
    */
   async prepare(): Promise<{ autoFixed: boolean; message: string }> {
     const { tokenPath, baseUrl } = this.config;
+
+    // Wait for Gitea to be reachable (up to 60s). On fresh installs, Gitea
+    // container may still be starting when the first API call is made.
+    // Without this check, requests fall through to the landing page nginx
+    // which returns 405 for non-GET methods.
+    for (let attempt = 0; attempt < 30; attempt++) {
+      try {
+        const probe = await fetch(`${baseUrl}/api/v1/version`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (probe.ok) break;
+      } catch { /* not ready yet */ }
+      if (attempt < 29) {
+        await new Promise((r) => setTimeout(r, 2000));
+      } else {
+        throw new Error(
+          `Gitea is not reachable at ${baseUrl}/api/v1/version after 60s. ` +
+          `Check that the Gitea container is running: docker ps | grep gitea`,
+        );
+      }
+    }
+
     if (existsSync(tokenPath)) {
       // Validate cached token — it may be stale if Gitea was reset or re-installed
       const token = readFileSync(tokenPath, 'utf-8').trim();
