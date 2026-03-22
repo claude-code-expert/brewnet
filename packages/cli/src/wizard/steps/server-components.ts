@@ -22,7 +22,6 @@ import chalk from 'chalk';
 import type {
   WizardState,
   WebServerService,
-  FileServerService,
   DbPrimary,
 } from '@brewnet/shared';
 import { DB_VERSIONS } from '@brewnet/shared';
@@ -180,31 +179,19 @@ export async function runServerComponentsStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 4. File Server (toggle + select service)
+  // 4. Nextcloud (파일 서버)
   // -------------------------------------------------------------------------
-  console.log(chalk.bold('  File Server'));
-  console.log(chalk.dim('  파일 저장·공유·동기화 서버. Dropbox / S3 같은 자체 호스팅 스토리지'));
+  console.log(chalk.bold('  Nextcloud'));
+  console.log(chalk.dim('  자체 호스팅 파일 동기화 + 캘린더·연락처·사진 앱 포함 올인원 협업 Suite'));
+  console.log(chalk.dim('  Dropbox / Google Drive 대체. 웹·데스크톱·모바일 앱 지원'));
   console.log();
 
-  const fileServerEnabled = await confirm({
-    message: 'Enable File Server?',
+  const nextcloudEnabled = await confirm({
+    message: 'Nextcloud 설치',
     default: next.servers.fileServer.enabled,
   });
-  next.servers.fileServer.enabled = fileServerEnabled;
-
-  if (fileServerEnabled) {
-    const fileService = await select<FileServerService>({
-      message: 'File server service',
-      choices: [
-        { name: 'Nextcloud', value: 'nextcloud', description: '파일 동기화 + 캘린더·연락처·사진 앱 포함 올인원 협업 Suite' },
-        { name: 'MinIO (S3-compatible)', value: 'minio', description: 'AWS S3 호환 오브젝트 스토리지. 대용량 파일·백업·미디어 저장에 최적' },
-      ],
-      default: next.servers.fileServer.service || 'nextcloud',
-    });
-    next.servers.fileServer.service = fileService;
-  } else {
-    next.servers.fileServer.service = '';
-  }
+  next.servers.fileServer.enabled = nextcloudEnabled;
+  next.servers.fileServer.service = nextcloudEnabled ? 'nextcloud' : '';
   console.log();
 
   // -------------------------------------------------------------------------

@@ -32,6 +32,9 @@ jobs:
       - name: Build shared
         run: pnpm --filter @brewnet/shared build
 
+      - name: Build admin-ui
+        run: pnpm --filter @brewnet/admin-ui build
+
       - name: Build CLI
         run: pnpm --filter @brewnet/cli build
 
