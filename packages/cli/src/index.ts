@@ -66,13 +66,15 @@ export function createProgram(): Command {
 // ---------------------------------------------------------------------------
 
 // Detect if this file is being run directly (not imported by tests).
-// Using import.meta.url to check if this is the entry point.
-const isDirectRun =
+// In test environments, NODE_ENV or VITEST/JEST globals are set.
+// For all other cases (npm global, npx, direct node invocation), parse immediately.
+const isTestEnv =
   typeof process !== 'undefined' &&
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+  (process.env['NODE_ENV'] === 'test' ||
+   process.env['JEST_WORKER_ID'] !== undefined ||
+   process.env['VITEST'] !== undefined);
 
-if (isDirectRun) {
+if (!isTestEnv) {
   const program = createProgram();
   program.parse(process.argv);
 }
