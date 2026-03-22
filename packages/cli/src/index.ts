@@ -9,6 +9,7 @@
  */
 
 import { Command } from 'commander';
+import { getLastProject } from './wizard/state.js';
 
 declare const __CLI_VERSION__: string;
 import { registerInitCommand } from './commands/init.js';
@@ -75,17 +76,10 @@ const isTestEnv =
    process.env['VITEST'] !== undefined);
 
 if (!isTestEnv) {
-  (async () => {
-    const program = createProgram();
-    // No subcommand + fresh install → auto-start init wizard
-    const userArgs = process.argv.slice(2);
-    if (userArgs.length === 0) {
-      const { getLastProject } = await import('./wizard/state.js');
-      const last = getLastProject();
-      if (!last) {
-        process.argv.push('init');
-      }
-    }
-    await program.parseAsync(process.argv);
-  })();
+  const program = createProgram();
+  // No subcommand + fresh install → auto-start init wizard
+  if (process.argv.length === 2 && !getLastProject()) {
+    process.argv.push('init');
+  }
+  program.parse(process.argv);
 }
