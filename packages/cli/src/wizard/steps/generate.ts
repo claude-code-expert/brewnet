@@ -384,14 +384,19 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
   // 5. Pull Docker images
   // -------------------------------------------------------------------------
   console.log();
-  const pullSpinner = ora('  Pulling Docker images...').start();
+  console.log(chalk.bold('  Pulling Docker images...'));
+  console.log(chalk.dim('    (네트워크 속도에 따라 수 분 소요될 수 있습니다)'));
+  console.log();
   try {
     const pullCmd = buildPullCommand(composePath);
-    const pullResult = await execCommand(pullCmd.cmd, pullCmd.args);
+    const { execa: execaPull } = await import('execa');
+    const pullResult = await execaPull(pullCmd.cmd, pullCmd.args, {
+      stdio: 'inherit',
+      reject: false,
+    });
 
     if (pullResult.exitCode !== 0) {
-      pullSpinner.fail('  Failed to pull Docker images');
-      console.log(chalk.dim(`    ${pullResult.stderr}`));
+      console.log(chalk.red('  ✗ Failed to pull Docker images'));
 
       // Offer to continue anyway
       const shouldContinue = await confirm({
@@ -403,10 +408,10 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         return 'error';
       }
     } else {
-      pullSpinner.succeed('  Docker images pulled');
+      console.log(chalk.green('  ✔ Docker images pulled'));
     }
   } catch (err) {
-    pullSpinner.fail('  Failed to pull Docker images');
+    console.log(chalk.red('  ✗ Failed to pull Docker images'));
     if (err instanceof Error) {
       console.log(chalk.dim(`    ${err.message}`));
     }
