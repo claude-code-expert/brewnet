@@ -20,7 +20,6 @@ const AUTO_PROPAGATED_SERVICES = [
   'Nextcloud (File Server)',
   'MinIO (Object Storage)',
   'pgAdmin (DB Admin UI)',
-  'SSH Server (OpenSSH)',
 ];
 
 // Services that require separate account setup through their own UI/CLI.

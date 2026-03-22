@@ -45,11 +45,6 @@ interface GeneratedFile {
   content: string;   // file content
 }
 
-interface ScaffoldTemplate {
-  appDir: string;    // directory name like "nextjs-app"
-  files: { path: string; template: string }[];
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -104,7 +99,7 @@ function createFastapiState(): WizardState {
     devStack: {
       languages: ['python'] as Language[],
       frameworks: { python: 'fastapi' },
-      frontend: [],
+      frontend: null,
     },
     boilerplate: {
       generate: true,
@@ -135,7 +130,7 @@ function createMultiFrameworkState(): WizardState {
     devStack: {
       languages: ['python', 'nodejs'] as Language[],
       frameworks: { python: 'fastapi', nodejs: 'express' },
-      frontend: [],
+      frontend: null,
     },
     boilerplate: {
       generate: true,
@@ -345,13 +340,6 @@ describe.skip('T077 — Boilerplate Scaffold Generation', () => {
       const state = createFileBrowserState();
       const files = await generateBoilerplate(state, tempDir);
 
-      const allPaths = files.map((f) => f.path);
-
-      // Should include storage directory paths or a config referencing them
-      const hasUploads = allPaths.some((p) => p.includes('storage/uploads'));
-      const hasTemp = allPaths.some((p) => p.includes('storage/temp'));
-      const hasBackups = allPaths.some((p) => p.includes('storage/backups'));
-
       // At least the storage directories should be represented
       // (either as .gitkeep files or referenced in config)
       const storageRelated = files.filter(
@@ -481,7 +469,7 @@ describe.skip('T077 — Boilerplate Scaffold Generation', () => {
       state.devStack = {
         languages: [],
         frameworks: {},
-        frontend: [],
+        frontend: null,
       };
       const files = await generateBoilerplate(state, tempDir);
 
@@ -689,7 +677,7 @@ describe.skip('T077 — Boilerplate Scaffold Generation', () => {
       state.devStack = {
         languages: ['go'] as Language[],
         frameworks: {},  // no framework selected for go
-        frontend: [],
+        frontend: null,
       };
 
       // Should not throw, may return empty or a default Go scaffold

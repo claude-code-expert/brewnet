@@ -39,6 +39,7 @@ function formatDate(iso: string) {
 }
 
 export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
+  const domainBase = app.backendExternalUrl ?? null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {/* App Info Card */}
@@ -119,9 +120,9 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                   {app.backendExternalUrl && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ width: 60, fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>external</span>
-                      <a href={app.backendExternalUrl} target="_blank" rel="noopener noreferrer"
+                      <a href={`${app.backendExternalUrl}/api/hello`} target="_blank" rel="noopener noreferrer"
                         style={{ color: 'var(--amber)', fontSize: 12.5, fontFamily: 'var(--mono)', textDecoration: 'none' }}>
-                        {app.backendExternalUrl} <span style={{ fontSize: 10, color: 'var(--txt3)' }}>↗</span>
+                        {app.backendExternalUrl}/api/hello <span style={{ fontSize: 10, color: 'var(--txt3)' }}>↗</span>
                       </a>
                     </div>
                   )}
@@ -220,20 +221,21 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                   { label: 'Echo',   path: '/api/echo',  method: 'POST' },
                 ].map(({ label, path, method }) => {
                   const isGet = method === 'GET';
+                  const localHref = `${boilerplate.backendUrl}${path}`;
+                  const domainHref = domainBase ? `${domainBase}${path}` : null;
                   const cardStyle: React.CSSProperties = {
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 4,
+                    gap: 6,
                     padding: '8px 10px',
                     background: 'var(--bg3)',
                     border: '1px solid var(--bdr)',
                     borderRadius: 'var(--r)',
                     textDecoration: 'none',
-                    cursor: isGet ? 'pointer' : 'default',
-                    opacity: isGet ? 1 : 0.6,
+                    cursor: 'default',
                   };
-                  const inner = (
-                    <>
+                  return (
+                    <div key={label} style={cardStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt2)', textTransform: 'uppercase' }}>
                           {label}
@@ -244,17 +246,23 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                           </span>
                         )}
                       </div>
-                      <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: isGet ? 'var(--teal)' : 'var(--txt3)', wordBreak: 'break-all' }}>
-                        {path}
-                      </span>
-                    </>
-                  );
-                  return isGet ? (
-                    <a key={label} href={`${boilerplate.backendUrl}${path}`} target="_blank" rel="noopener noreferrer" style={cardStyle}>
-                      {inner}
-                    </a>
-                  ) : (
-                    <div key={label} style={cardStyle}>{inner}</div>
+                      {/* local link */}
+                      {isGet ? (
+                        <a href={localHref} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--teal)', textDecoration: 'none', wordBreak: 'break-all' }}>
+                          {path} <span style={{ fontSize: 9, color: 'var(--txt3)' }}>local ↗</span>
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)', wordBreak: 'break-all' }}>{path}</span>
+                      )}
+                      {/* domain link — only when domain connected */}
+                      {isGet && domainHref && (
+                        <a href={domainHref} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--amber)', textDecoration: 'none', wordBreak: 'break-all' }}>
+                          {path} <span style={{ fontSize: 9, color: 'var(--txt3)' }}>domain ↗</span>
+                        </a>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -293,7 +301,11 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
             {git.giteaUrl && (
               <InfoRow label="Gitea URL">
                 <a
-                  href={git.giteaUrl}
+                  href={
+                    git.giteaUrl.startsWith('https://')
+                      ? git.giteaUrl
+                      : `/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{

@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import type Dockerode from 'dockerode';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -40,7 +41,7 @@ const {
   checkEndpointReachable,
 } = await import('../../../../packages/cli/src/services/health-checker.js');
 
-const { createDefaultWizardState, applyFullInstallDefaults } = await import(
+const { createDefaultWizardState } = await import(
   '../../../../packages/cli/src/config/defaults.js'
 );
 
@@ -284,7 +285,7 @@ describe('pollHealthCheck', () => {
       ]),
     };
 
-    const result = await pollHealthCheck('gitea', mockDocker as any, 5000, 100);
+    const result = await pollHealthCheck('gitea', mockDocker as unknown as Dockerode, 5000, 100);
     expect(result.healthy).toBe(true);
     expect(result.service).toBe('gitea');
   });
@@ -296,7 +297,7 @@ describe('pollHealthCheck', () => {
       ]),
     };
 
-    const result = await pollHealthCheck('postgresql', mockDocker as any, 5000, 100);
+    const result = await pollHealthCheck('postgresql', mockDocker as unknown as Dockerode, 5000, 100);
     expect(result.healthy).toBe(true);
   });
 
@@ -307,7 +308,7 @@ describe('pollHealthCheck', () => {
       ]),
     };
 
-    const result = await pollHealthCheck('redis', mockDocker as any, 200, 50);
+    const result = await pollHealthCheck('redis', mockDocker as unknown as Dockerode, 200, 50);
     expect(result.healthy).toBe(false);
     expect(result.error).toMatch(/timeout/i);
   }, 3000);
@@ -322,7 +323,7 @@ describe('pollHealthCheck', () => {
       }),
     };
 
-    const result = await pollHealthCheck('traefik', mockDocker as any, 5000, 50);
+    const result = await pollHealthCheck('traefik', mockDocker as unknown as Dockerode, 5000, 50);
     expect(result.healthy).toBe(true);
   }, 5000);
 });

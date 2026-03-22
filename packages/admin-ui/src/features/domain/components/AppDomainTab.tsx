@@ -8,6 +8,7 @@ import { useAppDomain } from '../hooks/useAppDomain.js';
 import { HelpTooltip } from './HelpTooltip.js';
 import { HelpDrawer } from './HelpDrawer.js';
 import { ConfirmModal } from '../../../components/ConfirmModal.js';
+import { CopyButton } from '../../../components/ServiceCard.js';
 
 interface AppDomainTabProps {
   appName: string;
@@ -164,22 +165,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
               {connectedDomain.hostname}
               <span style={{ marginLeft: 4, fontSize: 11 }}>↗</span>
             </a>
-            <button
-              type="button"
-              title="Copy URL"
-              onClick={() => navigator.clipboard.writeText(externalUrl).catch(() => undefined)}
-              style={{
-                background: 'none',
-                border: '1px solid var(--bdr)',
-                borderRadius: 'var(--r)',
-                padding: '2px 7px',
-                cursor: 'pointer',
-                color: 'var(--txt2)',
-                fontSize: 11,
-              }}
-            >
-              Copy
-            </button>
+            <CopyButton text={externalUrl} />
           </div>
           {connectedDomain.connectedAt && (
             <span style={{ fontSize: 11.5, color: 'var(--txt2)' }}>

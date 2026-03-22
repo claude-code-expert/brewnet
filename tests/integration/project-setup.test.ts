@@ -39,7 +39,6 @@ import {
   setupCancelHandler,
 } from '../../packages/cli/src/wizard/navigation.js';
 import { validateProjectName } from '../../packages/cli/src/utils/validation.js';
-import type { WizardState } from '../../packages/shared/src/types/wizard-state.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -427,7 +426,7 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
     });
 
     it('should call onCancel when SIGINT is emitted', () => {
-      const onCancel = jest.fn();
+      const onCancel = jest.fn<() => void>();
       const cleanup = setupCancelHandler(onCancel);
 
       try {
@@ -439,7 +438,7 @@ describe('Project Setup Integration — Step 1 (T044)', () => {
     });
 
     it('should remove the handler after cleanup is called', () => {
-      const onCancel = jest.fn();
+      const onCancel = jest.fn<() => void>();
       const cleanup = setupCancelHandler(onCancel);
 
       cleanup(); // Remove handler

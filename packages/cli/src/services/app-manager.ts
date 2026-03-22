@@ -15,6 +15,7 @@ import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry
 
 const BREWNET_DIR = join(homedir(), '.brewnet');
 const GITEA_TOKEN_PATH = join(BREWNET_DIR, 'gitea-token');
+const GITEA_CONFIG_PATH = join(BREWNET_DIR, 'gitea-config.json');
 const DEPLOY_HISTORY_PATH = join(BREWNET_DIR, 'deploy-history.json');
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,36 @@ const jobs = new Map<string, AppJob>();
 
 export function resolveAppsJsonPath(): string {
   return join(BREWNET_DIR, 'apps.json');
+}
+
+// ---------------------------------------------------------------------------
+// Gitea config cache — persists confirmed baseUrl/username so resolveContext()
+// doesn't need to re-derive from wizardState on every call.
+// Written at: wizard completion (generate.ts), Named Tunnel setup (admin-server.ts).
+// ---------------------------------------------------------------------------
+
+interface GiteaConfig {
+  baseUrl: string;
+  username: string;
+  writtenAt: string;
+}
+
+export function loadGiteaConfig(): GiteaConfig | null {
+  if (!existsSync(GITEA_CONFIG_PATH)) return null;
+  try {
+    return JSON.parse(readFileSync(GITEA_CONFIG_PATH, 'utf-8')) as GiteaConfig;
+  } catch {
+    return null;
+  }
+}
+
+export function saveGiteaConfig(baseUrl: string, username: string): void {
+  try {
+    const config: GiteaConfig = { baseUrl, username, writtenAt: new Date().toISOString() };
+    writeFileSync(GITEA_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[app-manager] gitea-config.json 저장 실패:', e instanceof Error ? e.message : e);
+  }
 }
 
 /** Parse a single KEY=VALUE line from a .env file. Returns '' if not found. */
@@ -166,7 +197,7 @@ export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
   }
 
   return {
-    giteaUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}`,
+    giteaUrl: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${appName}`,
     cloneUrlHttp: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`,
     cloneUrlSsh,
     localPath: app.appDir,
@@ -454,28 +485,50 @@ function readBoilerplateMeta(projectPath: string): BoilerplateMeta[] {
 
 interface AppContext {
   projectPath: string;
-  giteaBaseUrl: string;
+  giteaBaseUrl: string;    // Internal URL for API calls — always http://localhost/git
+  giteaDisplayUrl: string; // URL for display/links — external URL in Named Tunnel mode
   giteaUser: string;
   giteaPassword: string;
 }
 
 function resolveContext(): AppContext {
+  // Read from persistent cache first — avoids fragile re-derivation from wizardState
+  // on every call. Cache is written at wizard completion and Named Tunnel setup.
+  const cached = loadGiteaConfig();
+
   const last = getLastProject();
   const state = loadState(last ?? '');
   const raw = (state as { projectPath?: string } | null)?.projectPath ?? process.cwd();
   const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
+
   const envPath = join(projectPath, '.env');
-  const giteaUser = readDotEnvValue(envPath, 'GITEA_ADMIN_USER') || (state?.admin as { username?: string } | undefined)?.username || 'admin';
+  const giteaUser =
+    cached?.username ??
+    (readDotEnvValue(envPath, 'GITEA_ADMIN_USER') ||
+      (state?.admin as { username?: string } | undefined)?.username ||
+      'admin');
+
   // GITEA_ADMIN_PASSWORD is a Docker secret, NOT in .env — read from secrets file first
   const secretsPath = join(projectPath, 'secrets', 'admin_password');
   const secretsPassword = existsSync(secretsPath) ? readFileSync(secretsPath, 'utf-8').trim() : '';
-  const giteaPassword = secretsPassword || readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') || (state?.admin as { password?: string } | undefined)?.password || '';
-  // Quick Tunnel: Gitea is path-prefix routed via Traefik (port 80, /git); port 3000 is internal only.
-  // Other modes: Gitea port 3000 is host-exposed — use direct port to avoid subdomain DNS dependency.
+  const giteaPassword =
+    secretsPassword ||
+    readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') ||
+    (state?.admin as { password?: string } | undefined)?.password ||
+    '';
+
+  // Internal API URL: always local Traefik proxy — stable regardless of tunnel state.
+  const giteaBaseUrl = 'http://localhost/git';
+
+  // Display URL: use external subdomain in Named Tunnel mode so dashboard links open correctly.
+  // In Named Tunnel mode, Gitea's ROOT_URL has no /git subpath, so local /git/ auth redirects
+  // break in the browser. The external URL https://git.<zone>/ works correctly.
   const tunnelMode = state?.domain?.cloudflare?.tunnelMode ?? '';
-  const gitPort = state?.servers?.gitServer?.port ?? 3000;
-  const giteaBaseUrl = tunnelMode === 'quick' ? 'http://localhost/git' : `http://localhost:${gitPort}`;
-  return { projectPath, giteaBaseUrl, giteaUser, giteaPassword };
+  const zoneName = state?.domain?.cloudflare?.zoneName ?? '';
+  const giteaDisplayUrl =
+    tunnelMode === 'named' && zoneName ? `https://git.${zoneName}` : giteaBaseUrl;
+
+  return { projectPath, giteaBaseUrl, giteaDisplayUrl, giteaUser, giteaPassword };
 }
 
 /** Inject Traefik Quick Tunnel labels if running in quick tunnel mode. */
@@ -888,7 +941,7 @@ async function _createModeA(
     lang: meta.lang,
     framework: meta.frameworkId,
     port,
-    giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
+    giteaRepoUrl: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: 'running',
     createdAt: new Date().toISOString(),
   });
@@ -921,6 +974,7 @@ async function _createModeB(
   if (opts.branch) cloneArgs.push('-b', opts.branch);
   cloneArgs.push(opts.gitUrl!, appDir);
   await execa('git', cloneArgs);
+  appendLog(job, `[clone] ${opts.gitUrl} → ${opts.appName} ✓`);
   // Inject user-specified ports into .env so docker-compose picks them up
   // (prevents "port already allocated" when default 8080/3000 are in use)
   const envExPath = join(appDir, '.env.example');
@@ -939,6 +993,7 @@ async function _createModeB(
     writeFileSync(join(appDir, '.env'), envContent, 'utf-8');
   }
   await reinitGitB(appDir);
+  setStep(job, 2, 'running', `Creating Gitea repo ${ctx.giteaUser}/${opts.appName}…`);
   const alreadyExists = await gitea.repoExists(opts.appName);
   const cloneUrl = alreadyExists
     ? `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}.git`
@@ -951,9 +1006,10 @@ async function _createModeB(
   await execa('git', ['push', 'brewnet', 'HEAD:main', '--force'], { cwd: appDir });
   setStep(job, 3, 'done');
 
-  // Git Clone mode: skip Docker up + Health check.
-  // Clone + Gitea repo creation is sufficient — user deploys separately.
-  // If docker-compose.yml exists (e.g. brewnet boilerplate), auto-start.
+  // Git Clone mode: auto-scaffold docker-compose.yml if repo has none.
+  // Handles static sites (nginx), plain Node.js/Python projects, etc.
+  ensureComposeFile(appDir, opts.appName, port, job);
+
   const hasCompose = existsSync(join(appDir, 'docker-compose.yml')) || existsSync(join(appDir, 'compose.yml'));
   if (hasCompose) {
     setStep(job, 4, 'running', 'docker compose up --build');
@@ -978,7 +1034,7 @@ async function _createModeB(
     sourceUrl: opts.gitUrl,
     appDir,
     port,
-    giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
+    giteaRepoUrl: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: hasCompose ? 'running' : 'stopped',
     createdAt: new Date().toISOString(),
   });
@@ -1039,7 +1095,7 @@ async function _createModeC(
     lang: opts.language ?? stackInfo?.language,
     framework: opts.frameworkId ?? stackInfo?.framework,
     port,
-    giteaRepoUrl: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${opts.appName}`,
+    giteaRepoUrl: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${opts.appName}`,
     status: 'running',
     createdAt: new Date().toISOString(),
   });
@@ -1059,7 +1115,9 @@ export async function stopApp(appName: string): Promise<void> {
   const apps = readApps(appsJson);
   const app = apps.find((a) => a.name === appName);
   if (!app) throw new Error(`App "${appName}" not found`);
-  await execa('docker', ['compose', 'down'], { cwd: app.appDir });
+  await execa('docker', ['compose', 'down'], { cwd: app.appDir }).catch((e: unknown) => {
+    console.warn('[stopApp] docker compose down failed:', e instanceof Error ? e.message : String(e));
+  });
   updateApp(appsJson, appName, { status: 'stopped' });
 }
 

@@ -13,7 +13,8 @@ const mockWriteFileSync = jest.fn((p: unknown, data: unknown) => {
 });
 const mockChmodSync = jest.fn();
 const mockMkdirSync = jest.fn();
-const mockUnlinkSync = jest.fn((p: unknown) => { delete fsContent[p as string]; });
+// eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+const mockUnlinkSync = jest.fn((p: unknown) => { delete (fsContent as Record<string, unknown>)[p as string]; });
 
 jest.unstable_mockModule('node:fs', () => ({
   existsSync: mockExistsSync,

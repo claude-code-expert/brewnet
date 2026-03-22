@@ -98,8 +98,8 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
 }));
 
 // Mock boilerplate-manager (used by Mode B and C for reinitGit / cloneStack)
-const mockReinitGit = jest.fn<(...args: any[]) => Promise<void>>();
-const mockCloneStack = jest.fn<(...args: any[]) => Promise<void>>();
+const mockReinitGit = jest.fn<(...args: unknown[]) => Promise<void>>();
+const mockCloneStack = jest.fn<(...args: unknown[]) => Promise<void>>();
 const mockGenerateEnv = jest.fn();
 jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
   reinitGit: mockReinitGit,

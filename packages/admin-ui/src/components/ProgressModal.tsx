@@ -7,7 +7,7 @@ function useElapsed(running: boolean): number {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!running) { startRef.current = null; setElapsed(0); return; }
+    if (!running) { startRef.current = null; queueMicrotask(() => setElapsed(0)); return; }
     if (startRef.current === null) startRef.current = Date.now();
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current!) / 1000)), 1000);
     return () => clearInterval(t);

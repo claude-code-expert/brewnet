@@ -80,7 +80,7 @@ function buildState(overrides: {
         ...state.domain.cloudflare,
         ...overrides.domain.cloudflare,
       };
-      const { cloudflare: _, ...rest } = overrides.domain;
+      const { cloudflare: _cfOverride, ...rest } = overrides.domain;
       Object.assign(state.domain, rest);
     } else {
       Object.assign(state.domain, overrides.domain);
@@ -97,7 +97,6 @@ function buildState(overrides: {
  * Build a "full install" state with all services enabled for TC-08-02.
  */
 function buildFullState(): WizardState {
-  const state = applyFullInstallDefaults(createDefaultWizardState());
   return buildState({
     admin: { username: 'admin', password: 'TestAdminPass123!' },
     servers: {
@@ -1493,7 +1492,7 @@ describe('ComposeGenerator — Docker logging configuration', () => {
   });
 
   it('should add logging config with json-file driver to every service', () => {
-    for (const [id, svc] of Object.entries(config.services)) {
+    for (const [_id, svc] of Object.entries(config.services)) {
       expect(svc.logging).toBeDefined();
       expect(svc.logging!.driver).toBe('json-file');
       expect(svc.logging!.options['max-size']).toBe('10m');

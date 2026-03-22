@@ -1,12 +1,13 @@
 /**
- * Integration tests for wizard Step 4: Domain & Network — T039–T043
+ * Integration tests for wizard Step 4: Domain & Network — T039–T044
  *
- * Tests the complete runDomainNetworkStep() function across all 5 scenarios:
+ * Tests the complete runDomainNetworkStep() function across all 3 scenarios:
  *   T039 — Scenario 1: Quick Tunnel → quickTunnelUrl set, tunnelMode='quick'
- *   T040 — Scenario 2: Named Tunnel success → all CF API calls made, apiToken cleared
- *   T041 — Scenario 2 rollback → deleteTunnel called on DNS failure
- *   T042 — Scenario 3: Guided domain purchase → Quick Tunnel bridge, then Named Tunnel
- *   T043 — Scenario 4: Named Tunnel only → no ingress/DNS, zoneId empty
+ *   T040 — Scenario 2 (has domain): Named Tunnel success → all CF API calls made, apiToken cleared
+ *   T041 — Scenario 2 (has domain) rollback → deleteTunnel called on DNS failure
+ *   T042 — Scenario 2 (no domain): domain purchase guide + Quick Tunnel bridge + tunnel-only
+ *   T043 — Scenario 2 (no domain, no bridge): tunnel-only, no ingress/DNS, zoneId empty
+ *   T044 — Scenario 3: Local only → tunnelMode='none', provider='local'
  *
  * Mock strategy:
  *   - @inquirer/prompts: auto-return scenario choices
@@ -40,14 +41,22 @@ jest.unstable_mockModule('@inquirer/prompts', () => ({
 // Mock cloudflare-client
 // ---------------------------------------------------------------------------
 
-const mockVerifyToken = jest.fn<() => Promise<{ valid: boolean; email?: string }>>();
-const mockGetAccounts = jest.fn<() => Promise<Array<{ id: string; name: string }>>>();
-const mockGetZones = jest.fn<() => Promise<Array<{ id: string; name: string; status: string }>>>();
-const mockCreateTunnel = jest.fn<() => Promise<{ tunnelId: string; tunnelToken: string }>>();
-const mockConfigureTunnelIngress = jest.fn<() => Promise<void>>();
-const mockCreateDnsRecord = jest.fn<() => Promise<void>>();
-const mockDeleteTunnel = jest.fn<() => Promise<void>>();
-const mockGetTunnelHealth = jest.fn<() => Promise<{ status: string; connectorCount: number }>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockVerifyToken = jest.fn<(...args: any[]) => Promise<{ valid: boolean; email?: string }>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetAccounts = jest.fn<(...args: any[]) => Promise<Array<{ id: string; name: string }>>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetZones = jest.fn<(...args: any[]) => Promise<Array<{ id: string; name: string; status: string }>>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockCreateTunnel = jest.fn<(...args: any[]) => Promise<{ tunnelId: string; tunnelToken: string }>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockConfigureTunnelIngress = jest.fn<(...args: any[]) => Promise<void>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockCreateDnsRecord = jest.fn<(...args: any[]) => Promise<void>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockDeleteTunnel = jest.fn<(...args: any[]) => Promise<void>>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetTunnelHealth = jest.fn<(...args: any[]) => Promise<{ status: string; connectorCount: number }>>();
 
 jest.unstable_mockModule(
   '../../../packages/cli/src/services/cloudflare-client.js',
@@ -116,7 +125,7 @@ jest.unstable_mockModule('ora', () => ({
 // ---------------------------------------------------------------------------
 
 jest.unstable_mockModule('execa', () => ({
-  execa: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+  execa: jest.fn<() => Promise<unknown>>().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -196,12 +205,13 @@ describe('T039 — Scenario 1: Quick Tunnel', () => {
 // T040 — Scenario 2: Named Tunnel success (full API flow)
 // ---------------------------------------------------------------------------
 
-describe('T040 — Scenario 2: Named Tunnel with existing domain (success)', () => {
+describe('T040 — Scenario 2 (has domain): Named Tunnel success (full API flow)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Scenario 2 selected
-    mockSelect.mockResolvedValueOnce('2-named-existing');
+    // Scenario 2 selected, user has domain
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true); // hasDomain = true
     // API token input
     mockInput.mockResolvedValue('valid-cf-api-token');
 
@@ -295,12 +305,13 @@ describe('T040 — Scenario 2: Named Tunnel with existing domain (success)', () 
 // T041 — Scenario 2 rollback: DNS failure triggers tunnel deletion
 // ---------------------------------------------------------------------------
 
-describe('T041 — Scenario 2 rollback: DNS failure', () => {
+describe('T041 — Scenario 2 (has domain) rollback: DNS failure', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Scenario 2 selected
-    mockSelect.mockResolvedValueOnce('2-named-existing');
+    // Scenario 2 selected, user has domain
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true); // hasDomain = true
     mockInput.mockResolvedValue('valid-cf-api-token');
 
     // CF API: tunnel creation succeeds
@@ -335,21 +346,21 @@ describe('T041 — Scenario 2 rollback: DNS failure', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T042 — Scenario 3: Guided domain purchase (Quick Tunnel bridge + Named Tunnel)
+// T042 — Scenario 2 (no domain): domain purchase guide + Quick Tunnel bridge
 // ---------------------------------------------------------------------------
 
-describe('T042 — Scenario 3: Guided domain purchase', () => {
+describe('T042 — Scenario 2 (no domain): domain purchase guide + Quick Tunnel bridge', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Scenario 3 selected
-    mockSelect.mockResolvedValueOnce('3-named-buy');
+    // Scenario 2 selected, user does NOT have domain
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(false); // hasDomain = false
+    mockConfirm.mockResolvedValueOnce(true);  // useBridge = true
 
-    // Accept Quick Tunnel bridge while waiting for domain setup
-    mockConfirm.mockResolvedValueOnce(true); // Start Quick Tunnel bridge?
-
-    // API token after domain setup complete
-    mockInput.mockResolvedValue('valid-cf-api-token');
+    // "Enter 누르세요" wait + API token input
+    mockInput.mockResolvedValueOnce('');                  // domain-ready Enter
+    mockInput.mockResolvedValue('valid-cf-api-token');    // CF API token
 
     // Quick Tunnel bridge URL
     mockQtStart.mockResolvedValue('https://bridge.trycloudflare.com');
@@ -394,16 +405,19 @@ describe('T042 — Scenario 3: Guided domain purchase', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T043 — Scenario 4: Named Tunnel only (no DNS)
+// T043 — Scenario 2 (no domain, no bridge): tunnel-only, DNS skipped
 // ---------------------------------------------------------------------------
 
-describe('T043 — Scenario 4: Named Tunnel only, domain later', () => {
+describe('T043 — Scenario 2 (no domain, no bridge): tunnel-only', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Scenario 4 selected
-    mockSelect.mockResolvedValueOnce('4-named-only');
-    mockInput.mockResolvedValue('valid-cf-api-token');
+    // Scenario 2 selected, user does NOT have domain, declines Quick Tunnel bridge
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(false); // hasDomain = false
+    mockConfirm.mockResolvedValueOnce(false); // useBridge = false
+    mockInput.mockResolvedValueOnce('');                 // domain-ready Enter
+    mockInput.mockResolvedValue('valid-cf-api-token');   // CF API token
 
     // CF API: token + account + zone + tunnel creation
     mockVerifyToken.mockResolvedValue({ valid: true });
@@ -474,13 +488,13 @@ describe('T043 — Scenario 4: Named Tunnel only, domain later', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 5: Local only
+// T044 — Scenario 3: Local only
 // ---------------------------------------------------------------------------
 
-describe('Scenario 5: Local only', () => {
+describe('T044 — Scenario 3: Local only', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSelect.mockResolvedValueOnce('5-local');
+    mockSelect.mockResolvedValueOnce('3-local');
   });
 
   it('sets provider to "local"', async () => {

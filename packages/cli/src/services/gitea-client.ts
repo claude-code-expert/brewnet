@@ -304,7 +304,7 @@ export class GiteaClient {
 
   /** URL suitable for git remote add — includes credentials in URL (stored in .git/config which is chmod 600). */
   authedCloneUrl(cloneUrl: string): string {
-    const { username, password, tokenPath } = this.config;
+    const { username, password, tokenPath, baseUrl } = this.config;
     // Prefer cached API token over admin password — the token is verified to work
     // (prepare() always creates/validates it before any git operation).
     // Gitea accepts API tokens as HTTP Basic Auth password.
@@ -313,6 +313,17 @@ export class GiteaClient {
       : password;
     const encUser = encodeURIComponent(username);
     const encCred = encodeURIComponent(credential);
-    return cloneUrl.replace('http://', `http://${encUser}:${encCred}@`);
+
+    // Normalize to baseUrl — Gitea returns clone_url based on whatever host/path
+    // it receives. Behind Traefik's strip-prefix middleware the URL lacks the /git
+    // subpath (e.g. http://localhost/admin/repo.git instead of
+    // http://localhost/git/admin/repo.git), causing git to hit the wrong service.
+    // Extract the canonical user/repo.git tail and rebuild from baseUrl.
+    const repoMatch = cloneUrl.match(/\/([^/]+\/[^/]+\.git)$/);
+    const normalizedUrl = repoMatch
+      ? `${baseUrl.replace(/\/$/, '')}/${repoMatch[1]}`
+      : cloneUrl;
+
+    return normalizedUrl.replace('http://', `http://${encUser}:${encCred}@`);
   }
 }

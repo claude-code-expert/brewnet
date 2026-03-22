@@ -385,8 +385,23 @@ export async function createDnsRecord(
 
   if (!response.ok || !data.success) {
     const msg = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
-    // Non-fatal if record already exists
-    if (!msg.toLowerCase().includes('already exists')) {
+    // If record already exists, update it (upsert semantics — e.g. when re-creating a tunnel)
+    if (msg.toLowerCase().includes('already exists')) {
+      const existing = await getDnsRecords(apiToken, zoneId, `${subdomain}.${domain}`);
+      if (existing.length > 0) {
+        const patchUrl = `${CF_BASE}/zones/${zoneId}/dns_records/${existing[0].id}`;
+        const patchRes = await fetch(patchUrl, {
+          method: 'PATCH',
+          headers: cfHeaders(apiToken),
+          body: JSON.stringify({ content: `${tunnelId}.cfargotunnel.com`, proxied: true }),
+        });
+        const patchData = (await patchRes.json()) as { success: boolean; errors?: Array<{ message: string }> };
+        if (!patchRes.ok || !patchData.success) {
+          const patchMsg = patchData.errors?.[0]?.message ?? `HTTP ${patchRes.status}`;
+          throw new Error(`DNS record update failed: ${patchMsg}`);
+        }
+      }
+    } else {
       throw new Error(`DNS record creation failed: ${msg}`);
     }
   }

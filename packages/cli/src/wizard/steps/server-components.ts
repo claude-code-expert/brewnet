@@ -325,43 +325,8 @@ export async function runServerComponentsStep(
   next.servers.media.services = mediaEnabled ? ['jellyfin'] : [];
   console.log();
 
-  // -------------------------------------------------------------------------
-  // 8. SSH Server (toggle + passwordAuth + SFTP auto-suggest)
-  // -------------------------------------------------------------------------
-  console.log(chalk.bold('  SSH Server'));
-  console.log(chalk.dim('  터미널로 서버에 원격 접속하거나 SFTP로 파일을 전송하는 보안 채널'));
-  console.log();
-
-  const sshEnabled = await confirm({
-    message: 'Enable SSH Server?',
-    default: next.servers.sshServer.enabled,
-  });
-  next.servers.sshServer.enabled = sshEnabled;
-
-  if (sshEnabled) {
-    next.servers.sshServer.port = 2222;
-    console.log(chalk.dim('  SSH port: 2222'));
-
-    const passwordAuth = await confirm({
-      message: 'Allow password authentication? (key-only auth recommended)',
-      default: next.servers.sshServer.passwordAuth ?? false,
-    });
-    next.servers.sshServer.passwordAuth = passwordAuth;
-
-    // SFTP auto-suggestion
-    if (shouldAutoSuggestSftp(next)) {
-      console.log(
-        chalk.dim('  SFTP auto-enabled (File Server or Media Server is active)'),
-      );
-      next.servers.sshServer.sftp = true;
-    } else {
-      const sftpEnabled = await confirm({
-        message: 'Enable SFTP subsystem?',
-        default: next.servers.sshServer.sftp,
-      });
-      next.servers.sshServer.sftp = sftpEnabled;
-    }
-  }
+  // SSH Server — skipped (not yet implemented, planned for future release)
+  next.servers.sshServer.enabled = false;
   console.log();
 
   // -------------------------------------------------------------------------

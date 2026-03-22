@@ -177,7 +177,7 @@ jest.unstable_mockModule('execa', () => ({
 
 jest.unstable_mockModule('dockerode', () => ({
   default: jest.fn().mockImplementation(() => ({
-    ping: jest.fn().mockResolvedValue('OK'),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue('OK'),
   })),
 }));
 
@@ -210,7 +210,7 @@ jest.unstable_mockModule('../../packages/cli/src/utils/logger.js', () => ({
 // ---------------------------------------------------------------------------
 
 jest.unstable_mockModule('../../packages/cli/src/services/system-checker.js', () => ({
-  runAllChecks: jest.fn().mockResolvedValue({
+  runAllChecks: jest.fn<() => Promise<unknown>>().mockResolvedValue({
     results: [
       { name: 'OS', status: 'pass', message: 'macOS (darwin)', critical: true },
       { name: 'Docker', status: 'pass', message: 'Docker 27.0.3', critical: true },
@@ -240,7 +240,7 @@ const { runSystemCheckStep } = await import(
 const { runProjectSetupStep } = await import(
   '../../packages/cli/src/wizard/steps/project-setup.js'
 );
-const { runServerComponentsStep, applyComponentRules } = await import(
+const { runServerComponentsStep, applyComponentRules: _applyComponentRules } = await import(
   '../../packages/cli/src/wizard/steps/server-components.js'
 );
 const { runDevStackStep, applySkipDevStack } = await import(
@@ -487,9 +487,9 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
       const baseState = applyFullInstallDefaults(createDefaultWizardState());
 
       // Simulate some prior devStack selections
-      baseState.devStack.languages = ['nodejs'] as any;
+      baseState.devStack.languages = ['nodejs'] as unknown as typeof baseState.devStack.languages;
       baseState.devStack.frameworks = { nodejs: 'nextjs' };
-      baseState.devStack.frontend = 'react' as any;
+      baseState.devStack.frontend = 'react' as unknown as typeof baseState.devStack.frontend;
       baseState.servers.appServer.enabled = true;
       baseState.servers.fileBrowser.enabled = true;
 
@@ -649,7 +649,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
 
       const config = generateComposeConfig(state);
 
-      for (const [_name, svc] of Object.entries(config.services)) {
+      for (const svc of Object.values(config.services)) {
         expect(svc.security_opt).toContain('no-new-privileges:true');
       }
     });
@@ -661,7 +661,7 @@ describe('T102 — E2E: Full Install Minimal Flow', () => {
 
       const config = generateComposeConfig(state);
 
-      for (const [_name, svc] of Object.entries(config.services)) {
+      for (const svc of Object.values(config.services)) {
         expect(svc.restart).toBe('unless-stopped');
       }
     });

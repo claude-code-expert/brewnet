@@ -1163,7 +1163,8 @@ export function removeExternalLabels(
 
   for (const key of Object.keys(labels)) {
     if (key.startsWith(prefix) || key.startsWith(svcPrefix)) {
-      delete labels[key];
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete (labels as Record<string, unknown>)[key];
     }
   }
 
@@ -1319,6 +1320,95 @@ export function patchCloudflaredToNamedTunnel(
   });
   writeFileSync(composePath, output, 'utf-8');
   return true;
+}
+
+/**
+ * Patch built-in service environment variables in docker-compose.yml when
+ * transitioning from Quick Tunnel (path-prefix routing) to Named Tunnel
+ * (subdomain routing).
+ *
+ * Quick Tunnel sets service-specific path-based env vars (OVERWRITEWEBROOT,
+ * ROOT_URL=/git/, SCRIPT_NAME, FB_BASEURL) that break subdomain access.
+ * This function removes those and applies subdomain-correct equivalents.
+ *
+ * Returns the list of service names whose environment was changed (caller
+ * should restart these containers so new env takes effect).
+ */
+export function patchBuiltinServicesForNamedTunnel(
+  composePath: string,
+  domain: string,
+): string[] {
+  if (!domain) return [];
+
+  const raw = readFileSync(composePath, 'utf-8');
+  const doc = yaml.load(raw) as Record<string, unknown>;
+  const services = doc['services'] as Record<string, Record<string, unknown>> | undefined;
+  if (!services) return [];
+
+  const changed: string[] = [];
+
+  // Gitea: switch ROOT_URL from path-based to subdomain-based
+  if (services['gitea']) {
+    const svc = services['gitea'] as Record<string, unknown>;
+    const env = (svc['environment'] as Record<string, string> | undefined) ?? {};
+    const prev = env['GITEA__server__ROOT_URL'] ?? '';
+    if (prev !== `https://git.${domain}/`) {
+      env['GITEA__server__ROOT_URL'] = `https://git.${domain}/`;
+      env['GITEA__server__DOMAIN'] = `git.${domain}`;
+      env['GITEA__server__SSH_DOMAIN'] = `git.${domain}`;
+      svc['environment'] = env;
+      changed.push('gitea');
+    }
+  }
+
+  // Nextcloud: remove OVERWRITEWEBROOT, add OVERWRITEHOST/PROTOCOL
+  if (services['nextcloud']) {
+    const svc = services['nextcloud'] as Record<string, unknown>;
+    const env = (svc['environment'] as Record<string, string> | undefined) ?? {};
+    if (env['OVERWRITEWEBROOT']) {
+      delete env['OVERWRITEWEBROOT'];
+      env['OVERWRITEHOST'] = `cloud.${domain}`;
+      env['OVERWRITEPROTOCOL'] = 'https';
+      env['NEXTCLOUD_TRUSTED_PROXIES'] = 'traefik';
+      env['NEXTCLOUD_TRUSTED_DOMAINS'] = `cloud.${domain} localhost`;
+      svc['environment'] = env;
+      changed.push('nextcloud');
+    }
+  }
+
+  // pgAdmin: remove SCRIPT_NAME (not needed for subdomain routing)
+  if (services['pgadmin']) {
+    const svc = services['pgadmin'] as Record<string, unknown>;
+    const env = (svc['environment'] as Record<string, string> | undefined) ?? {};
+    if (env['SCRIPT_NAME']) {
+      delete env['SCRIPT_NAME'];
+      svc['environment'] = env;
+      changed.push('pgadmin');
+    }
+  }
+
+  // FileBrowser: remove FB_BASEURL (not needed for subdomain routing)
+  if (services['filebrowser']) {
+    const svc = services['filebrowser'] as Record<string, unknown>;
+    const env = (svc['environment'] as Record<string, string> | undefined) ?? {};
+    if (env['FB_BASEURL']) {
+      delete env['FB_BASEURL'];
+      svc['environment'] = env;
+      changed.push('filebrowser');
+    }
+  }
+
+  if (changed.length > 0) {
+    const output = yaml.dump(doc, {
+      indent: 2,
+      lineWidth: 120,
+      noRefs: true,
+      sortKeys: false,
+    });
+    writeFileSync(composePath, output, 'utf-8');
+  }
+
+  return changed;
 }
 
 /**

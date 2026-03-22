@@ -19,7 +19,6 @@
 import { input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { mkdirSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { validateProjectName } from '../../utils/validation.js';
 import {

@@ -3,6 +3,107 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [feature/named-tunnel-builtin-services] - 2026-03-22 14:00 — Named Tunnel 근본 버그 4건 수정 (DNS/Git Push/State Sync/Gitea Link)
+
+### 🎯 Prompts
+1. "git clone 시 여전히 에러 나고 있어 — 어제만 해도 잘 되던건데 static 한 리소스도 클론 후 gitea 푸시, deploy 및 도메인 연결이 되어야 해"
+2. "https://git.simplite.net/admin/nodejs-nestjs 이 주소 들어가면 에러 1033 나고 있어"
+3. "http://localhost/git/admin/nodejs-nestjs.git 접근시 http://localhost/user/login 로 리디렉션 되고 있는거 같아"
+4. "버튼 룩앤필이 안맞아 아이콘은 lucid를 원칙으로 써야 해"
+
+### ✅ Changes
+
+#### 버그 수정 — DNS CNAME Stale Tunnel UUID (Error 1033)
+- **Root Cause**: `createDnsRecord()`가 "already exists" 에러 시 기존 CNAME을 갱신하지 않고 무시 → 터널 재생성 후 구 UUID 가리킴
+- **Fixed**: `createDnsRecord()`에 upsert 로직 추가 — POST 실패 시 `getDnsRecords()` + PATCH로 기존 레코드 갱신 (`packages/cli/src/services/cloudflare-client.ts`)
+
+#### 버그 수정 — Git Push 실패 (clone_url /git prefix 누락)
+- **Root Cause**: Traefik `strip-prefix: /git` → Gitea가 `X-Forwarded-Host` 기반으로 `http://localhost/admin/repo.git` 반환 (/git 없음) → Traefik이 admin-ui SPA로 라우팅
+- **Fixed**: `authedCloneUrl()`에서 `user/repo.git` 패턴 추출 후 `baseUrl`(`http://localhost/git`)로 재조립 (`packages/cli/src/services/gitea-client.ts`)
+
+#### 버그 수정 — 도메인 연결 후 wizardState 미갱신
+- **Root Cause**: `wizardState`는 서버 시작 시 1회 로드되는 인메모리 싱글톤. `DomainManager.connect()`가 디스크에 저장해도 인메모리 미갱신
+- **Fixed**: `handleDomainConnect()`/`handleDomainDisconnect()` 성공 후 `loadState()` → `state.domainConnections` 동기화 (`packages/cli/src/services/admin-server.ts`)
+
+#### 버그 수정 — Gitea 링크 로그인 리디렉트
+- **Root Cause**: `getAppGitInfo()`의 `giteaUrl`이 항상 `http://localhost/git/...` → Named Tunnel에서 autologin 경유 → ROOT_URL 불일치로 auth redirect 깨짐
+- **Fixed**: `AppContext`에 `giteaDisplayUrl` 추가 — Named Tunnel이면 `https://git.<zone>`, 아니면 로컬 URL. `giteaUrl`과 `giteaRepoUrl`에 사용 (`packages/cli/src/services/app-manager.ts`)
+
+#### 기능 추가
+- **Added**: Static site 지원 — Git Clone 모드에서 docker-compose.yml 없는 저장소에 `ensureComposeFile()` 자동 호출 → nginx 기반 compose 생성 (`packages/cli/src/services/app-manager.ts`)
+- **Added**: `gitea-config.json` 항상 `http://localhost/git` 저장 — Named Tunnel 외부 URL 사용 금지 (`packages/cli/src/services/admin-server.ts`, `packages/cli/src/wizard/steps/generate.ts`)
+- **Added**: `resolveContext()` — `giteaBaseUrl`을 항상 `http://localhost/git`으로 고정 (터널 상태 무관) (`packages/cli/src/services/app-manager.ts`)
+
+#### UI 개선
+- **Modified**: CreateAppModal 모드 선택 버튼 — 이모지(📦🔗) → Lucide 아이콘(Package, GitBranch) + 선택 상태 fontWeight 강조 (`packages/admin-ui/src/components/CreateAppModal.tsx`)
+
+### 📁 Files Modified
+- `packages/cli/src/services/cloudflare-client.ts` (createDnsRecord upsert)
+- `packages/cli/src/services/gitea-client.ts` (authedCloneUrl URL 정규화)
+- `packages/cli/src/services/admin-server.ts` (wizardState 동기화, gitea-config.json 정규화)
+- `packages/cli/src/services/app-manager.ts` (giteaDisplayUrl, ensureComposeFile, resolveContext)
+- `packages/cli/src/wizard/steps/generate.ts` (gitea-config.json localhost/git 고정)
+- `packages/cli/src/services/domain-manager.ts` (zoneName 경로 수정)
+- `packages/admin-ui/src/components/CreateAppModal.tsx` (Lucide 아이콘)
+
+### 📋 Troubleshooting 기록
+- `troubleshooting/dns-cname-stale-tunnel-uuid-error-1033.md`
+- `troubleshooting/gitea-clone-url-missing-git-prefix.md`
+- `troubleshooting/wizardstate-stale-domain-connections.md`
+- `troubleshooting/gitea-link-login-redirect-named-tunnel.md`
+
+---
+
+## [feature/named-tunnel-builtin-services] - 2026-03-22 — Named Tunnel 전환 이슈 수정 + ServiceDetailModal 개선
+
+### 🎯 Prompts
+1. "도메인 연결 후 Nextcloud 페이지를 찾을 수 없음 — https://cloud.simplite.net 에러"
+2. "traefik 카드는 도메인 연결된건데도 로컬만 나오는데. 상세 화면도 로컬만 있어"
+3. "ssh -p 2222 admin@localhost 이것도 도메인 연결되면 바뀌어야 하는거 아닌가 싶은데"
+4. "이 내용 간단하게 요약해서 외부 도메인 연결해도 보안 때문에 내부접근만 허용한다 하고 상세 모달에서 안내를 해줘야 해"
+5. "아냐 이거 별도의 문서 md로 만들어서 phase 폴더 안에다 넣어 [SSH automation spec]"
+6. "@CopyButton 이거 텍스트랑 테두리 좀 더 밝게 해"
+7. "http://localhost:3000/admin/nodejs-express 접속하면 404 나와 @InfoRow Gitea URL — 왜 소스 푸시 안된거지?"
+8. "@OverviewTab 도메인이 프론트에 연결된 상태면 백엔드도 호출될 수 있을텐데 왜 백엔드 도메인은 주소는 안나오는건지 조사해봐"
+9. "무슨 소리야 https://nodejs-express.simplite.net/api/hello 로 이동하면 바로 백엔드 호출되는데 왜 호출이 안된다는거야? 소스 코드 다 확인하고 답변하라고 했지. 그냥 url이 제대로 표기 안되는 문제인거잖아"
+10. "지금 내용 다 깔끔하게 정리해서 /changelog /troubleshooting 에 기록해. 다시 반복되지 않도록 gitea, domain 사항들 다 정리해놔"
+11. "@OverviewTab 프론트 주소로 도메인 연결됐는데 /api/hello 가 기본값이야 [backend external URL에 /api/hello 추가]"
+
+### ✅ Changes
+
+#### 버그 수정
+- **Fixed**: Named Tunnel 모드에서 비통합 앱 `backendExternalUrl = null` 오류 → `https://${domainConn.hostname}/api/hello`로 수정 (GET /api/apps L1344, GET /api/apps/:name L1500) (`packages/cli/src/services/admin-server.ts`)
+- **Fixed**: Named Tunnel 모드에서 Gitea URL이 `http://localhost:3000/...`으로 표시 — Named Tunnel은 Gitea HTTP 포트(3000) 미노출 → `https://git.${zoneName}` 사용으로 수정 (`packages/cli/src/services/app-manager.ts:477`)
+
+#### 신규 기능
+- **Added**: `ServiceDetailInfo.securityNote` 필드 — 서비스 상세 모달에 보안 안내 텍스트 표시 (`packages/cli/src/services/admin-server.ts`, `packages/admin-ui/src/types.ts`)
+- **Added**: Traefik `securityNote` — "도메인 연결 후에도 보안상 로컬 네트워크에서만 접근 가능합니다 (의도된 설계)" 안내 추가 (`packages/cli/src/services/admin-server.ts`)
+- **Added**: `ServiceDetailModal` securityNote 렌더링 블록 — 황색 경고 박스 스타일 (`packages/admin-ui/src/components/ServiceDetailModal.tsx`)
+- **Added**: `specs/007-ssh-external-access/spec.md` — SSH 외부 접근 자동화 스펙 (Cloudflare A레코드, Phase 1-3 구현 계획) (`specs/007-ssh-external-access/spec.md`)
+
+#### UI 개선
+- **Modified**: CopyButton 텍스트/테두리 색상 밝게 조정 — `var(--txt3)` → `var(--txt2)`, `var(--bdr)` → `var(--bdr2)` (`packages/admin-ui/src/components/ServiceCard.tsx`)
+
+#### 수동 복구 (코드 변경 아님)
+- Gitea `gitea_db` 재생성 후 admin 계정 소실 → `gitea admin user create` + `change-password --must-change-password=false` + `generate-access-token` 실행
+- Nextcloud Named Tunnel 전환 후 `overwritewebroot=/cloud` 잔존 → `occ config:system:set` 3개 명령으로 수동 수정
+- Gitea 토큰 재생성 + Gitea URL 수정 → admin-server 재시작
+
+### 📁 Files Modified
+- `packages/cli/src/services/admin-server.ts` (backendExternalUrl /api/hello, securityNote)
+- `packages/cli/src/services/app-manager.ts` (giteaBaseUrl Named Tunnel 수정)
+- `packages/admin-ui/src/components/ServiceDetailModal.tsx` (securityNote 렌더링)
+- `packages/admin-ui/src/components/ServiceCard.tsx` (CopyButton 색상)
+- `packages/admin-ui/src/types.ts` (securityNote 타입)
+- `specs/007-ssh-external-access/spec.md` (신규)
+- `troubleshooting/gitea-admin-lost-after-db-recreation.md` (신규)
+- `troubleshooting/nextcloud-named-tunnel-overwritewebroot-remnant.md` (신규)
+- `troubleshooting/gitea-url-localhost-port-not-exposed-named-tunnel.md` (신규)
+- `troubleshooting/named-tunnel-nonunified-backend-url-wrong-null.md` (신규)
+- `troubleshooting/README.md` (4개 신규 파일 인덱스 추가)
+
+---
+
 ## [006-domain-settings] - 2026-03-21 — Cloudflare Tunnel 도메인 설정 UI + App Domain 연결 기능 완성
 
 ### 🎯 Prompts

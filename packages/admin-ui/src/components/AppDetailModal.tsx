@@ -14,9 +14,10 @@ interface AppDetailModalProps {
   appName: string;
   onClose: () => void;
   onOpenDomainSettings?: () => void;
+  initialTab?: Tab;
 }
 
-export function AppDetailModal({ appName, onClose, onOpenDomainSettings }: AppDetailModalProps) {
+export function AppDetailModal({ appName, onClose, onOpenDomainSettings, initialTab }: AppDetailModalProps) {
   const { apiFetch } = useAuth();
 
   const [app, setApp]                 = useState<AppEntry | null>(null);
@@ -24,7 +25,7 @@ export function AppDetailModal({ appName, onClose, onOpenDomainSettings }: AppDe
   const [settings, setSettings]       = useState<DeploySettings | null>(null);
   const [boilerplate, setBoilerplate] = useState<BoilerplateMeta | null>(null);
   const [notFound, setNotFound]       = useState(false);
-  const [activeTab, setActiveTab]     = useState<Tab>('overview');
+  const [activeTab, setActiveTab]     = useState<Tab>(initialTab ?? 'overview');
   const [progressJob, setProgressJob] = useState<{ jobId: string; appName: string } | null>(null);
 
   // 404-aware fetch wrapper

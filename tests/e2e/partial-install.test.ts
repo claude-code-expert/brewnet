@@ -152,8 +152,8 @@ jest.unstable_mockModule('node:os', () => ({
 // ---------------------------------------------------------------------------
 
 jest.unstable_mockModule('execa', () => ({
-  execa: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
-  $: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+  execa: jest.fn<() => Promise<unknown>>().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+  $: jest.fn<() => Promise<unknown>>().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ jest.unstable_mockModule('execa', () => ({
 
 jest.unstable_mockModule('dockerode', () => ({
   default: jest.fn().mockImplementation(() => ({
-    ping: jest.fn().mockResolvedValue('OK'),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue('OK'),
   })),
 }));
 
@@ -195,7 +195,7 @@ jest.unstable_mockModule('../../packages/cli/src/utils/logger.js', () => ({
 // ---------------------------------------------------------------------------
 
 jest.unstable_mockModule('../../packages/cli/src/services/system-checker.js', () => ({
-  runAllChecks: jest.fn().mockResolvedValue({
+  runAllChecks: jest.fn<() => Promise<unknown>>().mockResolvedValue({
     results: [
       { name: 'OS', status: 'pass', message: 'macOS', critical: true },
       { name: 'Docker', status: 'pass', message: 'Docker 27.0.3', critical: true },
@@ -228,7 +228,7 @@ const { runProjectSetupStep } = await import(
 const { runServerComponentsStep } = await import(
   '../../packages/cli/src/wizard/steps/server-components.js'
 );
-const { runDevStackStep, applySkipDevStack } = await import(
+const { runDevStackStep, applySkipDevStack: _applySkipDevStack } = await import(
   '../../packages/cli/src/wizard/steps/dev-stack.js'
 );
 const { runDomainNetworkStep } = await import(
@@ -378,7 +378,7 @@ describe('T103 — E2E: Partial Install Flow', () => {
     it('should have 3 services if cloudflare tunnel is added', () => {
       const state = applyPartialInstallDefaults(createDefaultWizardState());
       state.admin.password = 'test-pass-12345';
-      state.domain.provider = 'custom';
+      state.domain.provider = 'tunnel';
       state.domain.name = 'example.com';
       state.domain.cloudflare.enabled = true;
       state.domain.cloudflare.tunnelToken = 'my-token';

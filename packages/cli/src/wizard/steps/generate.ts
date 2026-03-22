@@ -1204,6 +1204,12 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
                 writeFileSync(tokenPath, td.sha1, 'utf-8');
                 chmodSync(tokenPath, 0o600);
                 gitea.succeed('  Gitea: API 토큰 생성 완료');
+                // Persist confirmed Gitea username for stable reuse in create-app
+                try {
+                  const { saveGiteaConfig } = await import('../../services/app-manager.js');
+                  // Always use local URL — admin server accesses Gitea via Traefik proxy, not external tunnel
+                  saveGiteaConfig('http://localhost/git', adminUser);
+                } catch { /* non-critical */ }
               } else {
                 const errBody = await tr.text();
                 gitea.warn(`  Gitea: API 토큰 생성 실패 (${tr.status}) — create-app 시 자동 재시도됩니다`);

@@ -38,20 +38,18 @@ import {
 } from '../../packages/cli/src/utils/resources.js';
 
 import {
-  brewnetConfigSchema,
   validateBrewnetConfig,
   safeValidateBrewnetConfig,
 } from '../../packages/shared/src/schemas/config.schema.js';
 
 import {
-  wizardStateSchema,
   safeValidateWizardState,
 } from '../../packages/shared/src/schemas/wizard-state.schema.js';
 
 import type { WizardState } from '../../packages/shared/src/types/wizard-state.js';
 import type { BrewnetConfig } from '../../packages/shared/src/schemas/config.schema.js';
 
-import { WizardStep, STEP_NAMES } from '../../packages/cli/src/wizard/navigation.js';
+import { WizardStep } from '../../packages/cli/src/wizard/navigation.js';
 
 // ---------------------------------------------------------------------------
 // Types for the review module (mirrors the planned implementation)
@@ -203,7 +201,7 @@ function generateReviewSections(state: WizardState): ReviewSection[] {
   });
 
   // --- Resource Estimate section ---
-  const resources = estimateResources(state as any);
+  const resources = estimateResources(state);
   const resourceItems: ReviewItem[] = [
     { label: 'Containers', value: String(resources.containers) },
     { label: 'Estimated RAM', value: resources.ramGB },
@@ -217,7 +215,7 @@ function generateReviewSections(state: WizardState): ReviewSection[] {
   });
 
   // --- Credential Propagation section ---
-  const targets = getCredentialTargets(state as any);
+  const targets = getCredentialTargets(state);
   if (targets.length > 0) {
     sections.push({
       id: 'credentials',
@@ -241,7 +239,7 @@ function exportConfig(state: WizardState, projectPath: string): string {
     schemaVersion: state.schemaVersion,
     projectName: state.projectName,
     projectPath: state.projectPath,
-    setupType: state.setupType,
+    setupType: state.setupType as 'full' | 'partial',
     admin: {
       username: state.admin.username,
       storage: state.admin.storage,
@@ -348,10 +346,6 @@ function importConfig(configPath: string): WizardState {
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
-
-function cloneState(state: WizardState): WizardState {
-  return JSON.parse(JSON.stringify(state));
-}
 
 /**
  * Create a fully-populated WizardState suitable for review.
@@ -585,7 +579,7 @@ describe('T064 — Review & Export', () => {
       const sections = generateReviewSections(state);
       const resourceSection = sections.find((s) => s.id === 'resources')!;
 
-      const expected = estimateResources(state as any);
+      const expected = estimateResources(state);
 
       const ramItem = resourceSection.items.find((i) => i.label === 'Estimated RAM')!;
       const diskItem = resourceSection.items.find((i) => i.label === 'Estimated Disk')!;
@@ -601,8 +595,8 @@ describe('T064 — Review & Export', () => {
       minimal.admin.password = 'testPassword123!';
       const full = createCompletedState();
 
-      const minResources = estimateResources(minimal as any);
-      const fullResources = estimateResources(full as any);
+      const minResources = estimateResources(minimal);
+      const fullResources = estimateResources(full);
 
       expect(fullResources.ramMB).toBeGreaterThan(minResources.ramMB);
       expect(fullResources.diskGB).toBeGreaterThan(minResources.diskGB);
@@ -611,8 +605,8 @@ describe('T064 — Review & Export', () => {
 
     it('5+ services selected shows correct container count', () => {
       const state = createCompletedState();
-      const resources = estimateResources(state as any);
-      const services = collectAllServices(state as any);
+      const resources = estimateResources(state);
+      const services = collectAllServices(state);
 
       // The completed state has: traefik, gitea, nextcloud, jellyfin,
       // postgresql, pgadmin, redis, openssh-server, filebrowser, cloudflared
@@ -913,7 +907,7 @@ describe('T064 — Review & Export', () => {
       const sections = generateReviewSections(state);
       const credSection = sections.find((s) => s.id === 'credentials')!;
 
-      const expectedTargets = getCredentialTargets(state as any);
+      const expectedTargets = getCredentialTargets(state);
       const actualNames = credSection.items.map((i) => i.label);
 
       expect(actualNames).toEqual(expectedTargets);

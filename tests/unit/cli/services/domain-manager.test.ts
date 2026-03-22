@@ -12,16 +12,16 @@ import type { WizardState } from '@brewnet/shared';
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockGetDnsRecords = jest.fn<any>();
-const mockDeleteDnsRecord = jest.fn<any>();
-const mockCreateDnsRecord = jest.fn<any>();
-const mockConfigureTunnelIngress = jest.fn<any>();
-const mockGetTunnelHealth = jest.fn<any>();
-const mockGetActiveServiceRoutes = jest.fn<any>();
-const mockAddExternalLabels = jest.fn<any>();
-const mockRemoveExternalLabels = jest.fn<any>();
-const mockLoadState = jest.fn<any>();
-const mockSaveState = jest.fn<any>();
+const mockGetDnsRecords = jest.fn<() => unknown>();
+const mockDeleteDnsRecord = jest.fn<() => unknown>();
+const mockCreateDnsRecord = jest.fn<() => unknown>();
+const mockConfigureTunnelIngress = jest.fn<() => unknown>();
+const mockGetTunnelHealth = jest.fn<() => unknown>();
+const mockGetActiveServiceRoutes = jest.fn<() => unknown>();
+const mockAddExternalLabels = jest.fn<() => unknown>();
+const mockRemoveExternalLabels = jest.fn<() => unknown>();
+const mockLoadState = jest.fn<() => unknown>();
+const mockSaveState = jest.fn<() => unknown>();
 const mockFetch = jest.fn<typeof fetch>();
 
 jest.unstable_mockModule('../../../../packages/cli/src/services/cloudflare-client.js', () => ({
@@ -45,7 +45,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
 
 // Mock execa for DNS resolution checks (dig command)
 jest.unstable_mockModule('execa', () => ({
-  execa: jest.fn<any>().mockResolvedValue({ stdout: 'tun-456.cfargotunnel.com.\n', stderr: '' }),
+  execa: jest.fn<() => unknown>().mockResolvedValue({ stdout: 'tun-456.cfargotunnel.com.\n', stderr: '' }),
 }));
 
 global.fetch = mockFetch as typeof fetch;

@@ -23,7 +23,6 @@ import {
 
 import type {
   ContainerInfo,
-  StatusRow,
 } from '../../../../packages/cli/src/commands/status.js';
 
 // ---------------------------------------------------------------------------

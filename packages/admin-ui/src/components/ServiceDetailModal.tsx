@@ -11,7 +11,7 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
     <div className="overlay">
       <div
         className="modal"
-        style={{ maxWidth: 520 }}
+        style={{ maxWidth: 720 }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* macOS-style titlebar */}
@@ -59,12 +59,22 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px 22px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Name + status */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--txt)', fontFamily: 'var(--mono)' }}>
-              {service.name}
-            </span>
+        <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Name + status + port/uptime */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--txt)', fontFamily: 'var(--mono)', flexShrink: 0 }}>
+                {service.name}
+              </span>
+              {service.port && (
+                <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt2)' }}>:{service.port}</span>
+              )}
+              {service.uptime && service.uptime !== '—' && (
+                <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {service.uptime}
+                </span>
+              )}
+            </div>
             <span
               className={
                 service.status === 'running' ? 'bdg b-run'
@@ -147,54 +157,184 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
             </div>
           )}
 
-          {/* URLs */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {service.url && (
-              <a href={service.url} target="_blank" rel="noopener noreferrer" className="btn bg bsm">
-                ↗ Local URL
-              </a>
-            )}
-            {service.externalUrl && (
-              <a href={service.externalUrl} target="_blank" rel="noopener noreferrer" className="btn bt bsm">
-                ↗ External URL
-              </a>
-            )}
-            {detail?.docs && (
-              <a href={detail.docs} target="_blank" rel="noopener noreferrer" className="btn bv bsm">
-                📖 Docs
-              </a>
-            )}
-          </div>
+          {/* Connection Params */}
+          {detail?.connectionParams && detail.connectionParams.length > 0 && (
+            <div>
+              <div className="section-title" style={{ marginBottom: 8 }}>Connection</div>
+              <div
+                style={{
+                  background: '#0a1020',
+                  border: '1px solid var(--bdr)',
+                  borderRadius: 'var(--r)',
+                  padding: '10px 14px',
+                  display: 'grid',
+                  gridTemplateColumns: 'auto 1fr',
+                  columnGap: 16,
+                  rowGap: 5,
+                }}
+              >
+                {detail.connectionParams.map(({ label, value }) => (
+                  <>
+                    <span key={`${label}-k`} style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
+                      {label}
+                    </span>
+                    <span key={`${label}-v`} style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--teal)' }}>
+                      {value}
+                    </span>
+                  </>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Port / uptime info */}
-          {(service.port || service.uptime) && (
-            <div style={{ display: 'flex', gap: 16, borderTop: '1px solid var(--bdr)', paddingTop: 12 }}>
-              {service.port && (
-                <div>
-                  <div className="sk" style={{ marginBottom: 4 }}>Port</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--txt)' }}>:{service.port}</div>
+          {/* How to Connect */}
+          {detail?.credentials?.command && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div className="section-title" style={{ margin: 0 }}>How to Connect</div>
+                <span style={{
+                  fontSize: 10,
+                  fontFamily: 'var(--mono)',
+                  color: 'var(--txt3)',
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--bdr)',
+                  borderRadius: 20,
+                  padding: '1px 7px',
+                }}>
+                  Terminal only
+                </span>
+              </div>
+              <div
+                style={{
+                  background: '#0a1020',
+                  border: '1px solid var(--bdr)',
+                  borderRadius: 'var(--r)',
+                  padding: '10px 14px',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 12,
+                  color: 'var(--teal)',
+                  overflowX: 'auto',
+                  whiteSpace: 'pre',
+                }}
+              >
+                {detail.credentials.command}
+              </div>
+            </div>
+          )}
+
+          {/* Tips */}
+          {detail?.tips && detail.tips.length > 0 && (
+            <div>
+              <div className="section-title" style={{ marginBottom: 8 }}>Tips</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {detail.tips.map((tip) => (
+                  <div
+                    key={tip}
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      fontSize: 12,
+                      color: 'var(--txt2)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <span style={{ color: 'var(--txt3)', flexShrink: 0 }}>›</span>
+                    <span>{tip}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* URLs */}
+          {(service.url || service.externalUrl) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {service.url && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 52, flexShrink: 0 }}>LOCAL</span>
+                  <a
+                    href={service.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 12,
+                      fontFamily: 'var(--mono)',
+                      color: 'var(--teal)',
+                      background: 'rgba(61,214,200,0.07)',
+                      border: '1px solid rgba(61,214,200,0.18)',
+                      borderRadius: 4,
+                      padding: '3px 10px',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textDecoration: 'none',
+                    }}
+                    title={service.url}
+                  >
+                    ↗ {service.url}
+                  </a>
                 </div>
               )}
-              {service.uptime && (
-                <div>
-                  <div className="sk" style={{ marginBottom: 4 }}>Uptime</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--txt)' }}>{service.uptime}</div>
-                </div>
-              )}
-              {service.cpu && (
-                <div>
-                  <div className="sk" style={{ marginBottom: 4 }}>CPU</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--txt)' }}>{service.cpu}</div>
-                </div>
-              )}
-              {service.memory && (
-                <div>
-                  <div className="sk" style={{ marginBottom: 4 }}>Memory</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--txt)' }}>{service.memory}</div>
+              {service.externalUrl && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 52, flexShrink: 0 }}>EXTERNAL</span>
+                  <a
+                    href={service.externalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 12,
+                      fontFamily: 'var(--mono)',
+                      color: 'var(--amber)',
+                      background: 'rgba(232,168,73,0.07)',
+                      border: '1px solid rgba(232,168,73,0.18)',
+                      borderRadius: 4,
+                      padding: '3px 10px',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textDecoration: 'none',
+                    }}
+                    title={service.externalUrl}
+                  >
+                    ↗ {service.externalUrl}
+                  </a>
                 </div>
               )}
             </div>
           )}
+
+          {/* Security Note */}
+          {detail?.securityNote && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 10,
+                padding: '10px 14px',
+                background: 'rgba(232,168,73,0.06)',
+                border: '1px solid rgba(232,168,73,0.2)',
+                borderRadius: 'var(--r)',
+                fontSize: 12,
+                color: 'var(--txt2)',
+                lineHeight: 1.55,
+              }}
+            >
+              <span style={{ color: 'var(--amber)', flexShrink: 0 }}>⚠</span>
+              <span>{detail.securityNote}</span>
+            </div>
+          )}
+
+          {/* Docs */}
+          {detail?.docs && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <a href={detail.docs} target="_blank" rel="noopener noreferrer" className="btn bv bsm">
+                📖 Docs
+              </a>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

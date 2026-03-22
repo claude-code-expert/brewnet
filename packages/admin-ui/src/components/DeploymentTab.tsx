@@ -167,7 +167,11 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
           <div className="section-title" style={{ marginBottom: 12 }}>Git Repository</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <a
-              href={`/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`}
+              href={(() => {
+                if (git.giteaUrl.startsWith('https://')) return git.giteaUrl;
+                try { return `/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`; }
+                catch { return git.giteaUrl; }
+              })()}
               target="_blank"
               rel="noopener noreferrer"
               style={{

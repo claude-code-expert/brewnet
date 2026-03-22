@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ServiceStatus, ServiceDetail } from '../types.js';
 
 const STACK_LABELS: Record<string, string> = {
@@ -43,6 +44,40 @@ function statusLabel(status: ServiceStatus['status']): string {
     case 'not_installed': return 'Not Installed';
     default: return status;
   }
+}
+
+export function CopyButton({ text, style }: { text: string; style?: React.CSSProperties }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch((err: unknown) => {
+      console.warn('[CopyButton] clipboard write failed:', err);
+    });
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      style={{
+        padding: '2px 8px',
+        fontSize: 10,
+        fontFamily: 'var(--mono)',
+        background: copied ? 'rgba(61,214,200,0.12)' : 'var(--bg3)',
+        border: `1px solid ${copied ? 'rgba(61,214,200,0.4)' : 'var(--bdr2)'}`,
+        borderRadius: 20,
+        color: copied ? 'var(--teal)' : 'var(--txt2)',
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        lineHeight: 1.6,
+        flexShrink: 0,
+        ...style,
+      }}
+    >
+      {copied ? 'copied' : 'copy'}
+    </button>
+  );
 }
 
 export function ServiceCard({ service, detail, onOpenDetail }: ServiceCardProps) {
@@ -103,23 +138,48 @@ export function ServiceCard({ service, detail, onOpenDetail }: ServiceCardProps)
         </p>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {service.port && (
-          <span
-            style={{
-              fontSize: 11,
-              fontFamily: 'var(--mono)',
-              color: 'var(--txt3)',
-              background: 'var(--bg3)',
-              border: '1px solid var(--bdr)',
-              borderRadius: 4,
-              padding: '2px 7px',
-            }}
-          >
-            :{service.port}
-          </span>
-        )}
+      {service.port && (
+        <span
+          style={{
+            fontSize: 11,
+            fontFamily: 'var(--mono)',
+            color: 'var(--txt2)',
+            background: 'var(--bg3)',
+            border: '1px solid var(--bdr2)',
+            borderRadius: 4,
+            padding: '2px 7px',
+            alignSelf: 'flex-start',
+          }}
+        >
+          :{service.port}
+        </span>
+      )}
 
+
+      {!service.url && !service.externalUrl && detail?.credentials?.command && (
+        <div
+          style={{
+            background: '#0a1020',
+            border: '1px solid var(--bdr)',
+            borderRadius: 4,
+            padding: '5px 10px',
+            fontFamily: 'var(--mono)',
+            fontSize: 11,
+            color: 'var(--teal)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={detail.credentials.command}
+        >
+          {detail.credentials.command}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 'auto' }}>
+        {!service.url && !service.externalUrl && detail?.credentials?.command && (
+          <CopyButton text={detail.credentials.command} />
+        )}
         {service.url && (
           <a
             href={service.url}
@@ -151,21 +211,6 @@ export function ServiceCard({ service, detail, onOpenDetail }: ServiceCardProps)
           </a>
         )}
       </div>
-
-      {isRunning && (service.cpu || service.memory) && (
-        <div style={{ display: 'flex', gap: 12 }}>
-          {service.cpu && (
-            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
-              CPU {service.cpu}
-            </span>
-          )}
-          {service.memory && (
-            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
-              MEM {service.memory}
-            </span>
-          )}
-        </div>
-      )}
     </div>
   );
 }

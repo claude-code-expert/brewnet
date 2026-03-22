@@ -121,8 +121,11 @@ export interface ServiceDetail {
   description?: string;
   license?: string;
   features?: string[];
-  credentials?: { summary: string; keys?: string[] };
+  credentials?: { summary: string; keys?: string[]; command?: string };
+  connectionParams?: { label: string; value: string }[];
+  tips?: string[];
   docs?: string;
+  securityNote?: string;
 }
 
 export interface GitRepoEntry {

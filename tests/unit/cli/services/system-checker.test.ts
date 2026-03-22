@@ -102,9 +102,6 @@ const {
   runAllChecks,
 } = await import('../../../../packages/cli/src/services/system-checker.js');
 
-const { BrewnetError, isBrewnetError } = await import(
-  '../../../../packages/cli/src/utils/errors.js'
-);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -176,8 +173,8 @@ function setupAllPassingMocks(): void {
   mockServerInstance.close.mockImplementation((callback?: () => void) => {
     if (callback) callback();
   });
-  mockServerInstance.on.mockReturnValue(mockServerInstance as any);
-  mockServerInstance.once.mockReturnValue(mockServerInstance as any);
+  mockServerInstance.on.mockReturnValue(mockServerInstance as unknown as ReturnType<typeof mockCreateServer>);
+  mockServerInstance.once.mockReturnValue(mockServerInstance as unknown as ReturnType<typeof mockCreateServer>);
 }
 
 // ---------------------------------------------------------------------------
@@ -843,7 +840,7 @@ describe('SystemChecker', () => {
             err.code = 'EADDRINUSE';
             callback(err);
           }
-          return mockServerInstance as any;
+          return mockServerInstance as unknown as ReturnType<typeof mockCreateServer>;
         });
         mockServerInstance.once.mockImplementation((event: string, callback: ErrorCallback) => {
           if (event === 'error') {
@@ -851,7 +848,7 @@ describe('SystemChecker', () => {
             err.code = 'EADDRINUSE';
             callback(err);
           }
-          return mockServerInstance as any;
+          return mockServerInstance as unknown as ReturnType<typeof mockCreateServer>;
         });
       });
 
@@ -882,7 +879,7 @@ describe('SystemChecker', () => {
             err.code = 'EADDRINUSE';
             callback(err);
           }
-          return mockServerInstance as any;
+          return mockServerInstance as unknown as ReturnType<typeof mockCreateServer>;
         });
         mockServerInstance.once.mockImplementation((event: string, callback: ErrorCallback) => {
           if (event === 'error') {
@@ -890,7 +887,7 @@ describe('SystemChecker', () => {
             err.code = 'EADDRINUSE';
             callback(err);
           }
-          return mockServerInstance as any;
+          return mockServerInstance as unknown as ReturnType<typeof mockCreateServer>;
         });
 
         const result = await checkPort(443);
@@ -912,7 +909,7 @@ describe('SystemChecker', () => {
             err.code = 'EACCES';
             callback(err);
           }
-          return mockServerInstance as any;
+          return mockServerInstance as unknown as ReturnType<typeof mockCreateServer>;
         });
         mockServerInstance.once.mockImplementation((event: string, callback: ErrorCallback) => {
           if (event === 'error') {
@@ -920,7 +917,7 @@ describe('SystemChecker', () => {
             err.code = 'EACCES';
             callback(err);
           }
-          return mockServerInstance as any;
+          return mockServerInstance as unknown as ReturnType<typeof mockCreateServer>;
         });
 
         const result = await checkPort(80);

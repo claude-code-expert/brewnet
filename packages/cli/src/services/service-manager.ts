@@ -317,12 +317,14 @@ export async function removeService(
   const namedVolumes = extractNamedVolumes(serviceVolumeMounts);
 
   // Remove service
-  delete compose.services[serviceId];
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+  delete (compose.services as Record<string, unknown>)[serviceId];
 
   // If purge, also remove associated named volumes from top-level
   if (options?.purge && compose.volumes && namedVolumes.length > 0) {
     for (const vol of namedVolumes) {
       if (vol in (compose.volumes as Record<string, unknown>)) {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete (compose.volumes as Record<string, unknown>)[vol];
       }
     }

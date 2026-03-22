@@ -146,7 +146,7 @@ export function TunnelStep({
         className="btn bp"
         onClick={() => void onCreateTunnel(tunnelName.trim())}
         disabled={tunnelCreating || !tunnelName.trim()}
-        style={{ alignSelf: 'flex-start', opacity: tunnelCreating || !tunnelName.trim() ? 0.6 : 1 }}
+        style={{ alignSelf: 'flex-end', opacity: tunnelCreating || !tunnelName.trim() ? 0.6 : 1 }}
       >
         {tunnelCreating
           ? <><Loader size={14} className="spin" /> Creating tunnel…</>

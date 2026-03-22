@@ -24,7 +24,7 @@ import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals
 // Mock execa — must come before any module imports
 // ---------------------------------------------------------------------------
 
-type ExecaFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<void>;
+type ExecaFn = (cmd: string, args: string[], opts?: Record<string, unknown>) => Promise<{ stdout: string } | undefined>;
 
 const mockExeca = jest.fn<ExecaFn>().mockResolvedValue(undefined);
 

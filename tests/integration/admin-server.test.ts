@@ -117,7 +117,7 @@ async function req(method: string, path: string, body?: object): Promise<{ statu
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  const { server, start, stop } = createAdminServer({ port: 0, projectPath: '/tmp/test-project' });
+  const { server, start: _start, stop } = createAdminServer({ port: 0, projectPath: '/tmp/test-project' });
   // Listen on ephemeral port
   await new Promise<void>((resolve) => {
     server.listen(0, '127.0.0.1', () => {

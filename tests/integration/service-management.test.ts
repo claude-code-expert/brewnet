@@ -39,7 +39,6 @@ import {
 
 import {
   getServiceDefinition,
-  SERVICE_REGISTRY,
 } from '../../packages/cli/src/config/services.js';
 
 import { DOCKER_COMPOSE_FILENAME } from '../../packages/shared/src/utils/constants.js';
@@ -71,7 +70,7 @@ interface ComposeFile {
 /** Result shape expected from addService / removeService */
 interface ServiceOperationResult {
   success: boolean;
-  composePath: string;
+  composePath?: string;
   backupPath?: string;
   error?: string;
 }

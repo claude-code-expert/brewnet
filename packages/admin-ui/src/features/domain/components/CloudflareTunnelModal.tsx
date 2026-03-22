@@ -13,6 +13,7 @@ import { HelpDrawer } from './HelpDrawer.js';
 interface CloudflareTunnelModalProps {
   apiFetch: ApiFetch;
   onClose: () => void;
+  onComplete?: () => void;
 }
 
 const WIZARD_STEPS = [
@@ -21,7 +22,7 @@ const WIZARD_STEPS = [
   { id: 'tunnel', label: 'Tunnel' },
 ];
 
-export function CloudflareTunnelModal({ apiFetch, onClose }: CloudflareTunnelModalProps) {
+export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: CloudflareTunnelModalProps) {
   const setup = useCloudflareSetup(apiFetch);
   const { setPassword } = useAuth();
   const [helpKey, setHelpKey] = useState<string | null>(null);
@@ -231,7 +232,7 @@ export function CloudflareTunnelModal({ apiFetch, onClose }: CloudflareTunnelMod
                       You can now connect your apps to subdomains from each app's Domain tab.
                     </div>
 
-                    <button className="btn bp" onClick={onClose} style={{ alignSelf: 'flex-start' }}>
+                    <button className="btn bp" onClick={onComplete ?? onClose} style={{ alignSelf: 'flex-end' }}>
                       Connect apps →
                     </button>
                   </div>

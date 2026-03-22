@@ -103,12 +103,12 @@ jest.unstable_mockModule(
 // Mock DomainManager
 // ---------------------------------------------------------------------------
 
-const mockDomainManagerConnect = jest.fn<any>();
-const mockDomainManagerDisconnect = jest.fn<any>();
-const mockDomainManagerList = jest.fn<any>();
-const mockDomainManagerStatus = jest.fn<any>();
-const mockDomainManagerGetConnectableApps = jest.fn<any>();
-const mockDomainManagerGetState = jest.fn<any>();
+const mockDomainManagerConnect = jest.fn<() => unknown>();
+const mockDomainManagerDisconnect = jest.fn<() => unknown>();
+const mockDomainManagerList = jest.fn<() => unknown>();
+const mockDomainManagerStatus = jest.fn<() => unknown>();
+const mockDomainManagerGetConnectableApps = jest.fn<() => unknown>();
+const mockDomainManagerGetState = jest.fn<() => unknown>();
 
 jest.unstable_mockModule(
   '../../../../packages/cli/src/services/domain-manager.js',

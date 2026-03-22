@@ -256,7 +256,7 @@ export function generateEndpoints(
   const isLocal = state.domain.provider === 'local';
   const scheme = isLocal ? 'http' : 'https';
 
-  const credTargets = getCredentialTargets(state as any);
+  const credTargets = getCredentialTargets(state);
 
   for (const svcId of services) {
     const mapping = SUBDOMAIN_MAP[svcId];

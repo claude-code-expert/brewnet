@@ -22,25 +22,38 @@ function ZoneDropdown({ zones, selectedId, onSelect }: {
   onSelect: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node) &&
+          triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  const handleToggle = () => {
+    if (!open && triggerRef.current) {
+      setRect(triggerRef.current.getBoundingClientRect());
+    }
+    setOpen((v) => !v);
+  };
+
   const selected = zones.find((z) => z.id === selectedId);
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div style={{ position: 'relative' }}>
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
         style={{
           width: '100%',
           display: 'flex',
@@ -89,19 +102,20 @@ function ZoneDropdown({ zones, selectedId, onSelect }: {
         />
       </button>
 
-      {/* Dropdown panel */}
-      {open && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 4px)',
-          left: 0,
-          right: 0,
+      {/* Dropdown panel — position:fixed to escape modal overflow clipping */}
+      {open && rect && (
+        <div ref={ref} style={{
+          position: 'fixed',
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: rect.width,
           background: 'var(--bg2)',
           border: '1px solid var(--bdr3)',
           borderRadius: 'var(--r)',
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-          zIndex: 100,
-          overflow: 'hidden',
+          zIndex: 9999,
+          maxHeight: 220,
+          overflowY: 'auto',
         }}>
           {zones.map((zone) => {
             const isSelected = zone.id === selectedId;

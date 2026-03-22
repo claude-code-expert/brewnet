@@ -1,12 +1,12 @@
 /**
- * Step 4: Network Access — 5-Scenario Cloudflare Tunnel Setup
+ * Step 4: Network Access — 3-Scenario Cloudflare Tunnel Setup
  *
  * Scenarios:
  *   1. Quick Tunnel    — no account, instant *.trycloudflare.com URL
- *   2. Named Tunnel    — existing CF domain, full API automation
- *   3. Named Tunnel    — guided domain purchase + optional Quick Tunnel bridge
- *   4. Named Tunnel    — create tunnel only, attach domain later
- *   5. Local only      — no external access
+ *   2. Named Tunnel    — CF account required; sub-path by domain ownership
+ *      2a. Has domain  — full DNS setup (zone selection + ingress + CNAME)
+ *      2b. No domain   — purchase guide + optional Quick Tunnel bridge + tunnel-only
+ *   3. Local only      — no external access
  *
  * Pure functions:
  *   - applyDomainDefaults  — Apply provider-specific defaults to wizard state
@@ -163,9 +163,9 @@ export async function runDomainNetworkStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 2. 5-option scenario selector
+  // 2. 3-option scenario selector
   // -------------------------------------------------------------------------
-  type ScenarioChoice = '1-quick' | '2-named-existing' | '3-named-buy' | '4-named-only' | '5-local';
+  type ScenarioChoice = '1-quick' | '2-named' | '3-local';
 
   const scenario = await select<ScenarioChoice>({
     message: '외부 접근 방식을 선택하세요',
@@ -176,23 +176,13 @@ export async function runDomainNetworkStep(
         description: '계정 없이 바로 시작. 단, 서버 재시작 시 URL이 변경됩니다.',
       },
       {
-        name: '2. Named Tunnel — 기존 Cloudflare 도메인 연결 (영구 URL)',
-        value: '2-named-existing' as const,
-        description: 'Cloudflare 계정 + 도메인이 이미 있는 경우. API 토큰 1회 입력.',
+        name: '2. Named Tunnel (Cloudflare 계정 필요, 영구 URL)',
+        value: '2-named' as const,
+        description: 'Cloudflare 계정 + API 토큰 필요. 도메인 유무에 따라 설정이 달라집니다.',
       },
       {
-        name: '3. Named Tunnel — 도메인 먼저 구입 후 연결 (안내 포함)',
-        value: '3-named-buy' as const,
-        description: '도메인 구입 가이드 제공. 임시 Quick Tunnel로 즉시 접근 가능.',
-      },
-      {
-        name: '4. Named Tunnel만 생성 — 도메인은 나중에 연결',
-        value: '4-named-only' as const,
-        description: '터널만 준비. `brewnet domain connect`로 도메인 추가 가능.',
-      },
-      {
-        name: '5. 로컬 전용 (외부 접근 없음)',
-        value: '5-local' as const,
+        name: '3. 로컬 전용 (외부 접근 없음)',
+        value: '3-local' as const,
         description: '내부 네트워크에서만 접근. brewnet.local 도메인 사용.',
       },
     ],
@@ -204,7 +194,7 @@ export async function runDomainNetworkStep(
   // 3. Dispatch by scenario
   // -------------------------------------------------------------------------
 
-  if (scenario === '5-local') {
+  if (scenario === '3-local') {
     return runLocalScenario(next);
   }
 
@@ -212,16 +202,8 @@ export async function runDomainNetworkStep(
     return runQuickTunnelScenario(next, tunnelLogger);
   }
 
-  if (scenario === '2-named-existing') {
-    return runNamedTunnelWithDomainScenario(next, tunnelLogger);
-  }
-
-  if (scenario === '3-named-buy') {
-    return runGuidedDomainPurchaseScenario(next, tunnelLogger);
-  }
-
-  // scenario === '4-named-only'
-  return runNamedTunnelOnlyScenario(next, tunnelLogger);
+  // scenario === '2-named'
+  return runUnifiedNamedTunnelScenario(next, tunnelLogger);
 }
 
 // ---------------------------------------------------------------------------
@@ -578,7 +560,11 @@ async function runNamedTunnelApiFlow(
   return next;
 }
 
-async function runNamedTunnelWithDomainScenario(
+// ---------------------------------------------------------------------------
+// Scenario 2: Named Tunnel (unified — handles both domain-owned and domain-later paths)
+// ---------------------------------------------------------------------------
+
+async function runUnifiedNamedTunnelScenario(
   next: WizardState,
   tunnelLogger: TunnelLogger,
 ): Promise<WizardState> {
@@ -586,76 +572,65 @@ async function runNamedTunnelWithDomainScenario(
   next.domain.ssl = 'cloudflare';
   next.domain.cloudflare.enabled = true;
   next.domain.cloudflare.tunnelMode = 'named';
-
-  try {
-    const updated = await runNamedTunnelApiFlow(next, tunnelLogger, true);
-    printNetworkSummary(updated);
-    return updated;
-  } catch (err) {
-    console.log(chalk.red(`  오류: ${err instanceof Error ? err.message : String(err)}`));
-    console.log();
-    console.log(chalk.yellow('  Local 모드로 전환합니다.'));
-    return runLocalScenario(next);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Scenario 3: Guided Domain Purchase
-// ---------------------------------------------------------------------------
-
-async function runGuidedDomainPurchaseScenario(
-  next: WizardState,
-  tunnelLogger: TunnelLogger,
-): Promise<WizardState> {
-  console.log(chalk.bold('  도메인 구입 안내'));
-  console.log();
-  console.log(chalk.bold.white('  Cloudflare에서 도메인을 등록하는 방법:'));
-  console.log();
-  console.log(chalk.dim('  1. https://domains.cloudflare.com → 로그인 또는 계정 생성'));
-  console.log(chalk.dim('  2. 도메인 검색 → 등록 (연 $8~15 수준, .com 기준)'));
-  console.log(chalk.dim('  3. 도메인이 Cloudflare 네임서버로 자동 설정됩니다'));
-  console.log(chalk.dim('  4. 등록 완료까지 1~5분 소요'));
-  console.log();
-
-  // Offer Quick Tunnel bridge while waiting
-  const useBridge = await confirm({
-    message: 'Quick Tunnel로 임시 접근을 시작하겠습니까? (도메인 준비 중에도 서비스에 접근 가능)',
-    default: true,
-  });
-  console.log();
 
   let qtManager: QuickTunnelManager | null = null;
 
-  if (useBridge) {
-    const spinner = ora('Quick Tunnel 시작 중...').start();
-    try {
-      qtManager = new QuickTunnelManager(tunnelLogger);
-      const url = await qtManager.start();
-      spinner.succeed(chalk.green(`임시 URL: ${url}`));
-      console.log(chalk.dim('  도메인 준비가 완료되면 아래에서 Enter를 눌러 Named Tunnel로 전환합니다.'));
-      console.log();
-    } catch (err) {
-      spinner.fail(chalk.yellow(`Quick Tunnel 실패: ${err instanceof Error ? err.message : String(err)}`));
-      console.log();
-      qtManager = null;
-    }
-  }
-
-  // Single-session wait: block until user confirms domain is ready
-  await input({
-    message: '도메인 설정 완료 후 Enter를 누르세요',
-    default: '',
-  });
-  console.log();
-
-  // Proceed with Named Tunnel setup
-  next.domain.provider = 'tunnel';
-  next.domain.ssl = 'cloudflare';
-  next.domain.cloudflare.enabled = true;
-  next.domain.cloudflare.tunnelMode = 'named';
-
   try {
-    const updated = await runNamedTunnelApiFlow(next, tunnelLogger, true);
+    // Ask whether user already has a Cloudflare domain
+    const hasDomain = await confirm({
+      message: 'Cloudflare에 등록된 도메인이 이미 있으신가요?',
+      default: true,
+    });
+    console.log();
+
+    if (!hasDomain) {
+      // Domain purchase guide (previously scenario 3)
+      console.log(chalk.bold('  도메인 구입 안내'));
+      console.log();
+      console.log(chalk.bold.white('  Cloudflare에서 도메인을 등록하는 방법:'));
+      console.log();
+      console.log(chalk.dim('  1. https://domains.cloudflare.com → 로그인 또는 계정 생성'));
+      console.log(chalk.dim('  2. 도메인 검색 → 등록 (연 $8~15 수준, .com 기준)'));
+      console.log(chalk.dim('  3. 도메인이 Cloudflare 네임서버로 자동 설정됩니다'));
+      console.log(chalk.dim('  4. 등록 완료까지 1~5분 소요'));
+      console.log();
+
+      // Offer Quick Tunnel bridge while waiting for domain setup
+      const useBridge = await confirm({
+        message: 'Quick Tunnel로 임시 접근을 시작하겠습니까? (도메인 준비 중에도 서비스에 접근 가능)',
+        default: true,
+      });
+      console.log();
+
+      if (useBridge) {
+        const spinner = ora('Quick Tunnel 시작 중...').start();
+        try {
+          qtManager = new QuickTunnelManager(tunnelLogger);
+          const url = await qtManager.start();
+          spinner.succeed(chalk.green(`임시 URL: ${url}`));
+          console.log(chalk.dim('  도메인 준비가 완료되면 아래에서 Enter를 눌러 Named Tunnel로 전환합니다.'));
+          console.log();
+        } catch (err) {
+          spinner.fail(chalk.yellow(`Quick Tunnel 실패: ${err instanceof Error ? err.message : String(err)}`));
+          console.log();
+          qtManager = null;
+        }
+      }
+
+      // Block until user signals domain is ready
+      await input({
+        message: '도메인 설정 완료 후 Enter를 누르세요',
+        default: '',
+      });
+      console.log();
+
+      // No domain yet — create tunnel only, skip DNS (previously scenario 4)
+      next.domain.cloudflare.zoneId = '';
+      next.domain.cloudflare.zoneName = '';
+    }
+
+    // includeDns=true when user has a domain (full setup), false otherwise (tunnel-only)
+    const updated = await runNamedTunnelApiFlow(next, tunnelLogger, hasDomain);
 
     // Stop Quick Tunnel bridge if it was running
     if (qtManager) {
@@ -669,50 +644,19 @@ async function runGuidedDomainPurchaseScenario(
       console.log();
     }
 
-    printNetworkSummary(updated);
-    return updated;
-  } catch (err) {
-    // Stop bridge on error too
-    if (qtManager) {
-      await qtManager.stop().catch(() => {/* best-effort */});
+    if (!hasDomain) {
+      console.log(chalk.dim('  도메인 연결: `brewnet domain connect`'));
+      console.log();
     }
-    console.log(chalk.red(`  오류: ${err instanceof Error ? err.message : String(err)}`));
-    console.log();
-    console.log(chalk.yellow('  Local 모드로 전환합니다.'));
-    return runLocalScenario(next);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Scenario 4: Named Tunnel Only (no DNS)
-// ---------------------------------------------------------------------------
-
-async function runNamedTunnelOnlyScenario(
-  next: WizardState,
-  tunnelLogger: TunnelLogger,
-): Promise<WizardState> {
-  console.log(chalk.bold('  Named Tunnel 생성 (도메인 연결은 나중에)'));
-  console.log(chalk.dim('  터널만 생성하고, 도메인 연결은 설치 완료 후'));
-  console.log(chalk.dim('  `brewnet domain connect` 명령으로 진행할 수 있습니다.'));
-  console.log();
-
-  next.domain.provider = 'tunnel';
-  next.domain.ssl = 'cloudflare';
-  next.domain.cloudflare.enabled = true;
-  next.domain.cloudflare.tunnelMode = 'named';
-  next.domain.cloudflare.zoneId = '';
-  next.domain.cloudflare.zoneName = '';
-
-  try {
-    // Run API flow without DNS (includeDns = false)
-    const updated = await runNamedTunnelApiFlow(next, tunnelLogger, false);
-
-    console.log(chalk.dim('  도메인 연결: `brewnet domain connect`'));
-    console.log();
 
     printNetworkSummary(updated);
     return updated;
   } catch (err) {
+    if (qtManager) {
+      await qtManager.stop().catch((stopErr: unknown) => {
+        console.warn('[Named Tunnel] Quick Tunnel 중지 실패:', stopErr instanceof Error ? stopErr.message : String(stopErr));
+      });
+    }
     console.log(chalk.red(`  오류: ${err instanceof Error ? err.message : String(err)}`));
     console.log();
     console.log(chalk.yellow('  Local 모드로 전환합니다.'));

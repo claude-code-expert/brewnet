@@ -167,7 +167,9 @@ interface ServiceDetailInfo {
     summary: string;
     command?: string;
   };
+  connectionParams?: { label: string; value: string }[];
   tips: string[];
+  securityNote?: string;
 }
 
 const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
@@ -192,6 +194,7 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       'Set exposedbydefault=false and explicitly enable each service with traefik.enable=true',
       'Add --certificatesresolvers.le.acme.email=YOUR_EMAIL for Let\'s Encrypt',
     ],
+    securityNote: '보안상 외부 도메인으로 노출하지 않습니다. 서버 내부(localhost)에서만 접근 가능합니다.',
   },
   'Traefik Dashboard': {
     description: 'Built-in Traefik web UI for monitoring routes, services, and middleware',
@@ -269,6 +272,12 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       summary: 'Configured via POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB environment variables.',
       command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet_db',
     },
+    connectionParams: [
+      { label: 'host', value: 'localhost' },
+      { label: 'port', value: '5432' },
+      { label: 'user', value: 'brewnet' },
+      { label: 'db', value: 'brewnet_db' },
+    ],
     tips: [
       'Internal network only (brewnet-internal) — no host port exposed',
       'Data persisted in named volume — safe across container restarts',
@@ -290,6 +299,12 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       summary: 'Configured via MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD environment variables.',
       command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet_db',
     },
+    connectionParams: [
+      { label: 'host', value: 'localhost' },
+      { label: 'port', value: '3306' },
+      { label: 'user', value: 'brewnet' },
+      { label: 'db', value: 'brewnet_db' },
+    ],
     tips: [
       'Internal network only (brewnet-internal) — no host port exposed',
       'Root password required at first startup',
@@ -372,6 +387,12 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       summary: 'Uses admin username set in Pre-Step. Password auth enabled (PASSWORD_ACCESS=true); switch to key-only after setup.',
       command: 'ssh -p 2222 USER@localhost',
     },
+    connectionParams: [
+      { label: 'host', value: 'localhost' },
+      { label: 'port', value: '2222' },
+      { label: 'user', value: '<admin-username>' },
+      { label: 'protocol', value: 'SSH / SFTP' },
+    ],
     tips: [
       'Switch to key-only auth after initial setup: set PASSWORD_ACCESS=false',
       'Port 2222 avoids conflict with host SSH (port 22)',
@@ -596,7 +617,17 @@ async function handleGetServices(
   urlMap: Record<string, string> = TRAEFIK_PATH_SERVICES,
   quickTunnelUrl = '',
   allowedDirs?: Set<string>,
+  wizardState?: WizardState | null,
 ): Promise<void> {
+  // Named Tunnel subdomain map — composeService → fixed subdomain prefix
+  const NAMED_SUBDOMAIN_MAP: Record<string, string> = {
+    gitea: 'git',
+    nextcloud: 'cloud',
+    jellyfin: 'media',
+    filebrowser: 'files',
+    pgadmin: 'pgadmin',
+    minio: 'minio',
+  };
   try {
     const allContainers = await docker.listContainers({ all: true });
     const services: ServiceStatus[] = [];
@@ -650,7 +681,26 @@ async function handleGetServices(
       // Compute external URL from Traefik PathPrefix labels on the container
       let externalUrl: string | null = null;
       const qtUrl = quickTunnelUrl;
-      if (qtUrl && traefikPath) {
+      const tunnelMode = wizardState?.domain?.cloudflare?.tunnelMode ?? 'none';
+      const namedDomain = wizardState?.domain?.cloudflare?.zoneName || wizardState?.domain?.name || '';
+
+      if (tunnelMode === 'named' && namedDomain) {
+        // Named Tunnel: built-in services use fixed subdomains
+        const sub = NAMED_SUBDOMAIN_MAP[composeService];
+        if (sub) {
+          externalUrl = `https://${sub}.${namedDomain}`;
+        }
+        // User apps: look up in domainConnections by composeService name
+        // (appName may match composeService directly, or be a brewnet- prefixed variant)
+        if (!externalUrl) {
+          const appNameVariants = [composeService, composeService.replace(/^brewnet-/, '')];
+          const conn = (wizardState?.domainConnections ?? []).find(
+            (c) => appNameVariants.includes(c.appName),
+          );
+          if (conn) externalUrl = `https://${conn.hostname}`;
+        }
+      } else if (qtUrl && traefikPath) {
+        // Quick Tunnel: PathPrefix-based URL
         let extPath = traefikPath;
         // Unified API-only stacks (e.g. nextjs-app): append /api/hello
         // so the external URL points to the API endpoint, not the empty root
@@ -660,7 +710,7 @@ async function handleGetServices(
         }
         externalUrl = qtUrl.replace(/\/$/, '') + extPath;
       }
-      if (!externalUrl && qtUrl) {
+      if (!externalUrl && qtUrl && tunnelMode !== 'named') {
         // Fallback for known homeserver services (EXT_PATHS)
         const EXT_PATH_MAP: Record<string, string> = {
           traefik: '', gitea: '/git', nextcloud: '/cloud', pgadmin: '/pgadmin',
@@ -1148,7 +1198,21 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // GET /api/services/catalog — SERVICE_DETAIL_MAP + NAME_ALIASES for React SPA
         if (parts[1] === 'services' && parts[2] === 'catalog' && req.method === 'GET') {
-          json(res, 200, { catalog: SERVICE_DETAIL_MAP, aliases: NAME_ALIASES });
+          const adminUser = wizardState?.admin?.username ?? 'USER';
+          const catalog = { ...SERVICE_DETAIL_MAP };
+          if (catalog['SSH Server']) {
+            catalog['SSH Server'] = {
+              ...catalog['SSH Server'],
+              credentials: {
+                ...catalog['SSH Server'].credentials!,
+                command: `ssh -p 2222 ${adminUser}@localhost`,
+              },
+              connectionParams: catalog['SSH Server'].connectionParams?.map((p) =>
+                p.label === 'user' ? { ...p, value: adminUser } : p,
+              ),
+            };
+          }
+          json(res, 200, { catalog, aliases: NAME_ALIASES });
           return;
         }
 
@@ -1169,7 +1233,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         if (parts[1] === 'services') {
           if (req.method === 'GET' && parts.length === 2) {
-            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl, allowedWorkingDirs);
+            await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl, allowedWorkingDirs, wizardState);
             return;
           }
           if (req.method === 'POST' && parts[2] === 'install') {
@@ -1243,7 +1307,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             for (const h of history) { if (h.status === 'success') historyByApp.set(h.appName, h); }
             // Load boilerplate meta once for frontend URL lookup
             const bpMetaPath = join(projectPath, '.brewnet-boilerplate.json');
-            let bpMetaMap = new Map<string, BoilerplateMeta>();
+            const bpMetaMap = new Map<string, BoilerplateMeta>();
             if (existsSync(bpMetaPath)) {
               try {
                 const raw = JSON.parse(readFileSync(bpMetaPath, 'utf-8')) as BoilerplateMeta | BoilerplateMeta[];
@@ -1263,6 +1327,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               let externalUrl: string | null;
               let backendLocalUrl: string | null = null;
               let backendExternalUrl: string | null = null;
+              // Check domainConnections for this app (Named Tunnel or any connected domain)
+              const domainConn = (wizardState?.domainConnections ?? []).find((c) => c.appName === a.name);
               if (isNonUnified) {
                 // Read actual FRONTEND_PORT from .env — meta may have stale default (3000)
                 let frontendPort = 3000;
@@ -1273,9 +1339,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                   if (fePortMatch) frontendPort = parseInt(fePortMatch[1], 10);
                 }
                 localUrl = `http://127.0.0.1:${frontendPort}`;
-                externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}-ui` : null;
+                externalUrl = domainConn ? `https://${domainConn.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}-ui` : null);
                 backendLocalUrl = a.port ? `http://127.0.0.1:${a.port}` : null;
-                backendExternalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null;
+                backendExternalUrl = domainConn ? `https://${domainConn.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null);
               } else {
                 // Compute localUrl with basePath (same logic as Dashboard services)
                 localUrl = a.port ? `http://localhost:${a.port}` : null;
@@ -1283,7 +1349,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                   const bp = detectBasePath(a.appDir);
                   if (bp && localUrl) localUrl += bp;
                 }
-                externalUrl = qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null;
+                externalUrl = domainConn ? `https://${domainConn.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null);
               }
               return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl, externalUrl, backendLocalUrl, backendExternalUrl };
             });
@@ -1420,6 +1486,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             let externalUrlSingle: string | null;
             let backendLocalUrlSingle: string | null = null;
             let backendExternalUrlSingle: string | null = null;
+            const domainConnSingle = (wizardState?.domainConnections ?? []).find((c) => c.appName === found.name);
             if (isNonUnified) {
               let frontendPort = 3000;
               const feEnvPath = join(found.appDir, '.env');
@@ -1428,16 +1495,16 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                 if (m) frontendPort = parseInt(m[1], 10);
               }
               localUrlSingle = `http://127.0.0.1:${frontendPort}`;
-              externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}-ui` : null;
+              externalUrlSingle = domainConnSingle ? `https://${domainConnSingle.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}-ui` : null);
               backendLocalUrlSingle = found.port ? `http://127.0.0.1:${found.port}` : null;
-              backendExternalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null;
+              backendExternalUrlSingle = domainConnSingle ? `https://${domainConnSingle.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null);
             } else {
               localUrlSingle = found.port ? `http://localhost:${found.port}` : null;
               if (found.appDir) {
                 const bp = detectBasePath(found.appDir);
                 if (bp && localUrlSingle) localUrlSingle += bp;
               }
-              externalUrlSingle = qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null;
+              externalUrlSingle = domainConnSingle ? `https://${domainConnSingle.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null);
             }
             const app = { ...found, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl: localUrlSingle, externalUrl: externalUrlSingle, backendLocalUrl: backendLocalUrlSingle, backendExternalUrl: backendExternalUrlSingle };
             json(res, 200, { app });
@@ -1460,7 +1527,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             try {
               const branches = await getAppBranches(decodeURIComponent(parts[2] ?? ''));
               json(res, 200, { branches });
-            } catch (err) {
+            } catch (_err) {
               json(res, 200, { branches: [] });
             }
             return;
@@ -1978,6 +2045,12 @@ async function handleDomainConnect(
       return;
     }
 
+    // Refresh in-memory wizardState so GET /api/apps sees updated domainConnections immediately
+    const freshStateAfterConnect = loadState(state.projectName);
+    if (freshStateAfterConnect?.domainConnections) {
+      state.domainConnections = freshStateAfterConnect.domainConnections;
+    }
+
     json(res, 200, {
       success: true,
       hostname: result.hostname,
@@ -2007,6 +2080,12 @@ async function handleDomainDisconnect(
       const statusCode = result.error?.startsWith('NOT_CONNECTED') ? 404 : 500;
       json(res, statusCode, { success: false, error: result.error?.split(':')[0], message: result.error });
       return;
+    }
+
+    // Refresh in-memory wizardState so GET /api/apps reflects the removed connection immediately
+    const freshStateAfterDisconnect = loadState(state.projectName);
+    if (freshStateAfterDisconnect) {
+      state.domainConnections = freshStateAfterDisconnect.domainConnections ?? [];
     }
 
     json(res, 200, {
@@ -2090,7 +2169,7 @@ async function handleCloudflareZones(
     }
 
     json(res, 200, { success: true, zones });
-  } catch (err) {
+  } catch (_err) {
     json(res, 400, {
       success: false,
       error: 'TOKEN_INVALID',
@@ -2142,6 +2221,28 @@ async function handleCreateTunnel(
     state.domain.cloudflare.enabled = true;
     save(state);
 
+    // Also update state.domain.name to the zone name so Named Tunnel subdomain
+    // URLs (git.<zone>, cloud.<zone>, etc.) are derived from the correct base domain.
+    if (cf.zoneName) {
+      state.domain.name = cf.zoneName;
+      save(state);
+    }
+
+    const zoneName = cf.zoneName;
+
+    // Normalize gitea-config.json to local URL — admin server always uses Traefik proxy,
+    // not the external Named Tunnel URL which is unavailable until tunnel is fully active.
+    try {
+      const { saveGiteaConfig } = await import('./app-manager.js');
+      const adminUsername = (state.admin as { username?: string } | undefined)?.username ?? 'admin';
+      saveGiteaConfig('http://localhost/git', adminUsername);
+      logger.info('tunnel', `[${tunnelName}] gitea-config.json normalized → http://localhost/git`);
+    } catch (e) {
+      logger.warn('tunnel', `[${tunnelName}] gitea-config.json update failed: ${e instanceof Error ? e.message : e}`);
+    }
+
+    const steps: Array<{ step: string; success: boolean; detail?: string; services?: string[] }> = [];
+
     // Auto-patch docker-compose.yml and recreate cloudflared container so the
     // new named tunnel takes effect without manual intervention.
     let composeUpdated = false;
@@ -2176,6 +2277,75 @@ async function handleCreateTunnel(
           logger.warn('tunnel', `[${tunnelName}] cloudflared recreate exception: ${e instanceof Error ? e.message : e}`);
         }
       }
+
+      // Configure Cloudflare ingress rules for all active built-in services
+      if (cf.apiToken && cf.accountId && cf.tunnelId && zoneName) {
+        try {
+          const { configureTunnelIngress, getActiveServiceRoutes } = await import('./cloudflare-client.js');
+          const routes = getActiveServiceRoutes(state).map((r) => ({ ...r, domain: zoneName }));
+          await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, zoneName, routes);
+          steps.push({ step: 'ingress_configured', success: true, services: routes.map((r) => r.subdomain) });
+          logger.info('tunnel', `[${tunnelName}] ingress configured for: ${routes.map((r) => r.subdomain).join(', ')}`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          steps.push({ step: 'ingress_configured', success: false, detail: msg });
+          logger.warn('tunnel', `[${tunnelName}] ingress configure failed (non-fatal): ${msg}`);
+        }
+
+        // Create DNS CNAME records for each active built-in service (per-service, non-fatal)
+        const { createDnsRecord, getActiveServiceRoutes: getRoutes } = await import('./cloudflare-client.js');
+        const dnsRoutes = getRoutes(state);
+        const dnsResults: string[] = [];
+        const dnsFailed: string[] = [];
+        for (const route of dnsRoutes) {
+          try {
+            await createDnsRecord(cf.apiToken, cf.zoneId, cf.tunnelId, route.subdomain, zoneName);
+            dnsResults.push(route.subdomain);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.warn('tunnel', `[${tunnelName}] DNS CNAME for ${route.subdomain} failed (non-fatal): ${msg}`);
+            dnsFailed.push(route.subdomain);
+          }
+        }
+        steps.push({ step: 'dns_created', success: dnsFailed.length === 0, services: dnsResults, ...(dnsFailed.length > 0 ? { detail: `skipped: ${dnsFailed.join(', ')}` } : {}) });
+      }
+
+      // Patch built-in service env vars for subdomain routing (Gitea, Nextcloud, pgAdmin, FileBrowser)
+      if (zoneName) {
+        try {
+          const { patchBuiltinServicesForNamedTunnel } = await import('./compose-generator.js');
+          const patchedServices = patchBuiltinServicesForNamedTunnel(composePath, zoneName);
+          steps.push({ step: 'services_env_patched', success: true, services: patchedServices });
+          logger.info('tunnel', `[${tunnelName}] env patched for: ${patchedServices.join(', ') || 'none'}`);
+
+          // Restart services whose env vars changed
+          if (patchedServices.length > 0) {
+            try {
+              const { execa: execaSvc } = await import('execa');
+              const restart = await execaSvc(
+                'docker',
+                ['compose', '-f', composePath, 'up', '-d', '--force-recreate', ...patchedServices],
+                { cwd: projectPath, reject: false },
+              );
+              const restarted = restart.exitCode === 0;
+              steps.push({ step: 'services_restarted', success: restarted, services: patchedServices });
+              if (!restarted) {
+                logger.warn('tunnel', `[${tunnelName}] service restart failed (exit ${restart.exitCode}): ${restart.stderr}`);
+              } else {
+                logger.info('tunnel', `[${tunnelName}] restarted: ${patchedServices.join(', ')}`);
+              }
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              steps.push({ step: 'services_restarted', success: false, detail: msg });
+              logger.warn('tunnel', `[${tunnelName}] service restart exception: ${msg}`);
+            }
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          steps.push({ step: 'services_env_patched', success: false, detail: msg });
+          logger.warn('tunnel', `[${tunnelName}] env patch failed (non-fatal): ${msg}`);
+        }
+      }
     } else {
       logger.warn('tunnel', `[${tunnelName}] compose file not found at ${composePath} — cloudflared must be updated manually`);
     }
@@ -2186,6 +2356,7 @@ async function handleCreateTunnel(
       tunnelName: tunnelName.trim(),
       composeUpdated,
       containerRestarted,
+      steps,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

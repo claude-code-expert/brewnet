@@ -10,7 +10,7 @@
  * @module wizard/steps/review
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { select, input } from '@inquirer/prompts';
 import chalk from 'chalk';

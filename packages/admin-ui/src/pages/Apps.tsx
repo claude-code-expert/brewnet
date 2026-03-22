@@ -4,6 +4,7 @@ import { useAuth } from '../auth-context.js';
 import { usePolling } from '../hooks/usePolling.js';
 import type { AppEntry, DomainConnection, ConfigResponse } from '../types.js';
 import { NavHeader } from '../components/NavHeader.js';
+import { Footer } from '../components/Footer.js';
 import { AppCard } from '../components/AppCard.js';
 import { CreateAppModal } from '../components/CreateAppModal.js';
 import { ProgressModal } from '../components/ProgressModal.js';
@@ -24,7 +25,9 @@ export function Apps() {
   const [apps, setApps]             = useState<AppEntry[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showDomainSetting, setShowDomainSetting] = useState(false);
+  const [domainSourceApp, setDomainSourceApp] = useState<string | null>(null);
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
+  const [selectedAppInitialTab, setSelectedAppInitialTab] = useState<'overview' | 'deployment' | 'logs' | 'domain'>('overview');
   const [progressJob, setProgressJob] = useState<{ jobId: string; appName: string; type: 'create' | 'deploy' } | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -197,31 +200,8 @@ export function Apps() {
           />
         </div>
 
-        {/* Footer */}
-        <div style={{
-          height: 50,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          background: '#0c1525',
-          borderTop: '1px solid var(--bdr)',
-          marginTop: 32,
-          fontSize: 12.5,
-          color: 'var(--txt3)',
-        }}>
-          <a
-            href="https://github.com/claude-code-expert/brewnet"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--txt2)', textDecoration: 'none', fontFamily: 'var(--mono)', fontWeight: 600 }}
-          >
-            https://github.com/claude-code-expert/brewnet
-          </a>
-          <span>—</span>
-          <span>Clicking ⭐ means a lot to the developer!</span>
-        </div>
       </div>
+      <Footer />
 
       {/* Modals */}
       {showCreate && (
@@ -235,15 +215,30 @@ export function Apps() {
       {showDomainSetting && (
         <CloudflareTunnelModal
           apiFetch={apiFetch}
-          onClose={() => setShowDomainSetting(false)}
+          onClose={() => { setShowDomainSetting(false); setDomainSourceApp(null); }}
+          onComplete={() => {
+            setShowDomainSetting(false);
+            if (domainSourceApp) {
+              setSelectedApp(domainSourceApp);
+              setSelectedAppInitialTab('domain');
+            }
+            setDomainSourceApp(null);
+            showToast('Cloudflare Tunnel setup complete. Connect your apps from the Domain tab.');
+          }}
         />
       )}
 
       {selectedApp && (
         <AppDetailModal
           appName={selectedApp}
-          onClose={() => setSelectedApp(null)}
-          onOpenDomainSettings={() => { setSelectedApp(null); setShowDomainSetting(true); }}
+          initialTab={selectedAppInitialTab}
+          onClose={() => { setSelectedApp(null); setSelectedAppInitialTab('overview'); }}
+          onOpenDomainSettings={() => {
+            setDomainSourceApp(selectedApp);
+            setSelectedApp(null);
+            setSelectedAppInitialTab('overview');
+            setShowDomainSetting(true);
+          }}
         />
       )}
 

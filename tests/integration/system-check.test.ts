@@ -255,7 +255,6 @@ function simulateDockerDown(): void {
   const originalImpl = mockExeca.getMockImplementation();
   mockExeca.mockImplementation(async (cmd: unknown, args?: unknown) => {
     const command = String(cmd);
-    const argList = Array.isArray(args) ? args.map(String) : [];
 
     if (command === 'docker') {
       const error = new Error('command not found: docker') as Error & { exitCode: number };

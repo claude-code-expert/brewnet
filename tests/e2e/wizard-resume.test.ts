@@ -160,8 +160,8 @@ jest.unstable_mockModule('node:os', () => ({
 // ---------------------------------------------------------------------------
 
 jest.unstable_mockModule('execa', () => ({
-  execa: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
-  $: jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+  execa: jest.fn<() => Promise<unknown>>().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
+  $: jest.fn<() => Promise<unknown>>().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ jest.unstable_mockModule('execa', () => ({
 
 jest.unstable_mockModule('dockerode', () => ({
   default: jest.fn().mockImplementation(() => ({
-    ping: jest.fn().mockResolvedValue('OK'),
+    ping: jest.fn<() => Promise<string>>().mockResolvedValue('OK'),
   })),
 }));
 
@@ -206,7 +206,7 @@ jest.unstable_mockModule('../../packages/cli/src/utils/logger.js', () => ({
 // ---------------------------------------------------------------------------
 
 jest.unstable_mockModule('../../packages/cli/src/services/system-checker.js', () => ({
-  runAllChecks: jest.fn().mockResolvedValue({
+  runAllChecks: jest.fn<() => Promise<unknown>>().mockResolvedValue({
     results: [
       { name: 'OS', status: 'pass', message: 'macOS', critical: true },
       { name: 'Docker', status: 'pass', message: 'Docker 27.0.3', critical: true },
@@ -231,7 +231,6 @@ const originalConsoleLog = console.log;
 // ---------------------------------------------------------------------------
 
 const {
-  createState,
   saveState,
   loadState,
   hasResumeState,
@@ -376,8 +375,8 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should return true after state is saved', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'saved-project';
-      saveState(state as any);
+      state.projectName = 'saved-project';
+      saveState(state);
 
       expect(hasResumeState('saved-project')).toBe(true);
     });
@@ -395,8 +394,8 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should return false for a different project name', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'project-a';
-      saveState(state as any);
+      state.projectName = 'project-a';
+      saveState(state);
 
       expect(hasResumeState('project-a')).toBe(true);
       expect(hasResumeState('project-b')).toBe(false);
@@ -410,10 +409,10 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
   describe('State restoration', () => {
     it('should restore project name and setup type after save/load', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'restore-test';
-      (state as any).setupType = 'full';
-      (state as any).projectPath = '~/brewnet/restore-test';
-      saveState(state as any);
+      state.projectName = 'restore-test';
+      state.setupType = 'full';
+      state.projectPath = '~/brewnet/restore-test';
+      saveState(state);
 
       const loaded = loadState('restore-test');
       expect(loaded).not.toBeNull();
@@ -424,10 +423,10 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should restore admin credentials after save/load', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'cred-test';
+      state.projectName = 'cred-test';
       state.admin.username = 'custom-admin';
       state.admin.password = 'super-secret-pw';
-      saveState(state as any);
+      saveState(state);
 
       const loaded = loadState('cred-test');
       expect(loaded).not.toBeNull();
@@ -437,7 +436,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should restore server component selections after save/load', () => {
       const state = applyFullInstallDefaults(createDefaultWizardState());
-      (state as any).projectName = 'server-restore';
+      state.projectName = 'server-restore';
       state.servers.dbServer.dbPassword = 'db-pw-123';
       state.servers.sshServer.enabled = true;
       state.servers.sshServer.port = 2222;
@@ -445,7 +444,7 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
       state.servers.sshServer.sftp = true;
       state.servers.media.enabled = true;
       state.servers.media.services = ['jellyfin'];
-      saveState(state as any);
+      saveState(state);
 
       const loaded = loadState('server-restore');
       expect(loaded).not.toBeNull();
@@ -461,11 +460,11 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should restore devStack selections after save/load', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'devstack-restore';
-      state.devStack.languages = ['nodejs', 'python'] as any;
+      state.projectName = 'devstack-restore';
+      state.devStack.languages = ['nodejs', 'python'] as unknown as typeof state.devStack.languages;
       state.devStack.frameworks = { nodejs: 'nextjs', python: 'fastapi' };
-      state.devStack.frontend = 'react' as any;
-      saveState(state as any);
+      state.devStack.frontend = 'react' as unknown as typeof state.devStack.frontend;
+      saveState(state);
 
       const loaded = loadState('devstack-restore');
       expect(loaded).not.toBeNull();
@@ -476,14 +475,14 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should restore domain configuration after save/load', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'domain-restore';
-      state.domain.provider = 'custom' as any;
+      state.projectName = 'domain-restore';
+      state.domain.provider = 'custom' as unknown as typeof state.domain.provider;
       state.domain.name = 'myserver.dev';
-      state.domain.ssl = 'letsencrypt' as any;
+      state.domain.ssl = 'letsencrypt' as unknown as typeof state.domain.ssl;
       state.domain.cloudflare.enabled = true;
       state.domain.cloudflare.tunnelToken = 'cf-token-abc';
       state.domain.cloudflare.tunnelName = 'my-tunnel';
-      saveState(state as any);
+      saveState(state);
 
       const loaded = loadState('domain-restore');
       expect(loaded).not.toBeNull();
@@ -497,11 +496,11 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should restore boilerplate configuration after save/load', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'boilerplate-restore';
+      state.projectName = 'boilerplate-restore';
       state.boilerplate.generate = false;
       state.boilerplate.sampleData = false;
-      state.boilerplate.devMode = 'production' as any;
-      saveState(state as any);
+      state.boilerplate.devMode = 'production' as unknown as typeof state.boilerplate.devMode;
+      saveState(state);
 
       const loaded = loadState('boilerplate-restore');
       expect(loaded).not.toBeNull();
@@ -549,8 +548,8 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
   describe('Schema version validation', () => {
     it('should accept state with current schema version (6)', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'version-6';
-      saveState(state as any);
+      state.projectName = 'version-6';
+      saveState(state);
 
       const loaded = loadState('version-6');
       expect(loaded).not.toBeNull();
@@ -644,10 +643,10 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
     it('should create a fresh state and save it', () => {
       // First, save some state
       const originalState = applyFullInstallDefaults(createDefaultWizardState());
-      (originalState as any).projectName = 'reset-me';
+      originalState.projectName = 'reset-me';
       originalState.admin.password = 'original-pw';
-      originalState.devStack.languages = ['nodejs'] as any;
-      saveState(originalState as any);
+      originalState.devStack.languages = ['nodejs'] as unknown as typeof originalState.devStack.languages;
+      saveState(originalState);
 
       // Verify it was saved
       expect(hasResumeState('reset-me')).toBe(true);
@@ -664,9 +663,9 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should overwrite the saved state with defaults', () => {
       const originalState = createDefaultWizardState();
-      (originalState as any).projectName = 'overwrite-test';
+      originalState.projectName = 'overwrite-test';
       originalState.admin.username = 'custom-admin';
-      saveState(originalState as any);
+      saveState(originalState);
 
       // Reset
       resetState('overwrite-test');
@@ -686,15 +685,15 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
   describe('Multiple project persistence', () => {
     it('should maintain separate state for different project names', () => {
       const stateA = createDefaultWizardState();
-      (stateA as any).projectName = 'project-a';
+      stateA.projectName = 'project-a';
       stateA.admin.username = 'admin-a';
-      saveState(stateA as any);
+      saveState(stateA);
 
       const stateB = createDefaultWizardState();
-      (stateB as any).projectName = 'project-b';
+      stateB.projectName = 'project-b';
       stateB.admin.username = 'admin-b';
-      stateB.setupType = 'partial' as any;
-      saveState(stateB as any);
+      stateB.setupType = 'partial' as unknown as typeof stateB.setupType;
+      saveState(stateB);
 
       const loadedA = loadState('project-a');
       const loadedB = loadState('project-b');
@@ -709,13 +708,13 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
 
     it('should not interfere between projects on save/load', () => {
       const stateA = createDefaultWizardState();
-      (stateA as any).projectName = 'proj-x';
-      saveState(stateA as any);
+      stateA.projectName = 'proj-x';
+      saveState(stateA);
 
       const stateB = createDefaultWizardState();
-      (stateB as any).projectName = 'proj-y';
+      stateB.projectName = 'proj-y';
       stateB.admin.password = 'different-pw';
-      saveState(stateB as any);
+      saveState(stateB);
 
       // Loading proj-x should not return proj-y's password
       const loadedA = loadState('proj-x');
@@ -802,20 +801,20 @@ describe('T104 — E2E: Wizard Resume Flow', () => {
   describe('Global config last project tracking', () => {
     it('should update last project on save', () => {
       const state = createDefaultWizardState();
-      (state as any).projectName = 'tracked-project';
-      saveState(state as any);
+      state.projectName = 'tracked-project';
+      saveState(state);
 
       expect(mockConfSet).toHaveBeenCalledWith('lastProject', 'tracked-project');
     });
 
     it('should update last project to the most recently saved project', () => {
       const stateA = createDefaultWizardState();
-      (stateA as any).projectName = 'first-project';
-      saveState(stateA as any);
+      stateA.projectName = 'first-project';
+      saveState(stateA);
 
       const stateB = createDefaultWizardState();
-      (stateB as any).projectName = 'second-project';
-      saveState(stateB as any);
+      stateB.projectName = 'second-project';
+      saveState(stateB);
 
       // Last call to set should be for 'second-project'
       const lastCall = mockConfSet.mock.calls[mockConfSet.mock.calls.length - 1];

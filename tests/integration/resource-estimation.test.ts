@@ -38,11 +38,10 @@ import {
   SERVICE_DISK_MAP,
 } from '../../packages/cli/src/utils/resources.js';
 
-import type { WizardState } from '../../packages/cli/src/utils/resources.js';
+import type { WizardState } from '../../packages/shared/src/types/wizard-state.js';
 import type { ResourceEstimate } from '../../packages/cli/src/utils/resources.js';
 
 import {
-  getServiceDefinition,
   getAllServiceIds,
 } from '../../packages/cli/src/config/services.js';
 
@@ -55,19 +54,6 @@ import {
  */
 function cloneState(state: WizardState): WizardState {
   return JSON.parse(JSON.stringify(state));
-}
-
-/**
- * Toggle a boolean-enabled server component on/off and return a new state.
- */
-function withServer<K extends keyof WizardState['servers']>(
-  state: WizardState,
-  key: K,
-  patch: Partial<WizardState['servers'][K]>,
-): WizardState {
-  const next = cloneState(state);
-  next.servers[key] = { ...next.servers[key], ...patch } as WizardState['servers'][K];
-  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +233,7 @@ describe('Integration: Enabling all optional services increases estimates', () =
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
     state.domain.cloudflare = {
+      ...state.domain.cloudflare,
       enabled: true,
       tunnelToken: 'test-token',
       tunnelName: 'test-tunnel',
@@ -276,6 +263,7 @@ describe('Integration: Enabling all optional services increases estimates', () =
     state.servers.appServer = { enabled: true };
     state.devStack.languages = ['nodejs'];
     state.domain.cloudflare = {
+      ...state.domain.cloudflare,
       enabled: true,
       tunnelToken: 'test-token',
       tunnelName: 'test-tunnel',
@@ -334,6 +322,7 @@ describe('Integration: Removing DB server decreases estimates', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -359,6 +348,7 @@ describe('Integration: Removing DB server decreases estimates', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -380,6 +370,7 @@ describe('Integration: Removing DB server decreases estimates', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -400,6 +391,7 @@ describe('Integration: Removing DB server decreases estimates', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -502,6 +494,7 @@ describe('Integration: Multiple component toggles produce additive estimates', (
       dbUser: 'test',
       dbPassword: 'pass',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
     const dbEstimate = estimateResources(withDB);
@@ -523,6 +516,7 @@ describe('Integration: Multiple component toggles produce additive estimates', (
       dbUser: 'test',
       dbPassword: 'pass',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
     withBoth.servers.media = { enabled: true, services: ['jellyfin'] };
@@ -669,7 +663,7 @@ describe('Integration: collectAllServices length matches countSelectedServices',
       },
     ];
 
-    for (const { label, patch } of configs) {
+    for (const { patch } of configs) {
       const state = applyPartialInstallDefaults(createDefaultWizardState());
       patch(state);
 
@@ -701,6 +695,7 @@ describe('Integration: estimateResources.containers vs countSelectedServices', (
   it('should differ by 1 when Cloudflare Tunnel is enabled', () => {
     const state = createDefaultWizardState();
     state.domain.cloudflare = {
+      ...state.domain.cloudflare,
       enabled: true,
       tunnelToken: 'tok',
       tunnelName: 'tunnel',
@@ -755,6 +750,7 @@ describe('Integration: Credential targets across service combinations', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: true, // even with adminUI true, sqlite should not trigger pgAdmin
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -828,6 +824,7 @@ describe('Integration: Sequential component toggling simulates wizard flow', () 
       dbUser: 'user',
       dbPassword: 'pass',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
     ramHistory.push(estimateResources(state).ramMB);
@@ -881,6 +878,7 @@ describe('Integration: Sequential component toggling simulates wizard flow', () 
       dbUser: 'user',
       dbPassword: 'pass',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
     counts.push(countSelectedServices(state));
@@ -1024,7 +1022,7 @@ describe('Integration: getImageName matches service registry', () => {
     state.servers.media = { enabled: true, services: ['jellyfin'] };
     state.servers.sshServer = { enabled: true, port: 2222, passwordAuth: false, sftp: false };
     state.servers.fileBrowser = { enabled: true, mode: 'standalone' };
-    state.domain.cloudflare = { enabled: true, tunnelToken: 'tok', tunnelName: 'tun' };
+    state.domain.cloudflare = { ...state.domain.cloudflare, enabled: true, tunnelToken: 'tok', tunnelName: 'tun' };
 
     const services = collectAllServices(state);
     for (const svcId of services) {
@@ -1192,6 +1190,7 @@ describe('Integration: Cloudflare Tunnel resource estimation', () => {
     const baseEstimate = estimateResources(state);
 
     state.domain.cloudflare = {
+      ...state.domain.cloudflare,
       enabled: true,
       tunnelToken: 'test-token',
       tunnelName: 'test-tunnel',
@@ -1205,6 +1204,7 @@ describe('Integration: Cloudflare Tunnel resource estimation', () => {
   it('should include cloudflared in collectAllServices when tunnel is enabled', () => {
     const state = createDefaultWizardState();
     state.domain.cloudflare = {
+      ...state.domain.cloudflare,
       enabled: true,
       tunnelToken: 'test-token',
       tunnelName: 'test-tunnel',
@@ -1240,6 +1240,7 @@ describe('Integration: SQLite DB does not add container or RAM', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -1259,6 +1260,7 @@ describe('Integration: SQLite DB does not add container or RAM', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 
@@ -1278,6 +1280,7 @@ describe('Integration: SQLite DB does not add container or RAM', () => {
       dbUser: '',
       dbPassword: '',
       adminUI: false,
+      pgadminEmail: '',
       cache: '',
     };
 

@@ -1,5 +1,6 @@
 // T031 — CreateAppModal: multi-step wizard for app creation
 import { useState, useEffect, useRef } from 'react';
+import { Package, GitBranch } from 'lucide-react';
 import type { AppEntry } from '../types.js';
 import { showToast } from './Toast.js';
 
@@ -231,21 +232,33 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
                 <label className="fl">Mode</label>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {(['boilerplate', 'git-clone'] as AppEntry['mode'][]).map((m) => (
-                    <button
-                      key={m}
-                      style={{
-                        ...chipStyle(mode === m),
-                        padding: '10px 20px',
-                        borderRadius: 'var(--r)',
-                        fontSize: 13,
-                      }}
-                      onClick={() => setMode(m)}
-                    >
-                      {m === 'boilerplate' ? '📦 Boilerplate' : '🔗 Git Clone'}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {([
+                    { id: 'boilerplate', label: 'Boilerplate', Icon: Package },
+                    { id: 'git-clone',   label: 'Git Clone',   Icon: GitBranch },
+                  ] as { id: AppEntry['mode']; label: string; Icon: typeof Package }[]).map(({ id, label, Icon }) => {
+                    const sel = mode === id;
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => setMode(id)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 7,
+                          padding: '9px 18px',
+                          borderRadius: 'var(--r)',
+                          border: sel ? '1px solid var(--amber)' : '1px solid var(--bdr2)',
+                          background: sel ? 'rgba(232,168,73,0.1)' : 'var(--bg3)',
+                          color: sel ? 'var(--amber)' : 'var(--txt2)',
+                          fontSize: 13, fontWeight: sel ? 600 : 400,
+                          cursor: 'pointer',
+                          transition: 'all 0.14s',
+                        }}
+                      >
+                        <Icon size={15} strokeWidth={sel ? 2.2 : 1.8} />
+                        {label}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="fhint" style={{ marginTop: 8 }}>
                   {mode === 'boilerplate'

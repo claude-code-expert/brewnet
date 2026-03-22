@@ -5,7 +5,6 @@
  * services receive admin credentials and generates .env entries.
  */
 
-import { jest } from '@jest/globals';
 
 // ---------------------------------------------------------------------------
 // Imports

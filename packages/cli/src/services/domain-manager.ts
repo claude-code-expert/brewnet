@@ -187,7 +187,7 @@ export class DomainManager {
     let previousIngress: ServiceRoute[] | null = null;
     try {
       previousIngress = getActiveServiceRoutes(this.state);
-      const projectDomain = this.state.domain.zoneName;
+      const projectDomain = this.state.domain.cloudflare?.zoneName || this.state.domain.name || domain;
       const builtinRoutes = previousIngress.map((r) => ({ ...r, domain: projectDomain }));
       const existingExtRoutes = (this.state.domainConnections ?? [])
         .filter((c) => c.appName !== appName)
@@ -330,7 +330,7 @@ export class DomainManager {
     // Step 1: Remove ingress rule
     try {
       const remainingRoutes = getActiveServiceRoutes(this.state);
-      const projectDomain = this.state.domain.zoneName;
+      const projectDomain = this.state.domain.cloudflare?.zoneName || this.state.domain.name || conn.domain;
       const builtinRoutes = remainingRoutes
         .filter((r) => r.subdomain !== conn.subdomain)
         .map((r) => ({ ...r, domain: projectDomain }));
@@ -365,7 +365,7 @@ export class DomainManager {
       // Rollback: re-add ingress rule (restore all routes including the one being disconnected)
       try {
         const routes = getActiveServiceRoutes(this.state);
-        const projectDomain = this.state.domain.zoneName;
+        const projectDomain = this.state.domain.cloudflare?.zoneName || this.state.domain.name || conn.domain;
         const allBuiltin = routes.map((r) => ({ ...r, domain: projectDomain }));
         const allExt = (this.state.domainConnections ?? [])
           .map((c) => ({ subdomain: c.subdomain, containerName: this.resolveContainerName(c.appName), port: c.containerPort, domain: c.domain }));

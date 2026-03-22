@@ -37,7 +37,7 @@ const mockBuildUninstallTargets = jest.fn<() => { label: string; skipped?: boole
   ],
 );
 const mockListInstallations = jest.fn<() => string[]>(() => ['/home/user/brewnet-home']);
-const mockRunUninstall = jest.fn<() => Promise<void>>();
+const mockRunUninstall = jest.fn<() => Promise<{ removed: string[]; skipped: string[]; errors: string[]; success: boolean } | void>>();
 
 jest.unstable_mockModule(
   '../../../../packages/cli/src/services/uninstall-manager.js',
@@ -49,7 +49,8 @@ jest.unstable_mockModule(
 );
 
 const mockGetLastProject = jest.fn<() => string | null>(() => '/home/user/brewnet-home');
-const mockLoadState = jest.fn(() => null);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockLoadState = jest.fn<() => any>(() => null);
 
 jest.unstable_mockModule(
   '../../../../packages/cli/src/wizard/state.js',
@@ -73,7 +74,7 @@ jest.unstable_mockModule('@inquirer/prompts', () => ({
 }));
 
 // Mock execa — uninstall orphan cleanup does dynamic import('execa')
-const mockExeca = jest.fn().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+const mockExeca = jest.fn<() => Promise<unknown>>().mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 jest.unstable_mockModule('execa', () => ({
   execa: mockExeca,
 }));

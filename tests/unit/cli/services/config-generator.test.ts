@@ -12,7 +12,6 @@
  * - TC-08-12: Boilerplate selected → template substitution (`${PROJECT_NAME}`, `${DOMAIN}` replaced)
  */
 
-import { jest } from '@jest/globals';
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -35,7 +34,6 @@ const { createDefaultWizardState } = await import(
 
 import type {
   WizardState,
-  ServerComponents,
   GeneratedFile,
 } from '@brewnet/shared';
 

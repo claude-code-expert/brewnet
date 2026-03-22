@@ -28,6 +28,11 @@ A self-hosted home server management platform that provides an interactive CLI t
 - **Quick Tunnel URL 감지 정규식은 반드시 하이픈 포함 서브도메인만 매칭해야 함** — cloudflared 로그에 실제 URL 이전에 `"Post https://api.trycloudflare.com/tunnel": context deadline exceeded"` 에러가 먼저 찍힘. `/[a-z0-9-]+\.trycloudflare\.com/` 패턴은 `api.trycloudflare.com` 오매칭. 반드시 `quick-tunnel.ts`와 동일한 `/[\w]+-[\w][\w-]*\.trycloudflare\.com/` 패턴 사용.
 - **Nextcloud Quick Tunnel 모드에서 `NEXTCLOUD_TRUSTED_DOMAINS` env var에 반드시 `*.trycloudflare.com` 포함** — Nextcloud 29는 regex 미지원, `*` 와일드카드만 동작. regex(`/.*\.trycloudflare\.com/`) 넣으면 literal 문자열로 처리되어 아무것도 안 매칭됨. 컨테이너 재생성 시 env var 기준 재초기화되므로 occ 단독으로는 부족. `compose-generator.ts`의 `getNextcloudEnv()`와 `generate.ts`의 occ 호출 모두 `*.trycloudflare.com` 사용.
 - **Admin 대시보드(admin-server.ts)는 완성본 — UI 수정 외 로직 변경 금지** — 기능 완성 상태이며 구조/로직 변경은 사전 명시적 요청 없이 진행하지 말 것.
+- **Admin UI 디버깅 시 반드시 `pnpm --filter @brewnet/admin-ui dev`로 개발 서버 실행** — `localhost:5173`에서 Vite 개발 서버 구동. react-grab 등 브라우저 기반 디버깅 도구 사용 시 이 명령어로 먼저 서버를 띄워야 함.
+- **Gitea API 반환 clone_url을 절대 그대로 사용하지 말 것** — Traefik strip-prefix 뒤의 Gitea는 `X-Forwarded-Host` 기반으로 subpath 없는 URL 반환 (예: `http://localhost/admin/repo.git` — `/git` 누락). `authedCloneUrl()`이 `baseUrl`로 재조립하므로 직접 clone_url 조립 금지.
+- **`giteaBaseUrl`(API용)과 `giteaDisplayUrl`(표시용)은 반드시 분리** — Named Tunnel 모드에서 API URL은 `http://localhost/git`, 표시 URL은 `https://git.<zone>`. 혼용 시 auth redirect 깨짐 또는 터널 의존 API 실패.
+- **Cloudflare DNS 레코드 생성 시 반드시 upsert 패턴 사용** — `createDnsRecord()`는 "already exists" 시 기존 레코드를 PATCH로 갱신. 터널 재생성 후 구 UUID가 남으면 Error 1033.
+- **wizardState 변경하는 핸들러에서 반드시 인메모리 동기화** — `handleDomainConnect/Disconnect` 등 DomainManager가 디스크에 저장한 후 `loadState()` → `state.domainConnections = fresh` 필수. 안하면 GET /api/apps가 stale 데이터 반환.
 
 ## 🔁 Process Decision Rules
 

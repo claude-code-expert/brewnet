@@ -25,7 +25,7 @@
  * @module tests/integration/service-startup
  */
 
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { join } from 'node:path';
 
 import {
@@ -60,21 +60,6 @@ interface HealthCheckResult {
   healthy: boolean;
   elapsed: number;   // ms since health check started
   message: string;
-}
-
-/** Result of the entire startup flow. */
-interface StartupResult {
-  success: boolean;
-  services: ServiceStartResult[];
-  endpoints: EndpointInfo[];
-  error?: string;
-}
-
-interface ServiceStartResult {
-  serviceId: string;
-  containerId: string;
-  status: 'running' | 'failed' | 'timeout';
-  healthCheck: HealthCheckResult | null;
 }
 
 interface EndpointInfo {
@@ -242,7 +227,7 @@ function generateEndpoints(state: WizardState, services: string[]): EndpointInfo
     filebrowser: { subdomain: 'files', name: 'File Browser' },
   };
 
-  const credTargets = getCredentialTargets(state as any);
+  const credTargets = getCredentialTargets(state);
 
   for (const svcId of services) {
     const mapping = subdomainMap[svcId];
@@ -330,10 +315,11 @@ function createCompletedState(): WizardState {
       frontend: 'react',
     },
     domain: {
-      provider: 'custom',
+      provider: 'tunnel',
       name: 'myserver.example.com',
       ssl: 'letsencrypt',
       cloudflare: {
+        ...state.domain.cloudflare,
         enabled: true,
         tunnelToken: 'secret-token',
         tunnelName: 'my-tunnel',
@@ -364,6 +350,7 @@ function createLocalState(): WizardState {
       name: 'brewnet.local',
       ssl: 'self-signed',
       cloudflare: {
+        ...state.domain.cloudflare,
         enabled: false,
         tunnelToken: '',
         tunnelName: '',
@@ -400,7 +387,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('collectAllServices returns image-pullable service IDs', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
 
       // Every service should have a known Docker image
       for (const svcId of services) {
@@ -790,7 +777,7 @@ describe('T065 — Service Startup Flow', () => {
   describe('TC-08-20: Success — endpoint URLs and credentials', () => {
     it('generateEndpoints returns URLs for all web-accessible services', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       expect(endpoints.length).toBeGreaterThan(0);
@@ -809,7 +796,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('endpoints use HTTPS for non-local domains', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       for (const ep of endpoints) {
@@ -819,7 +806,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('endpoints use HTTP for local domains', () => {
       const state = createLocalState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       for (const ep of endpoints) {
@@ -829,7 +816,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('endpoints include subdomain-based URLs', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       const nextcloudEndpoint = endpoints.find((e) => e.serviceId === 'nextcloud');
@@ -843,7 +830,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('services without web endpoints are excluded', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       const endpointServiceIds = endpoints.map((e) => e.serviceId);
@@ -857,7 +844,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('endpoints include credential info for services that use admin creds', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       // Gitea always uses admin credentials
@@ -865,7 +852,6 @@ describe('T065 — Service Startup Flow', () => {
       expect(giteaEndpoint).toBeDefined();
 
       // Services that receive admin credentials should have credential notes
-      const credServices = getCredentialTargets(state as any);
       const endpointsWithCreds = endpoints.filter((e) => e.credentials);
       expect(endpointsWithCreds.length).toBeGreaterThan(0);
 
@@ -877,7 +863,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('endpoint count matches number of web-accessible services', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       // Only services with subdomain mappings get endpoints
@@ -889,7 +875,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('local domain endpoints use .local suffix', () => {
       const state = createLocalState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const endpoints = generateEndpoints(state, services);
 
       for (const ep of endpoints) {
@@ -920,7 +906,7 @@ describe('T065 — Service Startup Flow', () => {
   describe('Integrated flow: collectAllServices → sort → build commands', () => {
     it('full state produces a valid sorted service list', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const sorted = sortByDependency(services);
 
       expect(sorted.length).toBe(services.length);
@@ -936,7 +922,7 @@ describe('T065 — Service Startup Flow', () => {
 
     it('each service in sorted list has a valid Docker image', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
+      const services = collectAllServices(state);
       const sorted = sortByDependency(services);
 
       for (const svcId of sorted) {
@@ -971,8 +957,8 @@ describe('T065 — Service Startup Flow', () => {
 
     it('resource estimate matches the number of services collected', () => {
       const state = createCompletedState();
-      const services = collectAllServices(state as any);
-      const resources = estimateResources(state as any);
+      const services = collectAllServices(state);
+      const resources = estimateResources(state);
 
       // estimateResources counts containers independently — should match collectAllServices
       // Note: the app server container is only counted by estimateResources when

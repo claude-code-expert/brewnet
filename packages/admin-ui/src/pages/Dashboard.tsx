@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../auth-context.js';
 import { usePolling } from '../hooks/usePolling.js';
 import { NavHeader } from '../components/NavHeader.js';
+import { Footer } from '../components/Footer.js';
 import { ServiceCard } from '../components/ServiceCard.js';
 import { ServiceDetailModal } from '../components/ServiceDetailModal.js';
 import { LogsTab } from '../components/LogsTab.js';
@@ -25,6 +26,7 @@ export function Dashboard() {
   const [quickTunnelUrl, setQuickTunnelUrl] = useState('');
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [catalog, setCatalog] = useState<Record<string, ServiceDetail>>({});
+  const [aliases, setAliases] = useState<Record<string, string>>({});
   const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
 
@@ -54,7 +56,10 @@ export function Dashboard() {
 
         if (catalogRes.status === 'fulfilled' && catalogRes.value.ok) {
           const d = await catalogRes.value.json() as CatalogResponse;
-          if (!cancelled) setCatalog(d.catalog ?? {});
+          if (!cancelled) {
+            setCatalog(d.catalog ?? {});
+            setAliases(d.aliases ?? {});
+          }
         }
       } catch (err) {
         console.warn('[Dashboard] initial load error:', err);
@@ -163,7 +168,7 @@ export function Dashboard() {
                   }}
                 >
                   {services.map((svc) => {
-                    const detail = catalog[svc.id] ?? catalog[svc.name] ?? catalog[svc.type];
+                    const detail = catalog[svc.id] ?? catalog[svc.name] ?? catalog[aliases[svc.name]] ?? catalog[svc.type];
                     return (
                       <ServiceCard
                         key={svc.id}
@@ -199,37 +204,15 @@ export function Dashboard() {
           <LogsTab apiFetch={apiFetch} />
         )}
 
-        {/* Footer */}
-        <div style={{
-          height: 50,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          background: '#0c1525',
-          borderTop: '1px solid var(--bdr)',
-          marginTop: 32,
-          fontSize: 12.5,
-          color: 'var(--txt3)',
-        }}>
-          <a
-            href="https://github.com/claude-code-expert/brewnet"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--txt2)', textDecoration: 'none', fontFamily: 'var(--mono)', fontWeight: 600 }}
-          >
-            https://github.com/claude-code-expert/brewnet
-          </a>
-          <span>—</span>
-          <span>If you like it, a star would mean a lot!</span>
-        </div>
       </div>
+
+      <Footer />
 
       {/* Service detail modal */}
       {selectedService && (
         <ServiceDetailModal
           service={selectedService}
-          detail={catalog[selectedService.id] ?? catalog[selectedService.name] ?? catalog[selectedService.type]}
+          detail={catalog[selectedService.id] ?? catalog[selectedService.name] ?? catalog[aliases[selectedService.name]] ?? catalog[selectedService.type]}
           onClose={() => setSelectedService(null)}
         />
       )}

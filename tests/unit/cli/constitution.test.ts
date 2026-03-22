@@ -237,7 +237,7 @@ describe('TC-C-03: Transparent — all services have security_opt and restart', 
 
       expect(services.length).toBeGreaterThanOrEqual(6);
 
-      for (const [id, svc] of services) {
+      for (const [, svc] of services) {
         expect(svc.security_opt).toEqual(['no-new-privileges:true']);
         expect(svc.restart).toBe('unless-stopped');
         expect(svc.container_name).toMatch(/^brewnet-/);

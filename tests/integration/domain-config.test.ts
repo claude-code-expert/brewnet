@@ -78,7 +78,7 @@ function deepMerge<T extends Record<string, unknown>>(
  */
 function buildState(overrides: Record<string, unknown> = {}): WizardState {
   const base = createDefaultWizardState();
-  return deepMerge(base, overrides) as unknown as WizardState;
+  return deepMerge(base as unknown as Record<string, unknown>, overrides) as unknown as WizardState;
 }
 
 /**
@@ -524,7 +524,7 @@ describe('T084 — Domain-Specific Compose & Config Generation', () => {
       const state = createDefaultWizardState();
       const config = generateComposeConfig(state);
 
-      expect((config as Record<string, unknown>)['version']).toBeUndefined();
+      expect((config as unknown as Record<string, unknown>)['version']).toBeUndefined();
       expect(config.volumes).toBeDefined();
     });
   });
