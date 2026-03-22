@@ -833,6 +833,17 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
     const ctx = resolveContext();
     const appsJson = resolveAppsJsonPath();
 
+    // Auto-detect mode from provided fields if not explicitly set
+    if (!opts.mode) {
+      if (opts.gitUrl) {
+        opts.mode = 'git-clone';
+      } else if (opts.stackId) {
+        opts.mode = 'boilerplate';
+      } else {
+        opts.mode = 'new-project';
+      }
+    }
+
     // Step 0: Validating — mode-specific pre-checks
     setStep(job, 0, 'running');
     if (opts.mode === 'boilerplate') {
