@@ -3,6 +3,75 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-22 — v0.0.8 릴리즈: npm 배포 파이프라인, 설치 UX 개선, wizard 단순화
+
+### 🎯 Prompts
+1. "git tag 후 git push origin v0.0.1 --force 로 하면 npm에 제대로 올라가는건지 검사해봐"
+2. "설치할 때 BREWNET V1.0.1 을 가져오는데 이거 어디서 가져오는거지? 버전은 PACKAGE.JSON에서 가져오는거 아니야?"
+3. "sudo 권한이 필요합니다 /usr/local/bin 에 설치합니다. 하고 비번 넣어줬는데 no such file or directory 에러"
+4. "npm install 한 뒤 brewnet init 해도 아무 동작 안하고 brewnet --version에도 아무런 반응이 없어"
+5. "admin pannel 열때 admin ui not built 동일하게 나와"
+6. "Pulling Docker images...에서 다음 단계로 못가는거 같은데"
+7. "Applications 폴더로 이동 중... 에서 다음 화면으로 안넘어가는거 같아"
+8. "file server는 nextcloud 하나만 지원하자"
+9. "mysql 선택시 하위 버전 옵션 나오는데 최신으로 하나만 깔도록 해"
+10. "boilerplate 단계에서 기술 스택 정하면 그냥 설치하겠다고 동의한거니까 바로 설치하게 해"
+11. "npm 과 curl이 완전하게 분리되서 설치할 수 있도록 설계해야해"
+12. "ExitPromptError: User force closed the prompt with 0 null"
+
+### ✅ Changes
+
+#### npm 배포 파이프라인 구축
+- **Added**: GitHub Actions `publish.yml` — `v*` 태그 push 시 자동 npm 게시 (`@brewnet/cli`)
+- **Added**: `scripts/test-npm-install.sh` — npm install 로컬 시뮬레이션 테스트 (npm pack → install → smoke test)
+- **Fixed**: CI workflow에 admin-ui 빌드 단계 추가 (npm 패키지에 대시보드 누락 해결)
+
+#### CLI 진입점 수정
+- **Fixed**: `isDirectRun` 경로 매칭 → 테스트 환경 감지로 변경 (npm global 심링크에서 silent exit 해결) (`packages/cli/src/index.ts`)
+- **Fixed**: async IIFE + parseAsync → 동기 parse로 변경 (ExitPromptError 해결)
+- **Removed**: auto-init 로직 제거 — `brewnet init`으로 통일
+
+#### Admin UI 번들링
+- **Added**: tsup onSuccess — `admin-ui/dist` → `cli/dist/admin-ui/` 자동 복사 (`packages/cli/tsup.config.ts`)
+- **Fixed**: `admin-server.ts` 경로 `../../admin-ui` → `../admin-ui` (dist 밖을 가리키던 버그)
+- **Refactored**: monorepo fallback 제거 — `dist/admin-ui/` 단일 경로만 사용
+
+#### install.sh 수정
+- **Fixed**: `/usr/local/bin` 미존재 시 `sudo mkdir -p` 추가
+- **Fixed**: brew install --cask `stdio: 'inherit'`로 변경 (sudo 프롬프트 가려지던 문제)
+- **Fixed**: docker pull `stdio: 'inherit'`로 변경 (진행률 표시)
+- **Changed**: 버전 하드코딩 제거 → `package.json`에서 동적 로드
+- **Changed**: 빌드를 admin-ui → shared → cli 3단계로 분리 (실패 가시화)
+- **Removed**: `exec brewnet init` 제거 — curl/npm 설치 경로 완전 분리
+
+#### Wizard 단순화
+- **Changed**: File Server 2단계(활성화→서비스 선택) → Nextcloud 설치 1단계로 축소
+- **Changed**: DB 버전 선택 제거 — 최신 버전 자동 할당 (PostgreSQL 18.3, MySQL 8.4)
+- **Removed**: "Generate boilerplate?" 확인 질문 제거 — 스택 선택 시 바로 설치
+- **Removed**: SSH 서버 포트(2222) 시스템 체크에서 제거
+
+#### 기타
+- **Fixed**: deploy 시 "repo not found" 경로에 unshallow 체크 추가 (`shallow update not allowed` 해결)
+- **Added**: landing page hero-links 버튼 (brewnet.dev + GitHub)
+- **Changed**: README — curl 설치만 권장, npm/SSH/MinIO 참조 제거
+
+### 📊 npm Versions Published
+- v0.0.1 → v0.0.8 (8 releases)
+
+### 📁 Key Files Modified
+- `packages/cli/src/index.ts` — CLI 진입점 (4회 수정)
+- `packages/cli/src/services/admin-server.ts` — admin UI 경로 (3회 수정)
+- `packages/cli/tsup.config.ts` — admin-ui 번들링
+- `install.sh` — 설치 스크립트 (6회 수정)
+- `.github/workflows/publish.yml` — npm 배포 워크플로우
+- `packages/cli/src/wizard/steps/server-components.ts` — wizard 단순화
+- `packages/cli/src/wizard/steps/dev-stack.ts` — boilerplate confirm 제거
+- `packages/cli/src/services/docker-installer.ts` — brew stdio 수정
+- `packages/cli/src/wizard/steps/generate.ts` — docker pull stdio 수정
+- `README.md` — 설치 문서 정리
+
+---
+
 ## [feature/named-tunnel-builtin-services] - 2026-03-22 14:00 — Named Tunnel 근본 버그 4건 수정 (DNS/Git Push/State Sync/Gitea Link)
 
 ### 🎯 Prompts
