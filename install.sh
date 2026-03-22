@@ -296,15 +296,11 @@ printf "\n"
 printf "  ${DIM}To update: curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash${RESET}\n"
 printf "\n"
 
-# Fresh install → auto-start setup wizard
-if [ -z "$(ls -A "${BREWNET_DATA_DIR}/projects/" 2>/dev/null)" ]; then
-  if [ -n "$CONFIGURED_PROFILE" ]; then
-    # PATH was just added — source profile so brewnet is available
-    . "$CONFIGURED_PROFILE" 2>/dev/null || true
-  fi
-  printf "  ${BOLD}Starting setup wizard...${RESET}\n\n"
-  exec brewnet init < /dev/tty
-else
-  printf "  ${DIM}Run ${RESET}${GREEN}brewnet init${RESET}${DIM} to set up a new project${RESET}\n"
+if [ -n "$CONFIGURED_PROFILE" ]; then
+  printf "  ${YELLOW}Note:${RESET} Reload your shell first:\n"
+  printf "    source %s\n" "$CONFIGURED_PROFILE"
   printf "\n"
 fi
+printf "  ${BOLD}Get started:${RESET}\n"
+printf "    ${GREEN}brewnet${RESET}\n"
+printf "\n"
