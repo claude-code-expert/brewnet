@@ -378,15 +378,24 @@ describe('createDnsRecord', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('resolves even if record already exists (non-fatal)', async () => {
+  it('upserts when record already exists', async () => {
+    // 1st call: POST → 409 "already exists"
     mockFetch.mockResolvedValueOnce(makeFetchResponse({
       success: false,
       errors: [{ message: 'Record already exists' }],
     }, false, 409));
+    // 2nd call: GET existing records (getDnsRecords)
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({
+      success: true,
+      result: [{ id: 'rec-1', name: 'git.example.com', content: 'old-tunnel.cfargotunnel.com', proxied: true }],
+    }));
+    // 3rd call: PATCH to update the record
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: true }));
 
     await expect(
       createDnsRecord('token', 'zone-1', 'tunnel-1', 'git', 'example.com'),
     ).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   it('throws for non-"already exists" errors', async () => {

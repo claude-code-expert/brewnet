@@ -754,9 +754,9 @@ describe('T065 — Service Startup Flow', () => {
       // This test verifies the state is correctly identified
     });
 
-    it('custom domain requires DNS and HTTPS verification', () => {
+    it('tunnel domain requires DNS and HTTPS verification', () => {
       const state = createCompletedState();
-      expect(state.domain.provider).toBe('custom');
+      expect(state.domain.provider).toBe('tunnel');
       expect(state.domain.name).toBe('myserver.example.com');
       expect(state.domain.ssl).toBe('letsencrypt');
     });
