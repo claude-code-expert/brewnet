@@ -272,48 +272,15 @@ async function installDockerMacOS(): Promise<InstallResult> {
   if (dockerAppExists) {
     console.log(chalk.dim('  [2/3] Docker Desktop이 이미 설치되어 있습니다. 건너뜁니다.'));
   } else {
-    const s2 = ora({
-      text: '[2/3] Docker Desktop 다운로드 중... (~600MB, 수 분 소요)',
-      indent: 2,
-    }).start();
-
-    // Accumulate brew stderr so we can surface it on failure.
-    const brewErrLines: string[] = [];
+    console.log(chalk.dim('  [2/3] Docker Desktop 설치 중... (~600MB, 수 분 소요)'));
+    console.log(chalk.dim('        (비밀번호 입력이 필요할 수 있습니다)'));
+    console.log();
 
     try {
-      // stdin: 'inherit' lets macOS system dialogs pass through to the terminal.
-      const child = execa('brew', ['install', '--cask', 'docker-desktop'], {
+      await execa('brew', ['install', '--cask', 'docker-desktop'], {
         env: augmentedEnv(),
-        stdin: 'inherit',
+        stdio: 'inherit',
       });
-
-      const onBrewLine = (line: string) => {
-        if (/==> Downloading/i.test(line)) {
-          s2.text = '[2/3] Docker Desktop 다운로드 중... (~600MB)';
-        } else if (/^\s*#{3,}/.test(line)) {
-          const pct = line.match(/(\d+(?:\.\d+)?)%/);
-          if (pct) s2.text = `[2/3] Docker Desktop 다운로드 중... ${Math.round(Number(pct[1]))}%`;
-        } else if (/==> Verifying/i.test(line)) {
-          s2.text = '[2/3] 파일 무결성 검증 중...';
-        } else if (/==> Installing/i.test(line)) {
-          s2.text = '[2/3] Docker Desktop 설치 중...';
-        } else if (/==> Moving/i.test(line)) {
-          s2.text = '[2/3] Applications 폴더로 이동 중...';
-        } else if (/already installed/i.test(line)) {
-          s2.text = '[2/3] Docker Desktop 이미 설치됨 (brew 기록)';
-        }
-      };
-
-      child.stdout?.on('data', (chunk: Buffer) => {
-        chunk.toString().split('\n').forEach(onBrewLine);
-      });
-      child.stderr?.on('data', (chunk: Buffer) => {
-        const lines = chunk.toString().split('\n');
-        lines.forEach(onBrewLine);
-        lines.forEach((l) => { if (l.trim()) brewErrLines.push(l.trim()); });
-      });
-
-      await child;
 
       // Verify the app bundle actually landed in /Applications.
       // brew exits 0 in several cases that leave no app:
@@ -326,9 +293,7 @@ async function installDockerMacOS(): Promise<InstallResult> {
       })();
 
       if (!appNowExists) {
-        const detail = brewErrLines.slice(-3).join(' | ') || 'brew 출력 없음';
-        s2.fail(`[2/3] Docker Desktop 설치 실패 — brew 완료 후 앱 번들 없음`);
-        console.log(chalk.dim(`    brew 출력: ${detail}`));
+        console.log(chalk.red('  ✗ [2/3] Docker Desktop 설치 실패 — brew 완료 후 앱 번들 없음'));
         return {
           success: false,
           message:
@@ -339,11 +304,10 @@ async function installDockerMacOS(): Promise<InstallResult> {
         };
       }
 
-      s2.succeed('[2/3] Docker Desktop 설치 완료');
+      console.log(chalk.green('  ✔ [2/3] Docker Desktop 설치 완료'));
     } catch (err) {
-      const detail = brewErrLines.slice(-3).join(' | ')
-        || (err instanceof Error ? err.message : String(err));
-      s2.fail(`[2/3] Docker Desktop 설치 실패: ${detail}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      console.log(chalk.red(`  ✗ [2/3] Docker Desktop 설치 실패: ${detail}`));
       return {
         success: false,
         message: `brew install --cask docker-desktop 실패: ${detail}\n수동 설치: https://docs.docker.com/desktop/mac/`,
