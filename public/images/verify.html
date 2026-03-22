@@ -279,17 +279,17 @@ img { max-width: 100%; display: block; }
     <div class="hero-badge">Open Source &middot; Self-Hosted &middot; Docker-Powered</div>
     <h1 class="hero-title">One command. Your entire server stack, on tap.<br><span class="gradient-text">Just brew it!</span></h1>
     <div class="hero-split">
-      <p class="hero-desc">Interactive 7-step CLI wizard and Web Dashboard for setting up and managing personal servers with 17 Docker-based services. Build your own home server, skip the hosting fees, and own your data. From zero to a fully configured server in minutes — no cloud subscription required.</p>
+      <p class="hero-desc">Interactive 8-step CLI wizard and Web Dashboard for setting up and managing personal servers with Docker-based services. Build your own home server, skip the hosting fees, and own your data. From zero to a fully configured server in minutes — no cloud subscription required.</p>
       <ul class="hero-stack-list">
         <li><span class="stack-dot green"></span>Git Server (Gitea)</li>
-        <li><span class="stack-dot blue"></span>Web Server (Nginx / Traefik)</li>
+        <li><span class="stack-dot blue"></span>Web Server (Traefik / Nginx / Caddy)</li>
         <li><span class="stack-dot purple"></span>Media Server (Jellyfin)</li>
-        <li><span class="stack-dot orange"></span>Runtime Stack (Go, Java, PHP, .NET, Python)</li>
-        <li><span class="stack-dot cyan"></span>Database (PostgreSQL, Redis)</li>
-        <li><span class="stack-dot yellow"></span>Cloud Storage (Nextcloud)</li>
-        <li><span class="stack-dot red"></span>Monitoring (Grafana, Prometheus)</li>
-        <li><span class="stack-dot green"></span>CI/CD Pipeline</li>
-        <li class="stack-more">+ 9 more services</li>
+        <li><span class="stack-dot orange"></span>App Scaffolding (Go, Java, Rust, Python, Kotlin, Node.js)</li>
+        <li><span class="stack-dot cyan"></span>Database (PostgreSQL, MySQL + Redis)</li>
+        <li><span class="stack-dot yellow"></span>Cloud Storage (Nextcloud, MinIO)</li>
+        <li><span class="stack-dot red"></span>File Browser (FileBrowser)</li>
+        <li><span class="stack-dot green"></span>Cloudflare Tunnel (Named + Quick)</li>
+        <li class="stack-more">+ more services</li>
       </ul>
     </div>
     <div class="hero-actions">
@@ -327,8 +327,8 @@ img { max-width: 100%; display: block; }
   <div class="container">
     <div class="stats-grid">
       <div class="stat-item"><span class="stat-value">17</span><span class="stat-label">Docker Services</span></div>
-      <div class="stat-item"><span class="stat-value">7</span><span class="stat-label">Backend Languages</span></div>
-      <div class="stat-item"><span class="stat-value">7</span><span class="stat-label">Wizard Steps</span></div>
+      <div class="stat-item"><span class="stat-value">16</span><span class="stat-label">App Stacks</span></div>
+      <div class="stat-item"><span class="stat-value">8</span><span class="stat-label">Wizard Steps</span></div>
       <div class="stat-item"><span class="stat-value">100%</span><span class="stat-label">Open Source CLI</span></div>
     </div>
   </div>
@@ -346,12 +346,12 @@ img { max-width: 100%; display: block; }
       <div class="pain-card">
         <div class="pain-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
         <h3>Runtime setup is a nightmare</h3>
-        <p>Installing Go, Java, PHP, .NET, Python — each runtime has its own version manager, dependencies, and conflicts. Brewnet provisions any server runtime in one click with full isolation, zero dependency hell.</p>
+        <p>Installing Go, Java, Rust, Kotlin, Python, Node.js — each runtime has its own version manager, dependencies, and conflicts. Brewnet scaffolds any app stack in one step with full Docker isolation and zero dependency hell.</p>
       </div>
       <div class="pain-card">
         <div class="pain-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
         <h3>Security is an afterthought</h3>
-        <p>SSH hardening, firewall rules, SSL certificates, credential management — most self-hosters skip these until it's too late. Brewnet enforces security from Step 1: auto-firewall, key-only SSH, encrypted secrets, and Cloudflare Tunnel with zero exposed ports.</p>
+        <p>Firewall rules, SSL certificates, credential management — most self-hosters skip these until it's too late. Brewnet enforces security from Step 1: auto-firewall, encrypted secrets, and Cloudflare Tunnel with zero exposed ports.</p>
       </div>
       <div class="pain-card">
         <div class="pain-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></div>
@@ -374,12 +374,12 @@ img { max-width: 100%; display: block; }
       <div class="feature-card">
         <div class="feature-icon" style="--accent:#58a6ff"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
         <h3>One-Click Server Stack</h3>
-        <p>Go, Java, PHP, .NET, Python, Node.js — pick your runtime and launch a production-ready web server in one command. No manual dependency setup, no version conflicts.</p>
+        <p>Go, Java, Rust, Kotlin, Python, Node.js — pick your stack and scaffold a production-ready app with Gitea repo, Docker Compose, and Traefik routing in one command. 16 frameworks supported.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon" style="--accent:#3fb950"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
         <h3>Secure by Default</h3>
-        <p>SSH key-only auth, root login disabled, auto-firewall configuration, and encrypted credential propagation across all services.</p>
+        <p>Auto-firewall configuration, encrypted credential propagation across all services, and Cloudflare Tunnel for zero exposed ports.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon" style="--accent:#bc8cff"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></div>
@@ -394,12 +394,12 @@ img { max-width: 100%; display: block; }
       <div class="feature-card">
         <div class="feature-icon" style="--accent:#d29922"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0022 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>
         <h3>Docker Orchestration</h3>
-        <p>Auto-generates docker-compose.yml for up to 17 services with full container isolation. Each service runs in its own network sandbox with dependency ordering, health checks, and secure credential propagation.</p>
+        <p>Auto-generates docker-compose.yml with full container isolation. Each service runs in its own network sandbox with dependency ordering, health checks, and secure credential propagation across all services.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon" style="--accent:#39d353"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg></div>
-        <h3>Slack &amp; Telegram Notifications</h3>
-        <p>Get real-time alerts on service status, deployments, and errors — directly to Slack or Telegram. No database required. Just paste your webhook URL or bot token and start receiving notifications.</p>
+        <h3>App Scaffolding &amp; Auto-Deploy</h3>
+        <p>Scaffold a full project with <code>brewnet create-app</code> — Gitea repository, Docker Compose service, Traefik routing, and boilerplate source code, all in one step. 16 stacks across 6 languages supported.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon" style="--accent:#58a6ff"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
@@ -441,7 +441,7 @@ img { max-width: 100%; display: block; }
         <div class="step-number">02</div>
         <div class="step-content">
           <h3>Run the Wizard</h3>
-          <p>The interactive 7-step wizard walks you through: system check, project setup, admin account &amp; server components, dev stack &amp; runtime, domain &amp; network, review, and generation &amp; deployment.</p>
+          <p>The interactive 8-step wizard walks you through: system check, project setup, admin account &amp; server components, dev stack &amp; runtime, domain &amp; network, review, and generation &amp; deployment.</p>
           <div class="code-block"><code>brewnet init</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
         </div>
       </div>
@@ -463,13 +463,13 @@ img { max-width: 100%; display: block; }
         <div class="command-item"><code>brewnet up / down</code><span>Start / Stop all services</span></div>
         <div class="command-item"><code>brewnet status</code><span>Show service status</span></div>
         <div class="command-item"><code>brewnet logs [service]</code><span>View logs</span></div>
-        <div class="command-item"><code>brewnet deploy &lt;path&gt;</code><span>Deploy an application</span></div>
-        <div class="command-item"><code>brewnet domain add</code><span>Add custom domain</span></div>
-        <div class="command-item"><code>brewnet domain tunnel</code><span>Manage Cloudflare Tunnel</span></div>
-        <div class="command-item"><code>brewnet backup</code><span>Create backup</span></div>
+        <div class="command-item"><code>brewnet create-app &lt;name&gt;</code><span>Scaffold a new app project</span></div>
+        <div class="command-item"><code>brewnet domain connect [app]</code><span>Connect app to external domain</span></div>
+        <div class="command-item"><code>brewnet domain tunnel status</code><span>Check Cloudflare Tunnel status</span></div>
+        <div class="command-item"><code>brewnet admin</code><span>Open web dashboard (localhost:8088)</span></div>
+        <div class="command-item"><code>brewnet shutdown</code><span>Stop the admin panel daemon</span></div>
+        <div class="command-item"><code>brewnet backup</code><span>Create backup (tar.gz)</span></div>
         <div class="command-item"><code>brewnet restore &lt;id&gt;</code><span>Restore from backup</span></div>
-        <div class="command-item"><code>brewnet ssh enable</code><span>Enable SSH server</span></div>
-        <div class="command-item"><code>brewnet create-app &lt;name&gt;</code><span>Scaffold a new app</span></div>
         <div class="command-item"><code>brewnet uninstall</code><span>Remove all services &amp; data</span></div>
       </div>
     </div>
@@ -482,7 +482,7 @@ img { max-width: 100%; display: block; }
     <div class="section-header">
       <span class="section-badge">Services</span>
       <h2 class="section-title">All your server needs,<br><span class="gradient-text">one platform</span></h2>
-      <p class="section-desc">17 Docker services covering web servers, databases, file storage, media streaming, SSH, mail, and more.</p>
+      <p class="section-desc">Docker services covering web servers, databases, file storage, media streaming, Git hosting, Cloudflare Tunnel, and more.</p>
     </div>
     <div class="services-grid">
       <div class="service-item"><div class="service-icon web">WEB</div><div class="service-info"><h4>Web Server</h4><p>Traefik, Nginx, Caddy</p></div></div>
@@ -491,11 +491,11 @@ img { max-width: 100%; display: block; }
       <div class="service-item"><div class="service-icon cache">CACHE</div><div class="service-info"><h4>Cache</h4><p>Redis, Valkey, KeyDB</p></div></div>
       <div class="service-item"><div class="service-icon file">FILE</div><div class="service-info"><h4>File Storage</h4><p>Nextcloud, MinIO (S3)</p></div></div>
       <div class="service-item"><div class="service-icon media">MEDIA</div><div class="service-info"><h4>Media Server</h4><p>Jellyfin streaming</p></div></div>
-      <div class="service-item"><div class="service-icon ssh">SSH</div><div class="service-info"><h4>SSH Server</h4><p>OpenSSH, key-based auth, SFTP</p></div></div>
+
       <div class="service-item"><div class="service-icon mail">MAIL</div><div class="service-info"><h4>Mail Server</h4><p>docker-mailserver (SMTP/IMAP)</p></div></div>
       <div class="service-item"><div class="service-icon ssl">TUNNEL</div><div class="service-info"><h4>Cloudflare Tunnel</h4><p>Automatic HTTPS, DDoS protection</p></div></div>
       <div class="service-item"><div class="service-icon fb">FB</div><div class="service-info"><h4>FileBrowser</h4><p>Web-based file management UI</p></div></div>
-      <div class="service-item"><div class="service-icon runtime">DEV</div><div class="service-info"><h4>Dev Stack</h4><p>Node.js, Python, Go, Java, PHP, .NET, Rust</p></div></div>
+      <div class="service-item"><div class="service-icon runtime">DEV</div><div class="service-info"><h4>App Scaffolding</h4><p>Node.js, Python, Go, Java, Kotlin, Rust (16 stacks)</p></div></div>
     </div>
 
     <!-- Server Catalog -->
@@ -520,7 +520,7 @@ img { max-width: 100%; display: block; }
             <tr><td>File Server</td><td>MinIO</td><td><code>minio/minio:latest</code></td><td>9000, 9001</td><td>~256 MB</td></tr>
             <tr><td>Media</td><td>Jellyfin</td><td><code>jellyfin/jellyfin:latest</code></td><td>8096</td><td>~256 MB</td></tr>
             <tr><td>Utility</td><td>FileBrowser</td><td><code>filebrowser/filebrowser:latest</code></td><td>80</td><td>~32 MB</td></tr>
-            <tr><td>SSH</td><td>OpenSSH</td><td><code>linuxserver/openssh-server:latest</code></td><td>2222</td><td>~16 MB</td></tr>
+
             <tr><td>Mail</td><td>docker-mailserver</td><td><code>ghcr.io/docker-mailserver/docker-mailserver:latest</code></td><td>25, 587, 993</td><td>~256 MB</td></tr>
             <tr><td>Tunnel</td><td>Cloudflared</td><td><code>cloudflare/cloudflared:latest</code></td><td>outbound only</td><td>~32 MB</td></tr>
           </tbody>
@@ -573,7 +573,7 @@ img { max-width: 100%; display: block; }
         <div class="step-content">
           <h3>npm</h3>
           <p>Install globally via npm package manager.</p>
-          <div class="code-block"><code>npm install -g brewnet</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
+          <div class="code-block"><code>npm install -g @brewnet/cli</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
           <div class="code-block" style="margin-top:8px"><code>brewnet --version</code><button class="copy-btn" onclick="copyCode(this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button></div>
         </div>
       </div>
@@ -581,15 +581,16 @@ img { max-width: 100%; display: block; }
 
     <!-- Wizard Overview -->
     <div class="commands-section" style="margin-bottom:32px">
-      <h3 class="commands-title">7-Step Wizard Overview</h3>
+      <h3 class="commands-title">8-Step Wizard Overview</h3>
       <div class="wizard-steps">
-        <div class="wizard-step"><div class="wizard-step-num">1</div><div><div class="wizard-step-title">System Check</div><div class="wizard-step-desc">OS, Docker, ports (80/443), disk, RAM verification</div></div></div>
-        <div class="wizard-step"><div class="wizard-step-num">2</div><div><div class="wizard-step-title">Project Setup</div><div class="wizard-step-desc">Project name, path, install type (Full / Partial)</div></div></div>
-        <div class="wizard-step"><div class="wizard-step-num">3</div><div><div class="wizard-step-title">Admin &amp; Servers</div><div class="wizard-step-desc">Admin account, Web/File/DB/Media/SSH selection</div></div></div>
-        <div class="wizard-step"><div class="wizard-step-num">4</div><div><div class="wizard-step-title">Dev Stack</div><div class="wizard-step-desc">Backend language, framework, frontend, FileBrowser (optional)</div></div></div>
-        <div class="wizard-step"><div class="wizard-step-num">5</div><div><div class="wizard-step-title">Domain &amp; Network</div><div class="wizard-step-desc">Local (LAN) or Cloudflare Tunnel, Mail Server (conditional)</div></div></div>
-        <div class="wizard-step"><div class="wizard-step-num">6</div><div><div class="wizard-step-title">Review &amp; Confirm</div><div class="wizard-step-desc">Full config review, credential propagation targets, resource estimate</div></div></div>
-        <div class="wizard-step"><div class="wizard-step-num">7</div><div><div class="wizard-step-title">Generate &amp; Deploy</div><div class="wizard-step-desc">docker-compose.yml generation, image pull, container start, access verification</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">0</div><div><div class="wizard-step-title">System Check</div><div class="wizard-step-desc">OS, Docker, ports 80/443, disk, RAM verification</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">1</div><div><div class="wizard-step-title">Project Setup</div><div class="wizard-step-desc">Project name, path, install type (Full / Partial)</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">2</div><div><div class="wizard-step-title">Admin &amp; Servers</div><div class="wizard-step-desc">Admin account, Web/File/DB/Media component selection</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">3</div><div><div class="wizard-step-title">Dev Stack</div><div class="wizard-step-desc">Backend language &amp; framework (App Server 선택 시만 표시)</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">4</div><div><div class="wizard-step-title">Domain &amp; Network</div><div class="wizard-step-desc">Local (LAN) or Cloudflare Tunnel (Quick / Named)</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">5</div><div><div class="wizard-step-title">Review &amp; Confirm</div><div class="wizard-step-desc">Full config review, credential propagation targets, resource estimate</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">6</div><div><div class="wizard-step-title">Generate &amp; Deploy</div><div class="wizard-step-desc">docker-compose.yml 생성, image pull, container start, health check</div></div></div>
+        <div class="wizard-step"><div class="wizard-step-num">7</div><div><div class="wizard-step-title">Complete</div><div class="wizard-step-desc">접속 URL, 계정 정보, 외부 접근 검증 출력</div></div></div>
       </div>
     </div>
 
@@ -746,7 +747,7 @@ img { max-width: 100%; display: block; }
       <div class="footer-links">
         <a href="https://github.com/claude-code-expert/brewnet" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/claude-code-expert/brewnet#readme" target="_blank" rel="noopener">Docs</a>
-        <a href="https://github.com/claude-code-expert/brewnet/blob/main/LICENSE" target="_blank" rel="noopener">License (MIT)</a>
+        <a href="https://github.com/claude-code-expert/brewnet/blob/main/LICENSE" target="_blank" rel="noopener">License (Apache 2.0)</a>
         <a href="#">Privacy</a>
       </div>
     </div>
