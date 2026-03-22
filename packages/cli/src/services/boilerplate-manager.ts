@@ -244,10 +244,9 @@ export function generateEnv(
   const dbUser = opts?.dbUser ?? 'brewnet';
   const dbName = opts?.dbName ?? 'brewnet_db';
   const dbPassword = opts?.dbPassword ?? randomBytes(32).toString('hex');
-  const mysqlPassword = randomBytes(32).toString('hex');
-  const mysqlRoot = randomBytes(32).toString('hex');
 
   // 3. Apply regex substitutions (line-by-line, preserves comments/formatting)
+  //    All DB passwords use the same value (admin password) for consistency.
   content = content
     .replace(/^DB_DRIVER=.*/m, `DB_DRIVER=${dbDriver}`)
     .replace(/^DB_USER=.*/m, `DB_USER=${dbUser}`)
@@ -255,8 +254,8 @@ export function generateEnv(
     .replace(/^DB_PASSWORD=.*/m, `DB_PASSWORD=${dbPassword}`)
     .replace(/^MYSQL_USER=.*/m, `MYSQL_USER=${dbUser}`)
     .replace(/^MYSQL_DATABASE=.*/m, `MYSQL_DATABASE=${dbName}`)
-    .replace(/^MYSQL_PASSWORD=.*/m, `MYSQL_PASSWORD=${mysqlPassword}`)
-    .replace(/^MYSQL_ROOT_PASSWORD=.*/m, `MYSQL_ROOT_PASSWORD=${mysqlRoot}`);
+    .replace(/^MYSQL_PASSWORD=.*/m, `MYSQL_PASSWORD=${dbPassword}`)
+    .replace(/^MYSQL_ROOT_PASSWORD=.*/m, `MYSQL_ROOT_PASSWORD=${dbPassword}`);
 
   // 4. Override host ports if free ports were selected (avoids "port already in use").
   //    Stacks use `${BACKEND_PORT:-default}:containerPort` so only the host side changes.

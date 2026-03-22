@@ -308,15 +308,12 @@ describe('generateEnv — custom DB credentials (opts)', () => {
     expect(match![1]).toHaveLength(64);
   });
 
-  it('MYSQL_PASSWORD is always randomly generated (even when dbPassword provided)', () => {
+  it('MYSQL_PASSWORD uses the same dbPassword (admin password)', () => {
     generateEnv(dir, 'go-gin', 'mysql', { dbPassword: 'admin_pass' });
     const env = readFileSync(join(dir, '.env'), 'utf-8');
-    // DB_PASSWORD uses provided value
     expect(env).toMatch(/^DB_PASSWORD=admin_pass$/m);
-    // MYSQL_PASSWORD is still random (64-char hex)
-    const match = env.match(/^MYSQL_PASSWORD=([0-9a-f]+)$/m);
-    expect(match).not.toBeNull();
-    expect(match![1]).toHaveLength(64);
+    expect(env).toMatch(/^MYSQL_PASSWORD=admin_pass$/m);
+    expect(env).toMatch(/^MYSQL_ROOT_PASSWORD=admin_pass$/m);
   });
 });
 

@@ -366,7 +366,7 @@ describe('generateCredentialEnvEntries', () => {
     expect(entries['MYSQL_DATABASE']).toBe('mydb');
     expect(entries['MYSQL_USER']).toBe('myuser');
     expect(entries['MYSQL_PASSWORD']).toBe('DbPass456');
-    expect(entries['MYSQL_ROOT_PASSWORD']).toBe('AdminPass');
+    expect(entries['MYSQL_ROOT_PASSWORD']).toBe('DbPass456');
   });
 
   it('includes pgAdmin env vars when PostgreSQL + adminUI enabled', () => {

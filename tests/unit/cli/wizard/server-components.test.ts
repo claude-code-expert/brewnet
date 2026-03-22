@@ -57,13 +57,19 @@ import type { WizardState } from '@brewnet/shared';
  * Uses structuredClone to avoid shared references between tests.
  */
 function buildState(overrides: Partial<{
+  admin: Partial<WizardState['admin']>;
   servers: Partial<WizardState['servers']>;
   devStack: Partial<WizardState['devStack']>;
   domain: Partial<WizardState['domain']>;
 }>= {}): WizardState {
   const base = createDefaultWizardState();
   const state = structuredClone(base);
+  // Default admin password for tests (DB password uses admin.password)
+  state.admin.password = 'TestAdminPass123!';
 
+  if (overrides.admin) {
+    Object.assign(state.admin, overrides.admin);
+  }
   if (overrides.servers) {
     for (const [key, value] of Object.entries(overrides.servers)) {
       (state.servers as Record<string, unknown>)[key] = {
@@ -288,8 +294,7 @@ describe('TC-04-14: DB Server enabled → dbPassword auto-generated if empty', (
     });
 
     const result = applyComponentRules(state);
-    expect(result.servers.dbServer.dbPassword).toBe(MOCK_PASSWORD);
-    expect(generatePassword).toHaveBeenCalledWith(16);
+    expect(result.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
   });
 
   it('does not overwrite an existing dbPassword', () => {
@@ -311,7 +316,7 @@ describe('TC-04-14: DB Server enabled → dbPassword auto-generated if empty', (
 
     const result = applyComponentRules(state);
     expect(result.servers.dbServer.dbPassword).toBe(existingPassword);
-    expect(generatePassword).not.toHaveBeenCalled();
+    // generatePassword no longer used for DB passwords
   });
 
   it('does not generate password when dbServer is disabled (even if password is empty)', () => {
@@ -332,7 +337,7 @@ describe('TC-04-14: DB Server enabled → dbPassword auto-generated if empty', (
 
     const result = applyComponentRules(state);
     expect(result.servers.dbServer.dbPassword).toBe('');
-    expect(generatePassword).not.toHaveBeenCalled();
+    // generatePassword no longer used for DB passwords
   });
 });
 
@@ -581,7 +586,7 @@ describe('Combined rule application', () => {
     expect(finalState.servers.sshServer.sftp).toBe(true);
 
     // DB password auto-generated
-    expect(finalState.servers.dbServer.dbPassword).toBe(MOCK_PASSWORD);
+    expect(finalState.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
 
     // App server + file browser auto-enabled
     expect(finalState.servers.appServer.enabled).toBe(true);
@@ -590,6 +595,7 @@ describe('Combined rule application', () => {
 
   it('minimal state: all defaults, no devStack, local domain', () => {
     const state = createDefaultWizardState();
+    state.admin.password = 'TestAdminPass123!';
 
     const afterRules = applyComponentRules(state);
     const finalState = applyDevStackAutoEnables(afterRules);
@@ -601,8 +607,8 @@ describe('Combined rule application', () => {
     // No SFTP (no file/media)
     expect(finalState.servers.sshServer.sftp).toBe(false);
 
-    // DB password auto-generated (default state has dbServer enabled with empty password)
-    expect(finalState.servers.dbServer.dbPassword).toBe(MOCK_PASSWORD);
+    // DB password = admin password
+    expect(finalState.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
 
     // No devStack → appServer and fileBrowser disabled
     expect(finalState.servers.appServer.enabled).toBe(false);
@@ -640,7 +646,7 @@ describe('Combined rule application', () => {
 
     // No DB password generation (DB disabled)
     expect(result.servers.dbServer.dbPassword).toBe('');
-    expect(generatePassword).not.toHaveBeenCalled();
+    // generatePassword no longer used for DB passwords
 
   });
 });
@@ -734,8 +740,8 @@ describe('Edge cases', () => {
 
     // generatePassword called once for first call, not again for second
     // (because after first call, dbPassword is set)
-    expect(first.servers.dbServer.dbPassword).toBe(MOCK_PASSWORD);
-    expect(second.servers.dbServer.dbPassword).toBe(MOCK_PASSWORD);
+    expect(first.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
+    expect(second.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
 
     // Other rules should produce same result
     expect(first.servers.webServer.enabled).toBe(second.servers.webServer.enabled);
@@ -772,6 +778,6 @@ describe('Edge cases', () => {
     });
 
     const result = applyComponentRules(state);
-    expect(result.servers.dbServer.dbPassword).toBe(MOCK_PASSWORD);
+    expect(result.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
   });
 });

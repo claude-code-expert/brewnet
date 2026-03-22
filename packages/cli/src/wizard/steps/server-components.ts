@@ -25,7 +25,6 @@ import type {
   DbPrimary,
 } from '@brewnet/shared';
 import { DB_VERSIONS } from '@brewnet/shared';
-import { generatePassword } from '../../utils/password.js';
 import { estimateResources } from '../../utils/resources.js';
 
 // ---------------------------------------------------------------------------
@@ -56,9 +55,9 @@ export function applyComponentRules(state: WizardState): WizardState {
     next.servers.sshServer.sftp = true;
   }
 
-  // DB password auto-generation
+  // DB password — use admin password for consistency across all services
   if (next.servers.dbServer.enabled && !next.servers.dbServer.dbPassword) {
-    next.servers.dbServer.dbPassword = generatePassword(16);
+    next.servers.dbServer.dbPassword = next.admin.password;
   }
 
   return next;
@@ -269,12 +268,9 @@ export async function runServerComponentsStep(
     });
     next.servers.dbServer.dbUser = dbUser;
 
-    // DB password — auto-generate if empty
+    // DB password — use admin password for consistency
     if (!next.servers.dbServer.dbPassword) {
-      next.servers.dbServer.dbPassword = generatePassword(16);
-      console.log(
-        chalk.dim('  Database password auto-generated.'),
-      );
+      next.servers.dbServer.dbPassword = next.admin.password;
     }
 
     // Cache layer — removed (no longer offered)

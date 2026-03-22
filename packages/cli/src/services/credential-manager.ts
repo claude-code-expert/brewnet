@@ -163,7 +163,7 @@ export function generateCredentialEnvEntries(
     entries['MINIO_ROOT_USER'] = username;
   }
 
-  // Database credentials (these use the DB-specific password, not admin password)
+  // Database credentials — all use admin password (dbPassword = admin.password)
   if (s.dbServer.enabled && s.dbServer.primary === 'postgresql') {
     entries['POSTGRES_USER'] = s.dbServer.dbUser;
     entries['POSTGRES_DB'] = s.dbServer.dbName;
@@ -174,7 +174,7 @@ export function generateCredentialEnvEntries(
     entries['MYSQL_DATABASE'] = s.dbServer.dbName;
     entries['MYSQL_USER'] = s.dbServer.dbUser;
     entries['MYSQL_PASSWORD'] = s.dbServer.dbPassword || password;
-    entries['MYSQL_ROOT_PASSWORD'] = password;
+    entries['MYSQL_ROOT_PASSWORD'] = s.dbServer.dbPassword || password;
   }
 
   return entries;
