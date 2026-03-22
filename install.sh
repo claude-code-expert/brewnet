@@ -302,5 +302,5 @@ if [ -n "$CONFIGURED_PROFILE" ]; then
   printf "\n"
 fi
 printf "  ${BOLD}Get started:${RESET}\n"
-printf "    ${GREEN}brewnet${RESET}\n"
+printf "    ${GREEN}brewnet init${RESET}\n"
 printf "\n"

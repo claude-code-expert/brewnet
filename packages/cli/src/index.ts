@@ -9,7 +9,6 @@
  */
 
 import { Command } from 'commander';
-import { getLastProject } from './wizard/state.js';
 
 declare const __CLI_VERSION__: string;
 import { registerInitCommand } from './commands/init.js';
@@ -77,9 +76,5 @@ const isTestEnv =
 
 if (!isTestEnv) {
   const program = createProgram();
-  // No subcommand + fresh install → auto-start init wizard
-  if (process.argv.length === 2 && !getLastProject()) {
-    process.argv.push('init');
-  }
   program.parse(process.argv);
 }
