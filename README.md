@@ -44,16 +44,10 @@ A fully self-hosted home server management platform. Set up and manage a persona
 ### Quick Start
 
 ```bash
-# Option A — curl (recommended)
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-
-# Option B — npm
-npm install -g @brewnet/cli
 ```
 
-```bash
-brewnet init
-```
+The installer sets up the CLI and automatically starts the setup wizard.
 
 ### Requirements
 
@@ -69,23 +63,11 @@ brewnet init
 
 ### Installation
 
-**Option A — curl (recommended)**
-
-The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. No shell reload needed afterward.
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-brewnet --version
-brewnet init
 ```
 
-**Option B — npm**
-
-```bash
-npm install -g @brewnet/cli
-brewnet --version
-brewnet init
-```
+The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. On fresh installs, the setup wizard starts automatically after installation.
 
 ### Init Wizard — 8 Steps
 
@@ -93,7 +75,7 @@ brewnet init
 |------|-------------|
 | **Step 0** | System check — OS, Docker, ports 80/443, disk/RAM |
 | **Step 1** | Project setup — name, path, Full / Partial install |
-| **Step 2** | Admin account + server components — Web server, File server, DB, Media, SSH |
+| **Step 2** | Admin account + server components — Web server, Nextcloud, DB, Media |
 | **Step 3** | Dev stack — runtime + framework selection *(only shown when App Server is enabled in Step 2)* |
 | **Step 4** | Domain & network — Local (LAN) or Cloudflare Tunnel (external) |
 | **Step 5** | Review & confirm |
@@ -242,16 +224,10 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 ### 빠른 시작
 
 ```bash
-# 방법 A — curl (권장)
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-
-# 방법 B — npm
-npm install -g @brewnet/cli
 ```
 
-```bash
-brewnet init
-```
+설치 완료 후 자동으로 설정 위저드가 시작됩니다.
 
 ### 사전 요구사항
 
@@ -267,23 +243,11 @@ brewnet init
 
 ### 설치
 
-**방법 A — curl (권장)**
-
-설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 셸 재로드(`source ~/.zshrc`) 없이 바로 사용 가능합니다.
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-brewnet --version
-brewnet init
 ```
 
-**방법 B — npm**
-
-```bash
-npm install -g @brewnet/cli
-brewnet --version
-brewnet init
-```
+설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 신규 설치 시 완료 후 자동으로 설정 위저드가 시작됩니다.
 
 ### 초기 설정 위저드 — 8단계
 
@@ -291,7 +255,7 @@ brewnet init
 |------|------|
 | **Step 0** | 시스템 체크 — OS, Docker, 포트 80/443, 디스크/RAM |
 | **Step 1** | 프로젝트 설정 — 이름, 경로, Full / Partial 설치 유형 |
-| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어, SSH |
+| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, Nextcloud, DB, 미디어 |
 | **Step 3** | 개발 스택 — 런타임 + 프레임워크 선택 *(Step 2에서 App Server 활성화 시만 표시)* |
 | **Step 4** | 도메인 & 네트워크 — 로컬(LAN) 또는 Cloudflare Tunnel(외부 접속) |
 | **Step 5** | 검토 및 확인 |
@@ -303,10 +267,9 @@ brewnet init
 | 컴포넌트 | 선택지 | 기본값 |
 |----------|--------|--------|
 | 웹 서버 (필수) | Traefik / Nginx / Caddy | Traefik |
-| 파일 서버 | Nextcloud / MinIO | 비활성 |
-| DB 서버 | PostgreSQL / MySQL + Redis/Valkey | PostgreSQL + Redis |
+| 파일 서버 | Nextcloud | 비활성 |
+| DB 서버 | PostgreSQL / MySQL | PostgreSQL |
 | 미디어 | Jellyfin | 비활성 |
-| SSH 서버 | OpenSSH (포트 2222) | 비활성 |
 | 관리자 계정 | 사용자명 + 비밀번호 자동 생성 | admin / 20자 랜덤 |
 
 #### Step 3 — 개발 스택 선택지
