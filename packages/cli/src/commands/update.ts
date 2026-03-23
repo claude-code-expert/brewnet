@@ -101,7 +101,9 @@ export function registerUpdateCommand(program: Command): void {
           if (psOutput.trim()) {
             // docker compose ps --format json outputs one JSON object per line
             const lines = psOutput.trim().split('\n');
-            const containers = lines.map((line) => JSON.parse(line));
+            const containers = lines.flatMap((line) => {
+              try { return [JSON.parse(line) as { State?: string }]; } catch { return []; }
+            });
             const running = containers.filter(
               (c: { State?: string }) => c.State === 'running',
             ).length;

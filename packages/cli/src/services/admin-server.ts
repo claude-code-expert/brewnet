@@ -564,6 +564,8 @@ const NAME_ALIASES: Record<string, string> = {
 const docker = new Dockerode();
 
 const REQUIRED_SERVICES = new Set(['traefik', 'nginx', 'caddy', 'gitea']);
+// Services excluded from the Catalog UI (infrastructure-only, no user install/remove)
+const CATALOG_EXCLUDED = new Set([...REQUIRED_SERVICES, 'openssh-server', 'cloudflared']);
 
 const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudflared']);
 
@@ -933,7 +935,7 @@ async function handleGetCatalog(
     }
 
     const catalog = [...SERVICE_REGISTRY.values()]
-      .filter((def) => !REQUIRED_SERVICES.has(def.id) && def.id !== 'openssh-server' && def.id !== 'cloudflared')
+      .filter((def) => !CATALOG_EXCLUDED.has(def.id))
       .map((def) => ({
         id: def.id,
         name: def.name,

@@ -138,7 +138,7 @@ function displayServices(
   }
 
   const totalInstalled = installedServices.size;
-  const totalServices = [...SERVICE_REGISTRY.keys()].length;
+  const totalServices = SERVICE_CATEGORIES.flatMap((c) => c.ids).length;
   console.log(
     chalk.dim(`  ${totalInstalled}/${totalServices} services installed`),
   );
