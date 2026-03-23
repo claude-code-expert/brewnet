@@ -128,7 +128,7 @@
 - [x] T037 [P] [US2] Implement Docker + Docker Compose version check (24.0+) in `packages/cli/src/services/system-checker.ts`
 - [x] T038 [P] [US2] Implement Node.js version check (20+) in `packages/cli/src/services/system-checker.ts`
 - [x] T039 [P] [US2] Implement disk space check (20GB minimum, warn below) and RAM check (2GB minimum, warn below) in `packages/cli/src/services/system-checker.ts`
-- [x] T040 [P] [US2] Implement port availability check (80, 443, 2222) with process info on conflict in `packages/cli/src/services/system-checker.ts`
+<!-- - [x] T040 [P] [US2] Implement port availability check (80, 443, 2222) with process info on conflict in `packages/cli/src/services/system-checker.ts` -->
 - [x] T041 [P] [US2] Implement Git installation check (non-critical warning) in `packages/cli/src/services/system-checker.ts`
 - [x] T042 [US2] Implement Step 0 wizard step: orchestrate all checks, display pass/fail/warn table with chalk, halt on critical failures, prompt to continue on warnings in `packages/cli/src/wizard/steps/system-check.ts`
 
@@ -159,7 +159,7 @@
 
 ## Phase 6: User Story 4 — Server Component Selection (Priority: P1)
 
-**Goal**: Step 2 admin credentials (auto-gen 20 char password), 6 component toggle cards (Web/Git required), SFTP auto-suggest, resource estimation
+<!-- **Goal**: Step 2 admin credentials (auto-gen 20 char password), 6 component toggle cards (Web/Git required), SFTP auto-suggest, resource estimation -->
 
 **Independent Test**: Toggle each component, verify state changes, credential propagation targets, resource estimation accuracy
 
@@ -167,7 +167,7 @@
 
 - [x] T048 [P] [US4] Unit tests for password generation (length, charset, confusion-free) in `tests/unit/cli/utils/password.test.ts` — covers TC-04-01, TC-04-03
 - [x] T049 [P] [US4] Unit tests for credential propagation logic (getCredentialTargets returns correct services) in `tests/unit/cli/utils/resources.test.ts` — covers TC-04-02
-- [x] T050 [P] [US4] Unit tests for component toggle rules (Web/Git required, SFTP auto-suggest, Mail visibility, cache dependency, SSH key-only default, DB password auto-gen, App Server auto-enable) in `tests/unit/cli/wizard/server-components.test.ts` — covers TC-04-05 through TC-04-17
+<!-- - [x] T050 [P] [US4] Unit tests for component toggle rules (Web/Git required, SFTP auto-suggest, Mail visibility, cache dependency, SSH key-only default, DB password auto-gen, App Server auto-enable) in `tests/unit/cli/wizard/server-components.test.ts` — covers TC-04-05 through TC-04-17 -->
 - [x] T051 [P] [US4] Integration test for resource estimation with multiple components in `tests/integration/resource-estimation.test.ts` — covers TC-04-12
 
 ### Implementation for User Story 4
@@ -178,7 +178,7 @@
 - [x] T055 [P] [US4] Implement Git Server card (always ON, show gitea info, ports 3000/3022) in `packages/cli/src/wizard/steps/server-components.ts`
 - [x] T056 [P] [US4] Implement DB Server card (toggle, primary DB select with version, cache select, credentials with auto-gen, adminUI conditional on non-sqlite) in `packages/cli/src/wizard/steps/server-components.ts`
 - [x] T057 [P] [US4] Implement Media card (toggle, jellyfin) in `packages/cli/src/wizard/steps/server-components.ts`
-- [x] T058 [P] [US4] Implement SSH Server card (toggle, port 2222, key-only default, password auth toggle, SFTP auto-suggest when File/Media enabled) in `packages/cli/src/wizard/steps/server-components.ts`
+<!-- - [x] T058 [P] [US4] Implement SSH Server card (toggle, port 2222, key-only default, password auth toggle, SFTP auto-suggest when File/Media enabled) in `packages/cli/src/wizard/steps/server-components.ts` -->
 - [x] T059 [US4] Implement credential propagation manager: determine targets from enabled services, inject admin creds into per-service env vars in `packages/cli/src/services/credential-manager.ts`
 - [x] T060 [US4] Wire Step 1 → Step 2 navigation in init command orchestrator, display component summary with resource estimation after all cards in `packages/cli/src/commands/init.ts`
 
@@ -196,7 +196,7 @@
 
 - [x] T061 [P] [US7] Unit tests for docker-compose.yml generation (service definitions per selected components, Traefik labels, networks, dependency order) in `tests/unit/cli/services/compose-generator.test.ts` — covers TC-08-01, TC-08-02, TC-08-05, TC-08-06, TC-08-11
 - [x] T062 [P] [US7] Unit tests for .env generation (all required keys present, chmod 600, .env.example masking) in `tests/unit/cli/services/env-generator.test.ts` — covers TC-08-03, TC-08-04, TC-08-13
-- [x] T063 [P] [US7] Unit tests for infrastructure config generation (SSH sshd_config, Gitea app.ini, FileBrowser json, Mail postfix/dovecot, boilerplate template substitution) in `tests/unit/cli/services/config-generator.test.ts` — covers TC-08-07 through TC-08-10, TC-08-12
+<!-- - [x] T063 [P] [US7] Unit tests for infrastructure config generation (SSH sshd_config, Gitea app.ini, FileBrowser json, Mail postfix/dovecot, boilerplate template substitution) in `tests/unit/cli/services/config-generator.test.ts` — covers TC-08-07 through TC-08-10, TC-08-12 -->
 - [x] T064 [P] [US7] Integration tests for review display, export to brewnet.config.json, config import (--config flag) in `tests/integration/review-export.test.ts` — covers TC-07-01 through TC-07-07
 - [x] T065 [P] [US7] Integration tests for service startup flow (image pull, dependency order, health check polling, timeout handling, rollback, credential propagation verification) in `tests/integration/service-startup.test.ts` — covers TC-08-14 through TC-08-22
 
@@ -209,8 +209,8 @@
 ### Implementation for User Story 7
 
 - [x] T066 [US7] Implement docker-compose.yml generator using `js-yaml`: build YAML from WizardState using service registry, conditional service blocks, Traefik labels per subdomain, `brewnet`/`brewnet-internal` networks, depends_on ordering, `security_opt: [no-new-privileges:true]` on all containers (per constitution) in `packages/cli/src/services/compose-generator.ts`
-- [x] T067 [US7] Implement .env file generator: collect all env vars from WizardState (admin, domain, cloudflare, DB, SSH, mail, JWT), write with chmod 600; also generate .env.example with masked values in `packages/cli/src/services/env-generator.ts`
-- [x] T068 [US7] Implement infrastructure config generator: traefik.yml, sshd_config (`PasswordAuthentication no` + `PermitRootLogin no` per constitution: Secure by Default), gitea app.ini, filebrowser.json, mail postfix/dovecot, boilerplate scaffold with template variable substitution in `packages/cli/src/services/config-generator.ts`
+<!-- - [x] T067 [US7] Implement .env file generator: collect all env vars from WizardState (admin, domain, cloudflare, DB, SSH, mail, JWT), write with chmod 600; also generate .env.example with masked values in `packages/cli/src/services/env-generator.ts` -->
+<!-- - [x] T068 [US7] Implement infrastructure config generator: traefik.yml, sshd_config (`PasswordAuthentication no` + `PermitRootLogin no` per constitution: Secure by Default), gitea app.ini, filebrowser.json, mail postfix/dovecot, boilerplate scaffold with template variable substitution in `packages/cli/src/services/config-generator.ts` -->
 - [x] T069 [US7] Implement health checker: poll each service (HTTP health endpoint or Docker health status), max 120s timeout, display service logs on failure, offer retry/skip in `packages/cli/src/services/health-checker.ts`
 - [x] T070 [US7] Implement Step 5 (Review): display all selections in organized sections, credential propagation summary, resource totals, action select (Generate/Modify/Export), config export to brewnet.config.json in `packages/cli/src/wizard/steps/review.ts`
 - [x] T071 [US7] Implement Step 6 (Generate): orchestrate file generation → image pull (with progress via ora) → `docker compose up -d` (via execa) → health checks → credential propagation → external access verification (non-local) in `packages/cli/src/wizard/steps/generate.ts`
@@ -317,7 +317,7 @@
 - [x] T105 [P] Unit tests for all error codes (BN001–BN003, BN008–BN009) with correct messages and remediation text in `tests/unit/cli/utils/errors.test.ts` — covers TC-X-01, TC-X-02, TC-X-03, TC-X-06, TC-X-07 (BN006/BN007 deferred to Phase 2: deploy pipeline)
 - [x] T106 [P] Unit tests for logger (daily JSON file rotation, info/warn/error levels, metadata) in `tests/unit/cli/utils/logger.test.ts` — covers TC-L-01, TC-L-02
 - [x] T107 [P] Unit tests for wizard state persistence (save, load, schema migration, resume detection) in `tests/unit/cli/wizard/state.test.ts` — covers TC-W-01 through TC-W-05
-- [x] T108 [P] Unit tests for constitution compliance (Zero Config defaults, Secure by Default .env/SSH, Transparent logging) in `tests/unit/cli/constitution.test.ts` — covers TC-C-01 through TC-C-03
+<!-- - [x] T108 [P] Unit tests for constitution compliance (Zero Config defaults, Secure by Default .env/SSH, Transparent logging) in `tests/unit/cli/constitution.test.ts` — covers TC-C-01 through TC-C-03 -->
 - [x] T109 [P] Integration tests for constitution compliance (Reversible rollback, Offline First wizard without network) in `tests/integration/constitution.test.ts` — covers TC-C-04, TC-C-05
 - [x] T110 Run full test suite with coverage report, verify 90%+ CLI core coverage and 80%+ overall
 

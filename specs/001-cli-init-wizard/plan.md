@@ -33,7 +33,7 @@ Phase 1 (설치 → `brewnet init` 위저드 → 서비스 관리 → `brewnet u
 
 ### II. Secure by Default ✅ PASS
 - `.env` chmod 600 구현 (`env-generator.ts`)
-- SSH `PasswordAuthentication no`, `PermitRootLogin no` 기본값 (`config-generator.ts`)
+<!-- - SSH `PasswordAuthentication no`, `PermitRootLogin no` 기본값 (`config-generator.ts`) -->
 - 모든 컨테이너 `security_opt: [no-new-privileges:true]` (`compose-generator.ts`)
 - 20자 cryptographically random 패스워드
 

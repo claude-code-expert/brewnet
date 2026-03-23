@@ -75,13 +75,13 @@
 |----|------|-------|------|------|-----------|
 | TC-04-05 | U | Web Server card rendered | User attempts to disable | Toggle blocked, card shows "Required" | FR-05 |
 | TC-04-06 | U | Git Server card rendered | User views step | Git Server shows as always enabled | FR-05 |
-| TC-04-07 | U | File Server enabled | SSH Server viewed | SFTP checkbox auto-suggested (checked by default) | FR-05 |
-| TC-04-08 | U | Media Server enabled | SSH Server viewed | SFTP checkbox auto-suggested | FR-05 |
+<!-- | TC-04-07 | U | File Server enabled | SSH Server viewed | SFTP checkbox auto-suggested (checked by default) | FR-05 | -->
+<!-- | TC-04-08 | U | Media Server enabled | SSH Server viewed | SFTP checkbox auto-suggested | FR-05 | -->
 | TC-04-09 | U | Local domain configured | Mail Server card | Mail Server option hidden | FR-05 |
 | TC-04-10 | U | Non-local domain configured | Mail Server card | Mail Server option visible | FR-05 |
 | TC-04-11 | U | DB Server enabled | Primary DB selected | Cache layer selection becomes available | FR-05 |
 | TC-04-12 | I | Resource estimation renders | Multiple components toggled | RAM/disk estimates update in real time | FR-05 |
-| TC-04-13 | U | SSH Server enabled | Default config | Password auth = disabled (key-only) | FR-05 |
+<!-- | TC-04-13 | U | SSH Server enabled | Default config | Password auth = disabled (key-only) | FR-05 | -->
 | TC-04-14 | U | DB Server enabled | DB password field | Password auto-generated if not provided | FR-04 |
 
 ### App Server Auto-Enable
@@ -148,7 +148,7 @@
 | TC-08-04 | U | `.env` generated | File permissions checked | chmod 600 applied | FR-04 |
 | TC-08-05 | U | Traefik selected | Service with `Host()` label | Traefik routing labels present per service | FR-08 |
 | TC-08-06 | U | Cloudflare tunnel enabled | Compose generated | `cloudflared` service block present | FR-07, FR-08 |
-| TC-08-07 | U | SSH Server enabled | SSH config generated | `sshd_config` has `PasswordAuthentication no` and `PermitRootLogin no` | FR-05 |
+<!-- | TC-08-07 | U | SSH Server enabled | SSH config generated | `sshd_config` has `PasswordAuthentication no` and `PermitRootLogin no` | FR-05 | -->
 | TC-08-08 | U | Non-local domain + Mail | Mail config generated | Postfix/Dovecot configs in `infrastructure/mail/` | FR-08 |
 | TC-08-09 | U | Gitea enabled | Git config generated | `gitea/app.ini` with admin account | FR-08 |
 | TC-08-10 | U | FileBrowser enabled | FileBrowser config | `filebrowser.json` with admin credential API call | FR-08 |
@@ -226,7 +226,7 @@
 | TC | Type | Principle | Test |
 |----|------|-----------|------|
 | TC-C-01 | U | Zero Config | All wizard prompts have sensible defaults — user can press Enter through all prompts and get a valid config |
-| TC-C-02 | U | Secure by Default | Default SSH = key-only, no root login, `.env` = chmod 600 |
+<!-- | TC-C-02 | U | Secure by Default | Default SSH = key-only, no root login, `.env` = chmod 600 | -->
 | TC-C-03 | U | Transparent | All file generations logged and user-inspectable |
 | TC-C-04 | I | Reversible | Any started service can be rolled back to pre-init state |
 | TC-C-05 | I | Offline First | Wizard completes configuration without internet (Docker pulls excluded) |

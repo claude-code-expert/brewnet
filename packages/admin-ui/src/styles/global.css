@@ -83,7 +83,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ── Header / Nav ────────────────────────────────────────────── */
 #header {
-  height: 50px;
+  height: 65px;
   background: var(--bg1);
   border-bottom: 1px solid var(--bdr);
   display: flex;
@@ -108,14 +108,14 @@ a { color: inherit; text-decoration: none; }
 }
 
 #header .logo-name {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--amber);
 }
 
 #header .logo-tag {
-  font-size: 9.5px;
-  color: var(--txt3);
+  font-size: 11.5px;
+  color: var(--txt2);
   font-weight: 400;
 }
 
@@ -295,6 +295,8 @@ select.fi option {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
+  --txt3: #6889b0;
+  font-size: 13px;
 }
 
 .xbtn {
@@ -408,12 +410,12 @@ select.fi option {
   background: var(--bg2);
   border: 1px solid var(--bdr);
   border-radius: var(--r2);
-  padding: 15px 17px;
+  padding: 10px 17px;
 }
 
 .sk {
-  font-size: 10px;
-  color: var(--txt3);
+  font-size: 11px;
+  color: var(--txt2);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   font-family: var(--mono);
@@ -469,10 +471,10 @@ select.fi option {
 /* ── Table ───────────────────────────────────────────────────── */
 .rtbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rtbl th {
-  font-size: 10.5px;
+  font-size: 11px;
   text-align: left;
   padding: 8px 12px;
-  color: var(--txt3);
+  color: #e0e8f0;
   font-family: var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.8px;

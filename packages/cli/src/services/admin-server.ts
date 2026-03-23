@@ -25,8 +25,9 @@ import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
-import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
+import { DOCKER_COMPOSE_FILENAME, type WizardState, type LogSource, type UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
+import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
 import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
@@ -882,6 +883,40 @@ async function handleRemoveService(
   }
 }
 
+async function handleUpdateServices(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  _parts: string[],
+  _body: string,
+  projectPath: string,
+): Promise<void> {
+  try {
+    const composePath = join(projectPath, DOCKER_COMPOSE_FILENAME);
+    if (!existsSync(composePath)) {
+      json(res, 404, { success: false, error: 'No compose file found' });
+      return;
+    }
+
+    const { execa: execaUpdate } = await import('execa');
+
+    // Pull latest images
+    await execaUpdate('docker', ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'pull'], {
+      cwd: projectPath,
+    });
+
+    // Recreate with new images
+    await execaUpdate(
+      'docker',
+      ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'up', '-d', '--force-recreate', '--remove-orphans'],
+      { cwd: projectPath },
+    );
+
+    json(res, 200, { success: true, message: 'Services updated and restarted' });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
 async function handleGetCatalog(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -898,7 +933,7 @@ async function handleGetCatalog(
     }
 
     const catalog = [...SERVICE_REGISTRY.values()]
-      .filter((def) => !REQUIRED_SERVICES.has(def.id))
+      .filter((def) => !REQUIRED_SERVICES.has(def.id) && def.id !== 'openssh-server' && def.id !== 'cloudflared')
       .map((def) => ({
         id: def.id,
         name: def.name,
@@ -991,6 +1026,14 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   // Expand leading ~ — Node.js fs APIs do not interpret tilde as home directory
   if (projectPath.startsWith('~/') || projectPath === '~') {
     projectPath = join(homedir(), projectPath.slice(1));
+  }
+
+  // Run log rotation eagerly on server start (not just on queryLogs calls)
+  try {
+    const logsDir = join(homedir(), '.brewnet', 'logs');
+    runRotation(logsDir, projectPath);
+  } catch {
+    // Non-critical — rotation will still run on log queries
   }
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
@@ -1244,6 +1287,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
           if (req.method === 'POST' && parts[2] === 'install') {
             await handleInstallService(req, res, parts, body, projectPath);
+            return;
+          }
+          if (req.method === 'POST' && parts[2] === 'update') {
+            await handleUpdateServices(req, res, parts, body, projectPath);
             return;
           }
           // POST /api/services/containers/:id/start|stop → parts[3]=id, parts[4]=action
@@ -2456,7 +2503,10 @@ async function handleSettingsCloudflarePut(
     // Prefer explicit accountId param, then existing stored value, then getAccounts() (requires Account:Read)
     let resolvedAccountId = accountId || state.domain.cloudflare.accountId
       || await (await import('./cloudflare-client.js')).getAccounts(apiToken)
-          .then((a) => a[0]?.id ?? '').catch(() => '');
+          .then((a) => a[0]?.id ?? '').catch((err: unknown) => {
+            console.warn('[admin-server] getAccounts() failed (requires Account:Read permission):', err);
+            return '';
+          });
 
     if (zoneId) state.domain.cloudflare.zoneId = zoneId;
     if (tunnelId) state.domain.cloudflare.tunnelId = tunnelId;

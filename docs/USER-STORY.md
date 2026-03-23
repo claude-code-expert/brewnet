@@ -73,7 +73,7 @@ Docker 설치 이전에 단일 admin credential을 설정하고, 이후 모든 �
 
   Set up your Brewnet admin credentials.
   This single credential will be used for ALL services:
-  Nextcloud, Gitea, pgAdmin, Jellyfin, FileBrowser, SSH, Mail.
+  Nextcloud, Gitea, pgAdmin, Jellyfin, FileBrowser, Mail.
 
 ? Admin username: › admin
 ? Admin password: › ••••••••••••••••••••
@@ -87,7 +87,7 @@ Docker 설치 이전에 단일 admin credential을 설정하고, 이후 모든 �
 - Gitea admin, PostgreSQL user, Redis password
 - Nextcloud admin, MinIO root user
 - pgAdmin login, Jellyfin admin
-- FileBrowser admin, SSH login, Mail postmaster
+- FileBrowser admin, Mail postmaster
 
 ---
 
@@ -235,10 +235,11 @@ Each card can be expanded to configure options.
 ├──────────────────────────────────────────────────────────────────┤
 │  [OFF] Media               (Optional)                             │
 │        Jellyfin                                                   │
-├──────────────────────────────────────────────────────────────────┤
+└──────────────────────────────────────────────────────────────────┘
+<!-- ├──────────────────────────────────────────────────────────────────┤
 │  [OFF] SSH Server          (Optional)                             │
 │        Port 2222, key-based auth, SFTP subsystem                  │
-└──────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘ -->
 ```
 
 > Web Server와 Git Server는 항상 ON (Required) 상태이다. Full Install 선택 시 추가로 App + DB가 기본 ON 상태이다. Partial Install 선택 시 Web + Git만 ON이다.
@@ -335,6 +336,7 @@ DB Server를 활성화하면 Primary DB, Cache, 그리고 credentials를 하나�
 
 **Example selection**: User enables Media (Jellyfin).
 
+<!--
 ### 3.8 SSH Server (Optional)
 
 SSH Server 컴포넌트. 원격 접속 및 SFTP 파일 전송을 위한 서버를 제공한다.
@@ -367,6 +369,7 @@ SSH Server 컴포넌트. 원격 접속 및 SFTP 파일 전송을 위한 서버�
 > SSH Server는 포트 2222에서 실행되며, 기본적으로 key-based 인증만 허용한다. Password 인증은 선택적으로 활성화할 수 있다.
 > SFTP는 File Server(Nextcloud/MinIO) 또는 Media(Jellyfin)가 활성화된 경우 자동으로 ON이 제안된다.
 > Admin credentials entered once → propagated to Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH, Mail.
+-->
 
 ### 3.9 Git Server (Required — 항상 ON)
 
@@ -394,7 +397,7 @@ Git Server 컴포넌트. Web Server와 함께 항상 활성화되는 필수 컴�
 
 > Git Server는 Web Server와 마찬가지로 항상 활성화되는 필수 컴포넌트이다.
 > Admin credentials → Gitea admin 계정으로 전파.
-> SSH 포트는 3022로 SSH Server(2222)와 분리되어 공존 가능.
+> <!-- SSH 포트는 3022로 SSH Server(2222)와 분리되어 공존 가능. -->
 
 ### 3.10 Component Summary
 
@@ -410,11 +413,11 @@ Selected Server Components:
   App Server:     (auto-enabled from Dev Stack in Step 3)
   DB Server:      PostgreSQL + Redis
   Media:          Jellyfin
-  SSH Server:     Enabled (port 2222, key-based auth, SFTP on)
+  <!-- SSH Server:     Enabled (port 2222, key-based auth, SFTP on) -->
   Git Server:     Gitea (required, web: git.{DOMAIN}, SSH: port 3022, auto-deploy on)
 
   Credential Propagation:
-    Admin credentials → Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH, Mail
+    Admin credentials → Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, Mail
 
   Estimated Resources:
     Containers: 7 (+ app container and FileBrowser in next step)
@@ -755,7 +758,7 @@ Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에�
 > Admin credentials가 postmaster@{DOMAIN} 계정의 비밀번호로 자동 전파된다.
 > Local Only 선택 시에는 이 섹션이 표시되지 않는다 (메일 서버는 외부 도메인이 필요).
 
-**Updated Preview URLs** (with Mail and SSH):
+**Updated Preview URLs** (with Mail):
 
 ```
   Subdomains will be auto-configured:
@@ -767,8 +770,8 @@ Mail Server는 도메인 프로바이더가 **Local Only가 아닌 경우**에�
     files.myserver.example.com
     mail.myserver.example.com          (webmail)
 
-  SSH Access:
-    ssh admin@myserver.example.com -p 2222
+  <!-- SSH Access:
+    ssh admin@myserver.example.com -p 2222 -->
 
   Mail Endpoints:
     SMTP: smtp.myserver.example.com:587
@@ -815,7 +818,7 @@ Domain & Network Configuration:
   FileBrowser:   Enabled (files.myserver.example.com)
   DB Server:     PostgreSQL 16 + Redis 7 (brewnet_db)
   Media:         Jellyfin
-  SSH Server:    Enabled (port 2222, key-based auth, SFTP on)
+  <!-- SSH Server:    Enabled (port 2222, key-based auth, SFTP on) -->
   Mail Server:   Enabled (docker-mailserver, postmaster@myserver.example.com)
 
   ─── Runtime & Boilerplate ──────────────────────────────────────
@@ -837,7 +840,7 @@ Domain & Network Configuration:
     • Jellyfin       — Admin login
     • Gitea          — Admin login
     • FileBrowser    — Admin login
-    • SSH Server     — Admin user (key-based + optional password)
+    <!-- • SSH Server     — Admin user (key-based + optional password) -->
     • Mail Server    — Postmaster (admin@myserver.example.com)
 
   ─── Resources ──────────────────────────────────────────────────
@@ -892,10 +895,10 @@ Generating project files...
   [OK] Created infrastructure/filebrowser/filebrowser.json
   [OK] Created infrastructure/filebrowser/database.db
 
-  [OK] Created infrastructure/ssh/sshd_config
-  [OK] Created infrastructure/ssh/host_keys/
-  [OK] Created infrastructure/ssh/authorized_keys/
-  [OK] Created infrastructure/ssh/sftp.conf
+  <!-- [OK] Created infrastructure/ssh/sshd_config -->
+  <!-- [OK] Created infrastructure/ssh/host_keys/ -->
+  <!-- [OK] Created infrastructure/ssh/authorized_keys/ -->
+  <!-- [OK] Created infrastructure/ssh/sftp.conf -->
 
   [OK] Created infrastructure/mail/postfix/main.cf
   [OK] Created infrastructure/mail/dovecot/dovecot.conf
@@ -932,11 +935,11 @@ Generating project files...
 │   ├── filebrowser/
 │   │   ├── filebrowser.json
 │   │   └── database.db
-│   ├── ssh/
+│   <!-- ├── ssh/
 │   │   ├── sshd_config
 │   │   ├── sftp.conf
 │   │   ├── host_keys/
-│   │   └── authorized_keys/
+│   │   └── authorized_keys/ -->
 │   └── mail/
 │       ├── postfix/
 │       │   └── main.cf
@@ -989,7 +992,7 @@ Starting services...
     [OK] redis:7-alpine
     [OK] jellyfin/jellyfin:latest
     [OK] nextcloud:latest
-    [OK] linuxserver/openssh-server:latest
+    <!-- [OK] linuxserver/openssh-server:latest -->
     [OK] docker-mailserver/docker-mailserver:latest
     [OK] roundcube/roundcubemail:latest
     [OK] gitea/gitea:latest
@@ -998,11 +1001,11 @@ Starting services...
   Building applications...
     [OK] fastapi-app (Python 3.12)
 
-  Configuring SSH Server...
+  <!-- Configuring SSH Server...
     [OK] Generated sshd_config (port 2222, key-based auth)
     [OK] Generated SSH host keys (ed25519, rsa)
     [OK] Configured SFTP subsystem
-    [OK] Created admin user SSH access
+    [OK] Created admin user SSH access -->
 
   Configuring Mail Server...
     [OK] Generated postfix configuration (main.cf)
@@ -1016,7 +1019,7 @@ Starting services...
     [OK] Admin credentials → Jellyfin (admin login)
     [OK] Admin credentials → Gitea (admin login)
     [OK] Admin credentials → FileBrowser (admin login)
-    [OK] Admin credentials → SSH Server (admin user)
+    <!-- [OK] Admin credentials → SSH Server (admin user) -->
     [OK] Admin credentials → Mail Server (postmaster@myserver.example.com)
 
   Starting containers...
@@ -1028,7 +1031,7 @@ Starting services...
     [OK] brewnet-jellyfin        (media)
     [OK] brewnet-gitea           (git server)
     [OK] brewnet-filebrowser    (file browser)
-    [OK] brewnet-ssh             (SSH server)
+    <!-- [OK] brewnet-ssh             (SSH server) -->
     [OK] brewnet-mailserver      (mail server)
     [OK] brewnet-roundcube       (webmail)
 
@@ -1039,7 +1042,7 @@ Starting services...
     [OK] Cloudflare Tunnel connected
     [OK] DNS records configured for myserver.example.com
     [OK] HTTPS certificate active
-    [OK] SSH port 2222 reachable via tunnel
+    <!-- [OK] SSH port 2222 reachable via tunnel -->
     [OK] Mail ports (587, 993) configured
 
   Setup complete!
@@ -1084,18 +1087,18 @@ After setup completes, the wizard displays all available endpoints — **both lo
   FastAPI Docs      https://fastapi.myserver.example.com/docs
 
   ─── Git Access ──────────────────────────────────────────────────
-  Git SSH           ssh://git@myserver.example.com:3022/{user}/{repo}.git
+  Git SSH (Gitea)   ssh://git@myserver.example.com:3022/{user}/{repo}.git
   Git HTTP          https://git.myserver.example.com/{user}/{repo}.git
 
   ─── Databases (internal only) ────────────────────────────────────
   PostgreSQL        localhost:5432   (user: brewnet)
   Redis             localhost:6379
 
-  ─── Remote Access (SSH) ──────────────────────────────────────────
+  <!-- ─── Remote Access (SSH) ──────────────────────────────────────────
   SSH Local:        ssh admin@localhost -p 2222
   SSH External:     ssh admin@myserver.example.com -p 2222
   SFTP:             sftp -P 2222 admin@myserver.example.com
-  Auth:             Key-based (password auth: off)
+  Auth:             Key-based (password auth: off) -->
 
   ─── Mail ─────────────────────────────────────────────────────────
   SMTP:             smtp.myserver.example.com:587 (STARTTLS)
@@ -1114,7 +1117,7 @@ After setup completes, the wizard displays all available endpoints — **both lo
   │ Jellyfin        │ admin / (see .env ADMIN_PASSWORD)          │
   │ Gitea           │ admin / (see .env ADMIN_PASSWORD)          │
   │ FileBrowser     │ admin / (see .env ADMIN_PASSWORD)          │
-  │ SSH Server      │ admin (key-based auth)                     │
+  <!-- │ SSH Server      │ admin (key-based auth)                     │ -->
   │ Mail Server     │ admin@myserver.example.com / ADMIN_PASSWORD  │
   │ Roundcube       │ admin@myserver.example.com / ADMIN_PASSWORD  │
   └─────────────────┴────────────────────────────────────────────┘
@@ -1137,11 +1140,11 @@ After setup completes, the wizard displays all available endpoints — **both lo
      $ brewnet domain tunnel status
      # Should show "connected"
 
-  4. SSH Access:
+  <!-- 4. SSH Access:
      $ ssh -p 2222 admin@myserver.example.com "echo connected"
-     # Should print "connected"
+     # Should print "connected" -->
 
-  5. Mail Server:
+  4. Mail Server:
      $ brewnet status mailserver
      # Should show "running"
 
@@ -1149,7 +1152,7 @@ After setup completes, the wizard displays all available endpoints — **both lo
     • DNS not resolving?  Wait 5-10 min for DNS propagation.
     • HTTPS not working?  Check Cloudflare dashboard for domain status.
     • Tunnel offline?     Run `brewnet logs cloudflared` for tunnel logs.
-    • SSH refused?        Verify port 2222 is exposed in tunnel config.
+    <!-- • SSH refused?        Verify port 2222 is exposed in tunnel config. -->
 
     • 502 Bad Gateway?
       서비스 컨테이너가 실행 중이 아니거나 포트 매핑 오류.
@@ -1171,10 +1174,10 @@ After setup completes, the wizard displays all available endpoints — **both lo
       Cloudflare Tunnel → Public Hostname에서
       해당 서비스가 등록되었는지 확인.
 
-  ─── SSH Management ───────────────────────────────────────────
+  <!-- ─── SSH Management ───────────────────────────────────────────
   Tip: Run `brewnet ssh add-user <name>` to add SSH users.
   Tip: Run `brewnet ssh list` to see all SSH users.
-  Tip: Run `brewnet ssh remove-user <name>` to remove an SSH user.
+  Tip: Run `brewnet ssh remove-user <name>` to remove an SSH user. -->
 
   ─── Quick Start ──────────────────────────────────────────────
   Tip: Run `brewnet status` to check all services.
@@ -1227,10 +1230,10 @@ DB_PASSWORD=xK9mP2vQ8nL4wR7j    # auto-generated
 # Redis
 REDIS_PASSWORD=
 
-# SSH Server
-SSH_PORT=2222
-SSH_AUTH_METHOD=key                 # key | password | both
-SSH_SFTP_ENABLED=true
+# SSH Server (commented out)
+# SSH_PORT=2222
+# SSH_AUTH_METHOD=key                 # key | password | both
+# SSH_SFTP_ENABLED=true
 
 # Mail Server
 MAIL_DOMAIN=myserver.example.com
@@ -1432,7 +1435,7 @@ Optional:     File Server, App Server, DB Server, Media
 | **Media** | Jellyfin | Jellyfin |
 | **Git Server** | Gitea | Gitea (required, always ON) |
 | **FileBrowser** | FileBrowser (with App Server) | filebrowser/filebrowser:latest |
-| **SSH Server** | OpenSSH (port 2222, key-based auth, SFTP) | Key-based auth |
+<!-- | **SSH Server** | OpenSSH (port 2222, key-based auth, SFTP) | Key-based auth | -->
 | **Mail Server** | docker-mailserver (SMTP/IMAP, Roundcube) | Shown when domain is not local |
 
 > 이전 버전에 포함되었던 Monitoring (Grafana, Prometheus, Uptime Kuma), DevOps (Gitea, Drone CI), Home Automation (Home Assistant, Node-RED), Security (AdGuard Home, Vaultwarden, Authelia), Downloads (qBittorrent, Sonarr, Radarr), 추가 Storage (Syncthing, Seafile), 추가 Media (Navidrome, Immich, PhotoPrism), Search Engine, Message Queue, MongoDB 등은 간소화된 아키텍처에서 제거되었다.
@@ -1473,9 +1476,9 @@ This skips the wizard and directly generates files based on the saved configurat
 | `brewnet restore <id>` | Restore from backup |
 | `brewnet doctor` | Run system diagnostics |
 | `brewnet export` | Export configuration |
-| `brewnet ssh add-user <name>` | Add an SSH user |
+<!-- | `brewnet ssh add-user <name>` | Add an SSH user |
 | `brewnet ssh list` | List all SSH users |
-| `brewnet ssh remove-user <name>` | Remove an SSH user |
+| `brewnet ssh remove-user <name>` | Remove an SSH user | -->
 | `brewnet git repo create <name>` | Git 저장소 생성 |
 | `brewnet git repo list` | Git 저장소 목록 |
 | `brewnet git hook setup <repo>` | Webhook 자동 배포 설정 |

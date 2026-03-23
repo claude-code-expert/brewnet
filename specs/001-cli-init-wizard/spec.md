@@ -72,7 +72,7 @@ A user configures project name, path, and setup type (Full Install / Partial Ins
 
 ### User Story 4 - Server Component Selection (Priority: P1)
 
-A user configures admin credentials and toggles server components (Web Server, File Server, DB Server, Media, SSH Server, Git Server) with their sub-options.
+<!-- A user configures admin credentials and toggles server components (Web Server, File Server, DB Server, Media, SSH Server, Git Server) with their sub-options. -->
 
 **Why this priority**: Server component selection determines which Docker services will be generated. This is the core decision-making step.
 
@@ -84,9 +84,9 @@ A user configures admin credentials and toggles server components (Web Server, F
 2. **Given** admin password set, **When** services enabled, **Then** credentials propagated to all enabled service configs
 3. **Given** Web Server card, **When** user attempts to disable, **Then** toggle blocked, card shows "Required"
 4. **Given** Git Server card, **When** user views step, **Then** Git Server shows as always enabled (Required)
-5. **Given** File Server enabled, **When** SSH Server viewed, **Then** SFTP auto-suggested (checked by default)
+<!-- 5. **Given** File Server enabled, **When** SSH Server viewed, **Then** SFTP auto-suggested (checked by default) -->
 6. **Given** DB Server enabled, **When** primary DB selected, **Then** cache selection becomes available
-7. **Given** SSH Server enabled, **When** default config, **Then** password auth disabled (key-only)
+<!-- 7. **Given** SSH Server enabled, **When** default config, **Then** password auth disabled (key-only) -->
 8. **Given** local domain, **When** Mail Server card, **Then** Mail Server option hidden
 9. **Given** multiple components toggled, **When** resource estimation renders, **Then** RAM/disk estimates update
 
@@ -188,7 +188,7 @@ A user manages running services after initial setup: checking status, adding/rem
 - **FR-02**: System MUST perform system requirements check (OS, Docker, Node.js, disk, RAM, ports, Git) before wizard proceeds, with clear pass/fail/warn indicators
 - **FR-03**: System MUST collect project name (validated: alphanumeric + hyphens), path, and setup type (Full/Partial) in Step 1, with sensible defaults
 - **FR-04**: System MUST auto-generate admin credentials (20-char password, confusion-free charset), store in `.env` (chmod 600), and propagate to all enabled services (Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH, Mail)
-- **FR-05**: System MUST provide 6 server component toggle cards (Web Server required, Git Server required, File Server, DB Server, Media, SSH Server) with conditional logic (SFTP auto-suggest when File/Media enabled, Mail hidden for local domain, App Server auto-enabled from devStack)
+<!-- - **FR-05**: System MUST provide 6 server component toggle cards (Web Server required, Git Server required, File Server, DB Server, Media, SSH Server) with conditional logic (SFTP auto-suggest when File/Media enabled, Mail hidden for local domain, App Server auto-enabled from devStack) -->
 - **FR-06**: System MUST support multi-select language/framework/frontend selection with per-language framework filtering, boilerplate generation, FileBrowser configuration, and Skip option
 - **FR-07**: System MUST support 2 domain providers (local, tunnel with custom domain + Cloudflare Named Tunnel) with token validation and conditional Mail Server
 - **FR-08**: System MUST generate docker-compose.yml, .env, .env.example, infrastructure configs, and boilerplate scaffolds based on wizard selections, with Traefik routing labels and Docker network definitions
@@ -212,9 +212,9 @@ A user manages running services after initial setup: checking status, adding/rem
 
 - **SC-01**: User can complete `brewnet init` wizard from start to running services in under 10 minutes (excluding Docker image download time)
 - **SC-02**: All wizard prompts have sensible defaults — user can press Enter through all prompts and get a valid, working configuration (Zero Config principle)
-- **SC-03**: Generated `.env` file has chmod 600 permissions, SSH defaults to key-only auth, no root login (Secure by Default principle)
+<!-- - **SC-03**: Generated `.env` file has chmod 600 permissions, SSH defaults to key-only auth, no root login (Secure by Default principle) -->
 - **SC-04**: Every file generation and service operation is logged to `~/.brewnet/logs/` with timestamp and user can inspect all generated configs (Transparent principle)
 - **SC-05**: User can navigate backwards through wizard steps, cancel with state preservation, and resume later. Any started service can be rolled back (Reversible principle)
 - **SC-06**: CLI core test coverage reaches 90%+, overall project coverage 80%+ (per testing-complete-guide.md)
-- **SC-07**: All 9 service types (Web, Git, File, App, DB+Cache, Media, SSH, Mail, Tunnel) generate correct docker-compose service definitions with proper networking and Traefik labels
+<!-- - **SC-07**: All 9 service types (Web, Git, File, App, DB+Cache, Media, SSH, Mail, Tunnel) generate correct docker-compose service definitions with proper networking and Traefik labels -->
 - **SC-08**: `brewnet status`, `brewnet add`, `brewnet remove`, `brewnet backup`, and `brewnet restore` work correctly against running services without requiring direct Docker CLI usage

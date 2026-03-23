@@ -81,9 +81,9 @@ export function ExternalDomainsSection({ connections, tunnelId, zoneName }: Exte
             borderRadius: 'var(--r2)',
             padding: '28px 20px',
             textAlign: 'center',
-            color: 'var(--txt3)',
+            color: 'var(--txt2)',
             fontFamily: 'var(--mono)',
-            fontSize: 12,
+            fontSize: 13,
           }}
         >
           No external domain connections

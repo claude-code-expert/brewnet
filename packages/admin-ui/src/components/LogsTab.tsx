@@ -19,13 +19,13 @@ function levelBadgeStyle(level: LogEntry['level']): React.CSSProperties {
 }
 
 function formatTs(ts: string): string {
-  try {
-    const d = new Date(ts);
-    return d.toLocaleTimeString('en-US', { hour12: false }) + '.' +
-      String(d.getMilliseconds()).padStart(3, '0');
-  } catch {
-    return ts;
-  }
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts || '-';
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const time = d.toLocaleTimeString('en-US', { hour12: false });
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${mm}-${dd} ${time}.${ms}`;
 }
 
 export function LogsTab({ apiFetch }: LogsTabProps) {
@@ -43,7 +43,8 @@ export function LogsTab({ apiFetch }: LogsTabProps) {
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '100' });
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const params = new URLSearchParams({ limit: '100', since });
       if (source !== 'all') params.set('source', source);
       if (level !== 'ALL') params.set('level', level.toLowerCase());
       if (search) params.set('search', search);
@@ -96,12 +97,12 @@ export function LogsTab({ apiFetch }: LogsTabProps) {
       {/* Stats row */}
       {stats && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <div className="sbox" style={{ minWidth: 100 }}>
+          <div className="sbox" style={{ minWidth: 130 }}>
             <div className="sk">Total</div>
             <div className="sv">{stats.total}</div>
           </div>
           {stats.byLevel && Object.entries(stats.byLevel).map(([l, n]) => (
-            <div className="sbox" key={l} style={{ minWidth: 80 }}>
+            <div className="sbox" key={l} style={{ minWidth: 110 }}>
               <div className="sk">{l.toUpperCase()}</div>
               <div
                 className="sv"
@@ -134,7 +135,7 @@ export function LogsTab({ apiFetch }: LogsTabProps) {
       >
         {/* Source dropdown */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>SOURCE</span>
+          <span style={{ fontSize: 12, color: 'var(--txt2)', fontFamily: 'var(--mono)' }}>SOURCE</span>
           <select
             className="fi"
             style={{ width: 'auto', padding: '5px 10px', fontSize: 12 }}
@@ -151,7 +152,7 @@ export function LogsTab({ apiFetch }: LogsTabProps) {
 
         {/* Level buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>LEVEL</span>
+          <span style={{ fontSize: 12, color: 'var(--txt2)', fontFamily: 'var(--mono)' }}>LEVEL</span>
           {levelButtons.map((l) => (
             <button
               key={l}
@@ -189,12 +190,12 @@ export function LogsTab({ apiFetch }: LogsTabProps) {
         </label>
 
         {loading && (
-          <span style={{ fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>loading…</span>
+          <span style={{ fontSize: 12, color: 'var(--txt2)', fontFamily: 'var(--mono)' }}>loading…</span>
         )}
       </div>
 
       {/* Count */}
-      <div style={{ fontSize: 12, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>
+      <div style={{ fontSize: 12, color: 'var(--txt2)', fontFamily: 'var(--mono)' }}>
         Showing {entries.length} of {total} entries
       </div>
 
@@ -218,9 +219,9 @@ export function LogsTab({ apiFetch }: LogsTabProps) {
               </tr>
             ) : (
               entries.map((entry, i) => (
-                <tr key={`${entry.ts}-${i}`}>
-                  <td style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--txt3)', whiteSpace: 'nowrap' }}>
-                    {formatTs(entry.ts)}
+                <tr key={`${entry.timestamp}-${i}`}>
+                  <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--txt2)', whiteSpace: 'nowrap' }}>
+                    {formatTs(entry.timestamp)}
                   </td>
                   <td>
                     <span

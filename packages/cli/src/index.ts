@@ -25,6 +25,8 @@ import { registerShutdownCommand } from './commands/shutdown.js';
 import { registerUninstallCommand } from './commands/uninstall.js';
 import { registerDomainCommand } from './commands/domain.js';
 import { registerCreateAppCommand } from './commands/create-app.js';
+import { registerListCommand } from './commands/list.js';
+import { registerUpdateCommand } from './commands/update.js';
 
 /**
  * Build and return a fully configured Commander.js program with all
@@ -57,6 +59,8 @@ export function createProgram(): Command {
   registerUninstallCommand(program);
   registerDomainCommand(program);
   registerCreateAppCommand(program);
+  registerListCommand(program);
+  registerUpdateCommand(program);
 
   return program;
 }

@@ -17,7 +17,7 @@ WizardState (central)
 │   ├── GitServerConfig
 │   ├── DbServerConfig
 │   ├── MediaConfig
-│   ├── SshServerConfig
+<!-- │   ├── SshServerConfig -->
 │   ├── MailServerConfig
 │   ├── AppServerConfig
 │   └── FileBrowserConfig
@@ -82,7 +82,7 @@ interface ServerComponents {
   gitServer: GitServerConfig;
   dbServer: DbServerConfig;
   media: MediaConfig;
-  sshServer: SshServerConfig;
+  // sshServer: SshServerConfig;
   mailServer: MailServerConfig;
   appServer: AppServerConfig;
   fileBrowser: FileBrowserConfig;
@@ -142,6 +142,7 @@ interface MediaConfig {
 }
 ```
 
+<!--
 #### SshServerConfig
 
 ```typescript
@@ -152,6 +153,7 @@ interface SshServerConfig {
   sftp: boolean;                        // default: false, auto-suggested when File/Media enabled
 }
 ```
+-->
 
 #### MailServerConfig
 
@@ -268,7 +270,7 @@ interface ServiceDefinition {
 | valkey | `valkey/valkey:7-alpine` | 6379 | — | 12 |
 | keydb | `eqalpha/keydb:latest` | 6379 | — | 16 |
 | pgadmin | `dpage/pgadmin4:latest` | 5050 | pgadmin | 128 |
-| openssh-server | `linuxserver/openssh-server:latest` | 2222 | — | 16 |
+<!-- | openssh-server | `linuxserver/openssh-server:latest` | 2222 | — | 16 | -->
 | docker-mailserver | `ghcr.io/docker-mailserver/docker-mailserver:latest` | 25, 587, 993 | mail | 256 |
 | cloudflared | `cloudflare/cloudflared:latest` | — | — | 32 |
 

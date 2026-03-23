@@ -451,7 +451,7 @@ interface AppGitInfo {
 
 37개 검증 항목:
 - Dashboard: 페이지 로드, 서비스 렌더링, 탭 전환, Refresh, 로그 패널
-- Apps: 네비게이션, Stats, New App 모달 (3탭), 언어 7종 × 프레임워크 15종
+- Apps: 네비게이션, Stats, New App 모달 (3탭), 언어 6종 × 스택 16개
 - 프레임워크 검증: 미지원 9개 제거 확인 (Chi, Starlette, Fastify, Hono, Rocket, Warp, Quarkus, Vite+React, Remix)
 - API: /services, /apps, /git/repos, /boilerplates, /health
 - FileBrowser external URL (/files, not /static)

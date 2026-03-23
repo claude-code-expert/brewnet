@@ -104,7 +104,7 @@ export interface DeployHistoryEntry {
 }
 
 export interface LogEntry {
-  ts: string;
+  timestamp: string;
   level: 'info' | 'warn' | 'error' | 'debug';
   source: string;
   message: string;

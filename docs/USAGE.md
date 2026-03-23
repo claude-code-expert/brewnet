@@ -70,7 +70,7 @@ brewnet init
 
 - **관리자 ID**: 기본값 `admin`
 - **비밀번호**: 20자 자동 생성 (Enter로 수락 또는 직접 입력)
-- 이 단일 계정이 **모든 서비스의 기본 관리자**로 사용됩니다: Gitea, Nextcloud, pgAdmin, Jellyfin, FileBrowser, SSH, Mail Server
+- 이 단일 계정이 **모든 서비스의 기본 관리자**로 사용됩니다: Gitea, Nextcloud, pgAdmin, Jellyfin, FileBrowser, Mail Server
 
 #### Step 0 — 시스템 체크
 OS, Docker, 포트(80/443), 디스크/RAM 요구사항을 자동으로 검사합니다.
@@ -92,7 +92,7 @@ Docker가 없으면 자동 설치를 제안합니다.
 | 파일 서버 | Nextcloud / MinIO | 비활성 |
 | DB 서버 | PostgreSQL / MySQL + Redis/Valkey | PostgreSQL + Redis |
 | 미디어 | Jellyfin | 비활성 |
-| SSH 서버 | OpenSSH (포트 2222) | 비활성 |
+<!-- | SSH 서버 | OpenSSH (포트 2222) | 비활성 | -->
 
 > 관리자 계정은 Pre-Step에서 설정됩니다.
 

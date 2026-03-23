@@ -1,3 +1,6 @@
+> **[DEPRECATED]** SSH 기능은 현재 진행하지 않습니다.
+
+<!--
 # Feature Specification: SSH External Access via Cloudflare DNS Automation
 
 **Feature Branch**: `007-ssh-external-access`
@@ -233,3 +236,4 @@ sshExternalHostname?: string;  // 'ssh.simplite.net' — 설정 완료 시 저�
 ### 테스트 4: 공인 IP 변경 시 재설정
 1. 서버 공인 IP 변경 후 "외부 SSH 접속 설정" 버튼 재클릭
 2. Cloudflare DNS A 레코드가 새 IP로 업데이트됨 확인
+-->
