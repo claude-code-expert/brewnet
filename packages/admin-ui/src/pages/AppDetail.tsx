@@ -9,6 +9,7 @@ import { OverviewTab } from '../components/OverviewTab.js';
 import { DeploymentTab } from '../components/DeploymentTab.js';
 import { AppLogsTab } from '../components/AppLogsTab.js';
 import { AppDomainTab } from '../features/domain/index.js';
+import { DomainSettingModal } from '../components/DomainSettingModal.js';
 import type { AppEntry, AppGitInfo, DeploySettings, BoilerplateMeta } from '../types.js';
 
 type Tab = 'overview' | 'deployment' | 'logs' | 'domain';
@@ -26,6 +27,7 @@ export function AppDetail() {
 
   // Deploy progress modal state
   const [progressJob, setProgressJob] = useState<{ jobId: string; appName: string } | null>(null);
+  const [showDomainSettings, setShowDomainSettings] = useState(false);
 
   // Fetch wrapper: transparently passes through data but catches 404 for not-found detection
   const appAwareFetch = useCallback(
@@ -242,7 +244,12 @@ export function AppDetail() {
             )}
 
             {activeTab === 'domain' && (
-              <AppDomainTab appName={name ?? ''} apiFetch={apiFetch} appStatus={app.status} />
+              <AppDomainTab
+                appName={name ?? ''}
+                apiFetch={apiFetch}
+                appStatus={app.status}
+                onOpenDomainSettings={() => setShowDomainSettings(true)}
+              />
             )}
           </>
         )}
@@ -256,6 +263,14 @@ export function AppDetail() {
           apiFetch={apiFetch}
           onClose={() => setProgressJob(null)}
           onComplete={() => setProgressJob(null)}
+        />
+      )}
+
+      {/* Domain Settings Modal — opened from Domain tab when CF not configured */}
+      {showDomainSettings && (
+        <DomainSettingModal
+          apiFetch={apiFetch}
+          onClose={() => setShowDomainSettings(false)}
         />
       )}
     </>

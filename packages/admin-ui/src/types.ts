@@ -48,7 +48,7 @@ export interface ConfigResponse {
 
 export interface AppEntry {
   name: string;
-  mode: 'boilerplate' | 'git-clone' | 'new-project';
+  mode: 'boilerplate' | 'git-clone' | 'new-project' | 'local-path';
   stackId?: string;
   sourceUrl?: string;
   appDir: string;

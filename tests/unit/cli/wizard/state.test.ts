@@ -452,6 +452,35 @@ describe('loadState — schema migration', () => {
     const result = loadState('future-v99');
     expect(result).toBeNull();
   });
+
+  it('migrates v6 state: frontend vuejs array maps to vue', () => {
+    const v6State = {
+      ...buildValidState({ schemaVersion: 6 }),
+      devStack: { languages: [], frameworks: {}, frontend: ['vuejs'] },
+    };
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(v6State));
+
+    const result = loadState('migrate-v6-vue');
+    expect(result).not.toBeNull();
+    expect(result!.devStack.frontend).toBe('vue');
+  });
+
+  it('backfills domainConnections when missing from v7 state', () => {
+    const stateWithoutDomainConnections = (() => {
+      const s = buildValidState({ schemaVersion: 7 }) as Record<string, unknown>;
+      delete s['domainConnections'];
+      return s;
+    })();
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(stateWithoutDomainConnections));
+
+    const result = loadState('v7-no-domain-connections');
+    expect(result).not.toBeNull();
+    expect(result!.domainConnections).toEqual([]);
+  });
 });
 
 // ── saveState + loadState round-trip ────────────────────────────────────────

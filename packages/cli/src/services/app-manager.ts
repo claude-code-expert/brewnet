@@ -296,6 +296,81 @@ export async function deployApp(appName: string): Promise<string> {
   return job.jobId;
 }
 
+/**
+ * Deploy a local path project without Gitea — Mode D (local-path).
+ * Validates the path, registers the app in apps.json, auto-scaffolds
+ * docker config if missing, then runs docker compose up + health check.
+ */
+export async function deployLocalApp(opts: {
+  appName: string;
+  localPath: string;
+  port: number;
+}): Promise<string> {
+  const { appName, localPath, port } = opts;
+  const job = newJob(appName, ['Validate', 'Scaffold', 'Docker up', 'Health check']);
+  jobs.set(job.jobId, job);
+  setImmediate(() => void _runDeployLocal(job, appName, localPath, port));
+  return job.jobId;
+}
+
+async function _runDeployLocal(job: AppJob, appName: string, localPath: string, port: number): Promise<void> {
+  const appsJson = resolveAppsJsonPath();
+  try {
+    // Step 0: Validate path and project type
+    setStep(job, 0, 'running');
+    if (!existsSync(localPath)) throw new Error(`Path does not exist: ${localPath}`);
+    const projectType = _detectProjectType(localPath);
+    const hasDockerfile = existsSync(join(localPath, 'Dockerfile'));
+    if (!projectType && !hasDockerfile) {
+      throw new Error('Cannot detect project type and no Dockerfile found. Add a Dockerfile to deploy.');
+    }
+    appendLog(job, `[validate] ${projectType ? `Detected ${projectType} project` : 'Dockerfile found'}`);
+    // Register in apps.json (idempotent)
+    const existing = readApps(appsJson).find((a) => a.name === appName);
+    if (!existing) {
+      addApp(appsJson, {
+        name: appName,
+        mode: 'local-path',
+        appDir: localPath,
+        port,
+        status: 'creating',
+        createdAt: new Date().toISOString(),
+      });
+    } else {
+      updateApp(appsJson, appName, { appDir: localPath, port, status: 'creating' });
+    }
+    setStep(job, 0, 'done');
+
+    // Step 1: Scaffold docker config if missing
+    setStep(job, 1, 'running');
+    ensureComposeFile(localPath, appName, port, job);
+    await _injectQuickTunnelIfNeeded(localPath, appName, port);
+    setStep(job, 1, 'done');
+
+    // Step 2: Docker up
+    setStep(job, 2, 'running', 'docker compose up --build');
+    await _dockerComposeUp(localPath, job);
+    setStep(job, 2, 'done', 'containers started');
+
+    // Step 3: Health check
+    setStep(job, 3, 'running');
+    const healthUrl = _buildHealthUrl(localPath, port);
+    setStep(job, 3, 'running', `polling ${healthUrl}`);
+    await _pollHealth(healthUrl, 120_000, job);
+    setStep(job, 3, 'done');
+
+    updateApp(appsJson, appName, { status: 'running' });
+    job.status = 'done';
+  } catch (err) {
+    job.status = 'failed';
+    job.error = err instanceof Error ? err.message : String(err);
+    for (const step of job.steps) {
+      if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
+    }
+    updateApp(appsJson, appName, { status: 'failed' });
+  }
+}
+
 async function _runDeploy(job: AppJob, appName: string): Promise<void> {
   const apps = readApps(resolveAppsJsonPath());
   const app = apps.find((a) => a.name === appName);

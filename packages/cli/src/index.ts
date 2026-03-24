@@ -27,6 +27,9 @@ import { registerDomainCommand } from './commands/domain.js';
 import { registerCreateAppCommand } from './commands/create-app.js';
 import { registerListCommand } from './commands/list.js';
 import { registerUpdateCommand } from './commands/update.js';
+import { registerDeployCommand } from './commands/deploy.js';
+import { registerExportCommand } from './commands/export.js';
+import { registerStorageCommand } from './commands/storage.js';
 
 /**
  * Build and return a fully configured Commander.js program with all
@@ -61,6 +64,9 @@ export function createProgram(): Command {
   registerCreateAppCommand(program);
   registerListCommand(program);
   registerUpdateCommand(program);
+  registerDeployCommand(program);
+  registerExportCommand(program);
+  registerStorageCommand(program);
 
   return program;
 }

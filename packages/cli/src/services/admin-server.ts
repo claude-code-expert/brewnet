@@ -29,7 +29,7 @@ import { DOCKER_COMPOSE_FILENAME, type WizardState, type LogSource, type Unified
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
+import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 import { getStackById } from '../config/stacks.js';
@@ -1030,13 +1030,12 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     projectPath = join(homedir(), projectPath.slice(1));
   }
 
-  // Run log rotation eagerly on server start (not just on queryLogs calls)
-  try {
-    const logsDir = join(homedir(), '.brewnet', 'logs');
-    runRotation(logsDir, projectPath);
-  } catch {
-    // Non-critical — rotation will still run on log queries
-  }
+  // Run log rotation eagerly on server start, then every hour
+  const _logsDir = join(homedir(), '.brewnet', 'logs');
+  try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
+  const _rotationTimer = setInterval(() => {
+    try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
+  }, 60 * 60 * 1000);
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
   const username = wizardState?.admin?.username ?? '';
@@ -1488,8 +1487,14 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
           if (req.method === 'POST' && parts[2] === 'create') {
             const opts = JSON.parse(body) as CreateAppOptions;
-            const jobId = await createApp(opts);
-            json(res, 202, { jobId });
+            if (opts.mode === 'local-path') {
+              if (!opts.localPath) { json(res, 400, { error: 'localPath is required for local-path mode' }); return; }
+              const jobId = await deployLocalApp({ appName: opts.appName, localPath: opts.localPath, port: opts.port ?? 3000 });
+              json(res, 202, { jobId });
+            } else {
+              const jobId = await createApp(opts);
+              json(res, 202, { jobId });
+            }
             return;
           }
           if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
@@ -1952,6 +1957,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       }),
     stop: () =>
       new Promise((resolve, reject) => {
+        clearInterval(_rotationTimer);
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };

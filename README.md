@@ -93,7 +93,7 @@ brewnet init
 |------|-------------|
 | **Step 0** | System check — OS, Docker, ports 80/443, disk/RAM |
 | **Step 1** | Project setup — name, path, Full / Partial install |
-| **Step 2** | Admin account + server components — Web server, File server, DB, Media<!-- , SSH --> |
+| **Step 2** | Admin account + server components — Web server, File server, DB, Media |
 | **Step 3** | Dev stack — runtime + framework selection *(only shown when App Server is enabled in Step 2)* |
 | **Step 4** | Domain & network — Local (LAN) or Cloudflare Tunnel (external) |
 | **Step 5** | Review & confirm |
@@ -121,21 +121,10 @@ brewnet down                # Stop all services (data preserved)
 brewnet logs [service]      # View logs (-f for follow)
 brewnet add <app-name>      # Add an app (creates Gitea repo + Docker service)
 brewnet remove <app-name>   # Remove an app
+brewnet deploy <app-name>   # Deploy an app (git pull → docker compose up)
 brewnet backup              # Create backup (tar.gz)
 brewnet restore <id>        # Restore from backup
 brewnet admin               # Open local admin panel (http://localhost:8088)
-brewnet shutdown             # Stop the admin panel daemon
-```
-
-### Domain Management
-
-```bash
-brewnet domain connect [app]          # Connect app to external domain (Cloudflare Tunnel)
-brewnet domain disconnect <app>       # Disconnect app's external domain
-brewnet domain status [app]           # Show domain connection status
-brewnet domain list                   # List all external domain connections
-brewnet domain tunnel status          # Show tunnel connection status
-brewnet domain tunnel restart         # Restart cloudflared container
 ```
 
 ### Admin Dashboard
@@ -162,31 +151,16 @@ brewnet create-app <name>   # Generate a new app project with Docker + Git + rou
 
 Creates a full project: Gitea repository, Docker Compose service, Traefik routing, and boilerplate source code.
 
-**Supported stacks (16)** — each stack includes a backend service and, where applicable, a separate React SPA frontend with static page serving:
+**Supported stacks (16):**
 
-| Stack ID | Language | Framework | Frontend |
-|----------|----------|-----------|----------|
-| `go-gin` | Go | Gin | React SPA (separate container) |
-| `go-echo` | Go | Echo v4 | React SPA (separate container) |
-| `go-fiber` | Go | Fiber v3 | React SPA (separate container) |
-| `rust-actix-web` | Rust | Actix-web | React SPA (separate container) |
-| `rust-axum` | Rust | Axum | React SPA (separate container) |
-| `java-springboot` | Java | Spring Boot | React SPA (separate container) |
-| `java-spring` | Java | Spring Framework | React SPA (separate container) |
-| `kotlin-ktor` | Kotlin | Ktor | React SPA (separate container) |
-| `kotlin-springboot` | Kotlin | Spring Boot (Kotlin) | React SPA (separate container) |
-| `nodejs-express` | Node.js | Express | React SPA (separate container) |
-| `nodejs-nestjs` | Node.js | NestJS | React SPA (separate container) |
-| `nodejs-nextjs` | Node.js | Next.js (API only) | — |
-| `nodejs-nextjs-full` | Node.js | Next.js (Full Stack) | React built-in |
-| `python-fastapi` | Python | FastAPI | React SPA (separate container) |
-| `python-django` | Python | Django | React SPA (separate container) |
-| `python-flask` | Python | Flask | React SPA (separate container) |
-
-**Frontend notes:**
-- **React SPA** — Vite + React + TypeScript frontend served at `/apps/<name>-ui/` via Traefik. Supports static page serving (HTML/CSS/JS assets).
-- **React built-in** — Next.js full-stack app with React. Served at `/apps/<name>/` (unified routing, no separate container).
-- **API only** — `nodejs-nextjs` ships backend only; add a frontend separately if needed.
+| Language | Frameworks |
+|----------|------------|
+| Node.js | Express, Fastify, Next.js (App Router), Next.js (Pages) |
+| Go | Gin, Echo, Fiber |
+| Rust | Actix-web, Axum |
+| Python | FastAPI, Flask |
+| Kotlin | Spring Boot |
+| Java | Spring Boot |
 
 ### Stopping Services
 
@@ -317,7 +291,7 @@ brewnet init
 |------|------|
 | **Step 0** | 시스템 체크 — OS, Docker, 포트 80/443, 디스크/RAM |
 | **Step 1** | 프로젝트 설정 — 이름, 경로, Full / Partial 설치 유형 |
-| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어<!-- , SSH --> |
+| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어 |
 | **Step 3** | 개발 스택 — 런타임 + 프레임워크 선택 *(Step 2에서 App Server 활성화 시만 표시)* |
 | **Step 4** | 도메인 & 네트워크 — 로컬(LAN) 또는 Cloudflare Tunnel(외부 접속) |
 | **Step 5** | 검토 및 확인 |
@@ -332,19 +306,18 @@ brewnet init
 | 파일 서버 | Nextcloud / MinIO | 비활성 |
 | DB 서버 | PostgreSQL / MySQL + Redis/Valkey | PostgreSQL + Redis |
 | 미디어 | Jellyfin | 비활성 |
-<!-- | SSH 서버 | OpenSSH (포트 2222) | 비활성 | -->
 | 관리자 계정 | 사용자명 + 비밀번호 자동 생성 | admin / 20자 랜덤 |
 
 #### Step 3 — 개발 스택 선택지
 
 - **백엔드 언어**: Python / Node.js / Java / Rust / Go / Kotlin (복수 선택)
 - **언어별 프레임워크**:
-  - Go: Gin / Echo v4 / Fiber v3
-  - Rust: Actix-web / Axum
-  - Java: Spring Boot / Spring Framework
-  - Kotlin: Ktor / Spring Boot (Kotlin)
-  - Node.js: Express / NestJS / Next.js (API only) / Next.js (Full Stack)
   - Python: FastAPI / Django / Flask
+  - Node.js: Next.js / Next.js 15.x (App Router) / Express / NestJS
+  - Java: Spring / Spring Boot
+  - Rust: Axum / Actix Web
+  - Go: Gin / Echo / Fiber
+  - Kotlin: Ktor / Spring Boot (Kotlin)
 - **프론트엔드**: React (TypeScript) / Vue.js (Vite) (단일 선택)
 - 필요 없으면 **Skip** 선택
 
@@ -369,21 +342,10 @@ brewnet down                # 모든 서비스 중지 (데이터 유지)
 brewnet logs [service]      # 로그 확인 (-f 옵션으로 실시간)
 brewnet add <app-name>      # 앱 추가 (Gitea 저장소 + Docker 서비스 생성)
 brewnet remove <app-name>   # 앱 제거
+brewnet deploy <app-name>   # 앱 배포 (git pull → docker compose up)
 brewnet backup              # 백업 생성 (tar.gz)
 brewnet restore <id>        # 백업으로 복원
 brewnet admin               # 로컬 관리 패널 열기 (http://localhost:8088)
-brewnet shutdown             # 관리 패널 데몬 종료
-```
-
-### 도메인 관리
-
-```bash
-brewnet domain connect [app]          # 앱을 외부 도메인에 연결 (Cloudflare Tunnel)
-brewnet domain disconnect <app>       # 앱의 외부 도메인 연결 해제
-brewnet domain status [app]           # 도메인 연결 상태 확인
-brewnet domain list                   # 모든 외부 도메인 연결 목록
-brewnet domain tunnel status          # 터널 연결 상태 확인
-brewnet domain tunnel restart         # cloudflared 컨테이너 재시작
 ```
 
 ### 어드민 대시보드
@@ -410,31 +372,16 @@ brewnet create-app <name>   # Docker + Git + 라우팅이 포함된 앱 프로�
 
 Gitea 저장소, Docker Compose 서비스, Traefik 라우팅, 보일러플레이트 소스코드를 한 번에 생성합니다.
 
-**지원 스택 (16개)** — 각 스택은 백엔드 서비스와 함께, 해당되는 경우 정적 페이지 서빙을 포함한 React SPA 프론트엔드를 별도 컨테이너로 제공합니다.
+**지원 스택 (16개):**
 
-| 스택 ID | 언어 | 프레임워크 | 프론트엔드 |
-|---------|------|-----------|-----------|
-| `go-gin` | Go | Gin | React SPA (별도 컨테이너) |
-| `go-echo` | Go | Echo v4 | React SPA (별도 컨테이너) |
-| `go-fiber` | Go | Fiber v3 | React SPA (별도 컨테이너) |
-| `rust-actix-web` | Rust | Actix-web | React SPA (별도 컨테이너) |
-| `rust-axum` | Rust | Axum | React SPA (별도 컨테이너) |
-| `java-springboot` | Java | Spring Boot | React SPA (별도 컨테이너) |
-| `java-spring` | Java | Spring Framework | React SPA (별도 컨테이너) |
-| `kotlin-ktor` | Kotlin | Ktor | React SPA (별도 컨테이너) |
-| `kotlin-springboot` | Kotlin | Spring Boot (Kotlin) | React SPA (별도 컨테이너) |
-| `nodejs-express` | Node.js | Express | React SPA (별도 컨테이너) |
-| `nodejs-nestjs` | Node.js | NestJS | React SPA (별도 컨테이너) |
-| `nodejs-nextjs` | Node.js | Next.js (API 전용) | — |
-| `nodejs-nextjs-full` | Node.js | Next.js (풀스택) | React 내장 |
-| `python-fastapi` | Python | FastAPI | React SPA (별도 컨테이너) |
-| `python-django` | Python | Django | React SPA (별도 컨테이너) |
-| `python-flask` | Python | Flask | React SPA (별도 컨테이너) |
-
-**프론트엔드 안내:**
-- **React SPA** — Vite + React + TypeScript 프론트엔드. Traefik을 통해 `/apps/<name>-ui/` 경로로 서빙됩니다. 정적 페이지(HTML/CSS/JS 에셋) 서빙을 지원합니다.
-- **React 내장** — Next.js 풀스택 앱으로 React가 포함됩니다. 별도 컨테이너 없이 `/apps/<name>/` 경로로 통합 서빙됩니다.
-- **API 전용** — `nodejs-nextjs`는 백엔드만 제공합니다. 프론트엔드가 필요한 경우 별도로 추가하세요.
+| 언어 | 프레임워크 |
+|------|-----------|
+| Node.js | Express, Fastify, Next.js (App Router), Next.js (Pages) |
+| Go | Gin, Echo, Fiber |
+| Rust | Actix-web, Axum |
+| Python | FastAPI, Flask |
+| Kotlin | Spring Boot |
+| Java | Spring Boot |
 
 ### 서비스 종료
 
