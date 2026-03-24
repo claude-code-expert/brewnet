@@ -302,7 +302,6 @@ RUN rm /etc/nginx/conf.d/default.conf
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html /usr/share/nginx/html/index.html
-COPY service-loading.html /usr/share/nginx/html/service-loading.html
 
 # Non-root permissions
 RUN chown -R nginx:nginx /usr/share/nginx/html && \\
@@ -529,102 +528,11 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
 </html>
 `;
 
-  const serviceLoadingHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Starting \u2014 Brewnet</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      min-height: 100dvh;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      background: #0f1117; color: #c9d1d9;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      gap: 24px;
-    }
-    .logo { font-size: 2.5rem; line-height: 1; }
-    h1 { font-size: 1.25rem; font-weight: 600; color: #e6edf3; }
-    .spinner {
-      width: 40px; height: 40px;
-      border: 3px solid #30363d;
-      border-top-color: #f78166;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .status { font-size: 0.875rem; color: #7d8590; }
-    .timer  { font-size: 0.75rem;  color: #484f58; font-family: monospace; }
-    .note   { font-size: 0.75rem;  color: #484f58; max-width: 320px; text-align: center; line-height: 1.6; }
-  </style>
-</head>
-<body>
-  <div class="logo">&#x1F37A;</div>
-  <h1 id="service-name">Service</h1>
-  <div class="spinner"></div>
-  <div class="status" id="status">Starting up, please wait&hellip;</div>
-  <div class="timer"  id="timer">0s elapsed</div>
-  <div class="note">This page will automatically redirect<br>once the service is ready.</div>
-  <script>
-    var PATH_CONFIGS = {
-      '/git':      { name: 'Gitea',        check: '/git/api/v1/version' },
-      '/cloud':    { name: 'Nextcloud',    check: '/cloud/status.php' },
-      '/files':    { name: 'File Browser', check: '/files/api/health' },
-      '/jellyfin': { name: 'Jellyfin',     check: '/jellyfin/health' },
-      '/status':   { name: 'Uptime Kuma', check: '/status/api/v1/info' },
-      '/grafana':  { name: 'Grafana',      check: '/grafana/api/health' },
-      '/pgadmin':  { name: 'pgAdmin',      check: '/pgadmin/misc/ping' },
-      '/minio':    { name: 'MinIO',        check: '/minio/health/live' },
-    };
-    var pathname = window.location.pathname;
-    var keys = Object.keys(PATH_CONFIGS);
-    var key = null;
-    for (var i = 0; i < keys.length; i++) {
-      if (pathname.indexOf(keys[i]) === 0) { key = keys[i]; break; }
-    }
-    var cfg = key ? PATH_CONFIGS[key] : { name: 'Service', check: pathname };
-    var nameEl   = document.getElementById('service-name');
-    var statusEl = document.getElementById('status');
-    var timerEl  = document.getElementById('timer');
-    nameEl.textContent = cfg.name + ' is starting\u2026';
-    document.title = cfg.name + ' \u2014 Starting \u2014 Brewnet';
-    var elapsed = 0;
-    var ticker = setInterval(function() {
-      elapsed++;
-      timerEl.textContent = elapsed + 's elapsed';
-    }, 1000);
-    function checkReady() {
-      var ctrl = new AbortController();
-      var tid = setTimeout(function() { ctrl.abort(); }, 5000);
-      fetch(cfg.check, { cache: 'no-store', signal: ctrl.signal })
-        .then(function(resp) {
-          clearTimeout(tid);
-          var ct = resp.headers.get('content-type') || '';
-          if (resp.status < 500 && ct.indexOf('text/html') === -1) {
-            clearInterval(ticker);
-            statusEl.textContent = 'Ready! Redirecting\u2026';
-            window.location.reload();
-            return;
-          }
-          setTimeout(checkReady, 3000);
-        })
-        .catch(function() {
-          clearTimeout(tid);
-          setTimeout(checkReady, 3000);
-        });
-    }
-    setTimeout(checkReady, 2000);
-  </script>
-</body>
-</html>
-`;
 
   return [
     { path: 'landing/Dockerfile',           content: dockerfile },
     { path: 'landing/nginx.conf',           content: nginxConf },
     { path: 'landing/index.html',           content: indexHtml },
-    { path: 'landing/service-loading.html', content: serviceLoadingHtml },
   ];
 }
 
