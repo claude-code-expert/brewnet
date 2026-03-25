@@ -3,6 +3,130 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-25 22:30
+
+### 🎯 Prompts
+1. "traefik 상세 모달에서 보안상 외부 도메인으로 노출하지 않습니다 영역 삭제해"
+2. "domain 연결 후 subdomain 연동할 때 토스트 메시지가 너무 빨리 사라지니까 닫기 x 버튼을 통해 닫게 해줘"
+3. "brewnet uninstall시 클라우드플레어 터널도 같이 정리해주는게 맞아"
+4. "cloudflared LaunchDaemon 시스템 서비스 정리도 추가해"
+5. "cli에서 시스템 체크 후 Installation type이 또 뜨는 중복 프롬프트 제거해"
+6. "brewnet.simplite.net 404 문제 — domain connect 시 Next.js basePath를 tunnel ingress URL에 자동 반영"
+7. "불필요한 테스트 파일 식별 및 삭제"
+
+### ✅ Changes
+- **Removed**: `ServiceDetailInfo.securityNote` 필드 및 Traefik 보안 경고 UI 블록 (`admin-server.ts`, `ServiceDetailModal.tsx`, `types.ts`)
+- **Added**: `showPersistentToast()` — 닫기(✕) 버튼으로만 닫히는 persistent 토스트 (`Toast.tsx`)
+- **Modified**: 도메인 연결 에러 시 `showPersistentToast` 사용 (`useAppDomain.ts`)
+- **Added**: `brewnet uninstall` 시 Cloudflare Tunnel + DNS 자동 삭제 — `deleteTunnel(cascade: true)` (`uninstall.ts`, `cloudflare-client.ts`)
+- **Added**: `cleanupCloudflaredService()` — macOS LaunchDaemon / Linux systemd 자동 정리 (`uninstall.ts`)
+- **Fixed**: `init.ts` pre-step에서 Full Install 선택 후 `project-setup.ts`에서 Installation type 중복 프롬프트 제거
+- **Fixed**: Domain connect 시 Next.js basePath를 tunnel ingress service URL에 자동 포함 (`domain-manager.ts`, `cloudflare-client.ts`)
+- **Added**: `ServiceRoute.basePath`, `DomainConnection.basePath` 필드 (`cloudflare-client.ts`, `wizard-state.ts`)
+- **Fixed**: Toast 타이머 언마운트 누수, `_hideTimer` null 미설정, `completedSteps` 중복 state 제거 (`Toast.tsx`, `DomainSettingModal.tsx`, `StepIndicator.tsx`)
+- **Fixed**: `init.ts` silent catch → `console.warn` 로그 추가 (CLAUDE.md 규칙 준수)
+- **Added**: 테스트 커버리지 85%+ 달성을 위한 15개 테스트 파일 추가/확장 (2861 tests)
+- **Removed**: `docker-installer-extra.test.ts` 중복 테스트 파일 삭제
+
+### 📊 Test Results
+- Total: 2861/2861 passed (105 suites)
+- Coverage: 85.11% CLI
+
+### 📁 Files Modified (주요)
+- `packages/cli/src/commands/uninstall.ts` (+112 lines — CF tunnel/DNS 자동 삭제, cloudflared 서비스 정리)
+- `packages/cli/src/services/domain-manager.ts` (+98 lines — basePath 감지, ingress/health check 반영)
+- `packages/cli/src/services/cloudflare-client.ts` (+25 lines — basePath in service URL, cascade delete)
+- `packages/admin-ui/src/components/Toast.tsx` (+77 lines — persistent toast, close button)
+- `packages/cli/src/commands/init.ts` (+5 lines — setupType 중복 제거)
+- `packages/shared/src/types/wizard-state.ts` (+13 lines — basePath, wwwCnameRecordId, apex domain)
+- 15 test files (+1800 lines)
+
+---
+
+## [develop] - 2026-03-24 — CLI list/update 명령어, Admin Catalog 페이지, SSH 제거, UI 개선
+
+### 🎯 Prompts
+1. "전체 명령어 리스트 보여줘" (Telegram)
+2. "우리 프로젝트 전체 문서에서 ssh 관련 내역은 이제 진행하지 않으니까 주석처리해"
+3. "전체 명령어 이거 맞나 검증해 하나씩 실행해서 각각 호출되고 제대로 된 결과가 나오는지 테스트"
+4. "문서 업데이트 해 미구현된거 구현하려면 어떻게 해야 하는지 계획을 만들고 구현 방안을 수립해"
+5. "update만 구현. 나머지는 보류 하고 전체 앱의 목록을 반환하는 명령어도 필요해"
+6. "두개 다 구현해. update, list 둘다 어드민에서 버튼으로 해당 기능을 수행할 수 있도록"
+7. "모든 모달 내부의 이 색상 텍스트는 좀 더 밝은 색으로 하고 폰트 크기도 하나 더 키워야 해"
+8. "로그 시스템 문제점 3가지 수정하고 파일 보관 정책은 7일이야"
+9. "ssh 삭제. 내부에 이제 ssh는 지원하지 않음" (Catalog)
+10. "cloudflared 인스톨하면 어떻게 되는거지? 로직을 살펴봐" → Catalog에서 제외
+
+### ✅ Changes
+
+#### CLI 명령어 추가 (2개)
+- **Added**: `brewnet list` — 서비스 카탈로그 + 앱 스택 목록 (`--stacks`, `--installed`, `--json`) (`packages/cli/src/commands/list.ts`)
+- **Added**: `brewnet update` — Docker 이미지 pull + 서비스 재시작 (`--no-restart`) (`packages/cli/src/commands/update.ts`)
+- **Modified**: 명령어 등록 14→16개 (`packages/cli/src/index.ts`)
+
+#### Admin API
+- **Added**: `POST /api/services/update` — 대시보드에서 서비스 업데이트 트리거 (`packages/cli/src/services/admin-server.ts`)
+
+#### Admin UI — Catalog 페이지
+- **Added**: `/catalog` 페이지 — 서비스 카탈로그 조회 + Install/Remove 버튼 (`packages/admin-ui/src/pages/Catalog.tsx`)
+- **Added**: NavHeader에 "Catalog" 탭 추가 (`packages/admin-ui/src/components/NavHeader.tsx`)
+- **Added**: `/catalog` 라우트 등록 (`packages/admin-ui/src/router.tsx`)
+
+#### Admin UI — Dashboard
+- **Added**: "Update Services" 버튼 + 상태 메시지 (`packages/admin-ui/src/pages/Dashboard.tsx`)
+
+#### SSH 기능 제거 (전체 문서)
+- **Modified**: 14개 문서 파일에서 SSH 관련 내용 HTML 주석 처리
+- **Modified**: Catalog API에서 `openssh-server` 제외 (`admin-server.ts`)
+- **Modified**: Catalog API에서 `cloudflared` 제외 (독립 설치 불가)
+
+#### 로그 시스템 수정 (4건)
+- **Fixed**: `formatTs()` 날짜 미표시 → `MM-DD HH:MM:SS.mmm` 형식 (`LogsTab.tsx`)
+- **Fixed**: `LogEntry.ts` → `timestamp` 필드명 불일치 수정 (`types.ts`, `LogsTab.tsx`)
+- **Added**: UI 기본 `since=24h` 필터 추가 (`LogsTab.tsx`)
+- **Added**: 서버 시작 시 로그 로테이션 즉시 실행 (`admin-server.ts`)
+- **Modified**: 로그 보관 정책 30일→7일 (`constants.ts`)
+
+#### UI 색상/크기 개선 (다수)
+- **Modified**: 모달 내부 `--txt3` 오버라이드 → `#6889b0` (밝게) (`global.css .modal`)
+- **Modified**: `.sk` (stat label) — `var(--txt3)` → `var(--txt2)`, `10px` → `11px`
+- **Modified**: `.rtbl th` (테이블 헤더) — `#e0e8f0` (거의 흰색), `11px`
+- **Modified**: `#header` 높이 `50px` → `65px`, 로고 `16px` → `18px`
+- **Modified**: ☕ 이모지 → brewnet SVG 아이콘 (`NavHeader.tsx`)
+- **Modified**: Footer — copyright + brewnet.dev(amber) + GitHub 아이콘 추가 (`Footer.tsx`)
+- **Modified**: AppCard 높이 `200px` 고정, 그리드 너비 `350px` → `370px`
+
+#### 문서 정리
+- **Modified**: CLAUDE.md, README.md — 실제 구현된 22개 명령어로 업데이트
+- **Added**: `tests/cli-command-verify.sh` — CLI 명령어 검증 스크립트 (24 PASS)
+
+### 📊 Test Results
+- CLI commands: 24/24 PASS, 2 PENDING (deploy, storage)
+- Unit tests: 58/58 passed (commands/index.test.ts)
+
+### 📁 Files Modified
+- `.claude/CLAUDE.md` (+31, -31 lines)
+- `README.md` (+86, -81 lines)
+- `packages/admin-ui/src/pages/Catalog.tsx` (NEW, ~250 lines)
+- `packages/cli/src/commands/list.ts` (NEW, ~210 lines)
+- `packages/cli/src/commands/update.ts` (NEW, ~90 lines)
+- `packages/cli/src/index.ts` (+4 lines)
+- `packages/cli/src/services/admin-server.ts` (+49 lines)
+- `packages/admin-ui/src/pages/Dashboard.tsx` (+31 lines)
+- `packages/admin-ui/src/components/NavHeader.tsx` (+15 lines)
+- `packages/admin-ui/src/components/Footer.tsx` (+21 lines)
+- `packages/admin-ui/src/components/LogsTab.tsx` (+15, -20 lines)
+- `packages/admin-ui/src/components/AppCard.tsx` (+11 lines)
+- `packages/admin-ui/src/styles/global.css` (+10, -10 lines)
+- `packages/admin-ui/src/types.ts` (+1, -1 lines)
+- `packages/shared/src/utils/constants.ts` (+1, -1 lines)
+- `tests/unit/cli/commands/index.test.ts` (+2, -2 lines)
+- `tests/cli-command-verify.sh` (NEW)
+- `docs/superpowers/plans/2026-03-23-update-and-list-commands.md` (NEW)
+- 14 spec/doc files (SSH comment-out)
+
+---
+
 ## [develop] - 2026-03-22 — v0.0.8 릴리즈: npm 배포 파이프라인, 설치 UX 개선, wizard 단순화
 
 ### 🎯 Prompts

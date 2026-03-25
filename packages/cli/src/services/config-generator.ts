@@ -333,7 +333,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
     add_header X-XSS-Protection        "1; mode=block" always;
     add_header Referrer-Policy         "no-referrer"    always;
     add_header Permissions-Policy      "camera=(), microphone=(), geolocation=()" always;
-    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com" always;
+    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'" always;
 
     # All paths -> landing page
     location / {
@@ -456,14 +456,83 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
   <div class="footer">
     brewnet.dev <span>&middot;</span> MIT
   </div>
+  <div id="svc-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#0a0a0a;
+    flex-direction:column;align-items:center;justify-content:center;gap:20px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#c9d1d9;">
+    <div style="font-size:2.4rem;line-height:1">&#x1F37A;</div>
+    <div id="svc-name" style="font-size:1.1rem;font-weight:600;color:#e6edf3"></div>
+    <div style="width:36px;height:36px;border:3px solid #1f1f1f;border-top-color:#f59e0b;
+      border-radius:50%;animation:svc-spin .8s linear infinite"></div>
+    <div id="svc-status" style="font-size:.85rem;color:#525252">Starting up, please wait\u2026</div>
+    <div id="svc-timer" style="font-size:.75rem;color:#333;font-family:monospace">0s elapsed</div>
+    <div style="font-size:.72rem;color:#333;max-width:280px;text-align:center;line-height:1.6">
+      This page will automatically redirect<br>once the service is ready.</div>
+  </div>
+  <style>@keyframes svc-spin{to{transform:rotate(360deg)}}</style>
+  <script>
+    (function() {
+      var PATH_CONFIGS = {
+        '/git':      { name: 'Gitea',        check: '/git/api/v1/version' },
+        '/cloud':    { name: 'Nextcloud',    check: '/cloud/status.php' },
+        '/files':    { name: 'File Browser', check: '/files/api/health' },
+        '/jellyfin': { name: 'Jellyfin',     check: '/jellyfin/health' },
+        '/status':   { name: 'Uptime Kuma',  check: '/status/api/v1/info' },
+        '/grafana':  { name: 'Grafana',      check: '/grafana/api/health' },
+        '/pgadmin':  { name: 'pgAdmin',      check: '/pgadmin/misc/ping' },
+        '/minio':    { name: 'MinIO',        check: '/minio/health/live' },
+      };
+      var pathname = window.location.pathname;
+      var keys = Object.keys(PATH_CONFIGS);
+      var key = null;
+      for (var i = 0; i < keys.length; i++) {
+        if (pathname.indexOf(keys[i]) === 0) { key = keys[i]; break; }
+      }
+      if (!key) return;
+      var cfg = PATH_CONFIGS[key];
+      var overlay  = document.getElementById('svc-overlay');
+      var nameEl   = document.getElementById('svc-name');
+      var statusEl = document.getElementById('svc-status');
+      var timerEl  = document.getElementById('svc-timer');
+      overlay.style.display = 'flex';
+      nameEl.textContent = cfg.name + ' is starting\u2026';
+      document.title = cfg.name + ' \u2014 Starting \u2014 Brewnet';
+      var elapsed = 0;
+      var ticker = setInterval(function() {
+        elapsed++;
+        timerEl.textContent = elapsed + 's elapsed';
+      }, 1000);
+      function checkReady() {
+        var ctrl = new AbortController();
+        var tid = setTimeout(function() { ctrl.abort(); }, 5000);
+        fetch(cfg.check, { cache: 'no-store', signal: ctrl.signal })
+          .then(function(resp) {
+            clearTimeout(tid);
+            var ct = resp.headers.get('content-type') || '';
+            if (resp.status < 500 && ct.indexOf('text/html') === -1) {
+              clearInterval(ticker);
+              statusEl.textContent = 'Ready! Redirecting\u2026';
+              window.location.reload();
+              return;
+            }
+            setTimeout(checkReady, 3000);
+          })
+          .catch(function() {
+            clearTimeout(tid);
+            setTimeout(checkReady, 3000);
+          });
+      }
+      setTimeout(checkReady, 2000);
+    })();
+  </script>
 </body>
 </html>
 `;
 
+
   return [
-    { path: 'landing/Dockerfile', content: dockerfile },
-    { path: 'landing/nginx.conf', content: nginxConf },
-    { path: 'landing/index.html', content: indexHtml },
+    { path: 'landing/Dockerfile',           content: dockerfile },
+    { path: 'landing/nginx.conf',           content: nginxConf },
+    { path: 'landing/index.html',           content: indexHtml },
   ];
 }
 

@@ -68,7 +68,7 @@
 | REQ-1.5.3 | App Server 컴포넌트 — Dev Stack 선택 시 자동 활성화 (Step 3에서 설정) | Must | 1 |
 | REQ-1.5.4 | Database 컴포넌트 — Primary DB + Cache Layer 선택 | Must | 1 |
 | REQ-1.5.5 | Media 컴포넌트 — Jellyfin 미디어 서버 | Should | 1 |
-| REQ-1.5.6 | SSH Server 컴포넌트 — Step 2에서 카드 표시, 포트 설정 및 인증 방식 선택 | Must | 1 | → REQ-1.11 참조 |
+<!-- | REQ-1.5.6 | SSH Server 컴포넌트 — Step 2에서 카드 표시, 포트 설정 및 인증 방식 선택 | Must | 1 | → REQ-1.11 참조 | -->
 | REQ-1.5.7 | Mail Server 섹션 — Step 4에서 표시 (조건: domain != local) | Must | 1 | → REQ-1.12 참조 |
 | REQ-1.5.8 | Git Server 컴포넌트 — 항상 활성화 (필수). Web Server와 함께 필수 컴포넌트. 홈서버 코드 버전 관리 및 배포 파이프라인 핵심 인프라 | Must | 1 | → REQ-4.1 참조 |
 
@@ -120,6 +120,7 @@
 | REQ-1.10.11 | One-Time PIN (OTP) 인증 지원 — Cloudflare Access 이메일 기반 OTP | Could | 2 |
 | REQ-1.10.12 | 서비스별 접근 정책 — 개별 서비스에 대한 Cloudflare Access 정책 설정 | Could | 3 |
 
+<!--
 ### REQ-1.11 SSH 서버 (SSH Server)
 
 | ID | 요구사항 | 우선순위 | Phase |
@@ -133,6 +134,7 @@
 | REQ-1.11.7 | SSH 사용자 역할 기반 권한 — canDeployApps, canAccessDatabase, canManageFiles 권한 관리 | Should | 3 |
 | REQ-1.11.8 | SSH IP 화이트리스트 — 사용자별 허용 IP 목록 설정 | Could | 3 |
 | REQ-1.11.9 | SSH 접근 감사 로깅 — 모든 SSH 세션 연결/해제 시간, 소스 IP 기록 | Should | 3 |
+-->
 
 ### REQ-1.12 메일 서버 (Mail Server)
 
@@ -153,7 +155,7 @@
 | ID | 요구사항 | 우선순위 | Phase |
 |----|---------|:--------:|:-----:|
 | REQ-1.13.1 | 관리자 크리덴셜(username/password)을 Step 2에서 1회만 입력 | Must | 1 |
-| REQ-1.13.2 | 활성화된 모든 서비스에 관리자 크리덴셜 자동 전파 (Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, SSH Server, Mail Server 등) | Must | 1 |
+| REQ-1.13.2 | 활성화된 모든 서비스에 관리자 크리덴셜 자동 전파 (Nextcloud, pgAdmin, Jellyfin, Gitea, FileBrowser, Mail Server 등) | Must | 1 |
 | REQ-1.13.3 | Step 5(설정 확인)에서 크리덴셜 전파 대상 목록 표시 (어떤 서비스에 어떤 계정이 설정되는지 확인) | Must | 1 |
 | REQ-1.13.4 | Database는 별도 크리덴셜 사용 가능하나, 미입력 시 관리자 비밀번호가 자동으로 채워짐 | Must | 1 |
 
@@ -164,9 +166,9 @@
 | REQ-1.14.1 | DNS 전파 검증 명령어 — `dig`/`nslookup` 기반 DNS 레코드 확인 | Must | 1 |
 | REQ-1.14.2 | Cloudflare Tunnel 연결 상태 확인 — 터널 컨테이너 상태 및 Cloudflare API 연결 테스트 | Must | 1 |
 | REQ-1.14.3 | HTTPS 엔드포인트 헬스체크 — 도메인 접근 가능 여부 및 SSL 인증서 유효성 확인 | Must | 1 |
-| REQ-1.14.4 | SSH 연결 테스트 — SSH Server 활성화 시 포트 연결 및 키 인증 테스트 | Should | 1 |
+<!-- | REQ-1.14.4 | SSH 연결 테스트 — SSH Server 활성화 시 포트 연결 및 키 인증 테스트 | Should | 1 | -->
 | REQ-1.14.5 | Step 7(완료)에서 검증 섹션 표시 — non-local 도메인(Custom/Tunnel) 사용 시에만 표시 | Must | 1 |
-| REQ-1.14.6 | 문제 해결 가이드 — DNS 미전파, 터널 연결 실패, SSL 오류, SSH 접속 불가 등 일반적 문제에 대한 해결 방법 표시 | Should | 1 |
+| REQ-1.14.6 | 문제 해결 가이드 — DNS 미전파, 터널 연결 실패, SSL 오류 등 일반적 문제에 대한 해결 방법 표시 | Should | 1 |
 
 ### REQ-1.15 Dev Stack Framework Sub-Prompt (NEW v2.3)
 
@@ -298,7 +300,7 @@
 | REQ-4.1.1 | Gitea Docker 설치 — Step 2에서 Git Server 카드 토글 또는 `brewnet git install` CLI 명령 | Must | 1 |
 | REQ-4.1.2 | Git 서버 시작/중지 | Must | 2 |
 | REQ-4.1.3 | 저장소 CRUD (`brewnet git repo create/list/delete`) | Must | 2 |
-| REQ-4.1.4 | SSH 키 기반 Push/Pull (포트 3022, SSH Server 2222와 분리) | Must | 1 |
+| REQ-4.1.4 | SSH 키 기반 Push/Pull (포트 3022, 전용 Git SSH 포트) | Must | 1 |
 | REQ-4.1.5 | 사용자 관리 (`brewnet git user add/remove`) | Should | 2 |
 | REQ-4.1.6 | Webhook으로 배포 연동 (`brewnet git hook setup`) | Must | 2 |
 | REQ-4.1.7 | 웹 UI 접근 (서브도메인: `git.{DOMAIN}`, 포트 3000) | Should | 1 |
@@ -371,6 +373,7 @@
 
 ## 7. 보안 & ACL
 
+<!--
 ### REQ-7.1 SSH 관리
 
 | ID | 요구사항 | 우선순위 | Phase |
@@ -381,6 +384,7 @@
 | REQ-7.1.4 | Root 로그인 비활성화 | Must | 3 |
 | REQ-7.1.5 | SSH 사용자 목록/상태 확인 | Should | 3 |
 | REQ-7.1.6 | SSH 접속 가이드 표시 (`brewnet ssh connect`) | Should | 3 |
+-->
 
 ### REQ-7.2 ACL (접근 제어)
 
@@ -611,7 +615,7 @@
 |----|---------|------|
 | REQ-15.3.1 | 비밀번호 해시 (bcrypt) | 최소 12 rounds |
 | REQ-15.3.2 | JWT 토큰 만료 | 24시간 (갱신 가능) |
-| REQ-15.3.3 | SSH 키 인증만 허용 | 패스워드 인증 비활성화 |
+<!-- | REQ-15.3.3 | SSH 키 인증만 허용 | 패스워드 인증 비활성화 | -->
 | REQ-15.3.4 | HTTPS 강제 (Pro) | TLS 1.2+ only |
 | REQ-15.3.5 | DB 접속 포트 ACL 제한 | IP 화이트리스트 필수 |
 | REQ-15.3.6 | `.env` 파일 권한 보호 | chmod 600 (소유자만 읽기/쓰기) |

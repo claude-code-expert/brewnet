@@ -121,7 +121,7 @@ npm install -g brewnet
 brewnet init
 #   Step 0: 시스템 체크 (OS, Docker, Node.js, Git, 포트, 디스크)
 #   Step 1: 프로젝트 설정 (이름, 경로, Full Install / Partial Install)
-#   Step 2: 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media/SSH)
+#   Step 2: 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media)
 #   Step 3: Dev Stack & 런타임 (다중 선택, Frontend, FileBrowser) — 항상 표시
 #   Step 4: 도메인 & 네트워크 (Local/Custom, Cloudflare Tunnel, Mail Server)
 #   Step 5: 리뷰 & 확인 (자격증명 전파 대상, 리소스 추정, 설정 내보내기)
@@ -199,12 +199,12 @@ brewnet domain ssl app.example.com
 | 7 | **Git Server** | Gitea 통합 (필수), 저장소 관리, 자동 배포 | 1 |
 | 8 | **File Manager** | Nextcloud, MinIO (S3), SFTP, Jellyfin 스트리밍 | 3 |
 | 9 | **Database Manager** | PostgreSQL, MySQL, SQLite, Redis, Valkey, KeyDB 관리 | 3 |
-| 10 | **SSH Manager** | OpenSSH 설정, 키 인증, 사용자 관리 | 3 |
+<!-- | 10 | **SSH Manager** | OpenSSH 설정, 키 인증, 사용자 관리 | 3 | -->
 | 11 | **SSO Auth** | 통합 인증 (세션, JWT, OAuth2, 2FA) | 3 |
 | 12 | **Admin Account** | 마스터 관리자 계정 (위저드 Step 2, 자동 생성 20자 비밀번호, .env 저장 chmod 600) | 1 |
 | 13 | **Cloudflare Tunnel** | 외부 접근용 터널 (기본 활성화, NAT/CGNAT 지원, 포트포워딩 불필요) | 1 |
-| 14 | **Credential Propagation** | 단일 관리자 크리덴셜(username/password)을 Step 2에서 1회 입력, Nextcloud/pgAdmin/Jellyfin/Gitea/FileBrowser/SSH Server/Mail Server에 자동 전파. DB는 별도 크리덴셜이나 미입력 시 관리자 비밀번호 자동 적용 | 1 |
-| 15 | **External Access Verification** | DNS 전파 확인, Cloudflare Tunnel 연결 테스트, HTTPS 엔드포인트 헬스체크, SSH 연결 테스트. Step 7(완료)에서 non-local 도메인 대상 표시 | 1 |
+| 14 | **Credential Propagation** | 단일 관리자 크리덴셜(username/password)을 Step 2에서 1회 입력, Nextcloud/pgAdmin/Jellyfin/Gitea/FileBrowser/Mail Server에 자동 전파. DB는 별도 크리덴셜이나 미입력 시 관리자 비밀번호 자동 적용 | 1 |
+| 15 | **External Access Verification** | DNS 전파 확인, Cloudflare Tunnel 연결 테스트, HTTPS 엔드포인트 헬스체크. Step 7(완료)에서 non-local 도메인 대상 표시 | 1 |
 
 ### 5.2 Supported Infrastructure Services
 
@@ -216,7 +216,7 @@ brewnet domain ssl app.example.com
 | 파일 관리 | FileBrowser (`filebrowser/filebrowser:latest`) — 파일 관리 웹 UI (App Server 시 기본 포함) |
 | 미디어 | Jellyfin |
 | 데이터베이스 | PostgreSQL, MySQL, SQLite, Redis, Valkey, KeyDB |
-| SSH 서버 | OpenSSH Server (`linuxserver/openssh-server:latest`) — 포트 2222, 키 기반 인증, SFTP 서브시스템, 관리자 크리덴셜 사용 |
+<!-- | SSH 서버 | OpenSSH Server (`linuxserver/openssh-server:latest`) — 포트 2222, 키 기반 인증, SFTP 서브시스템, 관리자 크리덴셜 사용 | -->
 | 메일 서버 | docker-mailserver (`ghcr.io/docker-mailserver/docker-mailserver:latest`) — SMTP 587, IMAP 993, 도메인 필수, 관리자 계정을 postmaster로 사용 |
 | 터널/프록시 | Cloudflare Tunnel (`cloudflare/cloudflared:latest`) — 기본 활성화 |
 
@@ -314,13 +314,13 @@ Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare 
 | | 서비스 기본 인증 연동 | O | O | O |
 | **Cloudflare Tunnel** | 외부 접근 터널 (기본 ON, NAT/CGNAT 지원) | O | O | O |
 | | 자동 HTTPS (Cloudflare) | O | O | O |
-| **SSH 서버** | OpenSSH Server (포트 2222, 키 기반 인증) | O | O | O |
-| | SFTP 서브시스템 | O | O | O |
+<!-- | **SSH 서버** | OpenSSH Server (포트 2222, 키 기반 인증) | O | O | O |
+| | SFTP 서브시스템 | O | O | O | -->
 | **메일 서버** | docker-mailserver (SMTP/IMAP, 도메인 필수) | O | O | O |
 | | DKIM 서명 / Anti-spam | O | O | O |
 | **크리덴셜 전파** | 관리자 계정 1회 입력 → 전체 서비스 자동 전파 | O | O | O |
 | | Step 5 Review에서 전파 대상 목록 표시 | O | O | O |
-| **외부 접근 검증** | DNS/Tunnel/HTTPS/SSH 연결 테스트 (Step 7) | O | O | O |
+| **외부 접근 검증** | DNS/Tunnel/HTTPS 연결 테스트 (Step 7) | O | O | O |
 | **Docker** | CLI 관리 | O | O | O |
 | | 웹 UI (Dashboard) | X | O | O |
 
@@ -332,7 +332,7 @@ Brewnet은 외부 접근을 위해 6가지 솔루션을 검토하고 Cloudflare 
 |-------|------|----------|------------|
 | **Phase 1** (MVP) | 2주 | CLI 기초 + Docker 관리 | 설치 위저드, docker-compose 생성, 서비스 관리, Git 서버 (Gitea) |
 | **Phase 2** | 2주 | 네트워킹 + 배포 | 도메인/SSL, Cloudflare, Nginx, 자동 배포 |
-| **Phase 3** | 2주 | 보안 + 데이터 관리 | SSH, ACL, 방화벽, 파일/DB 관리, SSO |
+| **Phase 3** | 2주 | 보안 + 데이터 관리 | ACL, 방화벽, 파일/DB 관리, SSO |
 | **Phase 4** | 2주 | Dashboard (Pro) | Next.js 웹 대시보드, 실시간 로그 |
 | **Phase 5** | 2주 | 고도화 | 테스트, 문서화, 성능 최적화, 모니터링 통합 (Grafana/Prometheus 선택적 add-on), 베타 출시 |
 
@@ -378,8 +378,8 @@ git push brewnet main
 | 배포된 앱 | `https://[app-name].mydomain.com` |
 | Media | `https://media.mydomain.com` |
 | Webmail | `https://mail.mydomain.com` |
-| SSH | `ssh admin@mydomain.com -p 2222` |
-| SFTP | `sftp://admin@mydomain.com:2222` |
+<!-- | SSH | `ssh admin@mydomain.com -p 2222` |
+| SFTP | `sftp://admin@mydomain.com:2222` | -->
 | SMTP | `smtp.mydomain.com:587` |
 | IMAP | `imap.mydomain.com:993` |
 
@@ -403,7 +403,7 @@ git push brewnet main
 ├── config.json           # 글로벌 설정
 ├── docker-compose.yml    # 생성된 Compose 파일 (cloudflared 포함)
 ├── services/             # 서비스별 설정
-├── ssh/                  # SSH 키, 사용자 데이터
+<!-- ├── ssh/                  # SSH 키, 사용자 데이터 -->
 ├── storage/              # 파일 저장소 데이터
 ├── backups/              # 백업 데이터
 ├── logs/                 # 애플리케이션 로그

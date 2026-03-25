@@ -84,7 +84,7 @@ A self-hosted home server management platform that provides an interactive CLI t
 - Traefik (service routing, alternative to Nginx)
 - Certbot / Let's Encrypt (SSL)
 - SQLite (local database via better-sqlite3)
-- Gitea (Git server, Docker container, SSH port 2222)
+- Gitea (Git server, Docker container)
 
 ## Project Structure (Monorepo with pnpm)
 
@@ -111,7 +111,6 @@ brewnet/
 │   │   │   │   ├── logs.ts
 │   │   │   │   ├── deploy.ts
 │   │   │   │   ├── domain.ts
-│   │   │   │   ├── ssh/
 │   │   │   │   └── storage/
 │   │   │   ├── services/      # Core service modules
 │   │   │   │   ├── docker-manager.ts
@@ -123,7 +122,6 @@ brewnet/
 │   │   │   │   ├── git-server.ts
 │   │   │   │   ├── file-manager.ts
 │   │   │   │   ├── db-manager.ts
-│   │   │   │   └── ssh-manager.ts
 │   │   │   ├── boilerplate/   # App scaffolding templates
 │   │   │   ├── utils/
 │   │   │   └── config/
@@ -179,8 +177,6 @@ brewnet domain ssl <domain>    # Configure SSL
 brewnet domain tunnel setup    # Configure Cloudflare Tunnel
 brewnet domain tunnel status   # Check tunnel status
 brewnet domain tunnel expose   # Add public hostname
-brewnet ssh enable             # Enable SSH server
-brewnet ssh add-user <name>    # Add SSH user
 brewnet storage init           # Initialize file storage
 brewnet create-app <name>      # Scaffold a new app project
 ```
@@ -196,7 +192,6 @@ brewnet create-app <name>      # Scaffold a new app project
 7. **Git Server** — Gitea integration, repository management
 8. **File Manager** — Nextcloud, MinIO (S3), SFTP, Jellyfin streaming
 9. **Database Manager** — PostgreSQL, MySQL, MariaDB, Redis management
-10. **SSH Manager** — OpenSSH setup, key-based auth, user management
 11. **SSO Auth** — Single sign-on authentication system
 
 ## Server Components
@@ -209,7 +204,6 @@ brewnet create-app <name>      # Scaffold a new app project
 | App Server | Custom app (Docker container) |
 | Database | PostgreSQL, MySQL, MariaDB, SQLite + Cache: Redis, Valkey, KeyDB |
 | Media (optional) | Jellyfin |
-| SSH Server | OpenSSH (port 2222), key-based auth, SFTP subsystem (auto-suggested if File/Media enabled) |
 | Domain & Network | Local / Custom + Cloudflare Tunnel (default ON) |
 
 ## Installation Flow (7-step wizard)
@@ -217,7 +211,7 @@ brewnet create-app <name>      # Scaffold a new app project
 ```
 Step 0: System check (OS, Docker, ports, disk)
 Step 1: Project setup (name, path, Full Install / Partial Install)
-Step 2: Admin account + Server components (Web/File/App/DB/Media/SSH toggle cards)
+Step 2: Admin account + Server components (Web/File/App/DB/Media toggle cards)
 Step 3: Runtime & Boilerplate (language, framework, scaffolding) — conditional: appServer only
 Step 4: Domain & Network (provider: Local/Custom with Cloudflare Tunnel, SSL)
 Step 5: Review & Confirm (includes credential propagation summary)
@@ -251,7 +245,6 @@ Key tables: `services`, `deployments`, `domains`, `users`, `acl_rules`, `backups
 ├── config.json           # Global configuration
 ├── docker-compose.yml    # Generated compose file
 ├── services/             # Service-specific configs
-├── ssh/                  # SSH keys and user data
 ├── storage/              # File storage data
 ├── backups/              # Backup data
 ├── logs/                 # Application logs
@@ -272,7 +265,6 @@ Key tables: `services`, `deployments`, `domains`, `users`, `acl_rules`, `backups
 ## Key Design Principles
 
 1. **Zero Config** — Works out of the box with sensible defaults
-2. **Secure by Default** — SSH key-only auth, no root login, firewall auto-config
 3. **Transparent** — All operations logged, user can inspect/modify generated configs
 4. **Reversible** — Every action can be undone (rollback, restore)
 5. **Offline First** — Core CLI works without internet (except Docker pulls)
@@ -283,7 +275,7 @@ Key tables: `services`, `deployments`, `domains`, `users`, `acl_rules`, `backups
 |-------|-------|----------|
 | 1 (MVP) | CLI foundation, Docker management, basic services | 2 weeks |
 | 2 | Networking (domain, SSL, Nginx, Traefik) | 2 weeks |
-| 3 | Security (SSH, ACL, firewall, SSO) | 2 weeks |
+| 3 | Security (ACL, firewall, SSO) | 2 weeks |
 | 4 | Dashboard (Pro), monitoring, file/DB management | 2 weeks |
 | 5 | Polish, testing, documentation, performance | 2 weeks |
 
@@ -322,7 +314,6 @@ All detailed specifications are in the `spec/` directory:
 - `UX_IMPROVEMENTS.md` — 13 UX improvement items
 - `FINAL-SUMMARY.md` — Summary of 4 critical gaps found
 - `brewnet_user_workflow_simulation.md` — 8-step user workflow simulation
-- `ssh-complete-guide.md` — SSH server implementation guide
 - `file-server-complete-guide.md` — File server (Nextcloud/MinIO/Jellyfin/SFTP) guide
 - `boilerplate-complete-guide.md` — App scaffolding/template generation guide
 - `testing-complete-guide.md` — Testing strategy & CI/CD pipeline guide

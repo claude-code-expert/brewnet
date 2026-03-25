@@ -1,0 +1,25 @@
+{
+  "scenario": "quick-smoke",
+  "timestamp": "2026-03-23T05:51:32Z",
+  "steps": [],
+  "apps": [
+    {
+      "stack": "nodejs-express",
+      "status": "pass"
+    },
+    {
+      "stack": "go-gin",
+      "status": "pass"
+    },
+    {
+      "stack": "python-fastapi",
+      "status": "pass"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "pass": 3,
+    "fail": 0,
+    "skip": 0
+  }
+}

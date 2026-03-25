@@ -19,6 +19,8 @@ interface AppDomainTabProps {
 
 export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSettings }: AppDomainTabProps) {
   const [helpKey, setHelpKey] = useState<string | null>(null);
+  const [connectionMode, setConnectionMode] = useState<'subdomain' | 'apex'>('subdomain');
+  const hook = useAppDomain(appName, apiFetch);
   const {
     loading,
     connectedDomain,
@@ -27,11 +29,17 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
     subdomain,
     setSubdomain,
     subdomainError,
+    suggestedSubdomain,
     connecting,
     disconnecting,
     connect,
     disconnect,
-  } = useAppDomain(appName, apiFetch);
+  } = hook;
+
+  const handleModeChange = (mode: 'subdomain' | 'apex') => {
+    setConnectionMode(mode);
+    setSubdomain(mode === 'apex' ? '@' : suggestedSubdomain);
+  };
 
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
@@ -137,6 +145,11 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
   // Connected state
   if (connectedDomain) {
     const externalUrl = connectedDomain.externalUrl ?? `https://${connectedDomain.hostname}`;
+    const isApexConn = connectedDomain.subdomain === '@';
+    const wwwUrl = isApexConn ? `https://www.${connectedDomain.domain}` : null;
+    const disconnectMsg = isApexConn
+      ? `This will remove the DNS records for "${connectedDomain.hostname}" and "www.${connectedDomain.domain}". The app will no longer be publicly accessible.`
+      : `This will remove the DNS record for "${connectedDomain.hostname}" and the app will no longer be publicly accessible.`;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Connected URL card */}
@@ -167,6 +180,26 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
             </a>
             <CopyButton text={externalUrl} />
           </div>
+          {wwwUrl && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={wwwUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: 'var(--teal)',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textDecoration: 'none',
+                }}
+              >
+                www.{connectedDomain.domain}
+                <span style={{ marginLeft: 4, fontSize: 11 }}>↗</span>
+              </a>
+              <CopyButton text={wwwUrl} />
+            </div>
+          )}
           {connectedDomain.connectedAt && (
             <span style={{ fontSize: 11.5, color: 'var(--txt2)' }}>
               Connected {new Date(connectedDomain.connectedAt).toLocaleString()}
@@ -178,7 +211,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
         {disconnecting ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--txt2)', fontSize: 13 }}>
             <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span>
-            Removing DNS record…
+            Removing DNS record{isApexConn ? 's' : ''}…
           </div>
         ) : (
           <button
@@ -193,7 +226,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
         {/* Disconnect confirm modal */}
         {confirmDisconnect && (
           <ConfirmModal
-            message={`This will remove the DNS record for "${connectedDomain.hostname}" and the app will no longer be publicly accessible.`}
+            message={disconnectMsg}
             confirmLabel="Disconnect"
             danger
             onConfirm={() => { setConfirmDisconnect(false); void disconnect(); }}
@@ -204,7 +237,11 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
     );
   }
 
-  // Not connected — show subdomain input
+  // Not connected — show connection mode selector and input
+  const isDisabled = connecting || (!!appStatus && appStatus !== 'running');
+  const connectDisabled = isDisabled ||
+    (connectionMode === 'subdomain' && (!subdomain.trim() || !!subdomainError));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -218,77 +255,120 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
       }}>
         <Globe size={14} style={{ color: 'var(--teal)', flexShrink: 0, marginTop: 2 }} />
         <div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.6 }}>
-          Connect this app to a subdomain on{' '}
+          Connect this app to a domain on{' '}
           <span style={{ fontFamily: 'var(--mono)', color: 'var(--txt)' }}>
-            {zoneName ? `.${zoneName}` : 'your domain'}
+            {zoneName || 'your domain'}
           </span>.{' '}
           Cloudflare DNS CNAME 레코드와 Tunnel ingress 규칙이 자동으로 생성됩니다.
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ fontSize: 13, fontWeight: 500, color: 'var(--txt)', whiteSpace: 'nowrap' }}>Subdomain</label>
-          <HelpTooltip helpKey="subdomain" onHelp={setHelpKey} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+      {/* Connection mode radio */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
           <input
-            className="fi"
-            value={subdomain}
-            onChange={(e) => setSubdomain(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !connecting) void connect(); }}
-            placeholder={`e.g. ${appName.toLowerCase()}`}
+            type="radio"
+            checked={connectionMode === 'subdomain'}
+            onChange={() => handleModeChange('subdomain')}
             disabled={connecting}
-            style={{
-              borderColor: subdomainError ? 'var(--red)' : undefined,
-              fontFamily: 'var(--mono)',
-              width: 150,
-              height: 30,
-              padding: '0 10px',
-              flexShrink: 0,
-            }}
           />
-          {zoneName && (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              height: 30,
-              padding: '0 10px',
-              background: 'var(--bg2)',
-              border: '1px solid var(--bdr)',
-              borderRadius: 'var(--r)',
-              fontSize: 13,
-              color: 'var(--txt2)',
-              fontFamily: 'var(--mono)',
-              whiteSpace: 'nowrap',
-              width: 250,
-              flexShrink: 0,
-              boxSizing: 'border-box',
-            }}>
-              .{zoneName}
-            </span>
+          <span style={{ fontWeight: 500, color: 'var(--txt)' }}>Subdomain</span>
+          <HelpTooltip helpKey="subdomain" onHelp={setHelpKey} />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+          <input
+            type="radio"
+            checked={connectionMode === 'apex'}
+            onChange={() => handleModeChange('apex')}
+            disabled={connecting}
+          />
+          <span style={{ fontWeight: 500, color: 'var(--txt)' }}>Root domain</span>
+        </label>
+      </div>
+
+      {/* Subdomain input */}
+      {connectionMode === 'subdomain' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              className="fi"
+              value={subdomain}
+              onChange={(e) => setSubdomain(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !connecting) void connect(); }}
+              placeholder={`e.g. ${appName.toLowerCase()}`}
+              disabled={connecting}
+              style={{
+                borderColor: subdomainError ? 'var(--red)' : undefined,
+                fontFamily: 'var(--mono)',
+                width: 150,
+                height: 30,
+                padding: '0 10px',
+                flexShrink: 0,
+              }}
+            />
+            {zoneName && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 30,
+                padding: '0 10px',
+                background: 'var(--bg2)',
+                border: '1px solid var(--bdr)',
+                borderRadius: 'var(--r)',
+                fontSize: 13,
+                color: 'var(--txt2)',
+                fontFamily: 'var(--mono)',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                boxSizing: 'border-box',
+              }}>
+                .{zoneName}
+              </span>
+            )}
+          </div>
+          {subdomainError && (
+            <div style={{ fontSize: 12, color: 'var(--red)' }}>{subdomainError}</div>
           )}
-          <button
-            className="btn bp"
-            onClick={() => void connect()}
-            disabled={connecting || !subdomain.trim() || !!subdomainError || (!!appStatus && appStatus !== 'running')}
-            style={{ opacity: connecting || !subdomain.trim() || !!subdomainError || (!!appStatus && appStatus !== 'running') ? 0.5 : 1, flexShrink: 0 }}
-          >
-            {connecting
-              ? <><Loader size={14} className="spin" /> Connecting…</>
-              : <><Link size={14} /> Connect</>}
-          </button>
+        </div>
+      )}
+
+      {/* Apex info */}
+      {connectionMode === 'apex' && zoneName && (
+        <div style={{
+          padding: '10px 12px',
+          borderRadius: 'var(--r)',
+          background: 'rgba(232,168,73,0.06)',
+          border: '1px solid rgba(232,168,73,0.2)',
+          fontSize: 13,
+        }}>
+          <div style={{ color: 'var(--txt)' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{zoneName}</span>
+            {' '}과{' '}
+            <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>www.{zoneName}</span>
+            {' '}이 모두 연결됩니다.
+          </div>
+          <div style={{ color: 'var(--amber)', marginTop: 4, fontSize: 12 }}>
+            ⚠ 이 도메인의 모든 트래픽이 이 앱으로 라우팅됩니다.
           </div>
         </div>
+      )}
 
-        {subdomainError && (
-          <div style={{ fontSize: 12, color: 'var(--red)' }}>{subdomainError}</div>
-        )}
-        {!subdomainError && appStatus && appStatus !== 'running' && (
-          <div style={{ fontSize: 12, color: 'var(--red)' }}>
-            App must be running to connect a domain — start the app first.
-          </div>
-        )}
-      </div>
+      {!subdomainError && appStatus && appStatus !== 'running' && (
+        <div style={{ fontSize: 12, color: 'var(--red)' }}>
+          App must be running to connect a domain — start the app first.
+        </div>
+      )}
+
+      <button
+        className="btn bp"
+        onClick={() => void connect()}
+        disabled={connectDisabled}
+        style={{ opacity: connectDisabled ? 0.5 : 1, alignSelf: 'flex-start' }}
+      >
+        {connecting
+          ? <><Loader size={14} className="spin" /> Connecting…</>
+          : <><Link size={14} /> Connect</>}
+      </button>
 
       <HelpDrawer helpKey={helpKey} onClose={() => setHelpKey(null)} />
     </div>

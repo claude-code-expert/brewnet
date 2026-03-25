@@ -243,4 +243,83 @@ describe('runCompleteStep', () => {
     expect(allOutput).toMatch('/custom/path/brewnet');
     consoleSpy.mockRestore();
   });
+
+  it('renders External column table when hasTunnel=true (quick mode)', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const defaultState = createDefaultWizardState();
+    const state = makeState({
+      domain: {
+        ...defaultState.domain,
+        provider: 'tunnel',
+        name: 'example.com',
+        cloudflare: {
+          ...defaultState.domain.cloudflare,
+          enabled: true,
+          tunnelMode: 'quick' as const,
+          quickTunnelUrl: 'https://abc-123.trycloudflare.com',
+        },
+      },
+    });
+
+    await runCompleteStep(state);
+
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allOutput).toMatch(/External/i);
+    consoleSpy.mockRestore();
+  });
+
+  it('shows quick-tunnel provider section with service paths', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const defaultState = createDefaultWizardState();
+    const state = makeState({
+      domain: {
+        ...defaultState.domain,
+        provider: 'quick-tunnel',
+        cloudflare: {
+          ...defaultState.domain.cloudflare,
+          enabled: true,
+          tunnelMode: 'quick' as const,
+          quickTunnelUrl: 'https://xyz-999.trycloudflare.com',
+        },
+      },
+      servers: {
+        ...defaultState.servers,
+        gitServer: { enabled: true as const, service: 'gitea' as const, port: 3000, sshPort: 3022 },
+      },
+    });
+    // Ensure sorted includes 'gitea' to hit the quickPaths filter
+    mockCollectAllServices.mockReturnValue(['gitea', 'traefik']);
+
+    await runCompleteStep(state);
+
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allOutput).toMatch(/Quick Tunnel/i);
+    expect(allOutput).toMatch(/trycloudflare\.com/);
+    consoleSpy.mockRestore();
+  });
+
+  it('shows quick-tunnel section even without installed services', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const defaultState = createDefaultWizardState();
+    const state = makeState({
+      domain: {
+        ...defaultState.domain,
+        provider: 'quick-tunnel',
+        cloudflare: {
+          ...defaultState.domain.cloudflare,
+          enabled: true,
+          tunnelMode: 'quick' as const,
+          quickTunnelUrl: 'https://xyz-888.trycloudflare.com',
+        },
+      },
+    });
+    // No services from QUICK_TUNNEL_PATH_MAP installed → activePaths.length === 0
+    mockCollectAllServices.mockReturnValue(['traefik']);
+
+    await runCompleteStep(state);
+
+    const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allOutput).toMatch(/Quick Tunnel/i);
+    consoleSpy.mockRestore();
+  });
 });

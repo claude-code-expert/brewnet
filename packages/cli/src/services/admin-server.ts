@@ -25,10 +25,11 @@ import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
-import type { WizardState, LogSource, UnifiedLogLevel } from '@brewnet/shared';
+import { DOCKER_COMPOSE_FILENAME, type WizardState, type LogSource, type UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
+import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
-import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
+import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 import { getStackById } from '../config/stacks.js';
@@ -171,7 +172,6 @@ interface ServiceDetailInfo {
   };
   connectionParams?: { label: string; value: string }[];
   tips: string[];
-  securityNote?: string;
 }
 
 const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
@@ -196,7 +196,6 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
       'Set exposedbydefault=false and explicitly enable each service with traefik.enable=true',
       'Add --certificatesresolvers.le.acme.email=YOUR_EMAIL for Let\'s Encrypt',
     ],
-    securityNote: '보안상 외부 도메인으로 노출하지 않습니다. 서버 내부(localhost)에서만 접근 가능합니다.',
   },
   'Traefik Dashboard': {
     description: 'Built-in Traefik web UI for monitoring routes, services, and middleware',
@@ -563,6 +562,8 @@ const NAME_ALIASES: Record<string, string> = {
 const docker = new Dockerode();
 
 const REQUIRED_SERVICES = new Set(['traefik', 'nginx', 'caddy', 'gitea']);
+// Services excluded from the Catalog UI (infrastructure-only, no user install/remove)
+const CATALOG_EXCLUDED = new Set([...REQUIRED_SERVICES, 'openssh-server', 'cloudflared']);
 
 const INTERNAL_SERVICES = new Set(['brewnet-welcome', 'brewnet-landing', 'cloudflared']);
 
@@ -882,6 +883,40 @@ async function handleRemoveService(
   }
 }
 
+async function handleUpdateServices(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  _parts: string[],
+  _body: string,
+  projectPath: string,
+): Promise<void> {
+  try {
+    const composePath = join(projectPath, DOCKER_COMPOSE_FILENAME);
+    if (!existsSync(composePath)) {
+      json(res, 404, { success: false, error: 'No compose file found' });
+      return;
+    }
+
+    const { execa: execaUpdate } = await import('execa');
+
+    // Pull latest images
+    await execaUpdate('docker', ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'pull'], {
+      cwd: projectPath,
+    });
+
+    // Recreate with new images
+    await execaUpdate(
+      'docker',
+      ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'up', '-d', '--force-recreate', '--remove-orphans'],
+      { cwd: projectPath },
+    );
+
+    json(res, 200, { success: true, message: 'Services updated and restarted' });
+  } catch (err) {
+    json(res, 500, { success: false, error: String(err) });
+  }
+}
+
 async function handleGetCatalog(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -898,7 +933,7 @@ async function handleGetCatalog(
     }
 
     const catalog = [...SERVICE_REGISTRY.values()]
-      .filter((def) => !REQUIRED_SERVICES.has(def.id))
+      .filter((def) => !CATALOG_EXCLUDED.has(def.id))
       .map((def) => ({
         id: def.id,
         name: def.name,
@@ -992,6 +1027,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   if (projectPath.startsWith('~/') || projectPath === '~') {
     projectPath = join(homedir(), projectPath.slice(1));
   }
+
+  // Run log rotation eagerly on server start, then every hour
+  const _logsDir = join(homedir(), '.brewnet', 'logs');
+  try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
+  const _rotationTimer = setInterval(() => {
+    try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
+  }, 60 * 60 * 1000);
 
   // Build dashboard config from wizard state (credentials resolved lazily if needed)
   const username = wizardState?.admin?.username ?? '';
@@ -1246,6 +1288,10 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             await handleInstallService(req, res, parts, body, projectPath);
             return;
           }
+          if (req.method === 'POST' && parts[2] === 'update') {
+            await handleUpdateServices(req, res, parts, body, projectPath);
+            return;
+          }
           // POST /api/services/containers/:id/start|stop → parts[3]=id, parts[4]=action
           if (req.method === 'POST' && parts[3] && ['start', 'stop'].includes(parts[4] ?? '')) {
             await handleServiceAction(req, res, parts, body, projectPath);
@@ -1439,8 +1485,14 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
           if (req.method === 'POST' && parts[2] === 'create') {
             const opts = JSON.parse(body) as CreateAppOptions;
-            const jobId = await createApp(opts);
-            json(res, 202, { jobId });
+            if (opts.mode === 'local-path') {
+              if (!opts.localPath) { json(res, 400, { error: 'localPath is required for local-path mode' }); return; }
+              const jobId = await deployLocalApp({ appName: opts.appName, localPath: opts.localPath, port: opts.port ?? 3000 });
+              json(res, 202, { jobId });
+            } else {
+              const jobId = await createApp(opts);
+              json(res, 202, { jobId });
+            }
             return;
           }
           if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
@@ -1903,6 +1955,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
       }),
     stop: () =>
       new Promise((resolve, reject) => {
+        clearInterval(_rotationTimer);
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };
@@ -2009,8 +2062,8 @@ async function handleDomainConnect(
     return;
   }
 
-  // Validate subdomain format
-  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) {
+  // Validate subdomain format — "@" is the apex/root domain identifier, bypass DNS label check
+  if (subdomain !== '@' && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) {
     json(res, 400, { success: false, error: 'INVALID_SUBDOMAIN', message: 'Subdomain must be a valid DNS label' });
     return;
   }
@@ -2456,7 +2509,10 @@ async function handleSettingsCloudflarePut(
     // Prefer explicit accountId param, then existing stored value, then getAccounts() (requires Account:Read)
     let resolvedAccountId = accountId || state.domain.cloudflare.accountId
       || await (await import('./cloudflare-client.js')).getAccounts(apiToken)
-          .then((a) => a[0]?.id ?? '').catch(() => '');
+          .then((a) => a[0]?.id ?? '').catch((err: unknown) => {
+            console.warn('[admin-server] getAccounts() failed (requires Account:Read permission):', err);
+            return '';
+          });
 
     if (zoneId) state.domain.cloudflare.zoneId = zoneId;
     if (tunnelId) state.domain.cloudflare.tunnelId = tunnelId;

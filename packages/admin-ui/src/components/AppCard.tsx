@@ -52,9 +52,11 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
       display: 'flex',
       flexDirection: 'column',
       gap: 12,
+      height: 200,
+      overflow: 'hidden',
     }}>
       {/* Top row: name + status */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
         <button
           onClick={onOpenDetail}
           style={{
@@ -69,7 +71,12 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
             textDecoration: 'underline',
             textDecorationStyle: 'dotted',
             textUnderlineOffset: 3,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            maxWidth: 200,
           }}
+          title={app.name}
         >
           {app.name}
         </button>
@@ -128,7 +135,7 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
         {app.lastDeployedAt ? (
           <>Last deployed: <span style={{ color: 'var(--txt2)' }}>{formatDate(app.lastDeployedAt)}</span></>
         ) : (
-          <span style={{ color: 'var(--txt3)' }}>Never deployed</span>
+          <span style={{ color: 'var(--txt2)' }}>Never deployed</span>
         )}
       </div>
 

@@ -214,22 +214,29 @@ export type DomainScenario = 'A' | 'B' | 'C';
 export interface DomainConnection {
   /** Name of the local app/service (e.g., "my-api", "gitea") */
   appName: string;
-  /** Subdomain prefix (e.g., "my-api", "git") */
+  /**
+   * Subdomain label (e.g., "my-api", "git").
+   * "@" = apex/root domain connection — auto-bundles www.{domain} as well.
+   */
   subdomain: string;
   /** Base domain (e.g., "yourdomain.com") */
   domain: string;
-  /** Full hostname — derived from subdomain.domain */
+  /** Full hostname — apex domain or subdomain.domain */
   hostname: string;
   /** Cloudflare Tunnel ID used for this connection */
   tunnelId: string;
-  /** Cloudflare DNS record ID for the CNAME (used for deletion) */
+  /** Cloudflare DNS record ID for the CNAME (apex record when subdomain="@") */
   cnameRecordId: string;
+  /** www CNAME record ID — only set when subdomain="@" (apex connection) */
+  wwwCnameRecordId?: string;
   /** Internal container port for Traefik routing */
   containerPort: number;
   /** ISO 8601 timestamp of connection creation */
   connectedAt: string;
   /** Which domain scenario was used */
   scenario: DomainScenario;
+  /** Next.js basePath (e.g. '/apps/my-app') — used to build correct tunnel ingress URL */
+  basePath?: string;
 }
 
 // ─── Root State ──────────────────────────────────────────────────────────────

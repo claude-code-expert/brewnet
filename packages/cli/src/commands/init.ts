@@ -175,7 +175,7 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
     console.log();
 
     // Save state so admin-server can load credentials
-    try { saveState(state); } catch { /* non-critical */ }
+    try { saveState(state); } catch (e) { console.warn('[init] Failed to save state:', e); }
 
     // Skip directly to generate step
     const result = await runGenerateStep(state);
@@ -206,6 +206,9 @@ async function runInitWizard(options: InitOptions = {}): Promise<void> {
     if (installType === 'minimal') {
       return runMinimalInstall({ noOpen: options.open === false });
     }
+
+    // Full install chosen — persist so project-setup skips the redundant prompt
+    state.setupType = 'full';
   }
 
   // -----------------------------------------------------------------------

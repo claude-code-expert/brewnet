@@ -28,6 +28,8 @@ export interface ServiceRoute {
   port: number;
   /** Per-route domain override. When set, takes precedence over the shared `domain` param in configureTunnelIngress. */
   domain?: string;
+  /** App basePath (e.g. '/apps/my-app') — appended to the tunnel service URL so cloudflared proxies to the correct sub-path. */
+  basePath?: string;
 }
 
 export interface RetryConfig {
@@ -134,8 +136,10 @@ export async function deleteTunnel(
   apiToken: string,
   accountId: string,
   tunnelId: string,
+  opts?: { cascade?: boolean },
 ): Promise<void> {
-  const url = `${CF_BASE}/accounts/${accountId}/cfd_tunnel/${tunnelId}`;
+  const qs = opts?.cascade ? '?cascade=true' : '';
+  const url = `${CF_BASE}/accounts/${accountId}/cfd_tunnel/${tunnelId}${qs}`;
 
   const response = await fetchWithRetry(url, {
     method: 'DELETE',
@@ -324,10 +328,14 @@ export async function configureTunnelIngress(
   const url = `${CF_BASE}/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`;
 
   const ingress = [
-    ...routes.map((r) => ({
-      hostname: `${r.subdomain}.${r.domain ?? domain}`,
-      service: `http://${r.containerName}:${r.port}`,
-    })),
+    ...routes.map((r) => {
+      const baseDomain = r.domain ?? domain;
+      const hostname = r.subdomain ? `${r.subdomain}.${baseDomain}` : baseDomain;
+      return {
+        hostname,
+        service: `http://${r.containerName}:${r.port}${r.basePath ?? ''}`,
+      };
+    }),
     { service: 'http_status:404' },
   ];
 
@@ -367,12 +375,15 @@ export async function createDnsRecord(
 ): Promise<void> {
   const url = `${CF_BASE}/zones/${zoneId}/dns_records`;
 
+  // Empty subdomain = apex (root) domain; non-empty = subdomain.domain
+  const recordName = subdomain ? `${subdomain}.${domain}` : domain;
+
   const response = await fetch(url, {
     method: 'POST',
     headers: cfHeaders(apiToken),
     body: JSON.stringify({
       type: 'CNAME',
-      name: `${subdomain}.${domain}`,
+      name: recordName,
       content: `${tunnelId}.cfargotunnel.com`,
       proxied: true,
     }),
@@ -387,7 +398,7 @@ export async function createDnsRecord(
     const msg = data.errors?.[0]?.message ?? `HTTP ${response.status}`;
     // If record already exists, update it (upsert semantics — e.g. when re-creating a tunnel)
     if (msg.toLowerCase().includes('already exists')) {
-      const existing = await getDnsRecords(apiToken, zoneId, `${subdomain}.${domain}`);
+      const existing = await getDnsRecords(apiToken, zoneId, recordName);
       if (existing.length > 0) {
         const patchUrl = `${CF_BASE}/zones/${zoneId}/dns_records/${existing[0].id}`;
         const patchRes = await fetch(patchUrl, {

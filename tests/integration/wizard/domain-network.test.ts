@@ -526,3 +526,214 @@ describe('T044 — Scenario 3: Local only', () => {
     expect(mockCreateTunnel).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// T045 — Named Tunnel: verifyToken throws → catch branch (L331)
+//   verifyToken throws → catch sets { valid: false } → outer catch → local fallback
+// ---------------------------------------------------------------------------
+
+describe('T045 — Named Tunnel: verifyToken throws → local fallback', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput.mockResolvedValue('bad-token');
+    mockVerifyToken.mockRejectedValue(new Error('network error'));
+  });
+
+  it('falls back to local when verifyToken throws', async () => {
+    const state = makeState();
+    const result = await runDomainNetworkStep(state);
+    expect(result.domain.provider).toBe('local');
+    expect(mockVerifyToken).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T046 — Named Tunnel: getAccounts returns [] → manual ID input (L361-368)
+// ---------------------------------------------------------------------------
+
+describe('T046 — Named Tunnel: zero accounts → manual account ID input', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput
+      .mockResolvedValueOnce('valid-token')    // API token
+      .mockResolvedValueOnce('manual-acc-id') // manual account ID
+      .mockResolvedValueOnce('my-tunnel');    // tunnel name
+
+    mockVerifyToken.mockResolvedValue({ valid: true, email: 'user@example.com' });
+    mockGetAccounts.mockResolvedValue([]);
+    mockGetZones.mockResolvedValue([{ id: 'z1', name: 'example.com', status: 'active' }]);
+    mockCreateTunnel.mockResolvedValue({ tunnelId: 'tid', tunnelToken: 'tok' });
+    mockConfigureTunnelIngress.mockResolvedValue(undefined);
+    mockCreateDnsRecord.mockResolvedValue(undefined);
+    mockGetTunnelHealth.mockResolvedValue({ status: 'healthy', connectorCount: 1 });
+  });
+
+  it('prompts for manual account ID when getAccounts returns empty', async () => {
+    const state = makeState();
+    const result = await runDomainNetworkStep(state);
+    expect(result.domain.cloudflare.accountId).toBe('manual-acc-id');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T047 — Named Tunnel: multiple accounts → select prompt (L374-378)
+// ---------------------------------------------------------------------------
+
+describe('T047 — Named Tunnel: multiple accounts → select prompt', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect
+      .mockResolvedValueOnce('2-named')
+      .mockResolvedValueOnce('acc-2');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput.mockResolvedValue('valid-token');
+
+    mockVerifyToken.mockResolvedValue({ valid: true });
+    mockGetAccounts.mockResolvedValue([
+      { id: 'acc-1', name: 'Account One' },
+      { id: 'acc-2', name: 'Account Two' },
+    ]);
+    mockGetZones.mockResolvedValue([{ id: 'z1', name: 'example.com', status: 'active' }]);
+    mockCreateTunnel.mockResolvedValue({ tunnelId: 'tid', tunnelToken: 'tok' });
+    mockConfigureTunnelIngress.mockResolvedValue(undefined);
+    mockCreateDnsRecord.mockResolvedValue(undefined);
+    mockGetTunnelHealth.mockResolvedValue({ status: 'healthy', connectorCount: 1 });
+  });
+
+  it('prompts for account selection when getAccounts returns 2+ accounts', async () => {
+    const state = makeState();
+    const result = await runDomainNetworkStep(state);
+    expect(result.domain.cloudflare.accountId).toBe('acc-2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T048 — Named Tunnel: no active zones → outer catch → local fallback (L401-404)
+// ---------------------------------------------------------------------------
+
+describe('T048 — Named Tunnel: no active zones → local fallback', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput.mockResolvedValue('valid-token');
+
+    mockVerifyToken.mockResolvedValue({ valid: true });
+    mockGetAccounts.mockResolvedValue([{ id: 'acc-1', name: 'My Account' }]);
+    mockGetZones.mockResolvedValue([
+      { id: 'z1', name: 'example.com', status: 'pending' }, // NOT active
+    ]);
+  });
+
+  it('falls back to local when getZones returns no active zones', async () => {
+    const state = makeState();
+    const result = await runDomainNetworkStep(state);
+    expect(result.domain.provider).toBe('local');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T049 — Named Tunnel: multiple active zones → select prompt (L412-416)
+// ---------------------------------------------------------------------------
+
+describe('T049 — Named Tunnel: multiple active zones → select prompt', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect
+      .mockResolvedValueOnce('2-named')
+      .mockResolvedValueOnce('z2');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput.mockResolvedValue('valid-token');
+
+    mockVerifyToken.mockResolvedValue({ valid: true });
+    mockGetAccounts.mockResolvedValue([{ id: 'acc-1', name: 'My Account' }]);
+    mockGetZones.mockResolvedValue([
+      { id: 'z1', name: 'domain1.com', status: 'active' },
+      { id: 'z2', name: 'domain2.com', status: 'active' },
+    ]);
+    mockCreateTunnel.mockResolvedValue({ tunnelId: 'tid', tunnelToken: 'tok' });
+    mockConfigureTunnelIngress.mockResolvedValue(undefined);
+    mockCreateDnsRecord.mockResolvedValue(undefined);
+    mockGetTunnelHealth.mockResolvedValue({ status: 'healthy', connectorCount: 1 });
+  });
+
+  it('prompts for zone selection when getZones returns 2+ active zones', async () => {
+    const state = makeState();
+    const result = await runDomainNetworkStep(state);
+    expect(result.domain.cloudflare.zoneId).toBe('z2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T050 — Named Tunnel: createTunnel throws → outer catch → local fallback (L457-468)
+// ---------------------------------------------------------------------------
+
+describe('T050 — Named Tunnel: createTunnel throws → local fallback', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput.mockResolvedValue('valid-token');
+
+    mockVerifyToken.mockResolvedValue({ valid: true });
+    mockGetAccounts.mockResolvedValue([{ id: 'acc-1', name: 'My Account' }]);
+    mockGetZones.mockResolvedValue([{ id: 'z1', name: 'example.com', status: 'active' }]);
+    mockCreateTunnel.mockRejectedValue(new Error('CF API error'));
+  });
+
+  it('falls back to local when createTunnel rejects', async () => {
+    const state = makeState();
+    const result = await runDomainNetworkStep(state);
+    expect(result.domain.provider).toBe('local');
+    expect(mockCreateTunnel).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T051 — Named Tunnel: all DNS records fail → rollback then local fallback (L513-526)
+// ---------------------------------------------------------------------------
+
+describe('T051 — Named Tunnel: all DNS records fail → rollback', () => {
+  beforeEach(() => {
+    mockSelect.mockReset();
+    mockConfirm.mockReset();
+    mockInput.mockReset();
+    mockSelect.mockResolvedValueOnce('2-named');
+    mockConfirm.mockResolvedValueOnce(true);
+    mockInput.mockResolvedValue('valid-token');
+
+    mockVerifyToken.mockResolvedValue({ valid: true });
+    mockGetAccounts.mockResolvedValue([{ id: 'acc-1', name: 'My Account' }]);
+    mockGetZones.mockResolvedValue([{ id: 'z1', name: 'example.com', status: 'active' }]);
+    mockCreateTunnel.mockResolvedValue({ tunnelId: 'tid', tunnelToken: 'tok' });
+    mockConfigureTunnelIngress.mockResolvedValue(undefined);
+    mockCreateDnsRecord.mockRejectedValue(new Error('DNS error'));
+    mockDeleteTunnel.mockResolvedValue(undefined);
+  });
+
+  it('calls deleteTunnel when ALL DNS records fail', async () => {
+    const state = makeState();
+    try {
+      await runDomainNetworkStep(state);
+    } catch {
+      // outer catch may handle
+    }
+    expect(mockDeleteTunnel).toHaveBeenCalled();
+  });
+});

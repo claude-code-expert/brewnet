@@ -94,23 +94,35 @@ export class GiteaClient {
 
     // Wait for Gitea to be reachable (up to 60s). On fresh installs, Gitea
     // container may still be starting when the first API call is made.
-    // Without this check, requests fall through to the landing page nginx
-    // which returns 405 for non-GET methods.
+    // Pitfall: while Gitea is initialising, its embedded server (or a startup
+    // nginx page) responds to GET /api/v1/version with HTTP 200 text/html —
+    // probe.ok is true, but POST requests to /api/v1/users/.../tokens get a
+    // 405 Not Allowed.  We must verify the response is real Gitea JSON before
+    // declaring readiness.
+    let giteaReady = false;
     for (let attempt = 0; attempt < 30; attempt++) {
       try {
         const probe = await fetch(`${baseUrl}/api/v1/version`, {
           signal: AbortSignal.timeout(3000),
         });
-        if (probe.ok) break;
+        if (probe.ok) {
+          const ct = probe.headers.get('content-type') ?? '';
+          if (ct.includes('application/json')) {
+            giteaReady = true;
+            break;
+          }
+          // HTTP 200 but text/html — startup nginx page, not Gitea yet
+        }
       } catch { /* not ready yet */ }
       if (attempt < 29) {
         await new Promise((r) => setTimeout(r, 2000));
-      } else {
-        throw new Error(
-          `Gitea is not reachable at ${baseUrl}/api/v1/version after 60s. ` +
-          `Check that the Gitea container is running: docker ps | grep gitea`,
-        );
       }
+    }
+    if (!giteaReady) {
+      throw new Error(
+        `Gitea is not reachable at ${baseUrl}/api/v1/version after 60s. ` +
+        `Check that the Gitea container is running: docker ps | grep gitea`,
+      );
     }
 
     if (existsSync(tokenPath)) {

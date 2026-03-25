@@ -780,4 +780,19 @@ describe('Edge cases', () => {
     const result = applyComponentRules(state);
     expect(result.servers.dbServer.dbPassword).toBe('TestAdminPass123!');
   });
+
+  it('sets sshServer.passwordAuth to false when sshServer is enabled but passwordAuth is undefined (L50)', () => {
+    const state = buildState({
+      servers: {
+        sshServer: {
+          enabled: true,
+          sftp: false,
+          port: 22,
+          passwordAuth: undefined as unknown as boolean,
+        },
+      },
+    });
+    const result = applyComponentRules(state);
+    expect(result.servers.sshServer.passwordAuth).toBe(false);
+  });
 });

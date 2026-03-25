@@ -39,7 +39,7 @@ brewnet logs
 |------|------|------|
 | 0 | System Check | OS, Docker, Node.js, Git, 포트, 디스크 확인 |
 | 1 | Project Setup | 프로젝트 이름, 경로, 설치 유형 (Full / Partial) |
-| 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media/SSH) |
+| 2 | Server Components | 관리자 계정 + 서버 컴포넌트 (Web(필수)/Git(필수)/File/DB/Media) |
 | 3 | Dev Stack & Runtime | 다중 언어/프레임워크 선택, Frontend 기술 스택, FileBrowser, 보일러플레이트 — 항상 표시 |
 | 4 | Domain & Network | 도메인 (Local/Custom), Cloudflare Tunnel, Mail Server |
 | 5 | Review | 설정 확인, 자격증명 전파 대상 표시, 리소스 추정, 내보내기 |
@@ -100,7 +100,7 @@ brewnet logs
 | **Valkey** | `valkey/valkey:7-alpine` | 캐시 서버 (Redis 대안, BSD) | 1 |
 | **KeyDB** | `eqalpha/keydb:latest` | 캐시 서버 (Redis 대안, 멀티스레드) | 1 |
 | **pgAdmin** | `dpage/pgadmin4:latest` | 데이터베이스 관리 UI | 1 |
-| **OpenSSH Server** | `linuxserver/openssh-server:latest` | SSH 서버 (포트 2222, 키 기반 인증, SFTP) | 1 |
+<!-- | **OpenSSH Server** | `linuxserver/openssh-server:latest` | SSH 서버 (포트 2222, 키 기반 인증, SFTP) | 1 | -->
 | **docker-mailserver** | `ghcr.io/docker-mailserver/docker-mailserver:latest` | 메일 서버 (SMTP/IMAP, DKIM/SPF) | 1 |
 | **Roundcube** | `roundcube/roundcubemail:latest` | 웹메일 클라이언트 (선택) | 2 |
 | **Certbot** | 시스템 패키지 | Let's Encrypt SSL 인증서 발급/갱신 | 2 |
@@ -169,7 +169,7 @@ brewnet logs
 ├── 미디어: Jellyfin
 ├── DB: PostgreSQL / MySQL + 캐시 (Redis / Valkey / KeyDB)
 ├── 외부 접근: cloudflare/cloudflared (Cloudflare Tunnel)
-├── SSH: linuxserver/openssh-server
+<!-- ├── SSH: linuxserver/openssh-server -->
 ├── 메일: docker-mailserver
 └── 관리: pgAdmin
 ```
@@ -288,7 +288,7 @@ brewnet logs
 | 6379 | Redis/Valkey/KeyDB | 캐시 선택 시 |
 | 8096 | Jellyfin | 미디어 선택 시 |
 | 9000/9001 | MinIO (API/Console) | MinIO 선택 시 |
-| 2222 | SSH/SFTP | SSH 활성화 시 |
+<!-- | 2222 | SSH/SFTP | SSH 활성화 시 | -->
 | 25 | SMTP (메일 수신) | 메일 서버 활성화 시 |
 | 587 | SMTP Submission (메일 발송) | 메일 서버 활성화 시 |
 | 993 | IMAP (메일 수신) | 메일 서버 활성화 시 |
@@ -312,7 +312,7 @@ brewnet logs
 | pnpm | 빠른 설치, 디스크 효율, 모노레포 지원 | npm, yarn |
 | ofetch | 경량 HTTP 클라이언트, auto-retry, TypeScript 네이티브 | axios, node-fetch |
 | cloudflared | 아웃바운드 전용 터널, 포트포워딩 불필요, 무료 플랜, DDoS 보호 | Tailscale, ngrok, frp |
-| openssh-server | LinuxServer.io 에코시스템, 사전 구성된 Docker SSH, SFTP 서브시스템 내장 | 호스트 OpenSSH 직접 설정 |
+<!-- | openssh-server | LinuxServer.io 에코시스템, 사전 구성된 Docker SSH, SFTP 서브시스템 내장 | 호스트 OpenSSH 직접 설정 | -->
 | docker-mailserver | Docker 네이티브 풀스택 메일 서버, Postfix+Dovecot, DKIM/SPF/DMARC 지원 | Mailu, iRedMail |
 
 ---
@@ -353,7 +353,7 @@ brewnet/
 │   │   │   │   ├── status.ts / logs.ts
 │   │   │   │   ├── deploy.ts / domain.ts
 │   │   │   │   ├── uninstall.ts           # brewnet uninstall
-│   │   │   │   ├── ssh/      # SSH 관련 명령어
+│   │   │   │   <!-- ├── ssh/      # SSH 관련 명령어 -->
 │   │   │   │   └── storage/  # 스토리지 관련 명령어
 │   │   │   ├── services/     # 핵심 서비스 모듈
 │   │   │   │   ├── docker-manager.ts
@@ -365,7 +365,7 @@ brewnet/
 │   │   │   │   ├── git-server.ts
 │   │   │   │   ├── file-manager.ts
 │   │   │   │   ├── db-manager.ts
-│   │   │   │   ├── ssh-manager.ts
+│   │   │   │   <!-- ├── ssh-manager.ts -->
 │   │   │   │   └── uninstall-manager.ts  # brewnet uninstall
 │   │   │   ├── boilerplate/  # 앱 스캐폴딩 템플릿
 │   │   │   ├── utils/
@@ -416,7 +416,7 @@ brewnet/
 | `keydb` | `eqalpha/keydb:latest` | 6379 | Cache |
 | `pgadmin` | `dpage/pgadmin4:latest` | 5050 | DB Admin |
 | `jellyfin` | `jellyfin/jellyfin:latest` | 8096 | Media |
-| `openssh-server` | `linuxserver/openssh-server:latest` | 2222 | SSH/SFTP |
+<!-- | `openssh-server` | `linuxserver/openssh-server:latest` | 2222 | SSH/SFTP | -->
 | `docker-mailserver` | `ghcr.io/docker-mailserver/docker-mailserver:latest` | 25, 587, 993 | Mail |
 | `gitea` | `gitea/gitea:latest` | 3000, 3022 | Git Server (필수) |
 | `filebrowser` | `filebrowser/filebrowser:latest` | 80 | File Manager |

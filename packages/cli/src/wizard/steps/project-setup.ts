@@ -110,23 +110,15 @@ export async function runProjectSetupStep(
   const projectPath = rawPath;
 
   // -------------------------------------------------------------------------
-  // 4. Prompt for setup type
+  // 4. Setup type — skip prompt if already chosen in init.ts pre-step
   // -------------------------------------------------------------------------
-  const setupType = await select<SetupType>({
+  const setupType: SetupType = state.setupType || await select<SetupType>({
     message: 'Installation type',
     choices: [
-      {
-        name: 'Full Install (recommended)',
-        value: 'full',
-        description: 'Web Server + Git Server + Database + Cache',
-      },
-      {
-        name: 'Partial Install',
-        value: 'partial',
-        description: 'Web Server + Git Server only — add components later',
-      },
+      { name: 'Full Install (recommended)', value: 'full', description: 'Web Server + Git Server + Database + Cache' },
+      { name: 'Partial Install', value: 'partial', description: 'Web Server + Git Server only — add components later' },
     ],
-    default: state.setupType || 'full',
+    default: 'full',
   });
 
   // -------------------------------------------------------------------------

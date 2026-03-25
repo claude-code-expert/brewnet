@@ -216,4 +216,22 @@ describe('installDocker — Linux', () => {
     process.env['USER'] = origUser;
     process.env['LOGNAME'] = origLogname;
   });
+
+  it('continues when usermod throws (L367)', async () => {
+    const origUser = process.env['USER'];
+    process.env['USER'] = 'testuser';
+
+    // install script, systemctl start, systemctl enable succeed; usermod throws
+    mockExeca
+      .mockReturnValueOnce(makeSuccess(''))   // install script
+      .mockReturnValueOnce(makeSuccess(''))   // systemctl start
+      .mockReturnValueOnce(makeSuccess(''))   // systemctl enable
+      .mockReturnValueOnce(makeFailure(1));   // usermod throws → catch L367
+
+    const result = await installDocker();
+    // Non-fatal: install still succeeds
+    expect(result.success).toBe(true);
+
+    process.env['USER'] = origUser;
+  });
 });

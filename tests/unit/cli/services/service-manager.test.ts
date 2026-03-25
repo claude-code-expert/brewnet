@@ -184,6 +184,28 @@ describe('addService', () => {
     const result = await addService('nginx', '/tmp/project');
     expect(result.success).toBe(true);
   });
+
+  it('handles filename collision in backupComposeFile by appending numeric suffix', async () => {
+    setCompose(COMPOSE_PATH, makeComposeYaml());
+
+    // Freeze Date.now to produce a predictable backup filename
+    const TS = 1700000000000;
+    jest.spyOn(Date, 'now').mockReturnValue(TS);
+
+    // Simulate collision: readdirSync returns the would-be backup filename
+    mockReaddirSync.mockReturnValue([`docker-compose.yml.bak.${TS}`]);
+
+    const result = await addService('gitea', '/tmp/project');
+
+    // The collision-avoidance loop runs → copyFileSync called with .1 suffix
+    expect(result.success).toBe(true);
+    expect(mockCopyFileSync).toHaveBeenCalledWith(
+      COMPOSE_PATH,
+      `${COMPOSE_PATH}.bak.${TS}.1`,
+    );
+
+    jest.restoreAllMocks();
+  });
 });
 
 // ---------------------------------------------------------------------------

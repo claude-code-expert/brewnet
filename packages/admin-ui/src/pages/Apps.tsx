@@ -173,7 +173,7 @@ export function Apps() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 350px)', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, 370px)', gap: 16 }}>
               {apps.map((app) => (
                 <div
                   key={app.name}

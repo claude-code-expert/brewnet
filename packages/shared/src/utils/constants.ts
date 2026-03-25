@@ -163,7 +163,7 @@ export const DOCKER_LOG_MAX_SIZE = '10m';
 export const DOCKER_LOG_MAX_FILES = '3';
 
 /** Days before CLI log files are deleted */
-export const CLI_LOG_RETENTION_DAYS = 30;
+export const CLI_LOG_RETENTION_DAYS = 7;
 
 /** Maximum access/tunnel log file size before copytruncate rotation (bytes) */
 export const ACCESS_LOG_MAX_BYTES = 50 * 1024 * 1024;

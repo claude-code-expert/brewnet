@@ -32,10 +32,10 @@ A fully self-hosted home server management platform. Set up and manage a persona
 <td width="50%">
 
 **Pro Dashboard** 💼
+- Browser-based Setup Wizard 
 - Web-based management interface
 - Real-time monitoring
 - Team access control
-- Paid features (Freemium)
 
 </td>
 </tr>
@@ -44,10 +44,16 @@ A fully self-hosted home server management platform. Set up and manage a persona
 ### Quick Start
 
 ```bash
+# Option A — curl (recommended)
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+
+# Option B — npm
+npm install -g @brewnet/cli
 ```
 
-The installer sets up the CLI and automatically starts the setup wizard.
+```bash
+brewnet init
+```
 
 ### Requirements
 
@@ -63,13 +69,23 @@ The installer sets up the CLI and automatically starts the setup wizard.
 
 ### Installation
 
+**Option A — curl (recommended)**
+
+The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. No shell reload needed afterward.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+brewnet --version
+brewnet init
 ```
 
-The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. After installation, run `brewnet init` to start the setup wizard.
+**Option B — npm**
 
-<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/install.png" alt="Brewnet installation wizard" width="700">
+```bash
+npm install -g @brewnet/cli
+brewnet --version
+brewnet init
+```
 
 ### Init Wizard — 8 Steps
 
@@ -77,7 +93,7 @@ The installer will prompt for your `sudo` password to place the binary at `/usr/
 |------|-------------|
 | **Step 0** | System check — OS, Docker, ports 80/443, disk/RAM |
 | **Step 1** | Project setup — name, path, Full / Partial install |
-| **Step 2** | Admin account + server components — Web server, Nextcloud, DB, Media |
+| **Step 2** | Admin account + server components — Web server, File server, DB, Media |
 | **Step 3** | Dev stack — runtime + framework selection *(only shown when App Server is enabled in Step 2)* |
 | **Step 4** | Domain & network — Local (LAN) or Cloudflare Tunnel (external) |
 | **Step 5** | Review & confirm |
@@ -114,8 +130,6 @@ brewnet admin               # Open local admin panel (http://localhost:8088)
 ### Admin Dashboard
 
 `brewnet admin` starts a background HTTP server at `http://localhost:8088` — a React SPA.
-
-<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/dashboard.png" alt="Brewnet admin dashboard" width="700">
 
 **Dashboard tab** — Service status table with container name, status, port, and External URL.
 
@@ -216,10 +230,10 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 <td width="50%">
 
 **Pro Dashboard** 💼
+- 쉬운 웹 설치 (단계별 위저드)
 - 웹 기반 관리 인터페이스
 - 실시간 모니터링
 - 팀 접근 권한 관리
-- 유료 기능 (Freemium)
 
 </td>
 </tr>
@@ -228,10 +242,16 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 ### 빠른 시작
 
 ```bash
+# 방법 A — curl (권장)
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+
+# 방법 B — npm
+npm install -g @brewnet/cli
 ```
 
-설치 완료 후 자동으로 설정 위저드가 시작됩니다.
+```bash
+brewnet init
+```
 
 ### 사전 요구사항
 
@@ -247,13 +267,23 @@ curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/ins
 
 ### 설치
 
+**방법 A — curl (권장)**
+
+설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 셸 재로드(`source ~/.zshrc`) 없이 바로 사용 가능합니다.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+brewnet --version
+brewnet init
 ```
 
-설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 설치 완료 후 `brewnet init`으로 설정 위저드를 시작합니다.
+**방법 B — npm**
 
-<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/install.png" alt="Brewnet 설치 화면" width="700">
+```bash
+npm install -g @brewnet/cli
+brewnet --version
+brewnet init
+```
 
 ### 초기 설정 위저드 — 8단계
 
@@ -261,7 +291,7 @@ curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/ins
 |------|------|
 | **Step 0** | 시스템 체크 — OS, Docker, 포트 80/443, 디스크/RAM |
 | **Step 1** | 프로젝트 설정 — 이름, 경로, Full / Partial 설치 유형 |
-| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, Nextcloud, DB, 미디어 |
+| **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어 |
 | **Step 3** | 개발 스택 — 런타임 + 프레임워크 선택 *(Step 2에서 App Server 활성화 시만 표시)* |
 | **Step 4** | 도메인 & 네트워크 — 로컬(LAN) 또는 Cloudflare Tunnel(외부 접속) |
 | **Step 5** | 검토 및 확인 |
@@ -273,8 +303,8 @@ curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/ins
 | 컴포넌트 | 선택지 | 기본값 |
 |----------|--------|--------|
 | 웹 서버 (필수) | Traefik / Nginx / Caddy | Traefik |
-| 파일 서버 | Nextcloud | 비활성 |
-| DB 서버 | PostgreSQL / MySQL | PostgreSQL |
+| 파일 서버 | Nextcloud / MinIO | 비활성 |
+| DB 서버 | PostgreSQL / MySQL + Redis/Valkey | PostgreSQL + Redis |
 | 미디어 | Jellyfin | 비활성 |
 | 관리자 계정 | 사용자명 + 비밀번호 자동 생성 | admin / 20자 랜덤 |
 
@@ -321,8 +351,6 @@ brewnet admin               # 로컬 관리 패널 열기 (http://localhost:8088
 ### 어드민 대시보드
 
 `brewnet admin`은 `http://localhost:8088`에서 React SPA 대시보드를 백그라운드로 실행합니다.
-
-<img src="https://raw.githubusercontent.com/brewnetdev/brewnet-web/develop/public/images/dashboard.png" alt="Brewnet 어드민 대시보드" width="700">
 
 **Dashboard 탭** — 컨테이너명, 상태, 포트, External URL을 포함한 서비스 상태 테이블.
 

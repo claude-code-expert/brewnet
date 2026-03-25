@@ -29,7 +29,6 @@ export function Dashboard() {
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
-
   // Initial data load
   useEffect(() => {
     let cancelled = false;
@@ -102,7 +101,7 @@ export function Dashboard() {
               fontSize: 12,
             }}
           >
-            <span style={{ fontFamily: 'var(--mono)', color: 'var(--txt3)', fontSize: 10 }}>QUICK TUNNEL</span>
+            <span style={{ fontFamily: 'var(--mono)', color: 'var(--txt2)', fontSize: 11 }}>QUICK TUNNEL</span>
             <a
               href={quickTunnelUrl}
               target="_blank"

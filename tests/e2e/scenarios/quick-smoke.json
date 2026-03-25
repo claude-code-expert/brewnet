@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 7,
+  "projectName": "my-homeserver",
+  "projectPath": "~/brewnet/my-homeserver",
+  "setupType": "full",
+  "admin": { "username": "admin", "password": "skagml12!@", "storage": "local" },
+  "servers": {
+    "webServer":  { "enabled": true, "service": "traefik" },
+    "fileServer": { "enabled": false, "service": "" },
+    "gitServer":  { "enabled": true, "service": "gitea", "port": 3000, "sshPort": 3022 },
+    "dbServer": {
+      "enabled": true, "primary": "postgresql", "primaryVersion": "17",
+      "dbName": "brewnet_db", "dbUser": "brewnet", "dbPassword": "",
+      "adminUI": false, "pgadminEmail": "test@test.com", "cache": ""
+    },
+    "media":      { "enabled": false, "services": [] },
+    "sshServer":  { "enabled": false, "port": 2222, "passwordAuth": false, "sftp": false },
+    "mailServer": { "enabled": false, "service": "", "port25Blocked": false,
+                    "relayProvider": "", "relayHost": "", "relayPort": 587,
+                    "relayUser": "", "relayPassword": "" },
+    "appServer":  { "enabled": true },
+    "fileBrowser":{ "enabled": false, "mode": "" }
+  },
+  "portRemapping": {},
+  "devStack": {
+    "languages": ["nodejs"],
+    "frameworks": { "nodejs": "express" },
+    "frontend": null
+  },
+  "boilerplate": { "generate": false, "sampleData": false, "devMode": "production" },
+  "domain": {
+    "provider": "quick-tunnel",
+    "name": "brewnet.local",
+    "ssl": "cloudflare",
+    "cloudflare": {
+      "enabled": true, "tunnelMode": "quick", "quickTunnelUrl": "",
+      "accountId": "", "apiToken": "", "tunnelId": "", "tunnelToken": "",
+      "tunnelName": "", "zoneId": "", "zoneName": ""
+    }
+  },
+  "_e2e": {
+    "apps": {
+      "stacks": ["nodejs-express", "go-gin", "python-fastapi"],
+      "lifecycle": ["create", "health", "gitea", "deploy", "stop", "start", "delete"]
+    }
+  }
+}

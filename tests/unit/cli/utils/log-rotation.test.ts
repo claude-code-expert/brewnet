@@ -155,6 +155,18 @@ describe('rotateLargeFile', () => {
     expect(mockTruncateSync).toHaveBeenCalledWith('/logs/tunnel.log', 0);
   });
 
+  it('should return false when copyFileSync throws during rotation', () => {
+    mockExistsSync.mockImplementation((path: string) => path === '/logs/tunnel.log');
+    mockStatSync.mockReturnValue({ size: 60 * 1024 * 1024 });
+    mockCopyFileSync.mockImplementationOnce(() => {
+      throw new Error('ENOSPC: no space left on device');
+    });
+
+    const result = rotateLargeFile('/logs/tunnel.log', 50 * 1024 * 1024, 5);
+    expect(result).toBe(false);
+    expect(mockTruncateSync).not.toHaveBeenCalled();
+  });
+
   it('should shift existing rotated files', () => {
     mockExistsSync.mockImplementation((path: string) => {
       // File and .1 and .2 exist

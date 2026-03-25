@@ -1,7 +1,7 @@
 // packages/cli/src/types/app-entry.ts
 
 /** Source mode for a managed app. */
-export type AppMode = 'boilerplate' | 'git-clone' | 'new-project';
+export type AppMode = 'boilerplate' | 'git-clone' | 'new-project' | 'local-path';
 
 /** Lifecycle status of a managed app. */
 export type AppStatus = 'creating' | 'running' | 'stopped' | 'failed';
@@ -62,6 +62,8 @@ export interface CreateAppOptions {
   frameworkId?: string;
   includePostgres?: boolean;
   includeRedis?: boolean;
+  // Mode D: local path deploy (no Gitea)
+  localPath?: string;
 }
 
 /** One entry in the deploy history (stored in ~/.brewnet/deploy-history.json). */

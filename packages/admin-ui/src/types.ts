@@ -48,7 +48,7 @@ export interface ConfigResponse {
 
 export interface AppEntry {
   name: string;
-  mode: 'boilerplate' | 'git-clone' | 'new-project';
+  mode: 'boilerplate' | 'git-clone' | 'new-project' | 'local-path';
   stackId?: string;
   sourceUrl?: string;
   appDir: string;
@@ -104,7 +104,7 @@ export interface DeployHistoryEntry {
 }
 
 export interface LogEntry {
-  ts: string;
+  timestamp: string;
   level: 'info' | 'warn' | 'error' | 'debug';
   source: string;
   message: string;
@@ -125,7 +125,6 @@ export interface ServiceDetail {
   connectionParams?: { label: string; value: string }[];
   tips?: string[];
   docs?: string;
-  securityNote?: string;
 }
 
 export interface GitRepoEntry {

@@ -22,6 +22,8 @@ export function toSubdomainSlug(appName: string): string {
  * Returns { valid: true } or { valid: false, error: string }.
  */
 export function validateSubdomainLabel(s: string): { valid: boolean; error?: string } {
+  // "@" = apex/root domain connection — bypasses DNS label rules
+  if (s === '@') return { valid: true };
   if (!s || s.length === 0) {
     return { valid: false, error: 'Subdomain cannot be empty' };
   }

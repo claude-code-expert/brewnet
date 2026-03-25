@@ -678,3 +678,231 @@ describe('domain connect --domain (external domain connection)', () => {
     expect(mockDomainManagerConnect).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Legacy connect — error and edge cases (L142-143, L150-151, L162, L166, L171, L173, L185-186, L197, L199)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — legacy: error and edge cases', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    mockLoadState.mockReturnValue(makeQuickTunnelState());
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('shows invalid token error and exits with code 2 when verifyToken returns valid=false', async () => {
+    mockVerifyToken.mockResolvedValue({ valid: false });
+    const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit:2'); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockExit).toHaveBeenCalledWith(2);
+    expect(mockCreateTunnel).not.toHaveBeenCalled();
+  });
+
+  it('shows verify failure and exits with code 2 when verifyToken throws', async () => {
+    mockVerifyToken.mockRejectedValue(new Error('Network timeout'));
+    const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit:2'); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockExit).toHaveBeenCalledWith(2);
+    expect(mockCreateTunnel).not.toHaveBeenCalled();
+  });
+
+  it('prompts for manual account ID when getAccounts returns empty and proceeds to createTunnel', async () => {
+    mockGetAccounts.mockResolvedValue([]);
+    mockInput
+      .mockResolvedValueOnce('valid-api-token')
+      .mockResolvedValueOnce('manual-acc-id');
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockCreateTunnel).toHaveBeenCalled();
+  });
+
+  it('shows account select prompt when getAccounts returns multiple entries', async () => {
+    mockGetAccounts.mockResolvedValue([
+      { id: 'acc-1', name: 'Account One' },
+      { id: 'acc-2', name: 'Account Two' },
+    ]);
+    mockSelect.mockResolvedValue('acc-1');
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockSelect).toHaveBeenCalled();
+    expect(mockCreateTunnel).toHaveBeenCalled();
+  });
+
+  it('shows error and exits with code 4 when no active zones found', async () => {
+    mockGetZones.mockResolvedValue([]);
+    const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit:4'); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockExit).toHaveBeenCalledWith(4);
+    expect(mockCreateTunnel).not.toHaveBeenCalled();
+  });
+
+  it('shows zone select prompt when multiple active zones exist', async () => {
+    mockGetZones.mockResolvedValue([
+      { id: 'zone-456', name: 'example.com', status: 'active' },
+      { id: 'zone-789', name: 'other.com', status: 'active' },
+    ]);
+    mockSelect.mockResolvedValue('zone-456');
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockSelect).toHaveBeenCalled();
+    expect(mockCreateTunnel).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path C: Named Tunnel with existing zone → re-sync ingress + DNS (L218-221)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — Path C (Named Tunnel, existing zone → re-sync)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    // Named tunnel with a zone already set → Path C; reuse base state with zoneId override
+    const state = makeNamedTunnelNoZoneState();
+    state.domain.cloudflare.zoneId = 'zone-456';
+    mockLoadState.mockReturnValue(state);
+  });
+
+  it('calls configureTunnelIngress with existing tunnelId (Path C re-sync)', async () => {
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockCreateTunnel).not.toHaveBeenCalled();
+    expect(mockConfigureTunnelIngress).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      'existing-tunnel-id',
+      expect.any(String),
+      expect.any(Array),
+    );
+  });
+
+  it('warns but succeeds when configureTunnelIngress throws in Path C (L729)', async () => {
+    mockConfigureTunnelIngress.mockRejectedValueOnce(new Error('CF ingress fail in C'));
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    // Path C non-fatal ingress failure → warn but still saves state
+    expect(mockSaveState).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path A — createTunnel failure (L585-586)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — Path A: createTunnel failure (L585-586)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    mockLoadState.mockReturnValue(makeQuickTunnelState());
+  });
+
+  it('aborts without saving state when createTunnel throws (L585-586)', async () => {
+    mockCreateTunnel.mockRejectedValue(new Error('CF tunnel creation failed'));
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockSaveState).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path A — QuickTunnel stop failure (L625)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — Path A: QuickTunnel stop failure (L625)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    mockLoadState.mockReturnValue(makeQuickTunnelState());
+  });
+
+  it('warns but continues when QuickTunnel stop throws in Path A (L625)', async () => {
+    mockQtStop.mockRejectedValue(new Error('Docker stop failed'));
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    // Even with stop failure, state is saved (migration completed)
+    expect(mockSaveState).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path B — ingress failure (L671-672)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — Path B: ingress failure (L671-672)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    mockLoadState.mockReturnValue(makeNamedTunnelNoZoneState());
+  });
+
+  it('aborts without saving state when ingress throws in Path B (L671-672)', async () => {
+    mockConfigureTunnelIngress.mockRejectedValue(new Error('CF ingress failed in B'));
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockSaveState).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path B — no tunnelId throws (L659)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — Path B: missing tunnelId throws (L659)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    // Named mode with no zone (→ Path B) AND no tunnelId (→ line 659 throws)
+    const state = makeNamedTunnelNoZoneState();
+    state.domain.cloudflare.tunnelId = '';
+    mockLoadState.mockReturnValue(state);
+  });
+
+  it('throws when tunnelId is empty in Path B (L659)', async () => {
+    const p = makeProgram();
+    registerDomainCommand(p);
+    // runDomainConnect absorbs the thrown error — just verify no save
+    await runDomainConnect(p);
+    expect(mockSaveState).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Path C — no tunnelId throws (L717)
+// ---------------------------------------------------------------------------
+
+describe('domain connect — Path C: missing tunnelId throws (L717)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setupDefaultMocks();
+    // Named tunnel with zone (→ Path C) but no tunnelId (→ line 717 throws)
+    const state = makeNamedTunnelNoZoneState();
+    state.domain.cloudflare.zoneId = 'zone-already-set';
+    state.domain.cloudflare.tunnelId = '';
+    mockLoadState.mockReturnValue(state);
+  });
+
+  it('throws when tunnelId is empty in Path C (L717)', async () => {
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await runDomainConnect(p);
+    expect(mockSaveState).not.toHaveBeenCalled();
+  });
+});

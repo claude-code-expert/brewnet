@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { ApiFetch, DomainConnectionEntry } from '../types.js';
 import { listDomains, connectDomain, disconnectDomain } from '../api/domain-api.js';
 import { toSubdomainSlug, validateSubdomainLabel } from '../utils/subdomain.js';
-import { showToast } from '../../../components/Toast.js';
+import { showToast, showPersistentToast } from '../../../components/Toast.js';
 
 const CF_ERROR_MESSAGES: Record<string, string> = {
   CNAME_CONFLICT: 'This subdomain is already in use. Choose a different one.',
@@ -48,11 +48,16 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await listDomains(apiFetch);
+      const [result, settingsRes] = await Promise.all([
+        listDomains(apiFetch),
+        apiFetch('/api/settings/cloudflare').catch((e: unknown) => {
+          console.warn('[useAppDomain] Failed to fetch cloudflare settings:', e);
+          return null;
+        }),
+      ]);
       setConnections(result.connections);
       setCfConfigured(result.credentialsConfigured);
-      setZoneName(result.tunnel?.tunnelName ? '' : ''); // zoneName comes from CF settings
-      // Derive zoneName from connections hostname pattern or tunnel info
+      // Derive zoneName from connections hostname pattern
       if (result.connections.length > 0) {
         const first = result.connections[0].hostname;
         const parts = first.split('.');
@@ -60,16 +65,17 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
           setZoneName(parts.slice(1).join('.'));
         }
       }
-      // Also try to get zoneName from the settings endpoint
-      try {
-        const settingsRes = await apiFetch('/api/settings/cloudflare');
-        if (settingsRes.ok) {
+      // Override with zoneName from settings if available
+      if (settingsRes?.ok) {
+        try {
           const settings = await settingsRes.json() as { zoneName?: string };
           if (settings.zoneName) setZoneName(settings.zoneName);
+        } catch (e) {
+          console.warn('[useAppDomain] Failed to parse cloudflare settings:', e);
         }
-      } catch { /* non-critical */ }
-    } catch {
-      // non-fatal — stay in loading=false state
+      }
+    } catch (e) {
+      console.warn('[useAppDomain] Failed to load domain info:', e);
     } finally {
       setLoading(false);
     }
@@ -105,11 +111,11 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
         const errorCode = (result as { error?: string }).error;
         const errorMsg = (result as { message?: string }).message ?? errorCode ?? 'Failed to connect domain';
         console.error(`[domain-connect] FAIL — error=${errorCode} message=${errorMsg}`, result);
-        showToast(mapError(errorCode, errorMsg));
+        showPersistentToast(mapError(errorCode, errorMsg));
       }
     } catch (e) {
       console.error('[domain-connect] exception:', e);
-      showToast(e instanceof Error ? e.message : 'Failed to connect domain');
+      showPersistentToast(e instanceof Error ? e.message : 'Failed to connect domain');
     } finally {
       setConnecting(false);
     }

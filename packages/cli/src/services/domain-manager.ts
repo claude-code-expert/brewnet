@@ -123,7 +123,9 @@ export class DomainManager {
     domain: string,
     options: ConnectOptions = {},
   ): Promise<ConnectResult> {
-    const hostname = `${subdomain}.${domain}`;
+    const isApex = subdomain === '@';
+    const hostname = isApex ? domain : `${subdomain}.${domain}`;
+    const wwwHostname = isApex ? `www.${domain}` : null;
     const steps: StepResult[] = [];
     const cf = this.state.domain.cloudflare;
     const log = (msg: string) => options.onLog?.(`[domain-connect] ${msg}`);
@@ -158,15 +160,20 @@ export class DomainManager {
       };
     }
 
+    // Detect Next.js basePath for custom apps (needed for tunnel ingress URL)
+    const appBasePath = this.resolveAppBasePath(appName);
+    if (appBasePath) log(`detected basePath: ${appBasePath}`);
+
     // Determine scenario
     const scenario = options.scenario ?? this.detectScenario();
     log(`scenario: ${scenario}`);
 
     // Step 1: Health check (local)
-    log(`step 1/6: health check → http://127.0.0.1:${containerPort}/`);
+    const healthUrl = `http://127.0.0.1:${containerPort}${appBasePath}/`;
+    log(`step 1/6: health check → ${healthUrl}`);
     const healthStart = Date.now();
     try {
-      const healthy = await this.checkLocalHealth(appName, containerPort);
+      const healthy = await this.checkLocalHealth(appName, containerPort, appBasePath);
       if (!healthy) {
         const err = `App "${appName}" not responding on port ${containerPort}`;
         log(`FAIL step 1: ${err}`);
@@ -191,10 +198,15 @@ export class DomainManager {
       const builtinRoutes = previousIngress.map((r) => ({ ...r, domain: projectDomain }));
       const existingExtRoutes = (this.state.domainConnections ?? [])
         .filter((c) => c.appName !== appName)
-        .map((c) => ({ subdomain: c.subdomain, containerName: this.resolveContainerName(c.appName), port: c.containerPort, domain: c.domain }));
-      const newRoute: ServiceRoute = { subdomain, containerName: this.resolveContainerName(appName), port: containerPort, domain };
-      const allRoutes = [...builtinRoutes, ...existingExtRoutes, newRoute];
-      log(`ingress routes: ${JSON.stringify(allRoutes.map((r) => `${r.subdomain} → ${r.containerName}:${r.port}`))}`);
+        .flatMap((c) => this.connectionToRoutes(c));
+      const newRoutes: ServiceRoute[] = isApex
+        ? [
+            { subdomain: '', containerName: this.resolveContainerName(appName), port: containerPort, domain, basePath: appBasePath || undefined },
+            { subdomain: 'www', containerName: this.resolveContainerName(appName), port: containerPort, domain, basePath: appBasePath || undefined },
+          ]
+        : [{ subdomain, containerName: this.resolveContainerName(appName), port: containerPort, domain, basePath: appBasePath || undefined }];
+      const allRoutes = [...builtinRoutes, ...existingExtRoutes, ...newRoutes];
+      log(`ingress routes: ${JSON.stringify(allRoutes.map((r) => `${r.subdomain} → ${r.containerName}:${r.port}${r.basePath ?? ''}`))}`);
       await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, domain, allRoutes);
       steps.push({ step: 'ingress_update', status: 'completed', durationMs: Date.now() - ingressStart });
       log(`step 2 OK (${Date.now() - ingressStart}ms)`);
@@ -204,10 +216,13 @@ export class DomainManager {
       return { success: false, hostname, externalUrl: `https://${hostname}`, steps, error: `Ingress update failed: ${err}` };
     }
 
-    // Step 3: Create DNS CNAME record
+    // Step 3: Create DNS CNAME record(s)
     log(`step 3/6: DNS CNAME check/create for ${hostname} (zoneId=${cf.zoneId || '(empty)'})`);
     const dnsStart = Date.now();
     let cnameRecordId = '';
+    let wwwCnameRecordId: string | undefined;
+    // Use '' as subdomain param for apex (createDnsRecord handles '' → name=domain)
+    const apexSubdomainArg = isApex ? '' : subdomain;
     try {
       // Check for existing CNAME
       const existing = await getDnsRecords(cf.apiToken, cf.zoneId, hostname);
@@ -227,10 +242,20 @@ export class DomainManager {
         }
         log(`deleted ${existing.length} existing CNAME record(s)`);
       }
-      await createDnsRecord(cf.apiToken, cf.zoneId, cf.tunnelId, subdomain, domain);
+      await createDnsRecord(cf.apiToken, cf.zoneId, cf.tunnelId, apexSubdomainArg, domain);
       // Fetch the record ID for future deletion
       const created = await getDnsRecords(cf.apiToken, cf.zoneId, hostname);
       cnameRecordId = created[0]?.id ?? '';
+      log(`step 3 apex DNS OK — cnameRecordId=${cnameRecordId}`);
+
+      // Apex: also create www CNAME
+      if (isApex) {
+        await createDnsRecord(cf.apiToken, cf.zoneId, cf.tunnelId, 'www', domain);
+        const wwwCreated = await getDnsRecords(cf.apiToken, cf.zoneId, `www.${domain}`);
+        wwwCnameRecordId = wwwCreated[0]?.id ?? '';
+        log(`step 3 www DNS OK — wwwCnameRecordId=${wwwCnameRecordId}`);
+      }
+
       steps.push({ step: 'dns_creation', status: 'completed', durationMs: Date.now() - dnsStart });
       log(`step 3 OK — cnameRecordId=${cnameRecordId} (${Date.now() - dnsStart}ms)`);
     } catch (err) {
@@ -246,7 +271,11 @@ export class DomainManager {
     try {
       const composePath = this.getComposePath();
       if (fs.existsSync(composePath)) {
-        addExternalLabels(composePath, appName, hostname, containerPort);
+        if (isApex) {
+          addExternalLabels(composePath, appName, hostname, containerPort, [wwwHostname!]);
+        } else {
+          addExternalLabels(composePath, appName, hostname, containerPort);
+        }
         log(`step 4 OK — labels added to ${composePath}`);
       } else {
         log(`step 4 SKIP — compose file not found at ${composePath}`);
@@ -267,9 +296,11 @@ export class DomainManager {
       hostname,
       tunnelId: cf.tunnelId,
       cnameRecordId,
+      ...(wwwCnameRecordId ? { wwwCnameRecordId } : {}),
       containerPort,
       connectedAt: new Date().toISOString(),
       scenario,
+      ...(appBasePath ? { basePath: appBasePath } : {}),
     };
 
     if (!this.state.domainConnections) {
@@ -280,6 +311,11 @@ export class DomainManager {
     this.state.domainConnections.push(connection);
     saveState(this.state);
     log(`step 5 OK`);
+
+    // Step 5.5: Nextcloud post-connect — fix overwritewebroot and trusted_domains
+    if (this.resolveContainerName(appName) === 'nextcloud') {
+      await this.fixNextcloudDomainConfig(hostname, log);
+    }
 
     // Step 6: Poll DNS propagation
     log(`step 6/6: poll DNS propagation for ${hostname} (timeout 30s)`);
@@ -336,7 +372,7 @@ export class DomainManager {
         .map((r) => ({ ...r, domain: projectDomain }));
       const remainingExtRoutes = (this.state.domainConnections ?? [])
         .filter((c) => c.appName !== appName)
-        .map((c) => ({ subdomain: c.subdomain, containerName: this.resolveContainerName(c.appName), port: c.containerPort, domain: c.domain }));
+        .flatMap((c) => this.connectionToRoutes(c));
       const filteredRoutes = [...builtinRoutes, ...remainingExtRoutes];
       if (cf.apiToken && cf.accountId && cf.tunnelId) {
         await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, conn.domain, filteredRoutes);
@@ -347,7 +383,7 @@ export class DomainManager {
       return { success: false, appName, removedHostname: conn.hostname, steps, error: `Ingress removal failed: ${err}` };
     }
 
-    // Step 2: Delete DNS CNAME record
+    // Step 2: Delete DNS CNAME record(s)
     try {
       if (cf.apiToken && cf.zoneId) {
         if (conn.cnameRecordId) {
@@ -359,6 +395,10 @@ export class DomainManager {
             await deleteDnsRecord(cf.apiToken, cf.zoneId, rec.id);
           }
         }
+        // Apex: also delete www CNAME record
+        if (conn.subdomain === '@' && conn.wwwCnameRecordId) {
+          await deleteDnsRecord(cf.apiToken, cf.zoneId, conn.wwwCnameRecordId);
+        }
       }
       steps.push({ step: 'dns_deletion', status: 'completed' });
     } catch (err) {
@@ -368,12 +408,14 @@ export class DomainManager {
         const projectDomain = this.state.domain.cloudflare?.zoneName || this.state.domain.name || conn.domain;
         const allBuiltin = routes.map((r) => ({ ...r, domain: projectDomain }));
         const allExt = (this.state.domainConnections ?? [])
-          .map((c) => ({ subdomain: c.subdomain, containerName: this.resolveContainerName(c.appName), port: c.containerPort, domain: c.domain }));
+          .flatMap((c) => this.connectionToRoutes(c));
         const allRoutes = [...allBuiltin, ...allExt];
         if (cf.apiToken && cf.accountId && cf.tunnelId) {
           await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, conn.domain, allRoutes);
         }
-      } catch { /* best-effort rollback */ }
+      } catch (rollbackErr: unknown) {
+        console.warn('[domain-manager] Tunnel ingress rollback failed:', rollbackErr);
+      }
       steps.push({ step: 'dns_deletion', status: 'failed', error: String(err) });
       return { success: false, appName, removedHostname: conn.hostname, steps, error: `DNS deletion failed: ${err}` };
     }
@@ -435,14 +477,18 @@ export class DomainManager {
       // Local health
       try {
         info.local.healthy = await this.checkLocalHealth(conn.appName, conn.containerPort);
-      } catch { /* leave false */ }
+      } catch (e) {
+        console.warn('[domain-manager] checkLocalHealth failed:', e);
+      }
 
       // Tunnel health
       if (cf.apiToken && cf.accountId && cf.tunnelId) {
         try {
           const health = await getTunnelHealth(cf.apiToken, cf.accountId, cf.tunnelId);
           info.tunnel = health;
-        } catch { /* leave inactive */ }
+        } catch (e) {
+          console.warn('[domain-manager] getTunnelHealth failed:', e);
+        }
       }
 
       // DNS verification
@@ -458,19 +504,25 @@ export class DomainManager {
             };
             info.external.dnsResolved = true;
           }
-        } catch { /* leave null */ }
+        } catch (e) {
+          console.warn('[domain-manager] getDnsRecords failed:', e);
+        }
       }
 
       // External reachability (use dig as fallback)
       try {
         const resolved = await this.checkDnsResolution(conn.hostname);
         info.external.dnsResolved = info.external.dnsResolved || resolved;
-      } catch { /* leave false */ }
+      } catch (e) {
+        console.warn('[domain-manager] checkDnsResolution failed:', e);
+      }
 
       // HTTPS reachability
       try {
         info.external.httpsReachable = await this.checkHttpsReachable(conn.hostname);
-      } catch { /* leave false */ }
+      } catch (e) {
+        console.warn('[domain-manager] checkHttpsReachable failed:', e);
+      }
 
       results.push(info);
     }
@@ -553,6 +605,24 @@ export class DomainManager {
     return appName;
   }
 
+  private resolveAppBasePath(appName: string): string {
+    const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
+    const apps = readApps(appsJsonPath);
+    const found = apps.find((a) => a.name === appName);
+    if (!found?.appDir) return '';
+
+    // Inline basePath detection (same logic as app-manager.detectBasePath)
+    for (const name of ['next.config.ts', 'next.config.mjs', 'next.config.js']) {
+      const configPath = path.join(found.appDir, name);
+      try {
+        const content = fs.readFileSync(configPath, 'utf-8');
+        const match = content.match(/basePath\s*:\s*['"`]([^'"`]+)['"`]/);
+        if (match) return match[1]!;
+      } catch { /* file not found — try next */ }
+    }
+    return '';
+  }
+
   private getComposePath(): string {
     const projectPath = this.state.projectPath.startsWith('~')
       ? path.join(os.homedir(), this.state.projectPath.slice(1))
@@ -560,11 +630,11 @@ export class DomainManager {
     return path.join(projectPath, 'docker-compose.yml');
   }
 
-  private async checkLocalHealth(_appName: string, port: number): Promise<boolean> {
+  private async checkLocalHealth(_appName: string, port: number, basePath = ''): Promise<boolean> {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5_000);
-      const resp = await fetch(`http://127.0.0.1:${port}/`, { signal: controller.signal });
+      const resp = await fetch(`http://127.0.0.1:${port}${basePath}/`, { signal: controller.signal });
       clearTimeout(timeout);
       return resp.ok || resp.status < 500;
     } catch {
@@ -604,7 +674,60 @@ export class DomainManager {
     if (!previousRoutes || !cf.apiToken || !cf.accountId || !cf.tunnelId) return;
     try {
       await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, domain, previousRoutes);
-    } catch { /* best-effort rollback */ }
+    } catch (err: unknown) {
+      console.warn('[domain-manager] Ingress rollback failed:', err);
+    }
+  }
+
+  /**
+   * Convert a stored DomainConnection to the ServiceRoute(s) needed for tunnel ingress.
+   * Apex connections ("@") expand to two routes: apex + www.
+   */
+  private connectionToRoutes(conn: DomainConnection): ServiceRoute[] {
+    const containerName = this.resolveContainerName(conn.appName);
+    if (conn.subdomain === '@') {
+      return [
+        { subdomain: '', containerName, port: conn.containerPort, domain: conn.domain, basePath: conn.basePath },
+        { subdomain: 'www', containerName, port: conn.containerPort, domain: conn.domain, basePath: conn.basePath },
+      ];
+    }
+    return [{ subdomain: conn.subdomain, containerName, port: conn.containerPort, domain: conn.domain, basePath: conn.basePath }];
+  }
+
+  /**
+   * Nextcloud requires occ config changes when connecting an external domain:
+   * - Clear overwritewebroot (Quick Tunnel sets it to /cloud, but dedicated domain serves at /)
+   * - Set overwrite.cli.url to the external URL
+   * - Add hostname to trusted_domains
+   */
+  private async fixNextcloudDomainConfig(
+    hostname: string,
+    log: (msg: string) => void,
+  ): Promise<void> {
+    const container = 'brewnet-nextcloud';
+    const occ = (args: string[]) =>
+      execa('docker', ['exec', '-u', '33', container, 'php', 'occ', ...args], { timeout: 15_000 });
+
+    try {
+      log(`nextcloud post-connect: fixing overwritewebroot and trusted_domains for ${hostname}`);
+      await occ(['config:system:set', 'overwritewebroot', '--value=']);
+      await occ(['config:system:set', 'overwrite.cli.url', `--value=https://${hostname}`]);
+      await occ(['config:system:set', 'overwritehost', `--value=${hostname}`]);
+
+      // Add to trusted_domains if not already present
+      const { stdout: domainsStr } = await occ(['config:system:get', 'trusted_domains']);
+      const existingDomains = domainsStr.trim().split('\n').map((d) => d.trim());
+      if (!existingDomains.includes(hostname)) {
+        const nextIdx = existingDomains.length;
+        await occ(['config:system:set', 'trusted_domains', String(nextIdx), `--value=${hostname}`]);
+      }
+
+      log(`nextcloud post-connect OK`);
+    } catch (err) {
+      // Non-fatal — log warning but don't fail the connect
+      log(`nextcloud post-connect WARN: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[domain-manager] Nextcloud occ config failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   private async pollDnsPropagation(hostname: string, timeoutMs: number): Promise<void> {
