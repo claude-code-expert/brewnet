@@ -1,16 +1,17 @@
 # Brewnet Development TODO
 
-> Last updated: 2026-03-24 | 보류 항목(SSH Server, Mail Server, Pro Dashboard) 제거됨
+> Last updated: 2026-03-25 | Domain Settings sequential wizard 완료, 모니터링 대시보드 개발 중
 
 ## 현재 구현 현황
 
 ```
-CLI 명령어:       16/19 (84%)   ████████░░
+CLI 명령어:       19/19 (100%)  ██████████
 Dashboard UI:    핵심 완료      ████████░░
 API 엔드포인트:   12/20 (60%)   ██████░░░░
 설치 위저드:      7/7 (100%)    ██████████
 도메인 기능:      핵심 완료      █████████░
-테스트:           기본 Unit      █████░░░░░
+테스트 커버리지:  85.11%        █████████░
+E2E 스택 검증:   15/16 PASS    █████████░
 ```
 
 ---
@@ -271,25 +272,24 @@ clearInterval(rotationTimer);
 
 ### 9. CLI 코어 테스트 커버리지 90% 달성
 
-**상태**: 현재 ~60%
-**난이도**: Medium / 2-3일
+**상태**: 현재 **85.11%** (6388/7506 lines, lcov 기준) — 2873개 테스트, 106 suites
+**난이도**: Medium / 1-2주
 
-#### 소스 레벨 현황
+#### 잔여 커버리지 갭
 
-| 파일 | 상태 | 비고 |
-|------|------|------|
-| `tests/unit/cli/` | ✅ 있음 | 51개 테스트 파일 |
-| `app-manager.test.ts` | ✅ 있음 | local-deploy, git-clone 분기 테스트 미비 |
-| `domain-manager.test.ts` | ✅ 있음 | connect/disconnect 엣지케이스 미비 |
-| `storage-manager.test.ts` | ❌ 없음 | Item 5 구현 후 신규 작성 필요 |
-| `log-rotation.test.ts` | ✅ 있음 | |
-| `admin-server.test.ts` | ✅ 있음 | 신규 엔드포인트 커버리지 부족 |
+| 파일 | 미커버 | 현재% |
+|------|--------|-------|
+| `admin-server.ts` | ~657개 | ~34% |
+| `wizard/steps/generate.ts` | ~190개 | ~61% |
+| `services/app-manager.ts` | ~149개 | ~73% |
+| `wizard/steps/domain-network.ts` | ~23개 | ~93% |
+| `commands/init.ts` | ~13개 | ~92% |
 
 #### 구현 방향
 
-1. Item 1~7 구현 완료 후 신규 함수에 대한 테스트 추가
-2. 모킹 대상: Cloudflare API, Docker API, Gitea API (이미 일부 존재)
-3. 우선순위: `app-manager` (Gitea 분기) → `domain-manager` (엣지케이스) → `storage-manager` (신규)
+1. `admin-server.ts` 제외 시 90% 달성 가능 (admin-server는 인라인 HTML 포함 1000+ lines)
+2. `generate.ts`, `app-manager.ts` 집중 — 비즈니스 로직 핵심 파일
+3. 모킹 대상: Docker API, Gitea API, execa (이미 대부분 존재)
 
 ---
 
@@ -297,11 +297,11 @@ clearInterval(rotationTimer);
 
 ### Admin UI UX 개선
 
-- [ ] Domain Settings sequential wizard — `DomainSettingModal`을 `TokenStep → ZoneStep → TunnelStep` 3단계로 교체 (컴포넌트 모두 구현됨, 조립만 필요)
+- [x] Domain Settings sequential wizard — `DomainSettingModal`을 `TokenStep → ZoneStep → TunnelStep` 3단계로 교체 **완료 (2026-03-25)**
 
 ### Admin UI 확장
 
-- [ ] 모니터링 대시보드 — CPU/Memory 그래프 (Recharts)
+- 🔄 **모니터링 대시보드** — CPU/Memory 그래프 (Recharts), 개발 중 (2026-03-25)
 - [ ] 자동 백업 스케줄링 UI — cron 기반
 - [ ] SSL 인증서 상태 모니터링
 - [ ] 시스템 알림/이벤트 로그 페이지
@@ -355,3 +355,7 @@ clearInterval(rotationTimer);
 - [x] 로그 시스템 — 4소스 통합, 날짜 표시, 24h 필터, 7일 보관
 - [x] SSH 문서 주석 처리 (14개 파일)
 - [x] 문서 정리 — 폐기 문서 삭제, 완료 spec 아카이브
+- [x] 테스트 커버리지 85.11% 달성 — 2873개 테스트, 15개 파일 신규/보강 (2026-03-25)
+- [x] 16종 보일러플레이트 E2E 순차 테스트 — 15/16 PASS, 리포트: `docs/reports/boilerplate-e2e-2026-03-25.md`
+- [x] 중복 문서 정리 — `docs/phase/` ↔ `docs/research/` 동일 파일 3개 삭제
+- [x] `test-cycle.sh` 버그 수정 — `cache: "redis"` → `""` (스키마 변경 미반영)
