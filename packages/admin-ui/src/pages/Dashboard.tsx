@@ -29,9 +29,6 @@ export function Dashboard() {
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
-  const [updating, setUpdating] = useState(false);
-  const [updateMsg, setUpdateMsg] = useState('');
-
   // Initial data load
   useEffect(() => {
     let cancelled = false;
@@ -82,19 +79,6 @@ export function Dashboard() {
 
   usePolling('/api/services', 5000, apiFetch, handleServicePoll, !loadingInitial);
 
-  const handleUpdate = async () => {
-    setUpdating(true);
-    setUpdateMsg('');
-    try {
-      const res = await apiFetch('/api/services/update', { method: 'POST' });
-      const data = await res.json() as { success: boolean; message?: string; error?: string };
-      setUpdateMsg(data.success ? 'Updated successfully' : `Error: ${data.error}`);
-    } catch (err) {
-      setUpdateMsg(`Error: ${String(err)}`);
-    }
-    setUpdating(false);
-  };
-
   const runningCount = services.filter((s) => s.status === 'running').length;
   const stoppedCount = services.filter((s) => s.status === 'stopped' || s.status === 'error').length;
 
@@ -141,21 +125,7 @@ export function Dashboard() {
               {t === 'services' ? 'Services' : 'Logs'}
             </button>
           ))}
-          <button
-            className={`btn bsm ${updating ? 'bg' : 'bp'}`}
-            onClick={() => void handleUpdate()}
-            disabled={updating}
-            style={{ marginLeft: 'auto' }}
-          >
-            {updating ? 'Updating...' : 'Update Services'}
-          </button>
         </div>
-
-        {updateMsg && (
-          <div style={{ fontSize: 12, fontFamily: 'var(--mono)', color: updateMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)', marginBottom: 12 }}>
-            {updateMsg}
-          </div>
-        )}
 
         {/* Loading state */}
         {loadingInitial && (

@@ -15,7 +15,7 @@ import { createConnection } from 'node:net';
 import { join, resolve, extname } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
+import { homedir, cpus, totalmem, freemem, loadavg } from 'node:os';
 import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
 import { createBackup, listBackups } from './backup-manager.js';
@@ -25,7 +25,7 @@ import { getLastProject, loadState } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
-import { DOCKER_COMPOSE_FILENAME, type WizardState, type LogSource, type UnifiedLogLevel } from '@brewnet/shared';
+import { type WizardState, type LogSource, type UnifiedLogLevel } from '@brewnet/shared';
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
@@ -885,40 +885,6 @@ async function handleRemoveService(
   }
 }
 
-async function handleUpdateServices(
-  _req: IncomingMessage,
-  res: ServerResponse,
-  _parts: string[],
-  _body: string,
-  projectPath: string,
-): Promise<void> {
-  try {
-    const composePath = join(projectPath, DOCKER_COMPOSE_FILENAME);
-    if (!existsSync(composePath)) {
-      json(res, 404, { success: false, error: 'No compose file found' });
-      return;
-    }
-
-    const { execa: execaUpdate } = await import('execa');
-
-    // Pull latest images
-    await execaUpdate('docker', ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'pull'], {
-      cwd: projectPath,
-    });
-
-    // Recreate with new images
-    await execaUpdate(
-      'docker',
-      ['compose', '-f', DOCKER_COMPOSE_FILENAME, 'up', '-d', '--force-recreate', '--remove-orphans'],
-      { cwd: projectPath },
-    );
-
-    json(res, 200, { success: true, message: 'Services updated and restarted' });
-  } catch (err) {
-    json(res, 500, { success: false, error: String(err) });
-  }
-}
-
 async function handleGetCatalog(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -1290,10 +1256,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             await handleInstallService(req, res, parts, body, projectPath);
             return;
           }
-          if (req.method === 'POST' && parts[2] === 'update') {
-            await handleUpdateServices(req, res, parts, body, projectPath);
-            return;
-          }
+
           // POST /api/services/containers/:id/start|stop → parts[3]=id, parts[4]=action
           if (req.method === 'POST' && parts[3] && ['start', 'stop'].includes(parts[4] ?? '')) {
             await handleServiceAction(req, res, parts, body, projectPath);
@@ -1314,6 +1277,78 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (parts[1] === 'backup') {
           await handleBackup(req, res, parts, body, projectPath);
           return;
+        }
+
+        // ── Metrics API ─────────────────────────────────────────────
+        if (parts[1] === 'metrics' && req.method === 'GET') {
+          if (parts[2] === 'system') {
+            const totalMem = totalmem();
+            const freeMem = freemem();
+            const usedMem = totalMem - freeMem;
+            const cpuCores = cpus();
+            const load = loadavg();
+            json(res, 200, {
+              cpu: {
+                cores: cpuCores.length,
+                model: cpuCores[0]?.model ?? 'unknown',
+                loadAvg: { '1m': load[0], '5m': load[1], '15m': load[2] },
+                usagePercent: Math.min(100, (load[0]! / cpuCores.length) * 100),
+              },
+              memory: {
+                total: totalMem,
+                used: usedMem,
+                free: freeMem,
+                usagePercent: (usedMem / totalMem) * 100,
+              },
+              uptime: process.uptime(),
+              timestamp: new Date().toISOString(),
+            });
+            return;
+          }
+          if (parts[2] === 'containers') {
+            try {
+              const containers = await docker.listContainers({ all: false });
+              const metrics = await Promise.all(
+                containers.map(async (c) => {
+                  const name = (c.Names[0] ?? '').replace(/^\//, '');
+                  try {
+                    const container = docker.getContainer(c.Id);
+                    const stats = await new Promise<Dockerode.ContainerStats>((resolve, reject) => {
+                      container.stats({ stream: false }, (err, data) => {
+                        if (err) reject(err);
+                        else resolve(data!);
+                      });
+                    });
+                    const cpuDelta = (stats.cpu_stats?.cpu_usage?.total_usage ?? 0) - (stats.precpu_stats?.cpu_usage?.total_usage ?? 0);
+                    const sysDelta = (stats.cpu_stats?.system_cpu_usage ?? 0) - (stats.precpu_stats?.system_cpu_usage ?? 0);
+                    const numCpus = stats.cpu_stats?.online_cpus ?? cpus().length;
+                    const cpuPercent = sysDelta > 0 ? (cpuDelta / sysDelta) * numCpus * 100 : 0;
+                    const memUsage = stats.memory_stats?.usage ?? 0;
+                    const memLimit = stats.memory_stats?.limit ?? 1;
+                    const memCache = stats.memory_stats?.stats?.cache ?? 0;
+                    const memActual = memUsage - memCache;
+                    return {
+                      name,
+                      id: c.Id.slice(0, 12),
+                      status: c.State,
+                      cpu: Math.round(cpuPercent * 100) / 100,
+                      memory: { usage: memActual, limit: memLimit, percent: (memActual / memLimit) * 100 },
+                      network: {
+                        rx: Object.values(stats.networks ?? {}).reduce((s, n) => s + (n.rx_bytes ?? 0), 0),
+                        tx: Object.values(stats.networks ?? {}).reduce((s, n) => s + (n.tx_bytes ?? 0), 0),
+                      },
+                    };
+                  } catch {
+                    return { name, id: c.Id.slice(0, 12), status: c.State, cpu: 0, memory: { usage: 0, limit: 0, percent: 0 }, network: { rx: 0, tx: 0 } };
+                  }
+                }),
+              );
+              json(res, 200, { containers: metrics, timestamp: new Date().toISOString() });
+            } catch (e) {
+              json(res, 500, { error: `Docker metrics failed: ${e instanceof Error ? e.message : String(e)}` });
+            }
+            return;
+          }
         }
 
         // ── Logs API (T021-T022) ────────────────────────────────────
