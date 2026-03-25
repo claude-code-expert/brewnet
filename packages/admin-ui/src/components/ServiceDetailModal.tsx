@@ -306,26 +306,6 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
             </div>
           )}
 
-          {/* Security Note */}
-          {detail?.securityNote && (
-            <div
-              style={{
-                display: 'flex',
-                gap: 10,
-                padding: '10px 14px',
-                background: 'rgba(232,168,73,0.06)',
-                border: '1px solid rgba(232,168,73,0.2)',
-                borderRadius: 'var(--r)',
-                fontSize: 12,
-                color: 'var(--txt2)',
-                lineHeight: 1.55,
-              }}
-            >
-              <span style={{ color: 'var(--amber)', flexShrink: 0 }}>⚠</span>
-              <span>{detail.securityNote}</span>
-            </div>
-          )}
-
           {/* Docs */}
           {detail?.docs && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { ApiFetch, DomainConnectionEntry } from '../types.js';
 import { listDomains, connectDomain, disconnectDomain } from '../api/domain-api.js';
 import { toSubdomainSlug, validateSubdomainLabel } from '../utils/subdomain.js';
-import { showToast } from '../../../components/Toast.js';
+import { showToast, showPersistentToast } from '../../../components/Toast.js';
 
 const CF_ERROR_MESSAGES: Record<string, string> = {
   CNAME_CONFLICT: 'This subdomain is already in use. Choose a different one.',
@@ -111,11 +111,11 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
         const errorCode = (result as { error?: string }).error;
         const errorMsg = (result as { message?: string }).message ?? errorCode ?? 'Failed to connect domain';
         console.error(`[domain-connect] FAIL — error=${errorCode} message=${errorMsg}`, result);
-        showToast(mapError(errorCode, errorMsg));
+        showPersistentToast(mapError(errorCode, errorMsg));
       }
     } catch (e) {
       console.error('[domain-connect] exception:', e);
-      showToast(e instanceof Error ? e.message : 'Failed to connect domain');
+      showPersistentToast(e instanceof Error ? e.message : 'Failed to connect domain');
     } finally {
       setConnecting(false);
     }

@@ -1091,6 +1091,7 @@ export function addExternalLabels(
   appName: string,
   hostname: string,
   port: number,
+  extraHosts?: string[],
 ): void {
   const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;
@@ -1114,7 +1115,8 @@ export function addExternalLabels(
 
   const routerName = `${appName}-external`;
   labels['traefik.enable'] = 'true';
-  labels[`traefik.http.routers.${routerName}.rule`] = `Host(\`${hostname}\`)`;
+  const allHosts = [hostname, ...(extraHosts ?? [])];
+  labels[`traefik.http.routers.${routerName}.rule`] = allHosts.map((h) => `Host(\`${h}\`)`).join(' || ');
   labels[`traefik.http.routers.${routerName}.entrypoints`] = 'web';
   labels[`traefik.http.routers.${routerName}.service`] = routerName;
   labels[`traefik.http.services.${routerName}.loadbalancer.server.port`] = String(port);

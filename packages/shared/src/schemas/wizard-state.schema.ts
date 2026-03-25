@@ -150,6 +150,7 @@ export const domainConnectionSchema = z.object({
   containerPort: z.number().int().min(1).max(65535),
   connectedAt: z.string().datetime(),
   scenario: domainScenarioSchema,
+  basePath: z.string().optional(),
 });
 
 // ─── Root Schema ─────────────────────────────────────────────────────────────

@@ -426,4 +426,88 @@ describe('uninstall command action', () => {
 
     consoleSpy.mockRestore();
   });
+
+  it('shows Quick Tunnel notice after successful uninstall when tunnelMode is "quick"', async () => {
+    mockRunUninstall.mockResolvedValue({ removed: ['containers'], skipped: [], errors: [], success: true });
+    mockLoadState.mockReturnValueOnce({
+      domain: { cloudflare: { tunnelMode: 'quick' } },
+    });
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const p = makeProgram();
+    registerUninstallCommand(p);
+    await parseCommand(p, ['uninstall', '--force']);
+
+    const output = consoleSpy.mock.calls.flat().join(' ');
+    expect(output).toContain('Quick Tunnel');
+
+    consoleSpy.mockRestore();
+  });
+
+  // ── orphan Docker cleanup (installations === 0, no dry-run) ─────────────
+
+  it('removes orphaned containers when docker ps returns container IDs', async () => {
+    mockListInstallations.mockReturnValue([]);
+    mockGetLastProject.mockReturnValue(null);
+    // call 1: docker ps → 1 container found
+    mockExeca.mockResolvedValueOnce({ stdout: 'abc123', exitCode: 0 });
+    // call 2 (docker rm), 3 (volume ls), 4 (network ls) → default ''
+
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const p = makeProgram();
+    registerUninstallCommand(p);
+    await parseCommand(p, ['uninstall']);
+
+    const output = consoleSpy.mock.calls.flat().join(' ');
+    expect(output).toMatch(/Removed 1 orphaned container/);
+
+    consoleSpy.mockRestore();
+  });
+
+  it('removes orphaned volumes when docker volume ls returns volume names', async () => {
+    mockListInstallations.mockReturnValue([]);
+    mockGetLastProject.mockReturnValue(null);
+    // call 1: docker ps → empty (no containers)
+    // call 2: docker volume ls → 1 volume found
+    mockExeca
+      .mockResolvedValueOnce({ stdout: '', exitCode: 0 })
+      .mockResolvedValueOnce({ stdout: 'brewnet-vol1', exitCode: 0 });
+    // call 3 (volume rm), 4 (network ls) → default ''
+
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const p = makeProgram();
+    registerUninstallCommand(p);
+    await parseCommand(p, ['uninstall']);
+
+    const output = consoleSpy.mock.calls.flat().join(' ');
+    expect(output).toMatch(/Removed 1 orphaned volume/);
+
+    consoleSpy.mockRestore();
+  });
+
+  it('removes orphaned networks when docker network ls returns network IDs', async () => {
+    mockListInstallations.mockReturnValue([]);
+    mockGetLastProject.mockReturnValue(null);
+    // call 1: docker ps → empty
+    // call 2: docker volume ls → empty
+    // call 3: docker network ls → 1 network found
+    mockExeca
+      .mockResolvedValueOnce({ stdout: '', exitCode: 0 })
+      .mockResolvedValueOnce({ stdout: '', exitCode: 0 })
+      .mockResolvedValueOnce({ stdout: 'brewnet-net1', exitCode: 0 });
+    // call 4 (network rm) → default ''
+
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const p = makeProgram();
+    registerUninstallCommand(p);
+    await parseCommand(p, ['uninstall']);
+
+    const output = consoleSpy.mock.calls.flat().join(' ');
+    expect(output).toMatch(/Removed 1 orphaned network/);
+
+    consoleSpy.mockRestore();
+  });
 });

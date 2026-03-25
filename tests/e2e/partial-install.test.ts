@@ -417,7 +417,9 @@ describe('T103 — E2E: Partial Install Flow', () => {
       selectQueue = ['partial'];
       mockExistsSync.mockReturnValue(false);
 
-      const state = await runProjectSetupStep(createDefaultWizardState());
+      const initial = createDefaultWizardState();
+      initial.setupType = '' as typeof initial.setupType; // Clear so project-setup shows the prompt
+      const state = await runProjectSetupStep(initial);
 
       expect(state.setupType).toBe('partial');
     });
@@ -427,7 +429,9 @@ describe('T103 — E2E: Partial Install Flow', () => {
       selectQueue = ['partial'];
       mockExistsSync.mockReturnValue(false);
 
-      const state = await runProjectSetupStep(createDefaultWizardState());
+      const initial = createDefaultWizardState();
+      initial.setupType = '' as typeof initial.setupType; // Clear so project-setup shows the prompt
+      const state = await runProjectSetupStep(initial);
 
       expect(state.servers.dbServer.enabled).toBe(false);
       expect(state.servers.fileServer.enabled).toBe(false);
@@ -446,6 +450,7 @@ describe('T103 — E2E: Partial Install Flow', () => {
       mockExistsSync.mockReturnValue(false);
 
       let state = createDefaultWizardState();
+      state.setupType = '' as 'full'; // Clear so project-setup shows the prompt
       state = await runProjectSetupStep(state);
 
       expect(state.setupType).toBe('partial');

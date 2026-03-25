@@ -496,3 +496,123 @@ describe('TC-CA-12: registerCreateAppCommand', () => {
     expect(dbOpt!.defaultValue).toBe('sqlite3');
   });
 });
+
+// ---------------------------------------------------------------------------
+// TC-CA-13: Interactive stack selection (no --stack flag)
+// ---------------------------------------------------------------------------
+
+describe('TC-CA-13: Interactive stack selection', () => {
+  it('runs selectStackInteractively when --stack is not provided', async () => {
+    mockCheckDocker.mockResolvedValue({ status: 'pass' });
+    mockExistsSync.mockReturnValue(false);
+
+    // First select call returns language 'Node.js', second returns the full StackEntry
+    (mockSelect as jest.Mock)
+      .mockResolvedValueOnce('Node.js')                    // language selection
+      .mockResolvedValueOnce({                              // framework selection
+        id: 'nodejs-express',
+        language: 'Node.js',
+        framework: 'Express 5',
+        version: '22',
+        orm: 'Prisma 6',
+        isUnified: false,
+        buildSlow: false,
+      });
+
+    mockCloneStack.mockResolvedValue(undefined);
+    mockGenerateEnv.mockReturnValue(undefined);
+    mockReinitGit.mockResolvedValue(undefined);
+    mockStartContainers.mockResolvedValue(undefined);
+    mockPollHealth.mockResolvedValue({ healthy: true, elapsedMs: 500 });
+    mockVerifyEndpoints.mockResolvedValue(undefined);
+
+    const program = new Command().exitOverride();
+    registerCreateAppCommand(program);
+
+    // No --stack flag → triggers interactive selection
+    await parseCommand(program, ['create-app', 'my-app', '--database', 'sqlite3']);
+
+    expect(mockSelect).toHaveBeenCalledTimes(2);
+    const allLogOutput = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogOutput).toContain('my-app');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TC-CA-14: Rust buildSlow warning
+// ---------------------------------------------------------------------------
+
+describe('TC-CA-14: Rust buildSlow warning', () => {
+  it('shows Rust build warning for slow-build stacks', async () => {
+    mockCheckDocker.mockResolvedValue({ status: 'pass' });
+    mockExistsSync.mockReturnValue(false);
+    mockCloneStack.mockResolvedValue(undefined);
+    mockGenerateEnv.mockReturnValue(undefined);
+    mockReinitGit.mockResolvedValue(undefined);
+    mockStartContainers.mockResolvedValue(undefined);
+    mockPollHealth.mockResolvedValue({ healthy: true, elapsedMs: 5000 });
+    mockVerifyEndpoints.mockResolvedValue(undefined);
+
+    const program = new Command().exitOverride();
+    registerCreateAppCommand(program);
+
+    // rust-actix-web has buildSlow: true
+    await parseCommand(program, ['create-app', 'my-app', '--stack', 'rust-actix-web', '--database', 'sqlite3']);
+
+    const allLogOutput = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogOutput).toMatch(/Rust Warning/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TC-CA-15: startContainers generic error → buildFailed (not port conflict)
+// ---------------------------------------------------------------------------
+
+describe('TC-CA-15: startContainers generic failure', () => {
+  it('throws buildFailed when startContainers fails with a generic error', async () => {
+    mockCheckDocker.mockResolvedValue({ status: 'pass' });
+    mockExistsSync.mockReturnValue(false);
+    mockCloneStack.mockResolvedValue(undefined);
+    mockGenerateEnv.mockReturnValue(undefined);
+    mockReinitGit.mockResolvedValue(undefined);
+    // Generic error (not "address already in use") → BrewnetError.buildFailed
+    mockStartContainers.mockRejectedValue(new Error('docker compose: image pull failed'));
+
+    const program = new Command().exitOverride();
+    registerCreateAppCommand(program);
+
+    await parseCommand(program, ['create-app', 'my-app', '--stack', 'nodejs-express', '--database', 'sqlite3']);
+
+    const allErrorOutput = consoleErrorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    // BrewnetError.buildFailed → "Build failed" or similar
+    expect(allErrorOutput).toMatch(/build|Build/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TC-CA-16: Unified stack success path (isUnified=true, line 405)
+// ---------------------------------------------------------------------------
+
+describe('TC-CA-16: Unified stack success path', () => {
+  it('shows unified app URL line when stack.isUnified is true (L405)', async () => {
+    mockCheckDocker.mockResolvedValue({ status: 'pass' });
+    mockExistsSync.mockReturnValue(false);
+    mockCloneStack.mockResolvedValue(undefined);
+    mockGenerateEnv.mockReturnValue(undefined);
+    mockReinitGit.mockResolvedValue(undefined);
+    mockStartContainers.mockResolvedValue(undefined);
+    mockPollHealth.mockResolvedValue({ healthy: true, elapsedMs: 800, dbConnected: true });
+    mockVerifyEndpoints.mockResolvedValue(undefined);
+
+    const program = new Command().exitOverride();
+    registerCreateAppCommand(program);
+
+    // nodejs-nextjs has isUnified: true → line 405 branch
+    await parseCommand(program, ['create-app', 'my-app', '--stack', 'nodejs-nextjs', '--database', 'sqlite3']);
+
+    const allLogOutput = consoleLogSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogOutput).toContain('my-app');
+    // Unified: shows "App (UI + API)" line, NOT separate Frontend/Backend lines
+    expect(allLogOutput).toContain('App (UI + API)');
+  });
+});

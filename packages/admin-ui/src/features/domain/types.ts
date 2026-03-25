@@ -54,6 +54,10 @@ export interface AppDomainState {
 export interface DomainConnectionEntry {
   appName: string;
   hostname: string;
+  /** Subdomain label, or "@" for apex/root domain connections */
+  subdomain?: string;
+  /** Base domain (e.g. "yourdomain.com") */
+  domain?: string;
   connectedAt?: string;
   externalUrl?: string;
 }

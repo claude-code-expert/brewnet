@@ -217,6 +217,8 @@ describe('readServiceLogs — container log parsing', () => {
 // ---------------------------------------------------------------------------
 
 describe('queryLogs — service source', () => {
+  afterEach(() => { jest.restoreAllMocks(); });
+
   it('calls readServiceLogs when sources includes service', async () => {
     mockListContainers.mockResolvedValueOnce([
       { Id: 'abc123abc123abc1', Names: ['/project-app-1'] },
@@ -241,5 +243,35 @@ describe('queryLogs — service source', () => {
     const result = await queryLogs({ sources: ['service'], services: ['app'] }, '/project');
     // Only 'app' entries should be included
     expect(result.entries.every((e) => e.service === 'app')).toBe(true);
+  });
+
+  // ── Error paths (L324, L329) ─────────────────────────────────────────────
+
+  it('warns and returns empty when container.logs() throws (L324)', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockListContainers.mockResolvedValueOnce([
+      { Id: 'abc123abc123abc1', Names: ['/project-app-1'] },
+    ]);
+    mockContainerLogs.mockRejectedValueOnce(new Error('container stopped'));
+
+    const entries = await readServiceLogs('/project');
+    expect(entries).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[log-aggregator]'),
+      expect.stringContaining('app'),
+      expect.any(Error),
+    );
+  });
+
+  it('warns and returns empty when docker.listContainers() throws (L329)', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockListContainers.mockRejectedValueOnce(new Error('Docker not running'));
+
+    const entries = await readServiceLogs('/project');
+    expect(entries).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[log-aggregator]'),
+      expect.any(Error),
+    );
   });
 });

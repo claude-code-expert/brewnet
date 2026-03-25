@@ -125,7 +125,6 @@ export interface ServiceDetail {
   connectionParams?: { label: string; value: string }[];
   tips?: string[];
   docs?: string;
-  securityNote?: string;
 }
 
 export interface GitRepoEntry {

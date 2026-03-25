@@ -275,6 +275,30 @@ describe('GiteaClient — createRepo 409/500 edge cases', () => {
     const url = await client.createRepo('my-app');
     expect(url).toBe('http://localhost:3000/admin/my-app.git');
   });
+
+  it('deletes orphan files and retries on 500 "files already exist" (L221-232)', async () => {
+    mockFetch
+      // createRepo → 500 with files-already-exist message
+      .mockResolvedValueOnce(jsonResponse('files already exist on server', 500))
+      // deleteRepo call (may 404 — caught)
+      .mockResolvedValueOnce(jsonResponse({}, 204))
+      // retry createRepo → success
+      .mockResolvedValueOnce(jsonResponse({ clone_url: 'http://localhost:3000/admin/my-app.git' }, 201));
+    const client = makeClient();
+    const url = await client.createRepo('my-app');
+    expect(url).toBe('http://localhost:3000/admin/my-app.git');
+  });
+
+  it('throws when createRepo retry after 500 files-already-exist still fails (L228-229)', async () => {
+    mockFetch
+      .mockResolvedValueOnce(jsonResponse('files already exist on server', 500))
+      // deleteRepo fails → caught silently
+      .mockRejectedValueOnce(new Error('delete failed'))
+      // retry createRepo → also fails
+      .mockResolvedValueOnce(jsonResponse({ message: 'still broken' }, 500));
+    const client = makeClient();
+    await expect(client.createRepo('my-app')).rejects.toThrow('createRepo retry failed');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -368,5 +392,56 @@ describe('GiteaClient — prepare()', () => {
 
     const client = makeClient();
     await expect(client.prepare()).rejects.toThrow('Gitea token creation failed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GiteaClient — prepare() timing: startup nginx page + Gitea not reachable
+// ---------------------------------------------------------------------------
+
+describe('GiteaClient — prepare() timing paths', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    fsContent = {};
+    jest.resetAllMocks();
+  });
+
+  afterEach(() => jest.useRealTimers());
+
+  it('retries when version probe returns text/html (startup nginx page) — covers L117-118', async () => {
+    const htmlResponse = {
+      ok: true,
+      status: 200,
+      headers: { get: (_h: string) => 'text/html' },
+      json: async () => ({}),
+      text: async () => '<html>Starting...</html>',
+    } as unknown as Response;
+
+    mockFetch
+      // First probe: ok=true but text/html (startup nginx page) → falls through to sleep
+      .mockResolvedValueOnce(htmlResponse)
+      // Second probe: ok=true + application/json (Gitea ready)
+      .mockResolvedValueOnce(versionOk())
+      // POST token → 201
+      .mockResolvedValueOnce(jsonResponse({ sha1: 'new-token' }, 201));
+
+    const client = makeClient();
+    const preparePromise = client.prepare();
+    await jest.runAllTimersAsync();
+
+    const result = await preparePromise;
+    expect(result.message).toBe('token created');
+  });
+
+  it('throws when Gitea not reachable after all 30 attempts — covers L122', async () => {
+    // All version probe attempts fail immediately
+    mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const client = makeClient();
+
+    // Attach rejection handler BEFORE advancing timers to avoid unhandled-rejection warnings
+    const prepareExpect = expect(client.prepare()).rejects.toThrow('Gitea is not reachable');
+    await jest.runAllTimersAsync();
+    await prepareExpect;
   });
 });

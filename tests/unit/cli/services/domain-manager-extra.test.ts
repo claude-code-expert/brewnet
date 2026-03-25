@@ -391,3 +391,126 @@ describe('DomainManager.connect() — onLog', () => {
     expect(logLines.some((l) => l.includes('start:'))).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// connect() — existing domainConnections included in ingress (L193-194)
+// ---------------------------------------------------------------------------
+
+describe('DomainManager.connect() — existing domainConnections in ingress (L193-194)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
+  });
+
+  it('includes pre-existing connections as external routes in ingress (L193-194)', async () => {
+    const state = makeState({
+      domainConnections: [
+        makeConnection({ appName: 'nextcloud', subdomain: 'cloud', hostname: 'cloud.example.com' }),
+      ],
+    });
+    mockLoadState.mockReturnValue(state);
+    // Provide a route so resolveContainerPort('gitea') resolves to 3000
+    mockGetActiveServiceRoutes.mockReturnValue([
+      { subdomain: 'git', containerName: 'gitea', port: 3000 },
+    ]);
+    // configureTunnelIngress fails → returns early after step 2 (L193-194 executed)
+    mockConfigureTunnelIngress.mockRejectedValueOnce(new Error('ingress fail'));
+
+    const mgr = new DomainManager('test-project');
+    const result = await mgr.connect('gitea', 'git', 'example.com');
+
+    expect(result.success).toBe(false);
+    expect(mockConfigureTunnelIngress).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// status() — checkDnsResolution exception (L580) + checkHttpsReachable exception (L595)
+// ---------------------------------------------------------------------------
+
+describe('DomainManager.status() — private method exception paths', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('covers checkDnsResolution catch path (L580) when execa throws', async () => {
+    const state = makeState({
+      domainConnections: [makeConnection()],
+    });
+    mockLoadState.mockReturnValue(state);
+    mockFetch.mockResolvedValue({ ok: false, status: 503 } as Response);
+    mockGetTunnelHealth.mockResolvedValue({ status: 'inactive', connectorCount: 0 });
+    mockGetDnsRecords.mockResolvedValue([]);
+    // execa throws for dig — checkDnsResolution returns false via catch (L580)
+    mockExecaFn.mockRejectedValueOnce(new Error('dig not found'));
+
+    const mgr = new DomainManager('test-project');
+    const results = await mgr.status();
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.external.dnsResolved).toBe(false);
+  });
+
+  it('covers checkHttpsReachable catch path (L595) when fetch throws on HTTPS check', async () => {
+    const state = makeState({
+      domainConnections: [makeConnection()],
+    });
+    mockLoadState.mockReturnValue(state);
+    // First fetch call (checkLocalHealth) succeeds; second (checkHttpsReachable) throws
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, status: 200 } as Response)
+      .mockRejectedValueOnce(new Error('SSL certificate error'));
+    mockGetTunnelHealth.mockResolvedValue({ status: 'inactive', connectorCount: 0 });
+    mockGetDnsRecords.mockResolvedValue([]);
+    mockExecaFn.mockResolvedValue({ stdout: '', stderr: '' });
+
+    const mgr = new DomainManager('test-project');
+    const results = await mgr.status();
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.external.httpsReachable).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// connect() — DNS propagation timeout → skipped step (L292-293)
+// ---------------------------------------------------------------------------
+
+describe('DomainManager.connect() — DNS propagation timeout (L292-293)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
+    // DNS never resolves → poll loop times out
+    mockExecaFn.mockResolvedValue({ stdout: '', stderr: '' });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('marks dns_propagation as skipped when poll times out', async () => {
+    const state = makeState();
+    mockLoadState.mockReturnValue(state);
+    mockGetActiveServiceRoutes.mockReturnValue([
+      { subdomain: 'git', containerName: 'gitea', port: 3000 },
+    ]);
+    mockConfigureTunnelIngress.mockResolvedValue(undefined);
+    mockGetDnsRecords
+      .mockResolvedValueOnce([]) // No existing record → no conflict
+      .mockResolvedValueOnce([{ id: 'rec-new', name: 'git.example.com', content: 'tun-456.cfargotunnel.com', proxied: true }]);
+    mockCreateDnsRecord.mockResolvedValue(undefined);
+
+    const mgr = new DomainManager('test-project');
+    const connectPromise = mgr.connect('gitea', 'git', 'example.com');
+
+    // Drive the async poll loop past the 30-second DNS timeout
+    await jest.advanceTimersByTimeAsync(35_000);
+
+    const result = await connectPromise;
+
+    expect(result.success).toBe(true);
+    const pollStep = result.steps.find((s) => s.step === 'dns_propagation');
+    expect(pollStep?.status).toBe('skipped');
+  });
+});

@@ -3,6 +3,46 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-25 22:30
+
+### 🎯 Prompts
+1. "traefik 상세 모달에서 보안상 외부 도메인으로 노출하지 않습니다 영역 삭제해"
+2. "domain 연결 후 subdomain 연동할 때 토스트 메시지가 너무 빨리 사라지니까 닫기 x 버튼을 통해 닫게 해줘"
+3. "brewnet uninstall시 클라우드플레어 터널도 같이 정리해주는게 맞아"
+4. "cloudflared LaunchDaemon 시스템 서비스 정리도 추가해"
+5. "cli에서 시스템 체크 후 Installation type이 또 뜨는 중복 프롬프트 제거해"
+6. "brewnet.simplite.net 404 문제 — domain connect 시 Next.js basePath를 tunnel ingress URL에 자동 반영"
+7. "불필요한 테스트 파일 식별 및 삭제"
+
+### ✅ Changes
+- **Removed**: `ServiceDetailInfo.securityNote` 필드 및 Traefik 보안 경고 UI 블록 (`admin-server.ts`, `ServiceDetailModal.tsx`, `types.ts`)
+- **Added**: `showPersistentToast()` — 닫기(✕) 버튼으로만 닫히는 persistent 토스트 (`Toast.tsx`)
+- **Modified**: 도메인 연결 에러 시 `showPersistentToast` 사용 (`useAppDomain.ts`)
+- **Added**: `brewnet uninstall` 시 Cloudflare Tunnel + DNS 자동 삭제 — `deleteTunnel(cascade: true)` (`uninstall.ts`, `cloudflare-client.ts`)
+- **Added**: `cleanupCloudflaredService()` — macOS LaunchDaemon / Linux systemd 자동 정리 (`uninstall.ts`)
+- **Fixed**: `init.ts` pre-step에서 Full Install 선택 후 `project-setup.ts`에서 Installation type 중복 프롬프트 제거
+- **Fixed**: Domain connect 시 Next.js basePath를 tunnel ingress service URL에 자동 포함 (`domain-manager.ts`, `cloudflare-client.ts`)
+- **Added**: `ServiceRoute.basePath`, `DomainConnection.basePath` 필드 (`cloudflare-client.ts`, `wizard-state.ts`)
+- **Fixed**: Toast 타이머 언마운트 누수, `_hideTimer` null 미설정, `completedSteps` 중복 state 제거 (`Toast.tsx`, `DomainSettingModal.tsx`, `StepIndicator.tsx`)
+- **Fixed**: `init.ts` silent catch → `console.warn` 로그 추가 (CLAUDE.md 규칙 준수)
+- **Added**: 테스트 커버리지 85%+ 달성을 위한 15개 테스트 파일 추가/확장 (2861 tests)
+- **Removed**: `docker-installer-extra.test.ts` 중복 테스트 파일 삭제
+
+### 📊 Test Results
+- Total: 2861/2861 passed (105 suites)
+- Coverage: 85.11% CLI
+
+### 📁 Files Modified (주요)
+- `packages/cli/src/commands/uninstall.ts` (+112 lines — CF tunnel/DNS 자동 삭제, cloudflared 서비스 정리)
+- `packages/cli/src/services/domain-manager.ts` (+98 lines — basePath 감지, ingress/health check 반영)
+- `packages/cli/src/services/cloudflare-client.ts` (+25 lines — basePath in service URL, cascade delete)
+- `packages/admin-ui/src/components/Toast.tsx` (+77 lines — persistent toast, close button)
+- `packages/cli/src/commands/init.ts` (+5 lines — setupType 중복 제거)
+- `packages/shared/src/types/wizard-state.ts` (+13 lines — basePath, wwwCnameRecordId, apex domain)
+- 15 test files (+1800 lines)
+
+---
+
 ## [develop] - 2026-03-24 — CLI list/update 명령어, Admin Catalog 페이지, SSH 제거, UI 개선
 
 ### 🎯 Prompts

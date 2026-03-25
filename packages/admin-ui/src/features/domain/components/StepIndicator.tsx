@@ -13,7 +13,6 @@ export function StepIndicator({ steps, currentStep, completedSteps }: StepIndica
       {steps.map((step, idx) => {
         const isCompleted = completedSteps.includes(step.id);
         const isActive = step.id === currentStep;
-        const _isPending = !isCompleted && !isActive; void _isPending;
 
         return (
           <div key={step.id} style={{ display: 'flex', alignItems: 'center', flex: idx < steps.length - 1 ? '1' : 'none' }}>

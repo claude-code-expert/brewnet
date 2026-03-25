@@ -303,3 +303,17 @@ describe('buildDomainConfig — tunnel provider', () => {
     expect(result.cloudflare.accountId).toBe('acc-1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// applyDomainDefaults — quick-tunnel provider (L91-94)
+// ---------------------------------------------------------------------------
+
+describe('applyDomainDefaults — quick-tunnel', () => {
+  it('sets provider, ssl, cloudflare enabled, and tunnelMode for quick-tunnel', () => {
+    const result = applyDomainDefaults(makeState(), 'quick-tunnel');
+    expect(result.domain.provider).toBe('quick-tunnel');
+    expect(result.domain.ssl).toBe('cloudflare');
+    expect(result.domain.cloudflare.enabled).toBe(true);
+    expect(result.domain.cloudflare.tunnelMode).toBe('quick');
+  });
+});

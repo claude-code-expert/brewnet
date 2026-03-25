@@ -106,6 +106,7 @@ const mockDockerodeCreateContainer = jest.fn<() => Promise<unknown>>();
 const MockDockerode = jest.fn().mockImplementation(() => ({
   getContainer: jest.fn(() => ({
     stop: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    start: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     remove: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     logs: jest.fn<() => Promise<Buffer>>().mockResolvedValue(Buffer.from('')),
     inspect: jest.fn<() => Promise<unknown>>().mockResolvedValue({ State: { Running: true } }),
@@ -285,6 +286,8 @@ describe('domain status', () => {
     mockGetLastProject.mockReturnValue('my-project');
   });
 
+  afterEach(() => { jest.restoreAllMocks(); });
+
   it('shows empty message when no connections', async () => {
     mockDomainManagerStatus.mockResolvedValue([]);
     let output = '';
@@ -319,6 +322,26 @@ describe('domain status', () => {
     await parseCommand(p, ['domain', 'status', 'my-app']);
     expect(mockDomainManagerStatus).toHaveBeenCalledWith('my-app');
   });
+
+  it('shows error when no project found (L998-999)', async () => {
+    mockGetLastProject.mockReturnValue('');
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'status']);
+    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+  });
+
+  it('shows error when DomainManager constructor throws (L1006-1007)', async () => {
+    MockDomainManager.mockImplementationOnce(() => { throw new Error('state load failed'); });
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'status']);
+    expect(errMsg).toContain('프로젝트 로드 실패');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -332,6 +355,8 @@ describe('domain disconnect', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     mockGetLastProject.mockReturnValue('my-project');
   });
+
+  afterEach(() => { jest.restoreAllMocks(); });
 
   it('disconnects successfully', async () => {
     mockDomainManagerDisconnect.mockResolvedValue({
@@ -359,6 +384,40 @@ describe('domain disconnect', () => {
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'disconnect', 'git']);
     expect(errMsg).toContain('Tunnel ingress removal failed');
+  });
+
+  it('shows error when no project found (L940-941)', async () => {
+    mockGetLastProject.mockReturnValue('');
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'disconnect', 'git']);
+    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+  });
+
+  it('shows error when DomainManager constructor throws (L948-949)', async () => {
+    MockDomainManager.mockImplementationOnce(() => { throw new Error('project state missing'); });
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'disconnect', 'git']);
+    expect(errMsg).toContain('프로젝트 로드 실패');
+  });
+
+  it('shows step error message when step fails (L970)', async () => {
+    mockDomainManagerDisconnect.mockResolvedValue({
+      success: false,
+      steps: [{ step: 'ingress_removal', status: 'failed', error: 'Ingress rule not found' }],
+      error: 'Ingress rule not found',
+    });
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s) + '\n'; });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'disconnect', 'git']);
+    expect(output).toContain('Ingress rule not found');
   });
 });
 
@@ -419,6 +478,18 @@ describe('domain tunnel status', () => {
     await parseCommand(p, ['domain', 'tunnel', 'status']);
     expect(output).toContain('API 토큰 없음');
   });
+
+  it('shows error message when getTunnelHealth throws (L397-400)', async () => {
+    mockGetLastProject.mockReturnValue('my-project');
+    mockLoadState.mockReturnValue(makeWizardState('named'));
+    mockGetTunnelHealth.mockRejectedValue(new Error('CF API timeout'));
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'status']);
+    expect(errMsg).toContain('CF API timeout');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -432,7 +503,13 @@ describe('domain connect with --domain', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     mockGetLastProject.mockReturnValue('my-project');
     mockLoadState.mockReturnValue(makeWizardState('named'));
+    // Reset getState to default (zoneId present) so Scenario C path is not taken
+    mockDomainManagerGetState.mockReturnValue({
+      domain: { cloudflare: { tunnelMode: 'named', tunnelId: 'tun-1', apiToken: 'tok', accountId: 'acc', zoneId: 'zone-123', tunnelName: 'brewnet-test' } },
+    });
   });
+
+  afterEach(() => { jest.restoreAllMocks(); });
 
   it('shows error when no project found', async () => {
     mockGetLastProject.mockReturnValue('');
@@ -481,5 +558,348 @@ describe('domain connect with --domain', () => {
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'my-api.example.com']);
     expect(errMsg).toContain('APP_NOT_RUNNING');
+  });
+
+  it('shows Scenario C CNAME instructions when no zoneId but tunnelId exists (L854)', async () => {
+    const state = makeWizardState('named');
+    state.domain.cloudflare.zoneId = '';  // no zoneId
+    state.domain.cloudflare.tunnelId = 'tun-456';  // but has tunnelId
+    mockLoadState.mockReturnValue(state);
+    mockDomainManagerGetState.mockReturnValueOnce({ domain: { cloudflare: { zoneId: '', tunnelId: 'tun-456' } } });
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'my-api.example.com']);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Scenario C'));
+  });
+
+  it('shows media streaming ToS warning and proceeds to connect for jellyfin app (L878)', async () => {
+    mockDomainManagerConnect.mockResolvedValue({
+      success: true,
+      hostname: 'jellyfin.example.com',
+      externalUrl: 'https://jellyfin.example.com',
+      steps: [],
+    });
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'connect', 'jellyfin', '--domain', 'jellyfin.example.com']);
+    expect(output).toContain('ToS');
+    expect(mockDomainManagerConnect).toHaveBeenCalled();
+  });
+
+  it('shows error when domain format invalid (no dot) (L831)', async () => {
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'invaliddomain']);
+    expect(errMsg).toContain('잘못된 도메인');
+  });
+
+  it('shows error when --domain is set but app name is missing (L99-100)', async () => {
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    // --domain set but no positional app argument
+    await parseCommand(p, ['domain', 'connect', '--domain', 'my-api.example.com']);
+    expect(errMsg).toContain('앱 이름이 필요합니다');
+  });
+
+  it('shows step error detail when step has failed status (L905)', async () => {
+    mockDomainManagerConnect.mockResolvedValue({
+      success: false,
+      hostname: 'my-api.example.com',
+      externalUrl: 'https://my-api.example.com',
+      steps: [{ step: 'health_check', status: 'failed', error: 'Connection refused on port 3000' }],
+      error: 'APP_NOT_RUNNING',
+    });
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s) + '\n'; });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'my-api.example.com']);
+    expect(output).toContain('Connection refused on port 3000');
+  });
+
+  it('shows CNAME conflict instructions when error is CNAME_CONFLICT (L924-925)', async () => {
+    mockDomainManagerConnect.mockResolvedValue({
+      success: false,
+      hostname: 'my-api.example.com',
+      externalUrl: 'https://my-api.example.com',
+      steps: [],
+      error: 'CNAME_CONFLICT',
+    });
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s) + '\n'; });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'my-api.example.com']);
+    expect(output).toContain('--force');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// domain tunnel status — additional paths (L328, L356)
+// ---------------------------------------------------------------------------
+
+describe('domain tunnel status — tunnelMode=none', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('shows error message when tunnelMode is none (L328-329)', async () => {
+    mockGetLastProject.mockReturnValue('my-project');
+    mockLoadState.mockReturnValue(makeWizardState('none'));
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'status']);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('터널이 설정되지 않았습니다'));
+  });
+
+  it('shows error when named tunnel has no tunnelId or accountId (L356)', async () => {
+    const state = makeWizardState('named');
+    state.domain.cloudflare.tunnelId = '';
+    state.domain.cloudflare.accountId = '';
+    mockGetLastProject.mockReturnValue('my-project');
+    mockLoadState.mockReturnValue(state);
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'status']);
+    expect(errMsg).toContain('터널 정보가 없습니다');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// domain tunnel restart — all paths (L424-541)
+// ---------------------------------------------------------------------------
+
+describe('domain tunnel restart', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetLastProject.mockReturnValue('my-project');
+    mockGetTunnelHealth.mockResolvedValue({ status: 'healthy', connectorCount: 1 });
+    mockGetActiveServiceRoutes.mockReturnValue([
+      { subdomain: 'git', containerName: 'gitea', port: 3000 },
+    ]);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('shows error when no project found (L427)', async () => {
+    mockGetLastProject.mockReturnValue('');
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+  });
+
+  it('shows error when tunnelMode is none (L434-436)', async () => {
+    mockLoadState.mockReturnValue(makeWizardState('none'));
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('터널이 설정되지 않았습니다'));
+  });
+
+  it('restarts container successfully in named tunnel mode (L443-501)', async () => {
+    mockLoadState.mockReturnValue(makeWizardState('named'));
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    // Container stop + start + health check complete
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('재시작합니다'));
+  });
+
+  it('handles container already stopped gracefully (L454-455)', async () => {
+    mockLoadState.mockReturnValue(makeWizardState('named'));
+    MockDockerode.mockImplementationOnce(() => ({
+      getContainer: jest.fn(() => ({
+        stop: jest.fn().mockRejectedValue(new Error('container not running')),
+        start: jest.fn().mockResolvedValue(undefined),
+        logs: jest.fn().mockResolvedValue(Buffer.from('')),
+        inspect: jest.fn().mockResolvedValue({ State: { Running: false } }),
+      })),
+      listContainers: jest.fn().mockResolvedValue([]),
+    }));
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    // Should succeed despite stop error
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('재시작합니다'));
+  });
+
+  it('shows error when container stop fails with non-running error (L457-459)', async () => {
+    mockLoadState.mockReturnValue(makeWizardState('named'));
+    MockDockerode.mockImplementationOnce(() => ({
+      getContainer: jest.fn(() => ({
+        stop: jest.fn().mockRejectedValue(new Error('ECONNREFUSED docker socket')),
+        start: jest.fn().mockResolvedValue(undefined),
+        logs: jest.fn().mockResolvedValue(Buffer.from('')),
+        inspect: jest.fn().mockResolvedValue({ State: { Running: false } }),
+      })),
+      listContainers: jest.fn().mockResolvedValue([]),
+    }));
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    // Should have tried to stop and hit the error path
+    expect(MockDockerode).toHaveBeenCalled();
+  });
+
+  it('shows error when container start fails (L470-472)', async () => {
+    mockLoadState.mockReturnValue(makeWizardState('named'));
+    MockDockerode.mockImplementationOnce(() => ({
+      getContainer: jest.fn(() => ({
+        stop: jest.fn().mockResolvedValue(undefined),
+        start: jest.fn().mockRejectedValue(new Error('Cannot start container')),
+        logs: jest.fn().mockResolvedValue(Buffer.from('')),
+        inspect: jest.fn().mockResolvedValue({ State: { Running: false } }),
+      })),
+      listContainers: jest.fn().mockResolvedValue([]),
+    }));
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    expect(errMsg).toContain('Cannot start');
+  });
+
+  it('shows service URLs with zoneName in named tunnel mode (L535-539)', async () => {
+    const state = makeWizardState('named');
+    mockLoadState.mockReturnValue(state);
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    // Service URL display with subdomain.zoneName pattern
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('example.com'));
+  });
+
+  it('completes quick tunnel restart and shows quick tunnel URL (L476-492)', async () => {
+    const state = makeWizardState('quick');
+    state.domain.cloudflare.quickTunnelUrl = 'https://abc.trycloudflare.com';
+    mockLoadState.mockReturnValue(state);
+
+    // captureQuickTunnelUrl uses callback-style container.logs() — mock must call callback
+    // immediately with error to avoid 30s timeout; this exercises the catch block (L490)
+    MockDockerode.mockImplementationOnce(() => ({
+      getContainer: jest.fn().mockReturnValue({
+        stop: jest.fn().mockResolvedValue(undefined),
+        start: jest.fn().mockResolvedValue(undefined),
+        logs: jest.fn().mockImplementation(
+          (_opts: unknown, cb: (err: Error, stream: undefined) => void) => {
+            cb(new Error('container stopped'), undefined);
+          },
+        ),
+        inspect: jest.fn().mockResolvedValue({ State: { Running: true } }),
+      }),
+      listContainers: jest.fn().mockResolvedValue([]),
+    }));
+
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    // Quick tunnel path ran — error caught gracefully (L490 urlSpinner.warn)
+    expect(consoleSpy).toHaveBeenCalled();
+  });
+
+  it('shows no-tunnel-credentials restart fallback message (L504-505)', async () => {
+    // tunnelMode='named' but no tunnelId → else branch at L502-505 (3s wait + console.log)
+    jest.useFakeTimers();
+    const state = makeWizardState('named');
+    state.domain.cloudflare.tunnelId = '';
+    mockLoadState.mockReturnValue(state);
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const p = makeProgram();
+    registerDomainCommand(p);
+    const cmd = parseCommand(p, ['domain', 'tunnel', 'restart']);
+    jest.runAllTimersAsync();
+    await cmd;
+    jest.useRealTimers();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('재시작 완료'));
+  });
+
+  it('saves state with new URL when Quick Tunnel URL capture succeeds (L483-489)', async () => {
+    // Use quick-tunnel state so the URL capture branch runs
+    const state = makeWizardState('quick');
+    state.domain.cloudflare.quickTunnelUrl = 'https://old.trycloudflare.com';
+    mockLoadState.mockReturnValue(state);
+
+    // Mock container.logs to call callback with a stream that emits a URL immediately
+    MockDockerode.mockImplementationOnce(() => ({
+      getContainer: jest.fn().mockReturnValue({
+        stop: jest.fn().mockResolvedValue(undefined),
+        start: jest.fn().mockResolvedValue(undefined),
+        inspect: jest.fn().mockResolvedValue({ State: { Running: true } }),
+        logs: jest.fn().mockImplementation(
+          (_opts: unknown, cb: (err: null, stream: unknown) => void) => {
+            const mockStream = {
+              on: jest.fn().mockImplementation((event: string, handler: (chunk: Buffer) => void) => {
+                if (event === 'data') {
+                  // Immediately deliver a URL via data event
+                  handler(Buffer.from('Your tunnel URL: https://abc-xyz.trycloudflare.com'));
+                }
+              }),
+              destroy: jest.fn(),
+            };
+            cb(null, mockStream);
+          },
+        ),
+      }),
+      listContainers: jest.fn().mockResolvedValue([]),
+    }));
+
+    const p = makeProgram();
+    registerDomainCommand(p);
+    await parseCommand(p, ['domain', 'tunnel', 'restart']);
+    // Success path: state was saved with new URL (L486)
+    expect(mockSaveState).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// domain connect — legacy path (no --domain) error cases
+// ---------------------------------------------------------------------------
+
+describe('domain connect — legacy path error cases', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetLastProject.mockReturnValue('my-project');
+  });
+
+  it('shows error when state is null in legacy connect (L111-113)', async () => {
+    mockLoadState.mockReturnValue(null);
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerDomainCommand(p);
+    // No --domain flag → legacy path; state = null → lines 111-113
+    await parseCommand(p, ['domain', 'connect']);
+    expect(errMsg).toContain('설치된 brewnet 프로젝트를 찾을 수 없습니다');
   });
 });

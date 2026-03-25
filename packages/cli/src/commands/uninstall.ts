@@ -8,6 +8,8 @@
  * @module commands/uninstall
  */
 
+import { existsSync } from 'node:fs';
+import { platform } from 'node:os';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { confirm, select } from '@inquirer/prompts';
@@ -30,6 +32,44 @@ function printTargets(
       ? chalk.dim(`  [skip] ${t.label} (${t.skipReason ?? 'preserved'})`)
       : chalk.red(`  [remove] ${t.label}`);
     console.log(tag);
+  }
+}
+
+/**
+ * Stop cloudflared system service and remove the plist/systemd unit.
+ * Requires sudo — prompts the user for their password.
+ */
+async function cleanupCloudflaredService(): Promise<void> {
+  const { execa: execaFn } = await import('execa');
+  const os = platform();
+
+  if (os === 'darwin') {
+    const plist = '/Library/LaunchDaemons/com.cloudflare.cloudflared.plist';
+    if (!existsSync(plist)) return;
+
+    console.log(chalk.dim('  cloudflared 시스템 서비스 정리 중... (sudo 비밀번호 필요)'));
+    try {
+      await execaFn('sudo', ['launchctl', 'bootout', 'system/com.cloudflare.cloudflared'], { stdio: 'inherit', reject: false });
+      await execaFn('sudo', ['rm', '-f', plist], { stdio: 'inherit' });
+      console.log(chalk.green('  ✓ cloudflared LaunchDaemon 서비스 제거 완료'));
+    } catch (err) {
+      console.log(chalk.yellow(`  ⚠  cloudflared 서비스 제거 실패: ${err instanceof Error ? err.message : err}`));
+    }
+  } else if (os === 'linux') {
+    // systemd service
+    try {
+      const { exitCode } = await execaFn('systemctl', ['is-active', 'cloudflared'], { reject: false });
+      if (exitCode !== 0) return; // not installed or not active
+
+      console.log(chalk.dim('  cloudflared 시스템 서비스 정리 중... (sudo 비밀번호 필요)'));
+      await execaFn('sudo', ['systemctl', 'stop', 'cloudflared'], { stdio: 'inherit', reject: false });
+      await execaFn('sudo', ['systemctl', 'disable', 'cloudflared'], { stdio: 'inherit', reject: false });
+      await execaFn('sudo', ['rm', '-f', '/etc/systemd/system/cloudflared.service'], { stdio: 'inherit', reject: false });
+      await execaFn('sudo', ['systemctl', 'daemon-reload'], { stdio: 'inherit', reject: false });
+      console.log(chalk.green('  ✓ cloudflared systemd 서비스 제거 완료'));
+    } catch (err) {
+      console.log(chalk.yellow(`  ⚠  cloudflared 서비스 제거 실패: ${err instanceof Error ? err.message : err}`));
+    }
   }
 }
 
@@ -211,25 +251,63 @@ export function registerUninstallCommand(program: Command): void {
           process.exitCode = 1;
         }
 
-        // --- Cloudflare Tunnel notice (context-aware) ---
+        // --- Cloudflare Tunnel cleanup (context-aware) ---
         const tunnelMode = state?.domain?.cloudflare?.tunnelMode;
-        if (tunnelMode === 'named') {
-          const tunnelName = state?.domain?.cloudflare?.tunnelName ?? '';
-          const zoneName = state?.domain?.cloudflare?.zoneName ?? '';
-          console.log(chalk.yellow('  ⚠  Cloudflare Named Tunnel 리소스가 남아있습니다.'));
-          console.log(chalk.dim('     API 토큰이 저장되지 않아 자동 삭제가 불가합니다.'));
-          console.log(chalk.dim('     아래 항목을 CF 대시보드에서 수동 삭제하세요:\n'));
-          console.log(chalk.dim('     1. 터널 삭제:'));
-          console.log(chalk.dim('        → https://one.dash.cloudflare.com → Networks → Tunnels'));
-          if (tunnelName) {
-            console.log(chalk.dim(`        → "${tunnelName}" 선택 → Delete`));
+        if (tunnelMode === 'named' && state) {
+          const cf = state.domain.cloudflare;
+          const { apiToken, accountId, tunnelId, tunnelName, zoneName, zoneId } = cf;
+
+          if (apiToken && accountId && tunnelId) {
+            console.log(chalk.dim('\n  Cloudflare 리소스 정리 중...'));
+
+            if (zoneId) {
+              try {
+                const { getDnsRecords, deleteDnsRecord } = await import('../services/cloudflare-client.js');
+                const tunnelTarget = `${tunnelId}.cfargotunnel.com`;
+                const allRecords: Array<{ id: string; name: string; content: string }> = [];
+                const hostnames = (state.domainConnections ?? []).map((c) => c.hostname);
+                for (const hostname of hostnames) {
+                  const recs = await getDnsRecords(apiToken, zoneId, hostname);
+                  allRecords.push(...recs.filter((r) => r.content === tunnelTarget));
+                }
+                for (const rec of allRecords) {
+                  await deleteDnsRecord(apiToken, zoneId, rec.id);
+                }
+                if (allRecords.length > 0) {
+                  console.log(chalk.green(`  ✓ DNS CNAME 레코드 ${allRecords.length}개 삭제`));
+                }
+              } catch (dnsErr) {
+                console.log(chalk.yellow(`  ⚠  DNS 레코드 삭제 실패: ${dnsErr instanceof Error ? dnsErr.message : dnsErr}`));
+              }
+            }
+
+            try {
+              const { deleteTunnel } = await import('../services/cloudflare-client.js');
+              await deleteTunnel(apiToken, accountId, tunnelId, { cascade: true });
+              console.log(chalk.green(`  ✓ Cloudflare Tunnel "${tunnelName || tunnelId}" 삭제 완료`));
+            } catch (tunErr) {
+              console.log(chalk.yellow(`  ⚠  터널 자동 삭제 실패: ${tunErr instanceof Error ? tunErr.message : tunErr}`));
+              console.log(chalk.dim('     CF 대시보드에서 수동 삭제하세요:'));
+              console.log(chalk.dim('     → https://one.dash.cloudflare.com → Networks → Tunnels'));
+              if (tunnelName) console.log(chalk.dim(`     → "${tunnelName}" 선택 → Delete`));
+            }
+
+            // Stop and remove local cloudflared system service (macOS / Linux)
+            await cleanupCloudflaredService();
+          } else {
+            // No API token — manual cleanup guide
+            console.log(chalk.yellow('\n  ⚠  Cloudflare Named Tunnel 리소스가 남아있습니다.'));
+            console.log(chalk.dim('     API 토큰이 없어 자동 삭제가 불가합니다.'));
+            console.log(chalk.dim('     CF 대시보드에서 수동 삭제하세요:\n'));
+            console.log(chalk.dim('     1. 터널 삭제:'));
+            console.log(chalk.dim('        → https://one.dash.cloudflare.com → Networks → Tunnels'));
+            if (tunnelName) console.log(chalk.dim(`        → "${tunnelName}" 선택 → Delete`));
+            if (zoneName) {
+              console.log(chalk.dim('     2. DNS CNAME 레코드 삭제:'));
+              console.log(chalk.dim(`        → ${zoneName} → DNS → Records`));
+              console.log(chalk.dim('        → *.cfargotunnel.com 을 가리키는 CNAME 삭제'));
+            }
           }
-          if (zoneName) {
-            console.log(chalk.dim('     2. DNS CNAME 레코드 삭제:'));
-            console.log(chalk.dim(`        → ${zoneName} → DNS → Records`));
-            console.log(chalk.dim('        → *.cfargotunnel.com 을 가리키는 CNAME 삭제'));
-          }
-          console.log(chalk.dim('\n     삭제하지 않으면 inactive 상태로 남습니다.'));
           console.log();
         } else if (tunnelMode === 'quick') {
           console.log(chalk.dim('  Quick Tunnel은 계정 연동이 없어 CF 측 정리가 필요 없습니다.'));

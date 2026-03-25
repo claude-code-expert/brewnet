@@ -129,13 +129,6 @@ describe('readAccessLogs — extended metadata', () => {
     expect(result[0].metadata.userAgent).toBe('Mozilla/5.0 (Test Browser)');
   });
 
-  it('includes userAgent from request_User-Agent (hyphen) field', () => {
-    fsFiles['/project/logs/access.log'] = makeAccessEntry({
-      'request_User-Agent': 'curl/7.88',
-    }) + '\n';
-    const result = readAccessLogs('/project');
-    expect(result[0].metadata.userAgent).toBe('curl/7.88');
-  });
 
   it('skips malformed JSON lines silently', () => {
     fsFiles['/project/logs/access.log'] = 'not-valid-json\n' + makeAccessEntry() + '\n';

@@ -74,11 +74,15 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/storage-manager.
   STORAGE_BACKENDS: mockStorageBackends,
 }));
 
+const mockInquirerSelect  = jest.fn<() => Promise<string>>().mockResolvedValue('nextcloud');
+const mockInquirerInput   = jest.fn<() => Promise<string>>().mockResolvedValue('admin');
+const mockInquirerConfirm = jest.fn<() => Promise<boolean>>().mockResolvedValue(true);
+
 jest.unstable_mockModule('@inquirer/prompts', () => ({
-  select: jest.fn<() => Promise<string>>().mockResolvedValue('nextcloud'),
-  input: jest.fn<() => Promise<string>>().mockResolvedValue('admin'),
+  select: mockInquirerSelect,
+  input: mockInquirerInput,
   password: jest.fn<() => Promise<string>>().mockResolvedValue('secret'),
-  confirm: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
+  confirm: mockInquirerConfirm,
 }));
 
 // ---------------------------------------------------------------------------
@@ -172,6 +176,25 @@ describe('export — action', () => {
     await parseCommand(p, ['export', '--project', 'my-project', '--output', '/tmp']);
     expect(mockOraInstance.fail).toHaveBeenCalled();
   });
+
+  it('includes apps.json and boilerplate.json in archive when they exist', async () => {
+    // Provide all optional files so cpSync is called for apps.json and boilerplate.json
+    fsContent['/home/user/.brewnet/projects/my-project/selections.json'] = '{}';
+    fsContent['/home/user/.brewnet/apps.json'] = '[]';
+    fsContent['/home/user/brewnet/my-project/.brewnet-boilerplate.json'] = '[]';
+    fsContent['/home/user/brewnet/my-project/docker-compose.yml'] = 'version: "3"';
+    mockStatSync.mockReturnValue({ size: 4096 });
+    mockExistsSync.mockImplementation((p: unknown) => (p as string) in fsContent);
+
+    const p = makeProgram();
+    registerExportCommand(p);
+    await parseCommand(p, ['export', '--project', 'my-project', '--output', '/tmp']);
+
+    // cpSync should have been called for apps.json and boilerplate.json
+    const cpCalls = mockCpSync.mock.calls.map((c) => String(c[0]));
+    expect(cpCalls.some((p) => p.includes('apps.json'))).toBe(true);
+    expect(cpCalls.some((p) => p.includes('.brewnet-boilerplate.json'))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -256,5 +279,152 @@ describe('storage status', () => {
     await parseCommand(p, ['storage', 'status', '--path', '/proj']);
     // Should show something about no backends or available backends
     expect(output.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// storage init — additional edge cases
+// ---------------------------------------------------------------------------
+
+describe('storage init — no project (no --path, no lastProject)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('errors when resolveProjectPath returns null (no lastProject)', async () => {
+    mockGetLastProject.mockReturnValue('');
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'nextcloud', '--yes']);
+    expect(errMsg).toContain('No project found');
+  });
+
+  it('resolves project via lastProject when --path is omitted', async () => {
+    mockGetLastProject.mockReturnValue('my-project');
+    mockLoadState.mockReturnValue({ projectPath: '/home/user/brewnet/my-project', admin: { password: 'pw' } });
+    mockInitStorage.mockResolvedValue({ success: true, backend: 'nextcloud', envPatched: true });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'nextcloud', '--yes']);
+    expect(mockInitStorage).toHaveBeenCalledWith('nextcloud', expect.objectContaining({
+      projectPath: '/home/user/brewnet/my-project',
+    }));
+  });
+});
+
+describe('storage init — invalid backend', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('errors on unknown backend name', async () => {
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'badbackend', '--yes', '--path', '/proj']);
+    expect(errMsg).toContain('Unknown storage backend');
+  });
+});
+
+describe('storage init — interactive and confirm paths', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockInitStorage.mockResolvedValue({ success: true, backend: 'nextcloud', envPatched: false });
+  });
+
+  it('uses interactive select when --service is omitted', async () => {
+    mockInquirerSelect.mockResolvedValueOnce('filebrowser');
+    mockInquirerConfirm.mockResolvedValueOnce(true);
+    mockInitStorage.mockResolvedValue({ success: true, backend: 'filebrowser', envPatched: false });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--path', '/proj']);
+    expect(mockInitStorage).toHaveBeenCalledWith('filebrowser', expect.any(Object));
+  });
+
+  it('cancels when confirm returns false', async () => {
+    mockInquirerConfirm.mockResolvedValueOnce(false);
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s); });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'filebrowser', '--path', '/proj']);
+    expect(output).toContain('Cancelled');
+    expect(mockInitStorage).not.toHaveBeenCalled();
+  });
+
+  it('prompts for credentials when needsCreds and no --yes (nextcloud)', async () => {
+    mockInquirerInput.mockResolvedValue('admin');
+    mockInquirerConfirm.mockResolvedValueOnce(true);
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'nextcloud', '--path', '/proj']);
+    expect(mockInquirerInput).toHaveBeenCalled();
+  });
+});
+
+describe('storage init — result variations', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('displays backup path when result.backupPath is set', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockInitStorage.mockResolvedValue({
+      success: true, backend: 'nextcloud', envPatched: true, backupPath: '/tmp/backup.tar.gz',
+    } as any);
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s); });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'nextcloud', '--yes', '--path', '/proj']);
+    expect(output).toContain('backup.tar.gz');
+  });
+
+  it('displays first-login message for filebrowser backend', async () => {
+    mockInitStorage.mockResolvedValue({ success: true, backend: 'filebrowser', envPatched: false });
+    let output = '';
+    jest.spyOn(console, 'log').mockImplementation((s: unknown) => { output += String(s); });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'filebrowser', '--yes', '--path', '/proj']);
+    expect(output).toContain('first login');
+  });
+
+  it('handles initStorage throwing an exception', async () => {
+    mockInitStorage.mockRejectedValue(new Error('docker not found'));
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'init', '--service', 'nextcloud', '--yes', '--path', '/proj']);
+    expect(mockOraInstance.fail).toHaveBeenCalledWith('Storage init failed');
+  });
+});
+
+describe('storage status — no project', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('errors when no project found and no --path given', async () => {
+    mockGetLastProject.mockReturnValue('');
+    let errMsg = '';
+    jest.spyOn(console, 'error').mockImplementation((s: unknown) => { errMsg += String(s); });
+    const p = makeProgram();
+    registerStorageCommand(p);
+    await parseCommand(p, ['storage', 'status']);
+    expect(errMsg).toContain('No project found');
   });
 });

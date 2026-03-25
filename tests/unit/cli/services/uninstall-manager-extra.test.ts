@@ -298,3 +298,79 @@ describe('listInstallations — filesystem scan', () => {
     expect(result.some((r) => r.path === `~/brewnet/${projectName}`)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// removeByManifest — rmSync error on boilerplate stack dir (L168-169)
+// ---------------------------------------------------------------------------
+
+describe('removeByManifest — boilerplate stack rmSync error (L168-169)', () => {
+  it('records error when rmSync throws removing boilerplate stack dir', async () => {
+    const stackDir = join(PROJECT_PATH, 'nodejs-express');
+    existingPaths.add(PROJECT_PATH);
+    existingPaths.add(join(PROJECT_PATH, '.brewnet-manifest.json'));
+    existingPaths.add(stackDir);
+    mockReadFileSync.mockImplementation((p: unknown) => {
+      if ((p as string).includes('.brewnet-manifest.json')) {
+        return makeValidManifest({ generatedDirs: [] });
+      }
+      return '{}';
+    });
+    mockRmSync.mockImplementation((p: unknown) => {
+      if ((p as string) === stackDir) throw new Error('EACCES: permission denied on stackDir');
+    });
+
+    const result = await runUninstall({ projectPath: PROJECT_PATH });
+    expect(result.errors.some((e) => e.includes('nodejs-express') && e.includes('permission denied'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeByManifest — rmSync error on generated dir (L182-183)
+// ---------------------------------------------------------------------------
+
+describe('removeByManifest — generatedDir rmSync error (L182-183)', () => {
+  it('records error when rmSync throws removing generated directory', async () => {
+    const secretsDir = join(PROJECT_PATH, 'secrets');
+    existingPaths.add(PROJECT_PATH);
+    existingPaths.add(join(PROJECT_PATH, '.brewnet-manifest.json'));
+    existingPaths.add(secretsDir);
+    mockReadFileSync.mockImplementation((p: unknown) => {
+      if ((p as string).includes('.brewnet-manifest.json')) {
+        return makeValidManifest({ boilerplateStacks: [] });
+      }
+      return '{}';
+    });
+    mockRmSync.mockImplementation((p: unknown) => {
+      if ((p as string) === secretsDir) throw new Error('EACCES: permission denied on secrets');
+    });
+
+    const result = await runUninstall({ projectPath: PROJECT_PATH });
+    expect(result.errors.some((e) => e.includes('secrets') && e.includes('permission denied'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanupOrphanContainers — execa throws (L403-404)
+// ---------------------------------------------------------------------------
+
+describe('cleanupOrphanContainers — execa error (L403-404)', () => {
+  it('records error when docker compose down throws for orphan containers', async () => {
+    const subDir = join(PROJECT_PATH, 'nodejs-express');
+    existingPaths.add(PROJECT_PATH);
+    mockListContainers.mockResolvedValueOnce([
+      {
+        Id: 'abc123',
+        Names: ['/nodejs-express'],
+        Labels: {
+          'com.docker.compose.project.working_dir': subDir,
+          'com.docker.compose.config.files': 'docker-compose.yml',
+        },
+      },
+    ]);
+    // Make the orphan compose down throw
+    mockExeca.mockRejectedValueOnce(new Error('docker compose failed'));
+
+    const result = await runUninstall({ projectPath: PROJECT_PATH });
+    expect(result.errors.some((e) => e.includes('orphan') && e.includes('nodejs-express'))).toBe(true);
+  });
+});
