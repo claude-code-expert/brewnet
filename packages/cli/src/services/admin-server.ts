@@ -1889,12 +1889,12 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             handleDomainApps(res, wizardState);
             return;
           }
-          // POST /api/domain/connect — no auth needed (apps-page uses this; server is localhost-only)
           if (req.method === 'POST' && parts[2] === 'connect') {
+            if (!checkAdminAuth(req, res, wizardState)) return;
             await handleDomainConnect(res, body, wizardState);
             return;
           }
-          // Mutating operations that remain auth-gated
+          // Auth-gated mutating operations
           if (!checkAdminAuth(req, res, wizardState)) return;
           if (req.method === 'DELETE' && parts[2] === 'disconnect' && parts[3]) {
             await handleDomainDisconnect(res, parts[3], wizardState);

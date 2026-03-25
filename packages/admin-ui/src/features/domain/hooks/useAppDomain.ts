@@ -51,8 +51,7 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
       const result = await listDomains(apiFetch);
       setConnections(result.connections);
       setCfConfigured(result.credentialsConfigured);
-      setZoneName(result.tunnel?.tunnelName ? '' : ''); // zoneName comes from CF settings
-      // Derive zoneName from connections hostname pattern or tunnel info
+      // Derive zoneName from connections hostname pattern
       if (result.connections.length > 0) {
         const first = result.connections[0].hostname;
         const parts = first.split('.');
@@ -67,9 +66,11 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
           const settings = await settingsRes.json() as { zoneName?: string };
           if (settings.zoneName) setZoneName(settings.zoneName);
         }
-      } catch { /* non-critical */ }
-    } catch {
-      // non-fatal — stay in loading=false state
+      } catch (e) {
+        console.warn('[useAppDomain] Failed to fetch cloudflare settings:', e);
+      }
+    } catch (e) {
+      console.warn('[useAppDomain] Failed to load domain info:', e);
     } finally {
       setLoading(false);
     }

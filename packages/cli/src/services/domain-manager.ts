@@ -373,7 +373,9 @@ export class DomainManager {
         if (cf.apiToken && cf.accountId && cf.tunnelId) {
           await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, conn.domain, allRoutes);
         }
-      } catch { /* best-effort rollback */ }
+      } catch (rollbackErr: unknown) {
+        console.warn('[domain-manager] Tunnel ingress rollback failed:', rollbackErr);
+      }
       steps.push({ step: 'dns_deletion', status: 'failed', error: String(err) });
       return { success: false, appName, removedHostname: conn.hostname, steps, error: `DNS deletion failed: ${err}` };
     }
@@ -604,7 +606,9 @@ export class DomainManager {
     if (!previousRoutes || !cf.apiToken || !cf.accountId || !cf.tunnelId) return;
     try {
       await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, domain, previousRoutes);
-    } catch { /* best-effort rollback */ }
+    } catch (err: unknown) {
+      console.warn('[domain-manager] Ingress rollback failed:', err);
+    }
   }
 
   private async pollDnsPropagation(hostname: string, timeoutMs: number): Promise<void> {

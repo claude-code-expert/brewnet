@@ -71,9 +71,13 @@ export async function connectDomain(
 }
 
 export async function disconnectDomain(apiFetch: ApiFetch, appName: string): Promise<void> {
-  await apiFetch(`/api/domain/disconnect/${encodeURIComponent(appName)}`, {
+  const res = await apiFetch(`/api/domain/disconnect/${encodeURIComponent(appName)}`, {
     method: 'DELETE',
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
+    throw new Error(body.message ?? body.error ?? `Disconnect failed (${res.status})`);
+  }
 }
 
 export async function listDomains(apiFetch: ApiFetch): Promise<DomainListResult> {
