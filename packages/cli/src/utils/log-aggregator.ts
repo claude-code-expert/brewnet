@@ -248,80 +248,88 @@ export async function readServiceLogs(
     // Filter containers belonging to this project by working directory label or name prefix
     const projectName = basename(projectPath).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    for (const containerInfo of containers) {
-      const containerName =
-        containerInfo.Names?.[0]?.replace(/^\//, '') ?? containerInfo.Id.slice(0, 12);
+    const logOpts: Record<string, unknown> = {
+      stdout: true,
+      stderr: true,
+      timestamps: true,
+    };
+    if (opts?.tail) logOpts.tail = opts.tail;
+    if (opts?.since) {
+      logOpts.since = Math.floor(new Date(opts.since).getTime() / 1000);
+    }
 
-      // Match containers that belong to this project (docker compose prefixes with project name)
-      if (!containerName.toLowerCase().startsWith(projectName)) continue;
+    const matchingContainers = containers.filter((containerInfo) => {
+      const name = containerInfo.Names?.[0]?.replace(/^\//, '') ?? containerInfo.Id.slice(0, 12);
+      return name.toLowerCase().startsWith(projectName);
+    });
 
-      const container = docker.getContainer(containerInfo.Id);
-      const logOpts: Record<string, unknown> = {
-        stdout: true,
-        stderr: true,
-        timestamps: true,
-      };
-      if (opts?.tail) logOpts.tail = opts.tail;
-      if (opts?.since) {
-        logOpts.since = Math.floor(new Date(opts.since).getTime() / 1000);
-      }
+    const perContainerEntries = await Promise.all(
+      matchingContainers.map(async (containerInfo) => {
+        const containerName =
+          containerInfo.Names?.[0]?.replace(/^\//, '') ?? containerInfo.Id.slice(0, 12);
+        const localEntries: UnifiedLogEntry[] = [];
+        try {
+          const logBuffer = (await docker.getContainer(containerInfo.Id).logs(logOpts)) as Buffer;
 
-      try {
-        const logBuffer = (await container.logs(logOpts)) as Buffer;
-
-        // Demultiplex Docker's 8-byte header format:
-        // [stream_type(1), 0, 0, 0, size(4 big-endian)] + payload
-        const frames: { stream: number; text: string }[] = [];
-        if (Buffer.isBuffer(logBuffer)) {
-          let pos = 0;
-          while (pos + 8 <= logBuffer.length) {
-            const streamType = logBuffer[pos];
-            const payloadSize = logBuffer.readUInt32BE(pos + 4);
-            pos += 8;
-            if (pos + payloadSize > logBuffer.length) break;
-            const payload = logBuffer.subarray(pos, pos + payloadSize).toString('utf-8');
-            frames.push({ stream: streamType, text: payload });
-            pos += payloadSize;
+          // Demultiplex Docker's 8-byte header format:
+          // [stream_type(1), 0, 0, 0, size(4 big-endian)] + payload
+          const frames: { stream: number; text: string }[] = [];
+          if (Buffer.isBuffer(logBuffer)) {
+            let pos = 0;
+            while (pos + 8 <= logBuffer.length) {
+              const streamType = logBuffer[pos];
+              const payloadSize = logBuffer.readUInt32BE(pos + 4);
+              pos += 8;
+              if (pos + payloadSize > logBuffer.length) break;
+              const payload = logBuffer.subarray(pos, pos + payloadSize).toString('utf-8');
+              frames.push({ stream: streamType, text: payload });
+              pos += payloadSize;
+            }
+          } else {
+            // Fallback if logs() returns a plain string (no multiplexing)
+            frames.push({ stream: 1, text: String(logBuffer) });
           }
-        } else {
-          // Fallback if logs() returns a plain string (no multiplexing)
-          frames.push({ stream: 1, text: String(logBuffer) });
-        }
 
-        for (const frame of frames) {
-          const level: UnifiedLogLevel = frame.stream === 2 ? 'error' : 'info';
-          for (const line of frame.text.split('\n')) {
-            if (!line.trim()) continue;
+          for (const frame of frames) {
+            const level: UnifiedLogLevel = frame.stream === 2 ? 'error' : 'info';
+            for (const line of frame.text.split('\n')) {
+              if (!line.trim()) continue;
 
-            // Docker timestamp format at the start of each line
-            const tsMatch = line.match(
-              /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(.*)/,
-            );
-            if (!tsMatch) continue;
+              // Docker timestamp format at the start of each line
+              const tsMatch = line.match(
+                /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(.*)/,
+              );
+              if (!tsMatch) continue;
 
-            const timestamp = tsMatch[1].endsWith('Z') ? tsMatch[1] : tsMatch[1] + 'Z';
-            const message = tsMatch[2];
+              const timestamp = tsMatch[1].endsWith('Z') ? tsMatch[1] : tsMatch[1] + 'Z';
+              const message = tsMatch[2];
 
-            if (opts?.since && timestamp < opts.since) continue;
+              if (opts?.since && timestamp < opts.since) continue;
 
-            // Strip project prefix from container name for clean service name
-            const serviceName = containerName
-              .replace(new RegExp(`^${projectName}[-_]`), '')
-              .replace(/-\d+$/, '');
+              // Strip project prefix from container name for clean service name
+              const serviceName = containerName
+                .replace(new RegExp(`^${projectName}[-_]`), '')
+                .replace(/-\d+$/, '');
 
-            entries.push({
-              timestamp,
-              source: 'service',
-              level,
-              service: serviceName,
-              message,
-              metadata: { containerId: containerInfo.Id.slice(0, 12) },
-            });
+              localEntries.push({
+                timestamp,
+                source: 'service',
+                level,
+                service: serviceName,
+                message,
+                metadata: { containerId: containerInfo.Id.slice(0, 12) },
+              });
+            }
           }
+        } catch (err: unknown) {
+          console.warn('[log-aggregator] Failed to read logs for container', containerName, err);
         }
-      } catch (err: unknown) {
-        console.warn('[log-aggregator] Failed to read logs for container', containerName, err);
-      }
+        return localEntries;
+      }),
+    );
+
+    for (const batch of perContainerEntries) {
+      entries.push(...batch);
     }
   } catch (err: unknown) {
     console.warn('[log-aggregator] Docker unavailable for readServiceLogs:', err);

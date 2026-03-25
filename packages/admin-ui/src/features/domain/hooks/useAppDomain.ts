@@ -48,7 +48,13 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await listDomains(apiFetch);
+      const [result, settingsRes] = await Promise.all([
+        listDomains(apiFetch),
+        apiFetch('/api/settings/cloudflare').catch((e: unknown) => {
+          console.warn('[useAppDomain] Failed to fetch cloudflare settings:', e);
+          return null;
+        }),
+      ]);
       setConnections(result.connections);
       setCfConfigured(result.credentialsConfigured);
       // Derive zoneName from connections hostname pattern
@@ -59,15 +65,14 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
           setZoneName(parts.slice(1).join('.'));
         }
       }
-      // Also try to get zoneName from the settings endpoint
-      try {
-        const settingsRes = await apiFetch('/api/settings/cloudflare');
-        if (settingsRes.ok) {
+      // Override with zoneName from settings if available
+      if (settingsRes?.ok) {
+        try {
           const settings = await settingsRes.json() as { zoneName?: string };
           if (settings.zoneName) setZoneName(settings.zoneName);
+        } catch (e) {
+          console.warn('[useAppDomain] Failed to parse cloudflare settings:', e);
         }
-      } catch (e) {
-        console.warn('[useAppDomain] Failed to fetch cloudflare settings:', e);
       }
     } catch (e) {
       console.warn('[useAppDomain] Failed to load domain info:', e);

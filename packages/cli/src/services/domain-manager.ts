@@ -437,14 +437,18 @@ export class DomainManager {
       // Local health
       try {
         info.local.healthy = await this.checkLocalHealth(conn.appName, conn.containerPort);
-      } catch { /* leave false */ }
+      } catch (e) {
+        console.warn('[domain-manager] checkLocalHealth failed:', e);
+      }
 
       // Tunnel health
       if (cf.apiToken && cf.accountId && cf.tunnelId) {
         try {
           const health = await getTunnelHealth(cf.apiToken, cf.accountId, cf.tunnelId);
           info.tunnel = health;
-        } catch { /* leave inactive */ }
+        } catch (e) {
+          console.warn('[domain-manager] getTunnelHealth failed:', e);
+        }
       }
 
       // DNS verification
@@ -460,19 +464,25 @@ export class DomainManager {
             };
             info.external.dnsResolved = true;
           }
-        } catch { /* leave null */ }
+        } catch (e) {
+          console.warn('[domain-manager] getDnsRecords failed:', e);
+        }
       }
 
       // External reachability (use dig as fallback)
       try {
         const resolved = await this.checkDnsResolution(conn.hostname);
         info.external.dnsResolved = info.external.dnsResolved || resolved;
-      } catch { /* leave false */ }
+      } catch (e) {
+        console.warn('[domain-manager] checkDnsResolution failed:', e);
+      }
 
       // HTTPS reachability
       try {
         info.external.httpsReachable = await this.checkHttpsReachable(conn.hostname);
-      } catch { /* leave false */ }
+      } catch (e) {
+        console.warn('[domain-manager] checkHttpsReachable failed:', e);
+      }
 
       results.push(info);
     }
