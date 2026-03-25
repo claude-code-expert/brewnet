@@ -186,7 +186,6 @@ export function readAccessLogs(projectPath: string, since?: string): UnifiedLogE
         ClientAddr?: string;
         Duration?: number;
         RequestHost?: string;
-        request_User_Agent?: string;
         'request_User-Agent'?: string;
       };
 
@@ -201,7 +200,7 @@ export function readAccessLogs(projectPath: string, since?: string): UnifiedLogE
       if (parsed.ClientAddr) metadata.clientAddr = parsed.ClientAddr;
       if (parsed.Duration !== undefined) metadata.duration = parsed.Duration;
       if (parsed.RequestHost) metadata.requestHost = parsed.RequestHost;
-      const userAgent = parsed['request_User-Agent'] ?? parsed.request_User_Agent;
+      const userAgent = parsed['request_User-Agent'];
       if (userAgent) metadata.userAgent = userAgent;
 
       // Extract clean service name from Traefik's "serviceName@provider" format
@@ -320,12 +319,12 @@ export async function readServiceLogs(
             });
           }
         }
-      } catch {
-        // Container may have stopped between list and logs call
+      } catch (err: unknown) {
+        console.warn('[log-aggregator] Failed to read logs for container', containerName, err);
       }
     }
-  } catch {
-    // Docker not available or not running
+  } catch (err: unknown) {
+    console.warn('[log-aggregator] Docker unavailable for readServiceLogs:', err);
   }
 
   return entries;
