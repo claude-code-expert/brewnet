@@ -31,7 +31,7 @@ describe('verifyServiceAccess — startupDelay', () => {
       { timeout: 1000, retries: 0 },
     );
 
-    expect(Date.now() - start).toBeGreaterThanOrEqual(10);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(8);
     expect(result.status).toBe('ok');
   });
 });

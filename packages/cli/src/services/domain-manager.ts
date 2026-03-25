@@ -312,6 +312,11 @@ export class DomainManager {
     saveState(this.state);
     log(`step 5 OK`);
 
+    // Step 5.5: Nextcloud post-connect — fix overwritewebroot and trusted_domains
+    if (this.resolveContainerName(appName) === 'nextcloud') {
+      await this.fixNextcloudDomainConfig(hostname, log);
+    }
+
     // Step 6: Poll DNS propagation
     log(`step 6/6: poll DNS propagation for ${hostname} (timeout 30s)`);
     const pollStart = Date.now();
@@ -687,6 +692,42 @@ export class DomainManager {
       ];
     }
     return [{ subdomain: conn.subdomain, containerName, port: conn.containerPort, domain: conn.domain, basePath: conn.basePath }];
+  }
+
+  /**
+   * Nextcloud requires occ config changes when connecting an external domain:
+   * - Clear overwritewebroot (Quick Tunnel sets it to /cloud, but dedicated domain serves at /)
+   * - Set overwrite.cli.url to the external URL
+   * - Add hostname to trusted_domains
+   */
+  private async fixNextcloudDomainConfig(
+    hostname: string,
+    log: (msg: string) => void,
+  ): Promise<void> {
+    const container = 'brewnet-nextcloud';
+    const occ = (args: string[]) =>
+      execa('docker', ['exec', '-u', '33', container, 'php', 'occ', ...args], { timeout: 15_000 });
+
+    try {
+      log(`nextcloud post-connect: fixing overwritewebroot and trusted_domains for ${hostname}`);
+      await occ(['config:system:set', 'overwritewebroot', '--value=']);
+      await occ(['config:system:set', 'overwrite.cli.url', `--value=https://${hostname}`]);
+      await occ(['config:system:set', 'overwritehost', `--value=${hostname}`]);
+
+      // Add to trusted_domains if not already present
+      const { stdout: domainsStr } = await occ(['config:system:get', 'trusted_domains']);
+      const existingDomains = domainsStr.trim().split('\n').map((d) => d.trim());
+      if (!existingDomains.includes(hostname)) {
+        const nextIdx = existingDomains.length;
+        await occ(['config:system:set', 'trusted_domains', String(nextIdx), `--value=${hostname}`]);
+      }
+
+      log(`nextcloud post-connect OK`);
+    } catch (err) {
+      // Non-fatal — log warning but don't fail the connect
+      log(`nextcloud post-connect WARN: ${err instanceof Error ? err.message : err}`);
+      console.warn(`[domain-manager] Nextcloud occ config failed (non-fatal): ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   private async pollDnsPropagation(hostname: string, timeoutMs: number): Promise<void> {
