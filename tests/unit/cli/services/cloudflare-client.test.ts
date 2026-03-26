@@ -362,6 +362,42 @@ describe('configureTunnelIngress', () => {
       configureTunnelIngress('token', 'acc-1', 'tunnel-1', 'example.com', []),
     ).rejects.toThrow();
   });
+
+  it('does NOT include basePath in ingress service URL', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: true }));
+
+    const routes = [
+      { subdomain: 'git', containerName: 'gitea', port: 3000 },
+      { subdomain: 'myapp', containerName: 'host.docker.internal', port: 3000, basePath: '/apps/myapp' },
+    ];
+    await configureTunnelIngress('token', 'acc-1', 'tunnel-1', 'example.com', routes);
+
+    const [, callInit] = (mockFetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(callInit.body as string);
+    const ingress = body.config.ingress as Array<{ hostname?: string; service: string }>;
+
+    // gitea route — no basePath at all
+    expect(ingress[0]).toEqual({ hostname: 'git.example.com', service: 'http://gitea:3000' });
+    // app route — basePath must NOT appear in service URL
+    expect(ingress[1]).toEqual({ hostname: 'myapp.example.com', service: 'http://host.docker.internal:3000' });
+    expect(ingress[1]!.service).not.toContain('/apps/');
+    // catch-all
+    expect(ingress[2]).toEqual({ service: 'http_status:404' });
+  });
+
+  it('builds correct hostname for apex (empty subdomain)', async () => {
+    mockFetch.mockResolvedValueOnce(makeFetchResponse({ success: true }));
+
+    const routes = [{ subdomain: '', containerName: 'host.docker.internal', port: 3000, domain: 'example.com' }];
+    await configureTunnelIngress('token', 'acc-1', 'tunnel-1', 'example.com', routes);
+
+    const [, callInit] = (mockFetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(callInit.body as string);
+    const ingress = body.config.ingress as Array<{ hostname?: string; service: string }>;
+
+    expect(ingress[0]!.hostname).toBe('example.com');
+    expect(ingress[0]!.service).toBe('http://host.docker.internal:3000');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ const {
   startContainers,
   verifyEndpoints,
   patchNextConfig,
+  unpatchNextConfig,
   injectTraefikForQuickTunnel,
   findFreePort,
   generateEnv,
@@ -333,6 +334,137 @@ describe('patchNextConfig', () => {
 
     const compose = readFileSync(composePath, 'utf-8');
     expect(compose).toContain('http://127.0.0.1:3000/apps/my-app/');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// unpatchNextConfig — reverse of patchNextConfig
+// ---------------------------------------------------------------------------
+
+describe('unpatchNextConfig', () => {
+  let tmpDir: string;
+  beforeEach(() => { tmpDir = makeTmpDir(); });
+  afterEach(() => cleanTmpDir(tmpDir));
+
+  // ── Returns false when no next.config exists ───────────────────────────
+
+  it('returns false when no next.config file exists', () => {
+    expect(unpatchNextConfig(tmpDir, 'my-app')).toBe(false);
+  });
+
+  // ── Returns false when basePath not present ────────────────────────────
+
+  it('returns false when basePath is not in config', () => {
+    writeFileSync(join(tmpDir, 'next.config.ts'), "const config = { reactStrictMode: true };", 'utf-8');
+    expect(unpatchNextConfig(tmpDir, 'my-app')).toBe(false);
+  });
+
+  // ── Removes basePath from standalone pattern ───────────────────────────
+
+  it('removes basePath + images from standalone config', () => {
+    const configPath = join(tmpDir, 'next.config.ts');
+    writeFileSync(configPath, "const config = { output: 'standalone' };", 'utf-8');
+
+    // First patch, then unpatch
+    patchNextConfig(tmpDir, 'my-app');
+    let content = readFileSync(configPath, 'utf-8');
+    expect(content).toContain("basePath: '/apps/my-app'");
+    expect(content).toContain('images: { unoptimized: true }');
+
+    const result = unpatchNextConfig(tmpDir, 'my-app');
+    expect(result).toBe(true);
+
+    content = readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('basePath');
+    expect(content).not.toContain('unoptimized');
+    expect(content).toContain("output: 'standalone'");
+  });
+
+  // ── Removes basePath from fallback (non-standalone) pattern ────────────
+
+  it('removes basePath from non-standalone config', () => {
+    const configPath = join(tmpDir, 'next.config.mjs');
+    writeFileSync(configPath, 'const nextConfig = {\n  reactStrictMode: true,\n};\n', 'utf-8');
+
+    patchNextConfig(tmpDir, 'my-app');
+    let content = readFileSync(configPath, 'utf-8');
+    expect(content).toContain("basePath: '/apps/my-app'");
+
+    const result = unpatchNextConfig(tmpDir, 'my-app');
+    expect(result).toBe(true);
+
+    content = readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('basePath');
+    expect(content).toContain('reactStrictMode: true');
+  });
+
+  // ── Reverts healthcheck URLs in docker-compose.yml ─────────────────────
+
+  it('reverts healthcheck URL from basePath to root', () => {
+    const configPath = join(tmpDir, 'next.config.ts');
+    writeFileSync(configPath, "const config = { output: 'standalone' };", 'utf-8');
+
+    const composePath = join(tmpDir, 'docker-compose.yml');
+    writeFileSync(composePath, 'test: curl http://127.0.0.1:3000/health\n', 'utf-8');
+
+    patchNextConfig(tmpDir, 'my-app');
+    let compose = readFileSync(composePath, 'utf-8');
+    expect(compose).toContain('http://127.0.0.1:3000/apps/my-app/health');
+
+    unpatchNextConfig(tmpDir, 'my-app');
+    compose = readFileSync(composePath, 'utf-8');
+    expect(compose).toContain('http://127.0.0.1:3000/health');
+    expect(compose).not.toContain('/apps/my-app');
+  });
+
+  // ── Reverts image src paths in .tsx files ──────────────────────────────
+
+  it('reverts image src paths from basePath to root', () => {
+    const configPath = join(tmpDir, 'next.config.ts');
+    writeFileSync(configPath, "const config = { output: 'standalone' };", 'utf-8');
+    writeFileSync(join(tmpDir, 'page.tsx'), '<img src="/brewnet-site-banner.png" />', 'utf-8');
+
+    patchNextConfig(tmpDir, 'my-app');
+    let tsx = readFileSync(join(tmpDir, 'page.tsx'), 'utf-8');
+    expect(tsx).toContain('src="/apps/my-app/brewnet-site-banner.png"');
+
+    unpatchNextConfig(tmpDir, 'my-app');
+    tsx = readFileSync(join(tmpDir, 'page.tsx'), 'utf-8');
+    expect(tsx).toContain('src="/brewnet-site-banner.png"');
+    expect(tsx).not.toContain('/apps/my-app');
+  });
+
+  // ── Roundtrip: patchNextConfig → unpatchNextConfig → patchNextConfig ──
+
+  it('roundtrip: unpatch then re-patch restores basePath', () => {
+    const configPath = join(tmpDir, 'next.config.ts');
+    writeFileSync(configPath, "const config = { output: 'standalone' };", 'utf-8');
+
+    patchNextConfig(tmpDir, 'my-app');
+    const patched = readFileSync(configPath, 'utf-8');
+
+    unpatchNextConfig(tmpDir, 'my-app');
+    const unpatched = readFileSync(configPath, 'utf-8');
+    expect(unpatched).not.toContain('basePath');
+
+    // Re-patch should work (idempotency of patchNextConfig after unpatch)
+    patchNextConfig(tmpDir, 'my-app');
+    const repatched = readFileSync(configPath, 'utf-8');
+    expect(repatched).toContain("basePath: '/apps/my-app'");
+    expect(repatched).toContain('images: { unoptimized: true }');
+  });
+
+  // ── Only removes matching app's basePath ───────────────────────────────
+
+  it('does not remove basePath for a different app name', () => {
+    const configPath = join(tmpDir, 'next.config.ts');
+    writeFileSync(configPath, "const config = { output: 'standalone' };", 'utf-8');
+
+    patchNextConfig(tmpDir, 'my-app');
+    expect(unpatchNextConfig(tmpDir, 'other-app')).toBe(false);
+
+    const content = readFileSync(configPath, 'utf-8');
+    expect(content).toContain("basePath: '/apps/my-app'");
   });
 });
 

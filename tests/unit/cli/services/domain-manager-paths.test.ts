@@ -70,9 +70,11 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js'
   readApps: mockReadApps,
 }));
 
+const mockUnpatchNextConfig = jest.fn<() => unknown>().mockReturnValue(false);
+const mockPatchNextConfig = jest.fn<() => unknown>();
 jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
-  unpatchNextConfig: jest.fn<() => unknown>().mockReturnValue(false),
-  patchNextConfig: jest.fn<() => unknown>(),
+  unpatchNextConfig: mockUnpatchNextConfig,
+  patchNextConfig: mockPatchNextConfig,
 }));
 
 jest.unstable_mockModule('../../../../packages/cli/src/config/stacks.js', () => ({
@@ -487,5 +489,83 @@ describe('DomainManager — resolveContainerName: create-app app', () => {
     expect(result).toBeDefined();
     // Verify configureTunnelIngress was called — it would include the remaining route
     expect(mockConfigureTunnelIngress).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// connect() Step 0: basePath removal for Named Tunnel
+// ---------------------------------------------------------------------------
+
+describe('connect Step 0 — basePath removal', () => {
+  it('calls unpatchNextConfig when basePath detected and app found in apps.json', async () => {
+    // Setup: app in apps.json with appDir, next.config has basePath
+    mockReadApps.mockReturnValue([
+      { name: 'my-app', appDir: '/home/user/my-project/apps/my-app', port: 3000, mode: 'git-clone', status: 'running' },
+    ]);
+    // resolveAppBasePath reads next.config from appDir — mock fs to return basePath content
+    mockExistsSync.mockImplementation((p: unknown) => {
+      if (String(p).endsWith('next.config.ts')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: unknown) => {
+      if (String(p).endsWith('next.config.ts')) return "const c = { basePath: '/apps/my-app' };";
+      return '';
+    });
+    // unpatchNextConfig returns true → basePath was removed
+    mockUnpatchNextConfig.mockReturnValue(true);
+    // execa succeeds for docker compose build/up and DNS check
+    (mockExecaFn as jest.Mock).mockResolvedValue({ stdout: 'ok\n', stderr: '' });
+
+    const mgr = new DomainManager('test-project');
+    const result = await mgr.connect('my-app', 'myapp', 'example.com');
+
+    expect(mockUnpatchNextConfig).toHaveBeenCalledWith('/home/user/my-project/apps/my-app', 'my-app');
+    // Docker rebuild should be called (docker compose build --no-cache)
+    const execaCalls = (mockExecaFn as jest.Mock).mock.calls;
+    const buildCall = execaCalls.find((c: unknown[]) =>
+      Array.isArray(c[1]) && c[1].includes('build') && c[1].includes('--no-cache'),
+    );
+    expect(buildCall).toBeDefined();
+    // basepath_removal step should be completed
+    expect(result.steps.find((s) => s.step === 'basepath_removal')?.status).toBe('completed');
+  });
+
+  it('rolls back with patchNextConfig when Docker rebuild fails', async () => {
+    mockReadApps.mockReturnValue([
+      { name: 'my-app', appDir: '/home/user/my-project/apps/my-app', port: 3000, mode: 'git-clone', status: 'running' },
+    ]);
+    mockExistsSync.mockImplementation((p: unknown) => {
+      if (String(p).endsWith('next.config.ts')) return true;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((p: unknown) => {
+      if (String(p).endsWith('next.config.ts')) return "const c = { basePath: '/apps/my-app' };";
+      return '';
+    });
+    mockUnpatchNextConfig.mockReturnValue(true);
+    // Docker rebuild fails
+    (mockExecaFn as jest.Mock)
+      .mockRejectedValueOnce(new Error('docker build failed'))
+      .mockResolvedValue({ stdout: 'ok\n', stderr: '' });
+
+    const mgr = new DomainManager('test-project');
+    const result = await mgr.connect('my-app', 'myapp', 'example.com');
+
+    // patchNextConfig should be called as rollback
+    expect(mockPatchNextConfig).toHaveBeenCalledWith('/home/user/my-project/apps/my-app', 'my-app');
+    // basepath_removal step should be failed
+    expect(result.steps.find((s) => s.step === 'basepath_removal')?.status).toBe('failed');
+  });
+
+  it('skips Step 0 when no basePath detected', async () => {
+    mockReadApps.mockReturnValue([]);
+    mockExistsSync.mockReturnValue(false);
+
+    const mgr = new DomainManager('test-project');
+    const result = await mgr.connect('gitea', 'git', 'example.com');
+
+    expect(mockUnpatchNextConfig).not.toHaveBeenCalled();
+    expect(mockPatchNextConfig).not.toHaveBeenCalled();
+    expect(result.steps.find((s) => s.step === 'basepath_removal')).toBeUndefined();
   });
 });
