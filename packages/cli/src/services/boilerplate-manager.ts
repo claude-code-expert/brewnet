@@ -370,6 +370,69 @@ export function patchNextConfig(projectDir: string, appName: string): void {
   }
 }
 
+/**
+ * Reverse of patchNextConfig — strips basePath, images.unoptimized,
+ * reverts healthcheck URLs, and restores image src paths.
+ *
+ * Used when connecting a Next.js app to a Named Tunnel dedicated subdomain,
+ * where root-path serving is required (basePath is only needed for Quick Tunnel
+ * Traefik PathPrefix routing).
+ *
+ * @returns true if basePath was found and removed
+ */
+export function unpatchNextConfig(projectDir: string, appName: string): boolean {
+  const candidates = ['next.config.ts', 'next.config.mjs', 'next.config.js'];
+  let configPath: string | null = null;
+  for (const c of candidates) {
+    const p = join(projectDir, c);
+    if (existsSync(p)) { configPath = p; break; }
+  }
+  if (!configPath) return false;
+
+  let content = readFileSync(configPath, 'utf-8');
+  const basePath = `/apps/${appName}`;
+
+  if (!content.includes(`basePath: '${basePath}'`)) return false;
+
+  // Remove basePath line and adjacent images: { unoptimized: true } line.
+  // Handles both insertion patterns from patchNextConfig:
+  //   Pattern 1 (after standalone): "    basePath: '/apps/x',\n    images: { unoptimized: true }"
+  //   Pattern 2 (fallback):         "  basePath: '/apps/x',"
+  const lines = content.split('\n');
+  const bpTarget = `basePath: '${basePath}'`;
+  const imgRegex = /^\s*images:\s*\{\s*unoptimized:\s*true\s*\},?\s*$/;
+  let dropNextImages = false;
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (trimmed === bpTarget || trimmed === `${bpTarget},`) {
+      dropNextImages = true;
+      return false;
+    }
+    if (dropNextImages && imgRegex.test(line)) {
+      dropNextImages = false;
+      return false;
+    }
+    dropNextImages = false;
+    return true;
+  });
+  content = filtered.join('\n');
+  writeFileSync(configPath, content, 'utf-8');
+
+  // Revert image src paths: /apps/{name}/brewnet-site-banner.png → /brewnet-site-banner.png
+  patchImagePaths(projectDir, '/brewnet-site-banner.png', `${basePath}/brewnet-site-banner.png`);
+
+  // Revert healthcheck URLs in docker-compose.yml
+  const composePath = join(projectDir, 'docker-compose.yml');
+  if (existsSync(composePath)) {
+    let compose = readFileSync(composePath, 'utf-8');
+    compose = compose.replaceAll(`http://127.0.0.1:3000${basePath}/health`, 'http://127.0.0.1:3000/health');
+    compose = compose.replaceAll(`http://127.0.0.1:3000${basePath}/`, 'http://127.0.0.1:3000/');
+    writeFileSync(composePath, compose, 'utf-8');
+  }
+
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // T006b — injectTraefikForQuickTunnel
 // ---------------------------------------------------------------------------

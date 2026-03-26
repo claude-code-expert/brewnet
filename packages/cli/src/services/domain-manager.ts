@@ -26,6 +26,7 @@ import {
 import { addExternalLabels, removeExternalLabels } from './compose-generator.js';
 import { loadState, saveState } from '../wizard/state.js';
 import { readApps } from './app-registry.js';
+import { unpatchNextConfig, patchNextConfig } from './boilerplate-manager.js';
 import { getStackById } from '../config/stacks.js';
 
 // ---------------------------------------------------------------------------
@@ -160,9 +161,41 @@ export class DomainManager {
       };
     }
 
-    // Detect Next.js basePath for custom apps (needed for tunnel ingress URL)
-    const appBasePath = this.resolveAppBasePath(appName);
+    // Detect Next.js basePath for custom apps
+    let appBasePath = this.resolveAppBasePath(appName);
     if (appBasePath) log(`detected basePath: ${appBasePath}`);
+
+    // Step 0: Remove basePath for dedicated subdomain root-path serving.
+    // Quick Tunnel uses Traefik PathPrefix + basePath to multiplex apps on one domain.
+    // Named Tunnel gives each app its own subdomain, so basePath must be stripped
+    // and the Docker image rebuilt for the app to serve at root path (/).
+    if (appBasePath) {
+      log(`step 0: removing basePath for dedicated subdomain — rebuilding for root-path serving`);
+      const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
+      const apps = readApps(appsJsonPath);
+      const appEntry = apps.find((a) => a.name === appName);
+      const expandedDir = appEntry?.appDir
+        ? (appEntry.appDir.startsWith('~') ? path.join(os.homedir(), appEntry.appDir.slice(1)) : appEntry.appDir)
+        : null;
+      if (expandedDir && unpatchNextConfig(expandedDir, appName)) {
+        try {
+          log(`basePath removed — rebuilding Docker image (--no-cache)`);
+          await execa('docker', ['compose', 'build', '--no-cache'], { cwd: expandedDir });
+          log(`rebuild complete — restarting container`);
+          await execa('docker', ['compose', 'up', '-d', '--force-recreate'], { cwd: expandedDir });
+          log(`container restarted — waiting for startup`);
+          await new Promise((resolve) => setTimeout(resolve, 3_000));
+          appBasePath = '';
+          steps.push({ step: 'basepath_removal', status: 'completed' });
+          log(`step 0 OK — app now serves at root path`);
+        } catch (err) {
+          log(`step 0 FAIL: Docker rebuild failed — ${err}`);
+          patchNextConfig(expandedDir, appName);
+          log(`basePath restored — continuing with sub-path serving at ${appBasePath}`);
+          steps.push({ step: 'basepath_removal', status: 'failed', error: String(err) });
+        }
+      }
+    }
 
     // Determine scenario
     const scenario = options.scenario ?? this.detectScenario();

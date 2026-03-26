@@ -48,6 +48,11 @@ jest.unstable_mockModule('execa', () => ({
   execa: jest.fn<() => unknown>().mockResolvedValue({ stdout: 'tun-456.cfargotunnel.com.\n', stderr: '' }),
 }));
 
+jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
+  unpatchNextConfig: jest.fn<() => unknown>().mockReturnValue(false),
+  patchNextConfig: jest.fn<() => unknown>(),
+}));
+
 global.fetch = mockFetch as typeof fetch;
 
 const { DomainManager } = await import('../../../../packages/cli/src/services/domain-manager.js');
