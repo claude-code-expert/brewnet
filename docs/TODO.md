@@ -79,6 +79,7 @@ API 엔드포인트:   12/20 (60%)   ██████░░░░
 
 ### 인프라
 
+- [x] 설치 텔레메트리 — Cloudflare Worker + KV (`infra/telemetry-worker/`)
 - [ ] CI/CD 파이프라인 — GitHub Actions (lint + test + build)
 - [ ] 코드 커버리지 리포팅 — Codecov 통합
 - [ ] DDNS 자동 갱신 — DuckDNS/No-IP 지원

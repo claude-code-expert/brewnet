@@ -1,0 +1,14 @@
+name = "brewnet-telemetry"
+main = "src/index.js"
+compatibility_date = "2026-03-25"
+
+# Custom domain — set up after `wrangler kv namespace create`
+# routes = [
+#   { pattern = "api.brewnet.dev/*", zone_name = "brewnet.dev" }
+# ]
+
+# KV binding — replace id after running:
+#   wrangler kv namespace create "INSTALL_COUNTS"
+[[kv_namespaces]]
+binding = "INSTALL_COUNTS"
+id = "a56f2bc83e3a4417945644d708d49bca"

@@ -285,6 +285,9 @@ else
   fi
 fi
 
+# ─── Telemetry (anonymous install counter — no personal data) ─────────────────
+curl -s "https://brewnet-telemetry.villainscode.workers.dev/telemetry/install?v=${BREWNET_VERSION}&os=${PLATFORM}&source=curl" >/dev/null 2>&1 &
+
 # ─── Done ──────────────────────────────────────────────────────────────────────
 printf "\n"
 printf "  ${GREEN}${BOLD}✓ Brewnet v${BREWNET_VERSION} installation complete!${RESET}\n"

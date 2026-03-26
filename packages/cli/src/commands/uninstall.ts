@@ -252,20 +252,38 @@ export function registerUninstallCommand(program: Command): void {
         }
 
         // --- Cloudflare Tunnel cleanup (context-aware) ---
-        const tunnelMode = state?.domain?.cloudflare?.tunnelMode;
-        if (tunnelMode === 'named' && state) {
+        // Run cleanup whenever CF credentials are present, regardless of tunnelMode.
+        // Quick Tunnel projects that were later upgraded to Named Tunnel have credentials
+        // and DNS records that must be cleaned up.
+        if (state?.domain?.cloudflare) {
           const cf = state.domain.cloudflare;
           const { apiToken, accountId, tunnelId, tunnelName, zoneName, zoneId } = cf;
+          const tunnelMode = cf.tunnelMode;
 
           if (apiToken && accountId && tunnelId) {
             console.log(chalk.dim('\n  Cloudflare 리소스 정리 중...'));
 
             if (zoneId) {
               try {
-                const { getDnsRecords, deleteDnsRecord } = await import('../services/cloudflare-client.js');
+                const { getDnsRecords, deleteDnsRecord, getActiveServiceRoutes } = await import('../services/cloudflare-client.js');
                 const tunnelTarget = `${tunnelId}.cfargotunnel.com`;
                 const allRecords: Array<{ id: string; name: string; content: string }> = [];
-                const hostnames = (state.domainConnections ?? []).map((c) => c.hostname);
+
+                // Build full hostname list: builtin service routes + app domain connections
+                // Bug fix: previously only app connections were included, missing git/cloud/files/media/pgadmin
+                const builtinHostnames = zoneName
+                  ? getActiveServiceRoutes(state).map((r) => `${r.subdomain}.${zoneName}`)
+                  : [];
+                const appHostnames: string[] = [];
+                for (const conn of state.domainConnections ?? []) {
+                  appHostnames.push(conn.hostname);
+                  // apex connection: also clean up www DNS record
+                  if (conn.subdomain === '@' && conn.domain) {
+                    appHostnames.push(`www.${conn.domain}`);
+                  }
+                }
+                const hostnames = [...new Set([...builtinHostnames, ...appHostnames])];
+
                 for (const hostname of hostnames) {
                   const recs = await getDnsRecords(apiToken, zoneId, hostname);
                   allRecords.push(...recs.filter((r) => r.content === tunnelTarget));
@@ -294,8 +312,8 @@ export function registerUninstallCommand(program: Command): void {
 
             // Stop and remove local cloudflared system service (macOS / Linux)
             await cleanupCloudflaredService();
-          } else {
-            // No API token — manual cleanup guide
+          } else if (tunnelMode === 'named') {
+            // Named tunnel configured but no API token — manual cleanup guide
             console.log(chalk.yellow('\n  ⚠  Cloudflare Named Tunnel 리소스가 남아있습니다.'));
             console.log(chalk.dim('     API 토큰이 없어 자동 삭제가 불가합니다.'));
             console.log(chalk.dim('     CF 대시보드에서 수동 삭제하세요:\n'));
@@ -307,10 +325,10 @@ export function registerUninstallCommand(program: Command): void {
               console.log(chalk.dim(`        → ${zoneName} → DNS → Records`));
               console.log(chalk.dim('        → *.cfargotunnel.com 을 가리키는 CNAME 삭제'));
             }
+          } else {
+            // Quick Tunnel with no CF credentials — nothing to clean up on CF side
+            console.log(chalk.dim('  Quick Tunnel은 계정 연동이 없어 CF 측 정리가 필요 없습니다.'));
           }
-          console.log();
-        } else if (tunnelMode === 'quick') {
-          console.log(chalk.dim('  Quick Tunnel은 계정 연동이 없어 CF 측 정리가 필요 없습니다.'));
           console.log();
         }
 
