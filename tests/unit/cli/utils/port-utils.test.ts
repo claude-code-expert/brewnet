@@ -106,14 +106,25 @@ describe('findFirstAvailableAlternative', () => {
 
   it('returns undefined when no candidate is available', async () => {
     const net = await import('net');
-    // Bind a port that has only one registered alternative
+    // Bind a port that has only one registered alternative.
+    // If a port is already occupied (e.g. by a Docker container in the test environment),
+    // treat it as externally unavailable — which satisfies the same test precondition.
     const servers: ReturnType<typeof net.createServer>[] = [];
 
     const alternatives = [5433, 5434]; // port 5432 alternatives
     for (const port of alternatives) {
       const srv = net.createServer();
-      await new Promise<void>((resolve) => srv.listen(port, '0.0.0.0', resolve));
-      servers.push(srv);
+      try {
+        await new Promise<void>((resolve, reject) =>
+          srv.listen(port, '0.0.0.0', () => resolve()).once('error', reject),
+        );
+        servers.push(srv);
+      } catch (e: unknown) {
+        // EADDRINUSE: port is already occupied externally — counts as unavailable.
+        // Close the server and continue; the port is effectively blocked.
+        srv.close();
+        if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
+      }
     }
 
     try {
@@ -126,5 +137,5 @@ describe('findFirstAvailableAlternative', () => {
         );
       }
     }
-  });
+  }, 10000);
 });

@@ -38,6 +38,12 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/service-manager.
   removeService: mockRemoveService,
 }));
 
+// execa is called by handleInstallService (docker compose up -d) and
+// handleRemoveService (docker compose rm -sf) after compose file mutations.
+const mockExeca = jest.fn<(file: string, args: string[], opts?: unknown) => Promise<{ exitCode: number }>>()
+  .mockResolvedValue({ exitCode: 0 });
+jest.unstable_mockModule('execa', () => ({ execa: mockExeca }));
+
 const mockCreateBackup = jest.fn<() => { id: string }>(() => ({ id: 'backup-001' }));
 const mockListBackups = jest.fn<() => { id: string; createdAt: string }[]>(() => [
   { id: 'backup-001', createdAt: new Date().toISOString() },
@@ -140,6 +146,7 @@ beforeEach(() => {
   mockListContainers.mockResolvedValue([]);
   mockAddService.mockResolvedValue({ success: true });
   mockRemoveService.mockResolvedValue({ success: true });
+  mockExeca.mockResolvedValue({ exitCode: 0 });
   mockGetContainer.mockReturnValue({
     start: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     stop: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -300,14 +307,6 @@ describe('GET /api/services', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /api/services/install', () => {
-  it('returns 202 on success', async () => {
-    mockAddService.mockResolvedValue({ success: true });
-    const res = await req('POST', '/api/services/install', { id: 'jellyfin' });
-    expect(res.status).toBe(202);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(true);
-  });
-
   it('returns 400 when id is missing', async () => {
     const res = await req('POST', '/api/services/install', {});
     expect(res.status).toBe(400);
@@ -319,10 +318,56 @@ describe('POST /api/services/install', () => {
     expect(res.status).toBe(409);
   });
 
-  it('returns 500 when addService fails with other error', async () => {
+  it('returns 500 when addService fails with non-duplicate error', async () => {
     mockAddService.mockResolvedValue({ success: false, error: 'compose error' });
     const res = await req('POST', '/api/services/install', { id: 'jellyfin' });
     expect(res.status).toBe(500);
+  });
+
+  // --- docker compose up -d behaviour ---
+
+  it('calls docker compose up -d after addService succeeds', async () => {
+    mockAddService.mockResolvedValue({ success: true });
+    mockExeca.mockResolvedValue({ exitCode: 0 });
+
+    const res = await req('POST', '/api/services/install', { id: 'jellyfin' });
+    expect(res.status).toBe(202);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.status).toBe('running');
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      ['compose', 'up', '-d', 'jellyfin'],
+      expect.objectContaining({ cwd: '/tmp/test' }),
+    );
+  });
+
+  it('returns 202 status=running when container starts successfully', async () => {
+    mockAddService.mockResolvedValue({ success: true });
+    mockExeca.mockResolvedValue({ exitCode: 0 });
+
+    const res = await req('POST', '/api/services/install', { id: 'postgresql' });
+    const body = JSON.parse(res.body);
+    expect(body.id).toBe('postgresql');
+    expect(body.status).toBe('running');
+  });
+
+  it('returns 202 status=compose_updated when docker compose up fails', async () => {
+    mockAddService.mockResolvedValue({ success: true });
+    mockExeca.mockRejectedValue(new Error('docker: command not found'));
+
+    const res = await req('POST', '/api/services/install', { id: 'jellyfin' });
+    expect(res.status).toBe(202);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+    expect(body.status).toBe('compose_updated');
+  });
+
+  it('does NOT call docker compose when addService fails', async () => {
+    mockAddService.mockResolvedValue({ success: false, error: 'Service already installed' });
+
+    await req('POST', '/api/services/install', { id: 'jellyfin' });
+    expect(mockExeca).not.toHaveBeenCalled();
   });
 });
 
@@ -402,6 +447,42 @@ describe('DELETE /api/services/containers/:id', () => {
     expect(res.status).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(true);
+  });
+
+  it('calls docker compose rm -sf BEFORE removeService (service must exist in compose at rm time)', async () => {
+    mockRemoveService.mockResolvedValue({ success: true });
+    mockExeca.mockResolvedValue({ exitCode: 0 });
+
+    const res = await req('DELETE', '/api/services/containers/jellyfin');
+    expect(res.status).toBe(200);
+    expect(mockExeca).toHaveBeenCalledWith(
+      'docker',
+      ['compose', 'rm', '-sf', 'jellyfin'],
+      expect.objectContaining({ cwd: '/tmp/test' }),
+    );
+    // docker compose rm runs before removeService to ensure compose file still has the service entry
+    const execaCallOrder = mockExeca.mock.invocationCallOrder[0];
+    const removeCallOrder = mockRemoveService.mock.invocationCallOrder[0];
+    expect(execaCallOrder).toBeLessThan(removeCallOrder!);
+  });
+
+  it('returns 200 even when docker compose rm fails (best-effort stop)', async () => {
+    mockRemoveService.mockResolvedValue({ success: true });
+    mockExeca.mockRejectedValue(new Error('container not found'));
+
+    const res = await req('DELETE', '/api/services/containers/jellyfin');
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
+  });
+
+  it('calls docker compose rm even when removeService fails (stop container regardless)', async () => {
+    mockRemoveService.mockResolvedValue({ success: false, error: 'Service not found' });
+    mockExeca.mockResolvedValue({ exitCode: 0 });
+
+    await req('DELETE', '/api/services/containers/jellyfin');
+    // docker compose rm is attempted before we know if removeService will fail
+    expect(mockExeca).toHaveBeenCalled();
   });
 
   it('returns 400 for required service (traefik)', async () => {

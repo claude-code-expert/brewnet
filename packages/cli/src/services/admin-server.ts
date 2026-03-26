@@ -842,11 +842,21 @@ async function handleInstallService(
     if (!id) { json(res, 400, { success: false, error: 'Missing service id' }); return; }
 
     const result = await addService(id, projectPath);
-    if (result.success) {
-      json(res, 202, { success: true, id, status: 'installed', message: `Service ${id} added` });
-    } else {
+    if (!result.success) {
       const code = result.error?.includes('already') ? 'ALREADY_EXISTS' : 'BN006';
       json(res, result.error?.includes('already') ? 409 : 500, { success: false, error: result.error, code });
+      return;
+    }
+
+    // Start the service after adding it to the compose file.
+    // addService() only writes docker-compose.yml; the container must be explicitly started.
+    try {
+      const { execa: execaInstall } = await import('execa');
+      await execaInstall('docker', ['compose', 'up', '-d', id], { cwd: projectPath });
+      json(res, 202, { success: true, id, status: 'running', message: `Service ${id} installed and started` });
+    } catch (startErr) {
+      logger.warn('admin-server', `[install] docker compose up -d failed for ${id}: ${String(startErr)}`);
+      json(res, 202, { success: true, id, status: 'compose_updated', message: `Service ${id} added to compose but failed to start` });
     }
   } catch (err) {
     json(res, 500, { success: false, error: String(err) });
@@ -872,6 +882,13 @@ async function handleRemoveService(
   const purge = url.searchParams.get('purge') === 'true';
 
   try {
+    // Stop and remove the container BEFORE removing from compose file.
+    // docker compose rm requires the service to still exist in the compose file to find it.
+    try {
+      const { execa: execaRm } = await import('execa');
+      await execaRm('docker', ['compose', 'rm', '-sf', serviceId], { cwd: projectPath });
+    } catch { /* best-effort — container may already be stopped or not exist */ }
+
     const result = await removeService(serviceId, projectPath, { purge });
     if (result.success) {
       json(res, 200, { success: true, id: serviceId, dataPreserved: !purge });
