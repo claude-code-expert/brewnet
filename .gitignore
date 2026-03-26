@@ -23,6 +23,9 @@ README.md.bak
 
 troubleshooting/
 
+# Boilerplate stack templates (cloned repos with their own .git)
+apps/sl-*/
+
 Thumbs.db
 *.tmp
 *.swp
