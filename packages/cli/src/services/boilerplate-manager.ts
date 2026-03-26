@@ -400,7 +400,7 @@ export function unpatchNextConfig(projectDir: string, appName: string): boolean 
   //   Pattern 2 (fallback):         "  basePath: '/apps/x',"
   const lines = content.split('\n');
   const bpTarget = `basePath: '${basePath}'`;
-  const imgRegex = /^\s*images:\s*\{\s*unoptimized:\s*true\s*\},?\s*$/;
+  const imgRegex = /^\s*images:\s*\{\s*unoptimized:\s*true\s*\}[,;\s}]*$/;
   let dropNextImages = false;
   const filtered = lines.filter((line) => {
     const trimmed = line.trim();
