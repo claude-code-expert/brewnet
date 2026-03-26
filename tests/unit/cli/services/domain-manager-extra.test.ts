@@ -52,6 +52,11 @@ jest.unstable_mockModule('execa', () => ({
   execa: mockExecaFn,
 }));
 
+jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
+  unpatchNextConfig: jest.fn<() => unknown>().mockReturnValue(false),
+  patchNextConfig: jest.fn<() => unknown>(),
+}));
+
 global.fetch = mockFetch as typeof fetch;
 
 const { DomainManager } = await import(

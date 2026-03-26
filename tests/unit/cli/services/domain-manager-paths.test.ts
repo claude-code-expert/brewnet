@@ -70,6 +70,11 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js'
   readApps: mockReadApps,
 }));
 
+jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
+  unpatchNextConfig: jest.fn<() => unknown>().mockReturnValue(false),
+  patchNextConfig: jest.fn<() => unknown>(),
+}));
+
 jest.unstable_mockModule('../../../../packages/cli/src/config/stacks.js', () => ({
   getStackById: mockGetStackById,
   STACK_CATALOG: [],

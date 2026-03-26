@@ -235,7 +235,7 @@ export interface DomainConnection {
   connectedAt: string;
   /** Which domain scenario was used */
   scenario: DomainScenario;
-  /** Next.js basePath (e.g. '/apps/my-app') — used to build correct tunnel ingress URL */
+  /** Next.js basePath (e.g. '/apps/my-app') — used for local health checks and logging; NOT included in CF Tunnel ingress origin (CF does not support path-based origins) */
   basePath?: string;
 }
 

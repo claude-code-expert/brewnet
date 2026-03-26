@@ -28,7 +28,7 @@ export interface ServiceRoute {
   port: number;
   /** Per-route domain override. When set, takes precedence over the shared `domain` param in configureTunnelIngress. */
   domain?: string;
-  /** App basePath (e.g. '/apps/my-app') — appended to the tunnel service URL so cloudflared proxies to the correct sub-path. */
+  /** App basePath (e.g. '/apps/my-app') — stored for local health-check URLs and logging only. NOT appended to the tunnel service URL because CF Tunnel ingress does not support path-based origins. */
   basePath?: string;
 }
 
@@ -333,7 +333,7 @@ export async function configureTunnelIngress(
       const hostname = r.subdomain ? `${r.subdomain}.${baseDomain}` : baseDomain;
       return {
         hostname,
-        service: `http://${r.containerName}:${r.port}${r.basePath ?? ''}`,
+        service: `http://${r.containerName}:${r.port}`,
       };
     }),
     { service: 'http_status:404' },

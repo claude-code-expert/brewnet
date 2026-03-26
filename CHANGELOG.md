@@ -3,6 +3,27 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-26 09:30
+
+### 🎯 Prompts
+1. "앱 git clone 후 deploy 한 뒤 도메인 연결 단계 마지막에 subdomain, root domain 연결시 에러 — ingress rules don't support proxying to a different path on the origin service"
+2. "진행해" (루트 패스 서빙을 위한 basePath 제거 + Docker 리빌드 구현)
+3. "빌드 해"
+
+### ✅ Changes
+- **Fixed**: CF Tunnel ingress origin URL에서 basePath 제거 — `http://host:3000/apps/x`는 CF API가 거부하므로 `http://host:3000`만 사용 (`cloudflare-client.ts:336`)
+- **Added**: `unpatchNextConfig()` — `patchNextConfig()`의 역함수, Named Tunnel 전용 서브도메인에서 루트 패스 서빙을 위해 basePath/images/healthcheck 일괄 복원 (`boilerplate-manager.ts`)
+- **Added**: Domain connect Step 0 — basePath 감지 시 자동으로 next.config에서 basePath 제거 → Docker `--no-cache` 리빌드 → 컨테이너 재시작, 실패 시 `patchNextConfig()`로 롤백 (`domain-manager.ts`)
+- **Modified**: `ServiceRoute.basePath`, `DomainConnection.basePath` JSDoc 수정 — health check/logging 전용이며 CF Tunnel ingress에는 미사용 명시
+
+### 📁 Files Modified
+- `packages/cli/src/services/cloudflare-client.ts` (+2, -2 lines)
+- `packages/cli/src/services/boilerplate-manager.ts` (+63 lines)
+- `packages/cli/src/services/domain-manager.ts` (+35, -2 lines)
+- `packages/shared/src/types/wizard-state.ts` (+1, -1 lines)
+
+---
+
 ## [develop] - 2026-03-25 22:30
 
 ### 🎯 Prompts
