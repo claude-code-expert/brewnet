@@ -76,61 +76,61 @@ function formatMessage(message: string, status: CheckResult['status']): string {
 }
 
 // ---------------------------------------------------------------------------
-// Docker 수동 실행 안내
+// Docker manual start guide
 // ---------------------------------------------------------------------------
 
 function showDockerStartGuide(plat: string): void {
   console.log();
-  console.log(chalk.bold('  Docker 수동 실행 방법:'));
+  console.log(chalk.bold('  How to start Docker manually:'));
   if (plat === 'darwin') {
-    console.log(chalk.dim('    1. Dock 또는 Applications 폴더에서 "Docker" 앱 실행'));
-    console.log(chalk.dim('    2. 메뉴바 상단 고래(🐳) 아이콘이 나타날 때까지 대기 (~30초)'));
-    console.log(chalk.dim('    3. 위 메뉴에서 "60초 더 대기"를 선택하세요'));
+    console.log(chalk.dim('    1. Open the "Docker" app from Dock or Applications folder'));
+    console.log(chalk.dim('    2. Wait for the whale (🐳) icon to appear in the menu bar (~30s)'));
+    console.log(chalk.dim('    3. Select "Wait 60 more seconds" from the menu above'));
   } else {
     console.log(chalk.dim('    sudo systemctl start docker   # systemd (Ubuntu/Debian/CentOS)'));
-    console.log(chalk.dim('    sudo service docker start     # SysV (구형 Ubuntu)'));
-    console.log(chalk.dim('    sudo dockerd &                # 수동 기동 (최후 수단)'));
+    console.log(chalk.dim('    sudo service docker start     # SysV (older Ubuntu)'));
+    console.log(chalk.dim('    sudo dockerd &                # Manual start (last resort)'));
   }
   console.log();
 }
 
 // ---------------------------------------------------------------------------
-// Docker Desktop 첫 실행 안내 (신규 설치 직후)
+// Docker Desktop first launch guide (right after fresh install)
 // ---------------------------------------------------------------------------
 
 function showDockerFirstLaunchGuide(): void {
   console.log();
-  console.log(chalk.bold('  Docker Desktop을 실행해주세요:'));
-  console.log(chalk.dim('    1. Dock 또는 Applications 폴더에서 "Docker" 앱 클릭'));
-  console.log(chalk.dim('    2. 라이선스 동의 및 초기 설정 완료 (~1분)'));
-  console.log(chalk.dim('    3. 메뉴바 상단 고래(🐳) 아이콘이 나타나면 준비 완료'));
+  console.log(chalk.bold('  Please start Docker Desktop:'));
+  console.log(chalk.dim('    1. Click the "Docker" app from Dock or Applications folder'));
+  console.log(chalk.dim('    2. Accept the license and complete initial setup (~1 min)'));
+  console.log(chalk.dim('    3. Ready when the whale (🐳) icon appears in the menu bar'));
   console.log();
 }
 
 // ---------------------------------------------------------------------------
-// Docker 수동 설치 안내
+// Docker manual install guide
 // ---------------------------------------------------------------------------
 
 function showDockerInstallGuide(plat: string): void {
   console.log();
-  console.log(chalk.bold('  Docker 수동 설치 방법:'));
+  console.log(chalk.bold('  How to install Docker manually:'));
   if (plat === 'darwin') {
-    console.log(chalk.dim('    1. https://docs.docker.com/desktop/mac/ 에서 Docker Desktop 다운로드'));
-    console.log(chalk.dim('    2. Docker.dmg 열고 Applications 폴더에 드래그'));
-    console.log(chalk.dim('    3. Docker 앱 실행 → 메뉴바 고래 아이콘 확인'));
-    console.log(chalk.dim('    4. 완료 후: brewnet init'));
+    console.log(chalk.dim('    1. Download Docker Desktop from https://docs.docker.com/desktop/mac/'));
+    console.log(chalk.dim('    2. Open Docker.dmg and drag to Applications folder'));
+    console.log(chalk.dim('    3. Launch Docker app → verify whale icon in menu bar'));
+    console.log(chalk.dim('    4. When done: brewnet init'));
   } else {
     console.log(chalk.dim('    1. curl -fsSL https://get.docker.com | sudo sh'));
     console.log(chalk.dim('    2. sudo systemctl start docker'));
     console.log(chalk.dim('    3. sudo usermod -aG docker $USER && newgrp docker'));
-    console.log(chalk.dim('    4. docker info   (정상 응답 확인)'));
-    console.log(chalk.dim('    5. 완료 후: brewnet init'));
+    console.log(chalk.dim('    4. docker info   (verify it responds)'));
+    console.log(chalk.dim('    5. When done: brewnet init'));
   }
   console.log();
 }
 
 // ---------------------------------------------------------------------------
-// Docker 데몬 대기 — 타임아웃 시 재시도 메뉴
+// Docker daemon wait — retry menu on timeout
 // ---------------------------------------------------------------------------
 
 async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
@@ -138,28 +138,28 @@ async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
   const RETRY_MS   = 60_000;
 
   const daemonSpinner = ora({
-    text: `Docker 데몬 시작 대기 중... (최대 ${INITIAL_MS / 1000}초)`,
+    text: `Waiting for Docker daemon... (up to ${INITIAL_MS / 1000}s)`,
     indent: 2,
   }).start();
 
   let ready = await waitForDockerDaemon(INITIAL_MS);
   if (ready) {
-    daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
+    daemonSpinner.succeed('Docker daemon is ready.');
     return true;
   }
 
-  // 타임아웃 → 인터랙티브 루프
+  // Timeout → interactive loop
   while (true) {
     daemonSpinner.stop();
     console.log();
-    console.log(chalk.red('  ✖ Docker 데몬이 응답하지 않습니다.'));
-    console.log(chalk.dim('    Docker는 설치됐지만 아직 실행되지 않았습니다.'));
+    console.log(chalk.red('  ✖ Docker daemon is not responding.'));
+    console.log(chalk.dim('    Docker is installed but not yet running.'));
 
-    // 실제 오류 원인 표시 (docker info stderr)
+    // Show actual error cause (docker info stderr)
     const diagInfo = await getDaemonDiagnostics();
     if (diagInfo) {
       console.log();
-      console.log(chalk.yellow('  원인 (docker info):'));
+      console.log(chalk.yellow('  Cause (docker info):'));
       const lines = diagInfo.split('\n').filter((l) => l.trim()).slice(0, 6);
       for (const line of lines) {
         console.log(chalk.dim(`    ${line.trim()}`));
@@ -168,52 +168,52 @@ async function waitForDaemonWithRetry(plat: string): Promise<boolean> {
     console.log();
 
     const choices: Array<{ value: string; name: string }> = [
-      { value: 'retry',  name: `⏱  60초 더 대기` },
+      { value: 'retry',  name: `⏱  Wait 60 more seconds` },
     ];
     if (plat === 'darwin') {
-      choices.push({ value: 'open', name: '🔧  Docker Desktop 직접 열기' });
+      choices.push({ value: 'open', name: '🔧  Open Docker Desktop directly' });
     }
     choices.push(
-      { value: 'manual', name: '📋  수동 실행 방법 보기' },
-      { value: 'quit',   name: '✗   종료' },
+      { value: 'manual', name: '📋  Show manual start instructions' },
+      { value: 'quit',   name: '✗   Quit' },
     );
 
-    const action = await select({ message: '어떻게 하시겠습니까?', choices });
+    const action = await select({ message: 'How would you like to proceed?', choices });
 
     if (action === 'retry') {
-      daemonSpinner.start('Docker 데몬 대기 중...');
+      daemonSpinner.start('Waiting for Docker daemon...');
       ready = await waitForDockerDaemon(RETRY_MS);
       if (ready) {
-        daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
+        daemonSpinner.succeed('Docker daemon is ready.');
         return true;
       }
-      // 루프 계속
+      // Continue loop
 
     } else if (action === 'open') {
       console.log();
-      console.log(chalk.dim('  Docker Desktop을 실행합니다...'));
+      console.log(chalk.dim('  Launching Docker Desktop...'));
       const lr = await launchDockerDesktop();
       if (!lr.success) {
-        console.log(chalk.red(`  Docker Desktop 실행 실패: ${lr.error ?? '알 수 없는 오류'}`));
-        console.log(chalk.dim('  Dock 또는 Applications 폴더에서 직접 실행해주세요.'));
+        console.log(chalk.red(`  Failed to launch Docker Desktop: ${lr.error ?? 'unknown error'}`));
+        console.log(chalk.dim('  Please open it manually from Dock or Applications folder.'));
         console.log();
       }
-      daemonSpinner.start('Docker Desktop 기동 대기 중...');
+      daemonSpinner.start('Waiting for Docker Desktop to start...');
       ready = await waitForDockerDaemon(RETRY_MS);
       if (ready) {
-        daemonSpinner.succeed('Docker 데몬이 준비됐습니다.');
+        daemonSpinner.succeed('Docker daemon is ready.');
         return true;
       }
-      // 루프 계속
+      // Continue loop
 
     } else if (action === 'manual') {
       showDockerStartGuide(plat);
-      // 루프 반복 → 다시 선택
+      // Loop continues — show choices again
 
     } else {
       // quit
       console.log();
-      console.log(chalk.dim('  Docker 실행 후 brewnet init을 다시 시도하세요.'));
+      console.log(chalk.dim('  Please start Docker and try brewnet init again.'));
       console.log();
       return false;
     }
@@ -241,32 +241,32 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     console.log();
 
     // -----------------------------------------------------------------------
-    // 2. Docker 사전 설치 (없는 경우 자동 설치 — 재시도 루프 포함)
+    // 2. Docker pre-install (auto-install if missing — with retry loop)
     // -----------------------------------------------------------------------
     const dockerInstalled = await isDockerInstalled();
 
     if (dockerInstalled) {
       const daemonRunning = await isDaemonRunning();
       if (daemonRunning) {
-        // Docker가 이미 실행 중 — 그대로 사용
-        console.log(chalk.green('  ✓  Docker가 실행 중입니다. 기존 설치를 사용합니다.'));
+        // Docker is already running — use existing installation
+        console.log(chalk.green('  ✓  Docker is running. Using existing installation.'));
         console.log();
       } else {
-        // Docker CLI는 있지만 데몬이 꺼진 경우 — 기동 안내
+        // Docker CLI exists but daemon is not running — start guide
         const plat = process.platform;
-        console.log(chalk.yellow('  ⚠  Docker가 설치되어 있지만 실행되지 않았습니다.'));
+        console.log(chalk.yellow('  ⚠  Docker is installed but not running.'));
         console.log(chalk.dim(
           plat === 'darwin'
-            ? '  Docker Desktop을 자동으로 실행합니다...'
-            : '  Docker 데몬을 시작합니다. (sudo 권한이 필요할 수 있습니다)',
+            ? '  Launching Docker Desktop automatically...'
+            : '  Starting Docker daemon. (may require sudo)',
         ));
         console.log();
 
         if (plat === 'darwin') {
           const lr = await launchDockerDesktop();
           if (!lr.success) {
-            console.log(chalk.red(`  Docker Desktop 실행 실패: ${lr.error ?? '알 수 없는 오류'}`));
-            console.log(chalk.dim('  Dock 또는 Applications 폴더에서 직접 실행해주세요.'));
+            console.log(chalk.red(`  Failed to launch Docker Desktop: ${lr.error ?? 'unknown error'}`));
+            console.log(chalk.dim('  Please open it manually from Dock or Applications folder.'));
             console.log();
           }
         } else {
@@ -287,15 +287,15 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     if (!dockerInstalled) {
       const plat = process.platform;
 
-      console.log(chalk.yellow('  ⚠  Docker가 설치되지 않았습니다. 자동으로 설치합니다.'));
+      console.log(chalk.yellow('  ⚠  Docker is not installed. Installing automatically.'));
       console.log(chalk.dim(
         plat === 'darwin'
-          ? '  [macOS] Homebrew를 통해 Docker Desktop을 설치합니다.'
-          : '  [Linux] 공식 Docker 설치 스크립트를 실행합니다. (sudo 권한 필요)',
+          ? '  [macOS] Installing Docker Desktop via Homebrew.'
+          : '  [Linux] Running the official Docker install script. (sudo required)',
       ));
       console.log();
 
-      // 설치 시도 — 실패 시 재시도/수동안내/종료 메뉴
+      // Install attempt — retry/manual/quit menu on failure
       let requiresRelogin = false;
       while (true) {
         const installResult = await installDocker();
@@ -303,21 +303,21 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
         if (installResult.success) {
           console.log();
           const platformLabel = plat === 'darwin' ? 'macOS' : 'Linux';
-          console.log(chalk.green(`  ✓  Docker 설치 완료 (${platformLabel})`));
+          console.log(chalk.green(`  ✓  Docker installation complete (${platformLabel})`));
           requiresRelogin = installResult.requiresRelogin ?? false;
           break;
         }
 
-        // 설치 실패
-        console.log(chalk.red(`  ✗  Docker 자동 설치 실패: ${installResult.message}`));
+        // Install failed
+        console.log(chalk.red(`  ✗  Docker auto-install failed: ${installResult.message}`));
         console.log();
 
         const action = await select({
-          message: '어떻게 하시겠습니까?',
+          message: 'How would you like to proceed?',
           choices: [
-            { value: 'retry',  name: '🔄  설치 다시 시도' },
-            { value: 'manual', name: '📋  수동 설치 방법 보기' },
-            { value: 'quit',   name: '✗   종료' },
+            { value: 'retry',  name: '🔄  Retry installation' },
+            { value: 'manual', name: '📋  Show manual install instructions' },
+            { value: 'quit',   name: '✗   Quit' },
           ],
         });
 
@@ -331,18 +331,18 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
         return { passed: false, results: [], portRemapping };
       }
 
-      // Docker 설치 완료 — macOS: 사용자가 직접 실행하도록 안내 후 확인 대기
-      // (자동 실행을 시도하지 않음 — 첫 실행 시 라이선스 동의 등 사용자 상호작용 필요)
+      // Docker installed — macOS: guide user to launch manually, then wait for confirmation
+      // (no auto-launch — first run requires license agreement and user interaction)
       if (plat === 'darwin') {
         showDockerFirstLaunchGuide();
         await confirm({
-          message: 'Docker Desktop을 실행하고 메뉴바에 고래(🐳) 아이콘이 나타났나요?',
+          message: 'Have you launched Docker Desktop and see the whale (🐳) icon in the menu bar?',
           default: true,
         });
         console.log();
       }
 
-      // Docker 설치 완료 — 데몬 기동 대기 (재시도 루프 포함)
+      // Docker installed — wait for daemon to start (with retry loop)
       const daemonReady = await waitForDaemonWithRetry(process.platform);
       if (!daemonReady) {
         return { passed: false, results: [], portRemapping };
@@ -351,7 +351,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       if (requiresRelogin) {
         console.log();
         console.log(chalk.dim(
-          '  ℹ  docker 그룹이 추가됐습니다. sudo 없이 사용하려면 새 터미널 세션을 열어주세요.',
+          '  ℹ  docker group added. Open a new terminal session to use Docker without sudo.',
         ));
       }
       console.log();
@@ -445,12 +445,12 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     }
 
     // -----------------------------------------------------------------------
-    // 5. Critical failures → remediation 힌트 + 컨텍스트별 해결 메뉴
+    // 5. Critical failures → remediation hints + context-specific resolution menu
     // -----------------------------------------------------------------------
     if (hasCriticalFailure) {
       const criticalFailures = results.filter((r) => r.status === 'fail' && r.critical);
 
-      console.log(chalk.red.bold('  필수 요구사항을 충족하지 못했습니다:'));
+      console.log(chalk.red.bold('  Required components are missing:'));
       console.log();
       for (const f of criticalFailures) {
         console.log(chalk.red(`    ✗  ${f.name}: ${f.message}`));
@@ -460,7 +460,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       }
       console.log();
 
-      // Docker 데몬 미실행(BN001) 여부 — 전용 재시도 메뉴 제공
+      // Check if Docker daemon not running (BN001) — offer dedicated retry menu
       const isDockerDaemonFailure = criticalFailures.some(
         (f) => f.name === 'Docker' && f.message.includes('BN001'),
       );
@@ -468,41 +468,41 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       if (isDockerDaemonFailure) {
         const plat = process.platform;
         const choices: Array<{ value: string; name: string }> = [
-          { value: 'wait', name: '⏱  Docker 기동 대기 (60초)' },
+          { value: 'wait', name: '⏱  Wait for Docker to start (60s)' },
         ];
         if (plat === 'darwin') {
-          choices.push({ value: 'open', name: '🐳  Docker Desktop 직접 열기 후 대기' });
+          choices.push({ value: 'open', name: '🐳  Open Docker Desktop and wait' });
         }
         choices.push(
-          { value: 'manual', name: '📋  수동 실행 방법 보기' },
-          { value: 'recheck', name: '🔄  다시 검사 (Docker 이미 실행 중인 경우)' },
-          { value: 'quit',   name: '✗   종료' },
+          { value: 'manual', name: '📋  Show manual start instructions' },
+          { value: 'recheck', name: '🔄  Re-check (if Docker is already running)' },
+          { value: 'quit',   name: '✗   Quit' },
         );
 
         while (true) {
-          const action = await select({ message: '어떻게 하시겠습니까?', choices });
+          const action = await select({ message: 'How would you like to proceed?', choices });
           console.log();
 
           if (action === 'wait') {
             const ready = await waitForDaemonWithRetry(plat);
             if (ready) return runSystemCheckStep();
-            // 루프 반복
+            // Continue loop
 
           } else if (action === 'open') {
-            console.log(chalk.dim('  Docker Desktop을 실행합니다...'));
+            console.log(chalk.dim('  Launching Docker Desktop...'));
             const lr = await launchDockerDesktop();
             if (!lr.success) {
-              console.log(chalk.red(`  Docker Desktop 실행 실패: ${lr.error ?? '알 수 없는 오류'}`));
-              console.log(chalk.dim('  Dock 또는 Applications 폴더에서 직접 실행해주세요.'));
+              console.log(chalk.red(`  Failed to launch Docker Desktop: ${lr.error ?? 'unknown error'}`));
+              console.log(chalk.dim('  Please open it manually from Dock or Applications folder.'));
               console.log();
             }
             const ready = await waitForDaemonWithRetry(plat);
             if (ready) return runSystemCheckStep();
-            // 루프 반복
+            // Continue loop
 
           } else if (action === 'manual') {
             showDockerStartGuide(plat);
-            // 루프 반복
+            // Continue loop
 
           } else if (action === 'recheck') {
             return runSystemCheckStep();
@@ -513,12 +513,12 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
         }
       }
 
-      // Docker 외 일반 critical failure → 직접 해결 후 재검사
+      // Non-Docker critical failure → resolve manually, then re-check
       const action = await select({
-        message: '어떻게 하시겠습니까?',
+        message: 'How would you like to proceed?',
         choices: [
-          { value: 'retry', name: '🔄  문제 해결 후 다시 검사' },
-          { value: 'quit',  name: '✗   종료' },
+          { value: 'retry', name: '🔄  Re-check after resolving the issue' },
+          { value: 'quit',  name: '✗   Quit' },
         ],
       });
 
@@ -532,13 +532,13 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     }
 
     // -----------------------------------------------------------------------
-    // 6. Non-port warnings → remediation 힌트 + 계속할지 확인
+    // 6. Non-port warnings → remediation hints + confirm to continue
     // -----------------------------------------------------------------------
     const nonPortWarnings = warnings.filter((w) => !w.name.startsWith('Port '));
 
     if (nonPortWarnings.length > 0) {
       console.log(chalk.yellow(
-        `  ${nonPortWarnings.length}개의 경고가 있습니다. 필수는 아니지만 일부 기능에 영향을 줄 수 있습니다.`,
+        `  ${nonPortWarnings.length} warning(s) found. Not critical, but may affect some features.`,
       ));
       console.log();
       for (const w of nonPortWarnings) {
@@ -550,7 +550,7 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
       console.log();
 
       const shouldContinue = await confirm({
-        message: '경고를 무시하고 계속 진행하시겠습니까?',
+        message: 'Ignore warnings and continue?',
         default: true,
       });
 
@@ -561,14 +561,14 @@ export async function runSystemCheckStep(): Promise<SystemCheckStepResult> {
     // -----------------------------------------------------------------------
     // 7. All pass
     // -----------------------------------------------------------------------
-    console.log(chalk.green.bold('  모든 시스템 체크를 통과했습니다!'));
+    console.log(chalk.green.bold('  All system checks passed!'));
     console.log();
 
     return { passed: true, results, portRemapping };
 
   } catch (err) {
     console.log();
-    console.log(chalk.red('  시스템 체크 중 예상치 못한 오류가 발생했습니다.'));
+    console.log(chalk.red('  An unexpected error occurred during system check.'));
     if (err instanceof Error) {
       console.log(chalk.dim(`  ${err.message}`));
     }

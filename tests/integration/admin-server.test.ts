@@ -49,7 +49,7 @@ const fakeContainer = {
   Id: 'abc123',
   State: 'running',
   Status: 'Up 2 hours',
-  Labels: { 'com.docker.compose.service': 'redis' },
+  Labels: { 'com.docker.compose.service': 'redis', 'com.docker.compose.project.working_dir': '/tmp/test-project' },
   Ports: [{ PublicPort: 6379 }],
 };
 
@@ -218,7 +218,7 @@ describe('GET /api/services', () => {
   it('marks required services (traefik, gitea) as non-removable', async () => {
     const traefikContainer = {
       ...fakeContainer,
-      Labels: { 'com.docker.compose.service': 'traefik' },
+      Labels: { 'com.docker.compose.service': 'traefik', 'com.docker.compose.project.working_dir': '/tmp/test-project' },
     };
     mockListContainers.mockResolvedValueOnce([traefikContainer]);
     const { data } = await req('GET', '/api/services');

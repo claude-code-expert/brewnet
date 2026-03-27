@@ -19,6 +19,7 @@ import {
   runUninstall,
 } from '../services/uninstall-manager.js';
 import { getLastProject, loadState } from '../wizard/state.js';
+import { listDomainConnections } from '../services/project-db.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -275,7 +276,8 @@ export function registerUninstallCommand(program: Command): void {
                   ? getActiveServiceRoutes(state).map((r) => `${r.subdomain}.${zoneName}`)
                   : [];
                 const appHostnames: string[] = [];
-                for (const conn of state.domainConnections ?? []) {
+                const domainConns = listDomainConnections(projectPath ?? process.cwd());
+                for (const conn of domainConns) {
                   appHostnames.push(conn.hostname);
                   // apex connection: also clean up www DNS record
                   if (conn.subdomain === '@' && conn.domain) {

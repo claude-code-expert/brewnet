@@ -168,7 +168,7 @@ export const wizardStateSchema = z.object({
   devStack: devStackConfigSchema,
   boilerplate: boilerplateConfigSchema,
   domain: domainConfigSchema,
-  domainConnections: z.array(domainConnectionSchema),
+  domainConnections: z.array(domainConnectionSchema).optional().default([]),
   portRemapping: z.record(z.coerce.number(), z.number().int().min(1).max(65535)),
 }) satisfies z.ZodType<WizardState>;
 

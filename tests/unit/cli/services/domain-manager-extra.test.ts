@@ -57,6 +57,29 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-mana
   patchNextConfig: jest.fn<() => unknown>(),
 }));
 
+const mockListDomainConnections = jest.fn<() => unknown[]>(() => []);
+const mockUpsertDomainConnection = jest.fn();
+const mockRemoveDomainConnection = jest.fn();
+jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', () => ({
+  listApps: jest.fn(() => []),
+  getApp: jest.fn(() => null),
+  addApp: jest.fn(),
+  updateApp: jest.fn(),
+  removeApp: jest.fn(),
+  listDomainConnections: mockListDomainConnections,
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: mockUpsertDomainConnection,
+  removeDomainConnection: mockRemoveDomainConnection,
+  getDeployHistory: jest.fn(() => []),
+  appendDeployHistory: jest.fn(),
+  getSetting: jest.fn(() => null),
+  setSetting: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
+}));
+
 global.fetch = mockFetch as typeof fetch;
 
 const { DomainManager } = await import(
@@ -144,6 +167,7 @@ function makeConnection(overrides: Partial<{
 describe('DomainManager.reload()', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
     mockGetActiveServiceRoutes.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
   });
@@ -154,6 +178,10 @@ describe('DomainManager.reload()', () => {
     updated.domainConnections = [makeConnection()];
 
     mockLoadState.mockReturnValueOnce(initial).mockReturnValueOnce(updated);
+    // list() reads from DB mock — after reload, the projectPath changes to updated state
+    mockListDomainConnections
+      .mockReturnValueOnce([])        // first list() call
+      .mockReturnValueOnce([makeConnection()]); // second list() call after reload
 
     const mgr = new DomainManager('test-project');
     expect(mgr.list()).toHaveLength(0);
@@ -166,6 +194,8 @@ describe('DomainManager.reload()', () => {
     const initial = makeState();
     initial.domainConnections = [makeConnection()];
     mockLoadState.mockReturnValueOnce(initial).mockReturnValueOnce(null);
+    // list() reads from DB mock — state stays the same projectPath after null reload
+    mockListDomainConnections.mockReturnValue([makeConnection()]);
 
     const mgr = new DomainManager('test-project');
     // reload() with null → no-op, state unchanged
@@ -177,6 +207,7 @@ describe('DomainManager.reload()', () => {
 describe('DomainManager.getState()', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
     mockGetActiveServiceRoutes.mockReturnValue([]);
   });
 
@@ -200,6 +231,7 @@ describe('DomainManager.status()', () => {
     state = makeState();
     state.domainConnections = [makeConnection()];
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue([makeConnection()]);
     mockGetActiveServiceRoutes.mockReturnValue([
       { subdomain: 'git', containerName: 'gitea', port: 3000 },
     ]);
@@ -208,6 +240,7 @@ describe('DomainManager.status()', () => {
 
   it('returns empty array when no connections', async () => {
     state.domainConnections = [];
+    mockListDomainConnections.mockReturnValue([]);
     const mgr = new DomainManager('test-project');
     const result = await mgr.status();
     expect(result).toHaveLength(0);
@@ -228,10 +261,12 @@ describe('DomainManager.status()', () => {
   });
 
   it('filters by appName when provided', async () => {
-    state.domainConnections = [
+    const conns = [
       makeConnection({ appName: 'git', subdomain: 'git', hostname: 'git.example.com' }),
       makeConnection({ appName: 'cloud', subdomain: 'cloud', hostname: 'cloud.example.com' }),
     ];
+    state.domainConnections = conns;
+    mockListDomainConnections.mockReturnValue(conns);
     mockGetTunnelHealth.mockResolvedValue({ status: 'healthy', connectorCount: 1 });
     mockGetDnsRecords.mockResolvedValue([]);
 
@@ -309,6 +344,7 @@ describe('DomainManager.status()', () => {
 describe('DomainManager.connect() — CNAME_CONFLICT', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
   });
 
@@ -339,6 +375,7 @@ describe('DomainManager.connect() — CNAME_CONFLICT', () => {
 describe('DomainManager.connect() — ingress failure', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
     mockGetDnsRecords.mockResolvedValue([]);
   });
@@ -366,6 +403,7 @@ describe('DomainManager.connect() — ingress failure', () => {
 describe('DomainManager.connect() — onLog', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
   });
 
@@ -404,16 +442,17 @@ describe('DomainManager.connect() — onLog', () => {
 describe('DomainManager.connect() — existing domainConnections in ingress (L193-194)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
   });
 
   it('includes pre-existing connections as external routes in ingress (L193-194)', async () => {
+    const existingConn = makeConnection({ appName: 'nextcloud', subdomain: 'cloud', hostname: 'cloud.example.com' });
     const state = makeState({
-      domainConnections: [
-        makeConnection({ appName: 'nextcloud', subdomain: 'cloud', hostname: 'cloud.example.com' }),
-      ],
+      domainConnections: [existingConn],
     });
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue([existingConn]);
     // Provide a route so resolveContainerPort('gitea') resolves to 3000
     mockGetActiveServiceRoutes.mockReturnValue([
       { subdomain: 'git', containerName: 'gitea', port: 3000 },
@@ -436,13 +475,17 @@ describe('DomainManager.connect() — existing domainConnections in ingress (L19
 describe('DomainManager.status() — private method exception paths', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockListDomainConnections.mockReturnValue([]);
+    mockGetActiveServiceRoutes.mockReturnValue([]);
   });
 
   it('covers checkDnsResolution catch path (L580) when execa throws', async () => {
+    const conn = makeConnection();
     const state = makeState({
-      domainConnections: [makeConnection()],
+      domainConnections: [conn],
     });
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue([conn]);
     mockFetch.mockResolvedValue({ ok: false, status: 503 } as Response);
     mockGetTunnelHealth.mockResolvedValue({ status: 'inactive', connectorCount: 0 });
     mockGetDnsRecords.mockResolvedValue([]);
@@ -457,10 +500,12 @@ describe('DomainManager.status() — private method exception paths', () => {
   });
 
   it('covers checkHttpsReachable catch path (L595) when fetch throws on HTTPS check', async () => {
+    const conn = makeConnection();
     const state = makeState({
-      domainConnections: [makeConnection()],
+      domainConnections: [conn],
     });
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue([conn]);
     // First fetch call (checkLocalHealth) succeeds; second (checkHttpsReachable) throws
     mockFetch
       .mockResolvedValueOnce({ ok: true, status: 200 } as Response)
@@ -485,6 +530,7 @@ describe('DomainManager.connect() — DNS propagation timeout (L292-293)', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    mockListDomainConnections.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as Response);
     // DNS never resolves → poll loop times out
     mockExecaFn.mockResolvedValue({ stdout: '', stderr: '' });
@@ -497,6 +543,7 @@ describe('DomainManager.connect() — DNS propagation timeout (L292-293)', () =>
   it('marks dns_propagation as skipped when poll times out', async () => {
     const state = makeState();
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue([]);
     mockGetActiveServiceRoutes.mockReturnValue([
       { subdomain: 'git', containerName: 'gitea', port: 3000 },
     ]);

@@ -177,10 +177,10 @@ describe('export — action', () => {
     expect(mockOraInstance.fail).toHaveBeenCalled();
   });
 
-  it('includes apps.json and boilerplate.json in archive when they exist', async () => {
-    // Provide all optional files so cpSync is called for apps.json and boilerplate.json
+  it('includes .brewnet.db and boilerplate.json in archive when they exist', async () => {
+    // Provide all optional files so cpSync is called for .brewnet.db and boilerplate.json
     fsContent['/home/user/.brewnet/projects/my-project/selections.json'] = '{}';
-    fsContent['/home/user/.brewnet/apps.json'] = '[]';
+    fsContent['/home/user/brewnet/my-project/.brewnet.db'] = '';
     fsContent['/home/user/brewnet/my-project/.brewnet-boilerplate.json'] = '[]';
     fsContent['/home/user/brewnet/my-project/docker-compose.yml'] = 'version: "3"';
     mockStatSync.mockReturnValue({ size: 4096 });
@@ -190,9 +190,9 @@ describe('export — action', () => {
     registerExportCommand(p);
     await parseCommand(p, ['export', '--project', 'my-project', '--output', '/tmp']);
 
-    // cpSync should have been called for apps.json and boilerplate.json
+    // cpSync should have been called for .brewnet.db and boilerplate.json
     const cpCalls = mockCpSync.mock.calls.map((c) => String(c[0]));
-    expect(cpCalls.some((p) => p.includes('apps.json'))).toBe(true);
+    expect(cpCalls.some((p) => p.includes('.brewnet.db'))).toBe(true);
     expect(cpCalls.some((p) => p.includes('.brewnet-boilerplate.json'))).toBe(true);
   });
 });

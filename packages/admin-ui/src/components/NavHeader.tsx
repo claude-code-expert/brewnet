@@ -37,6 +37,13 @@ export function NavHeader() {
         >
           Catalog
         </NavLink>
+        <NavLink
+          to="/debug/db"
+          className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+          style={{ fontSize: 12, opacity: 0.6 }}
+        >
+          DB
+        </NavLink>
       </div>
     </div>
   );

@@ -174,7 +174,7 @@ export async function runDevStackStep(
   // 3. Language single-select
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Backend Language'));
-  console.log(chalk.dim('  ↑↓: 이동   Enter: 확정   (추후 추가설정 가능합니다)'));
+  console.log(chalk.dim('  ↑↓: Navigate   Enter: Confirm   (You can adjust settings later)'));
   console.log();
 
   const languageChoices: Array<{ name: string; value: Language | 'skip' }> = [
@@ -182,7 +182,7 @@ export async function runDevStackStep(
       name: LANGUAGE_REGISTRY[key].name,
       value: key as Language | 'skip',
     })),
-    { name: 'Skip — 언어 선택 건너뛰기', value: 'skip' as const },
+    { name: 'Skip — Skip language selection', value: 'skip' as const },
   ];
 
   const selectedLang = await select<Language | 'skip'>({
@@ -195,7 +195,7 @@ export async function runDevStackStep(
     selectedLang === 'skip' ? [] : [selectedLang];
 
   if (selectedLanguages.length === 0) {
-    console.log(chalk.dim('  (선택 없음 — 프레임워크 선택을 건너뜁니다)'));
+    console.log(chalk.dim('  (No selection — skipping framework selection)'));
   }
   console.log();
 
@@ -255,7 +255,7 @@ export async function runDevStackStep(
 
   if (hasUnifiedStack) {
     console.log(chalk.bold('  Frontend Technology'));
-    console.log(chalk.dim('  Next.js 통합 스택이 선택되어 별도 프론트엔드가 필요하지 않습니다.'));
+    console.log(chalk.dim('  Next.js unified stack selected — no separate frontend needed.'));
     console.log(chalk.green('  ✔ Skipped (Next.js includes frontend)'));
     console.log();
   } else {

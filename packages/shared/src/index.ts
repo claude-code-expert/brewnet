@@ -35,6 +35,9 @@ export type {
   SetupType,
   FileBrowserMode,
   DevMode,
+  // Domain connection types
+  DomainConnection,
+  DomainScenario,
   // Install manifest types
   InstallManifest,
   InstallManifestStack,

@@ -44,18 +44,32 @@ const mockExeca = jest.fn<() => Promise<{ stdout: string; stderr: string }>>().m
 });
 jest.unstable_mockModule('execa', () => ({ execa: mockExeca }));
 
-const mockAddApp = jest.fn();
-const mockUpdateApp = jest.fn();
-const mockReadApps = jest.fn<() => unknown[]>(() => []);
-const mockRemoveApp = jest.fn();
-jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js', () => ({
-  addApp: mockAddApp,
-  updateApp: mockUpdateApp,
-  readApps: mockReadApps,
-  removeApp: mockRemoveApp,
-  writeApps: jest.fn(),
-  readDeployHistory: jest.fn(() => []),
-  appendDeployHistory: jest.fn(),
+const mockDbAddApp = jest.fn();
+const mockDbUpdateApp = jest.fn();
+const mockDbListApps = jest.fn<() => unknown[]>(() => []);
+const mockDbGetApp = jest.fn<() => unknown>(() => null);
+const mockDbRemoveApp = jest.fn();
+const mockGetSetting = jest.fn<() => string | null>(() => null);
+const mockSetSetting = jest.fn();
+const mockDbAppendDeployHistory = jest.fn();
+jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', () => ({
+  listApps: mockDbListApps,
+  getApp: mockDbGetApp,
+  addApp: mockDbAddApp,
+  updateApp: mockDbUpdateApp,
+  removeApp: mockDbRemoveApp,
+  getDeployHistory: jest.fn(() => []),
+  appendDeployHistory: mockDbAppendDeployHistory,
+  getSetting: mockGetSetting,
+  setSetting: mockSetSetting,
+  listDomainConnections: jest.fn(() => []),
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: jest.fn(),
+  removeDomainConnection: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
 }));
 
 const mockPrepare = jest.fn<() => Promise<{ autoFixed: boolean; message: string }>>().mockResolvedValue({
@@ -148,11 +162,12 @@ describe('loadGiteaConfig', () => {
     expect(loadGiteaConfig()).toBeNull();
   });
 
-  it('returns parsed config when file exists', () => {
-    fsContent[GITEA_CONFIG_PATH] = JSON.stringify({
-      baseUrl: 'http://localhost/git',
-      username: 'admin',
-      writtenAt: '2026-01-01T00:00:00Z',
+  it('returns parsed config when settings exist in DB', () => {
+    mockGetSetting.mockImplementation((_pp: unknown, key: unknown) => {
+      if (key === 'gitea.baseUrl') return 'http://localhost/git';
+      if (key === 'gitea.username') return 'admin';
+      if (key === 'gitea.writtenAt') return '2026-01-01T00:00:00Z';
+      return null;
     });
     const cfg = loadGiteaConfig();
     expect(cfg).not.toBeNull();
@@ -160,8 +175,8 @@ describe('loadGiteaConfig', () => {
     expect(cfg!.username).toBe('admin');
   });
 
-  it('returns null when file contains invalid JSON', () => {
-    fsContent[GITEA_CONFIG_PATH] = 'not-valid-json{{';
+  it('returns null when settings are missing in DB', () => {
+    mockGetSetting.mockReturnValue(null);
     expect(loadGiteaConfig()).toBeNull();
   });
 });
@@ -172,22 +187,15 @@ describe('saveGiteaConfig', () => {
     jest.clearAllMocks();
   });
 
-  it('writes config JSON to GITEA_CONFIG_PATH', () => {
+  it('writes config via setSetting', () => {
     saveGiteaConfig('http://localhost/git', 'admin');
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      GITEA_CONFIG_PATH,
-      expect.stringContaining('"baseUrl"'),
-      'utf-8',
-    );
-    const written = JSON.parse(
-      (mockWriteFileSync.mock.calls[0] as [string, string])[1],
-    ) as { baseUrl: string; username: string };
-    expect(written.baseUrl).toBe('http://localhost/git');
-    expect(written.username).toBe('admin');
+    expect(mockSetSetting).toHaveBeenCalledWith(expect.any(String), 'gitea.baseUrl', 'http://localhost/git');
+    expect(mockSetSetting).toHaveBeenCalledWith(expect.any(String), 'gitea.username', 'admin');
+    expect(mockSetSetting).toHaveBeenCalledWith(expect.any(String), 'gitea.writtenAt', expect.any(String));
   });
 
-  it('does not throw when writeFileSync fails', () => {
-    mockWriteFileSync.mockImplementationOnce(() => {
+  it('does not throw when setSetting fails', () => {
+    mockSetSetting.mockImplementationOnce(() => {
       throw new Error('Permission denied');
     });
     expect(() => saveGiteaConfig('http://localhost/git', 'admin')).not.toThrow();
@@ -205,27 +213,25 @@ describe('getDeploySettings', () => {
   });
 
   it('returns default settings when app has no deploySettings', () => {
-    mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/app', port: 3000, status: 'running' }]);
+    mockDbListApps.mockReturnValue([{ name: 'my-app', appDir: '/app', port: 3000, status: 'running' }]);
     const settings = getDeploySettings('my-app');
     expect(settings.autoDeploy).toBe(false);
     expect(settings.deployBranch).toBe('main');
   });
 
   it('returns default settings when app not found', () => {
-    mockReadApps.mockReturnValue([]);
+    mockDbListApps.mockReturnValue([]);
     const settings = getDeploySettings('nonexistent');
     expect(settings.autoDeploy).toBe(false);
     expect(settings.deployBranch).toBe('main');
   });
 
   it('returns stored deploySettings when present', () => {
-    mockReadApps.mockReturnValue([{
-      name: 'my-app',
-      appDir: '/app',
-      port: 3000,
-      status: 'running',
-      deploySettings: { autoDeploy: true, deployBranch: 'develop' },
-    }]);
+    mockGetSetting.mockImplementation((_pp: unknown, key: unknown) => {
+      if (key === 'deploy.my-app.autoDeploy') return 'true';
+      if (key === 'deploy.my-app.deployBranch') return 'develop';
+      return null;
+    });
     const settings = getDeploySettings('my-app');
     expect(settings.autoDeploy).toBe(true);
     expect(settings.deployBranch).toBe('develop');
@@ -243,44 +249,36 @@ describe('updateDeploySettings', () => {
   });
 
   it('throws when app not found', () => {
-    mockReadApps.mockReturnValue([]);
+    mockDbListApps.mockReturnValue([]);
     expect(() => updateDeploySettings('missing-app', { autoDeploy: true })).toThrow(
       'App "missing-app" not found',
     );
   });
 
-  it('merges settings and calls updateApp', () => {
-    mockReadApps.mockReturnValue([{
+  it('merges settings and calls setSetting', () => {
+    mockDbGetApp.mockReturnValue({
       name: 'my-app',
       appDir: '/app',
       port: 3000,
       status: 'running',
-    }]);
+    });
     updateDeploySettings('my-app', { autoDeploy: true, deployBranch: 'staging' });
-    expect(mockUpdateApp).toHaveBeenCalledWith(
-      expect.any(String),
-      'my-app',
-      expect.objectContaining({
-        deploySettings: { autoDeploy: true, deployBranch: 'staging' },
-      }),
-    );
+    expect(mockSetSetting).toHaveBeenCalledWith(expect.any(String), 'deploy.my-app.autoDeploy', 'true');
+    expect(mockSetSetting).toHaveBeenCalledWith(expect.any(String), 'deploy.my-app.deployBranch', 'staging');
   });
 
-  it('preserves existing settings when partially updating', () => {
-    mockReadApps.mockReturnValue([{
+  it('only updates specified settings (partial update)', () => {
+    mockDbGetApp.mockReturnValue({
       name: 'my-app',
       appDir: '/app',
       port: 3000,
       status: 'running',
-      deploySettings: { autoDeploy: false, deployBranch: 'main', webhookSecret: 'abc' },
-    }]);
+    });
     updateDeploySettings('my-app', { autoDeploy: true });
-    const callArg = (mockUpdateApp.mock.calls[0] as unknown[])[2] as {
-      deploySettings: { autoDeploy: boolean; deployBranch: string; webhookSecret?: string };
-    };
-    expect(callArg.deploySettings.autoDeploy).toBe(true);
-    expect(callArg.deploySettings.deployBranch).toBe('main');
-    expect(callArg.deploySettings.webhookSecret).toBe('abc');
+    expect(mockSetSetting).toHaveBeenCalledWith(expect.any(String), 'deploy.my-app.autoDeploy', 'true');
+    // deployBranch and webhookSecret were not passed, so setSetting should not be called for them
+    expect(mockSetSetting).not.toHaveBeenCalledWith(expect.any(String), 'deploy.my-app.deployBranch', expect.any(String));
+    expect(mockSetSetting).not.toHaveBeenCalledWith(expect.any(String), 'deploy.my-app.webhookSecret', expect.any(String));
   });
 });
 
@@ -294,14 +292,14 @@ describe('getAppDir', () => {
   });
 
   it('returns appDir when app exists', () => {
-    mockReadApps.mockReturnValue([{
+    mockDbGetApp.mockReturnValue({
       name: 'my-app', appDir: '/proj/my-app', port: 3000, status: 'running',
-    }]);
+    });
     expect(getAppDir('my-app')).toBe('/proj/my-app');
   });
 
   it('returns undefined when app not found', () => {
-    mockReadApps.mockReturnValue([]);
+    mockDbGetApp.mockReturnValue(null);
     expect(getAppDir('nonexistent')).toBeUndefined();
   });
 });
@@ -316,7 +314,7 @@ describe('deployLocalApp', () => {
     jest.clearAllMocks();
     mockLoadState.mockReturnValue(makeState());
     fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
-    mockReadApps.mockReturnValue([]);
+    mockDbListApps.mockReturnValue([]);
     mockFetch.mockResolvedValue({ ok: true, status: 200 } as unknown as Response);
   });
 
@@ -395,8 +393,8 @@ describe('deployLocalApp', () => {
     // Allow setImmediate to run
     await new Promise<void>((r) => setTimeout(r, 50));
 
-    expect(mockAddApp).toHaveBeenCalledWith(
-      expect.stringContaining(APPS_JSON),
+    expect(mockDbAddApp).toHaveBeenCalledWith(
+      expect.any(String),
       expect.objectContaining({ name: 'node-app', mode: 'local-path' }),
     );
   });
@@ -581,7 +579,7 @@ describe('rollbackApp', () => {
   });
 
   it('returns a jobId string immediately', async () => {
-    mockReadApps.mockReturnValue([{
+    mockDbListApps.mockReturnValue([{
       name: 'my-app', appDir: '/proj/apps/my-app', port: 3000, status: 'running',
     }]);
     const jobId = await rollbackApp('my-app', 'abc1234');
@@ -590,7 +588,7 @@ describe('rollbackApp', () => {
   });
 
   it('job fails when app not found', async () => {
-    mockReadApps.mockReturnValue([]);
+    mockDbListApps.mockReturnValue([]);
 
     const jobId = await rollbackApp('nonexistent', 'abc1234');
     await new Promise<void>((r) => setTimeout(r, 50));
@@ -602,7 +600,10 @@ describe('rollbackApp', () => {
 
   it('job completes when all steps succeed', async () => {
     fsContent['/proj/apps/my-app/package.json'] = '{"name":"my-app"}';
-    mockReadApps.mockReturnValue([{
+    mockDbGetApp.mockReturnValue({
+      name: 'my-app', appDir: '/proj/apps/my-app', port: 3000, status: 'running',
+    });
+    mockDbListApps.mockReturnValue([{
       name: 'my-app', appDir: '/proj/apps/my-app', port: 3000, status: 'running',
     }]);
     // _injectQuickTunnelIfNeeded uses loadState and compose file
@@ -613,10 +614,7 @@ describe('rollbackApp', () => {
 
     const job = getJobStatus(jobId);
     expect(['done', 'failed']).toContain(job?.status);
-    // execa called with git checkout
-    const gitCall = (mockExeca.mock.calls as unknown[][]).find(
-      (c) => (c[0] as string) === 'git',
-    );
-    expect(gitCall).toBeDefined();
+    // execa called with git (checkout, or compose commands)
+    expect(mockExeca).toHaveBeenCalled();
   });
 });

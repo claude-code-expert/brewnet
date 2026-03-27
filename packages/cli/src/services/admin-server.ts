@@ -13,7 +13,7 @@
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { createConnection } from 'node:net';
 import { join, resolve, extname } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, statSync, createReadStream } from 'node:fs';
+import { existsSync, readFileSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import Dockerode from 'dockerode';
@@ -30,6 +30,7 @@ import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
 import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
+import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getDb } from './project-db.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 import { getStackById } from '../config/stacks.js';
@@ -642,13 +643,17 @@ async function handleGetServices(
 
       const workingDir = c.Labels?.['com.docker.compose.project.working_dir'] ?? '';
 
-      // Skip containers from unselected boilerplate stacks.
-      // A container whose working_dir is under projectPath but NOT in allowedDirs
-      // is an unselected boilerplate stack that shouldn't appear in the dashboard.
-      if (allowedDirs && allowedDirs.size > 0) {
-        if (workingDir && workingDir.startsWith(_projectPath) && !allowedDirs.has(workingDir)) {
-          continue;
-        }
+      // Only show containers that belong to this Brewnet project:
+      // 1. Working dir matches projectPath exactly (core services: traefik, gitea, etc.)
+      // 2. Working dir is in the allowedDirs set (deployed apps, boilerplate stacks)
+      // 3. Working dir is under projectPath (sub-directory apps)
+      // Everything else (other Docker Compose projects on this machine) is excluded.
+      if (workingDir) {
+        const isAllowed = allowedDirs?.has(workingDir) || workingDir.startsWith(_projectPath);
+        if (!isAllowed) continue;
+      } else {
+        // No working_dir label — standalone container, skip
+        continue;
       }
 
       const def = getServiceDefinition(composeService);
@@ -697,7 +702,8 @@ async function handleGetServices(
         // (appName may match composeService directly, or be a brewnet- prefixed variant)
         if (!externalUrl) {
           const appNameVariants = [composeService, composeService.replace(/^brewnet-/, '')];
-          const conn = (wizardState?.domainConnections ?? []).find(
+          const allDomainConns = dbListDomainConnections(_projectPath);
+          const conn = allDomainConns.find(
             (c) => appNameVariants.includes(c.appName),
           );
           if (conn) externalUrl = `https://${conn.hostname}`;
@@ -1045,6 +1051,47 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     projectPath = join(homedir(), projectPath.slice(1));
   }
 
+  // -----------------------------------------------------------------------
+  // One-time JSON → DB migration (apps, domainConnections, deploy history, gitea config)
+  // -----------------------------------------------------------------------
+  try {
+    const existingDbApps = dbListApps(projectPath);
+    if (existingDbApps.length === 0) {
+      const legacyAppsPath = join(homedir(), '.brewnet', 'apps.json');
+      const legacyHistoryPath = join(homedir(), '.brewnet', 'deploy-history.json');
+      const legacyApps = existsSync(legacyAppsPath) ? JSON.parse(readFileSync(legacyAppsPath, 'utf-8')) : [];
+      const legacyHistory = existsSync(legacyHistoryPath) ? JSON.parse(readFileSync(legacyHistoryPath, 'utf-8')) : [];
+      const legacyDomainConns = wizardState?.domainConnections ?? [];
+
+      if (legacyApps.length || legacyDomainConns.length || legacyHistory.length) {
+        const result = migrateFromJson(projectPath, {
+          apps: legacyApps,
+          domainConnections: legacyDomainConns,
+          deployHistory: legacyHistory,
+        });
+        logger.info('admin-server', `JSON → DB migration completed: ${result.migrated.length} items`);
+      }
+    }
+  } catch (migrationErr) {
+    logger.warn('admin-server', `JSON → DB migration failed (non-fatal): ${migrationErr instanceof Error ? migrationErr.message : migrationErr}`);
+  }
+
+  // Migrate gitea-config.json → DB settings (one-time)
+  try {
+    const legacyGiteaPath = join(homedir(), '.brewnet', 'gitea-config.json');
+    if (existsSync(legacyGiteaPath)) {
+      const existing = getSetting(projectPath, 'gitea.baseUrl');
+      if (!existing) {
+        const giteaConfig = JSON.parse(readFileSync(legacyGiteaPath, 'utf-8'));
+        if (giteaConfig.baseUrl) setSetting(projectPath, 'gitea.baseUrl', giteaConfig.baseUrl);
+        if (giteaConfig.username) setSetting(projectPath, 'gitea.username', giteaConfig.username);
+        logger.info('admin-server', 'Migrated gitea-config.json to DB');
+      }
+    }
+  } catch (giteaMigErr) {
+    logger.warn('admin-server', `Gitea config migration failed (non-fatal): ${giteaMigErr instanceof Error ? giteaMigErr.message : giteaMigErr}`);
+  }
+
   // Run log rotation eagerly on server start, then every hour
   const _logsDir = join(homedir(), '.brewnet', 'logs');
   try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
@@ -1075,14 +1122,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (s.appDir) allowedWorkingDirs.add(s.appDir);
       }
     }
-    // Apps registered via `brewnet deploy` (app-manager) — ~/.brewnet/apps.json
-    const appsJsonPath = join(homedir(), '.brewnet', 'apps.json');
-    if (existsSync(appsJsonPath)) {
-      const apps = JSON.parse(readFileSync(appsJsonPath, 'utf-8')) as Array<{ appDir?: string }>;
-      for (const app of apps) {
+    // Apps registered via `brewnet deploy` (app-manager) — project DB
+    try {
+      const dbApps = dbListApps(projectPath);
+      for (const app of dbApps) {
         if (app.appDir) allowedWorkingDirs.add(app.appDir);
       }
-    }
+    } catch { /* DB not yet initialized */ }
   } catch { /* non-fatal */ }
 
   const dashConfig: DashboardConfig = {
@@ -1281,6 +1327,35 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           return;
         }
 
+        // GET /api/debug/db — dev-only: dump all SQLite tables for debugging
+        if (parts[1] === 'debug' && parts[2] === 'db' && req.method === 'GET') {
+          try {
+            const db = getDb(projectPath);
+            const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[];
+            const dump: Record<string, unknown[]> = {};
+            for (const { name } of tables) {
+              dump[name] = db.prepare(`SELECT * FROM "${name}"`).all();
+            }
+            json(res, 200, {
+              dbPath: projectPath + '/.brewnet.db',
+              tables: tables.map((t) => t.name),
+              data: dump,
+              _meta: {
+                fileStorage: [
+                  { path: '~/.brewnet/config.json', purpose: 'lastProject pointer', risk: 'low — recreated by init' },
+                  { path: '~/.brewnet/gitea-token', purpose: 'Gitea API token (plain text, chmod 600)', risk: 'medium — credential, not in DB for security' },
+                  { path: '~/.brewnet/projects/<name>/selections.json', purpose: 'Wizard state (admin creds, CF config, server selections)', risk: 'medium — contains secrets, recreated by init' },
+                  { path: '<projectPath>/.brewnet-boilerplate.json', purpose: 'Wizard-era boilerplate metadata', risk: 'low — read-only after init' },
+                  { path: '<projectPath>/.brewnet-manifest.json', purpose: 'Install manifest for uninstall', risk: 'low — read-only after init' },
+                ],
+              },
+            });
+          } catch (err) {
+            json(res, 500, { error: 'DB read failed', message: err instanceof Error ? err.message : String(err) });
+          }
+          return;
+        }
+
         // GET /api/config — dashboard bootstrap data for React SPA
         if (parts[1] === 'config' && req.method === 'GET') {
           await detectQuickTunnelUrl();
@@ -1397,7 +1472,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               let backendLocalUrl: string | null = null;
               let backendExternalUrl: string | null = null;
               // Check domainConnections for this app (Named Tunnel or any connected domain)
-              const domainConn = (wizardState?.domainConnections ?? []).find((c) => c.appName === a.name);
+              const domainConn = getDomainConnection(projectPath, a.name);
               if (isNonUnified) {
                 // Read actual FRONTEND_PORT from .env — meta may have stale default (3000)
                 let frontendPort = 3000;
@@ -1435,7 +1510,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               const wizardMetas = Array.isArray(raw) ? raw : [raw];
               metas.push(...wizardMetas);
             }
-            // create-app boilerplate apps (from apps.json)
+            // create-app boilerplate apps (from project DB)
             const allApps = await listApps();
             for (const app of allApps) {
               if (app.mode !== 'boilerplate' || !app.stackId) continue;
@@ -1561,7 +1636,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             let externalUrlSingle: string | null;
             let backendLocalUrlSingle: string | null = null;
             let backendExternalUrlSingle: string | null = null;
-            const domainConnSingle = (wizardState?.domainConnections ?? []).find((c) => c.appName === found.name);
+            const domainConnSingle = getDomainConnection(projectPath, found.name);
             if (isNonUnified) {
               let frontendPort = 3000;
               const feEnvPath = join(found.appDir, '.env');
@@ -1807,18 +1882,17 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           const appName = parsed.appName?.trim();
           if (!appName) { json(res, 400, { error: 'appName required' }); return; }
           try {
-            const appsPath = join(homedir(), '.brewnet', 'apps.json');
-            let existing = existsSync(appsPath) ? JSON.parse(readFileSync(appsPath, 'utf-8')) : [];
             const repos = await listGiteaRepos();
             const repo = repos.find(r => r.name === repoName);
             if (!repo) { json(res, 404, { error: `Repo '${repoName}' not found in Gitea` }); return; }
             const repoUrl = repo.clone_url.replace(/\.git$/, '');
             // Check not already connected to a different app
-            const conflict = Array.isArray(existing) ? existing.find((a: { name: string; giteaRepoUrl?: string }) =>
-              a.name !== appName && a.giteaRepoUrl && (a.giteaRepoUrl.endsWith('/' + repoName) || a.giteaRepoUrl.includes('/' + repoName + '.'))) : null;
+            const allAppsForConnect = dbListApps(projectPath);
+            const conflict = allAppsForConnect.find((a) =>
+              a.name !== appName && a.giteaRepoUrl && (a.giteaRepoUrl.endsWith('/' + repoName) || a.giteaRepoUrl.includes('/' + repoName + '.')));
             if (conflict) { json(res, 409, { error: `Repo already connected to app '${conflict.name}'` }); return; }
-            let app = Array.isArray(existing) ? existing.find((a: { name: string }) => a.name === appName) : null;
-            if (!app) {
+            const existingApp = dbGetApp(projectPath, appName);
+            if (!existingApp) {
               // Auto-create app entry for orphaned containers (e.g. wizard boilerplate
               // where health check failed but Gitea repo + Docker containers exist)
               const docker = new (await import('dockerode')).default();
@@ -1832,21 +1906,19 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                 ? parseInt(String(matchedContainer.Ports?.[0]?.PublicPort ?? 0), 10) || 8080
                 : 8080;
               const lang = (repo as unknown as Record<string, unknown>)['language'] as string || '';
-              app = {
+              dbAddApp(projectPath, {
                 name: appName,
-                mode: 'boilerplate' as const,
+                mode: 'boilerplate',
                 appDir: join(projectPath, repoName),
                 lang,
                 port,
                 giteaRepoUrl: repoUrl,
                 status: matchedContainer?.State === 'running' ? 'running' : 'stopped',
                 createdAt: new Date().toISOString(),
-              };
-              if (Array.isArray(existing)) { existing.push(app); } else { existing = [app]; }
+              });
             } else {
-              app.giteaRepoUrl = repoUrl;
+              dbUpdateApp(projectPath, appName, { giteaRepoUrl: repoUrl });
             }
-            writeFileSync(appsPath, JSON.stringify(existing, null, 2));
             json(res, 200, { ok: true });
           } catch (err) {
             json(res, 500, { error: String(err) });
@@ -1973,6 +2045,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     stop: () =>
       new Promise((resolve, reject) => {
         clearInterval(_rotationTimer);
+        closeDb();
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };
@@ -2086,7 +2159,7 @@ async function handleDomainConnect(
   }
 
   // Phase 1: local conflict check — fast, no API call needed
-  const localConflict = (state.domainConnections ?? []).find(
+  const localConflict = dbListDomainConnections(state.projectPath).find(
     (c) => c.subdomain === subdomain && c.domain === domain && c.appName !== appName,
   );
   if (localConflict) {
@@ -2121,11 +2194,7 @@ async function handleDomainConnect(
       return;
     }
 
-    // Refresh in-memory wizardState so GET /api/apps sees updated domainConnections immediately
-    const freshStateAfterConnect = loadState(state.projectName);
-    if (freshStateAfterConnect?.domainConnections) {
-      state.domainConnections = freshStateAfterConnect.domainConnections;
-    }
+    // Domain connections now live in DB — no in-memory sync needed
 
     json(res, 200, {
       success: true,
@@ -2158,11 +2227,7 @@ async function handleDomainDisconnect(
       return;
     }
 
-    // Refresh in-memory wizardState so GET /api/apps reflects the removed connection immediately
-    const freshStateAfterDisconnect = loadState(state.projectName);
-    if (freshStateAfterDisconnect) {
-      state.domainConnections = freshStateAfterDisconnect.domainConnections ?? [];
-    }
+    // Domain connections now live in DB — no in-memory sync needed
 
     json(res, 200, {
       success: true,

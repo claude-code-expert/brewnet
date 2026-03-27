@@ -66,7 +66,7 @@ export function registerDomainCommand(program: Command): void {
     .argument('[app]', 'Name of the local app/service to connect (required when using --domain)')
     .option('--domain <hostname>', 'Target external hostname (e.g., my-api.yourdomain.com)')
     .option('--force', 'Overwrite existing CNAME record if conflict detected')
-    .description('도메인을 기존 터널에 연결합니다 (Quick Tunnel → Named Tunnel 마이그레이션 또는 개별 앱 외부 도메인 연결)')
+    .description('Connect a domain to an existing tunnel (Quick Tunnel → Named Tunnel migration or per-app external domain)')
     .helpOption('-h, --help', 'Show help information')
     .addHelpText('after', `
 Examples:
@@ -96,7 +96,7 @@ What this command does:
       // NEW: If --domain is provided, use DomainManager for external domain connection
       if (opts.domain) {
         if (!app) {
-          console.error(chalk.red('  앱 이름이 필요합니다. 예: brewnet domain connect my-api --domain my-api.example.com'));
+          console.error(chalk.red('  App name is required. Example: brewnet domain connect my-api --domain my-api.example.com'));
           process.exit(1);
         }
         await handleDomainConnect(app, opts.domain, opts.force ?? false);
@@ -108,81 +108,81 @@ What this command does:
 
       const state = loadCurrentState();
       if (!state) {
-        console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
-        console.error(chalk.dim('  먼저 `brewnet init`을 실행하세요.'));
+        console.error(chalk.red('  No Brewnet project found.'));
+        console.error(chalk.dim('  Run `brewnet init` first.'));
         process.exit(1);
       }
 
       const { tunnelMode } = state.domain.cloudflare;
 
       if (tunnelMode === 'none') {
-        console.error(chalk.red('  이 프로젝트는 터널 없이 시작되었습니다.'));
-        console.error(chalk.dim('  `brewnet init`을 다시 실행하세요.'));
+        console.error(chalk.red('  This project was started without a tunnel.'));
+        console.error(chalk.dim('  Run `brewnet init` again.'));
         process.exit(1);
       }
 
       console.log();
       console.log(chalk.bold.cyan('  brewnet domain connect'));
-      console.log(chalk.dim(`  현재 모드: ${tunnelMode}`));
+      console.log(chalk.dim(`  Current mode: ${tunnelMode}`));
       console.log();
 
       // Prompt for CF API token
       let apiToken = await input({
-        message: 'Cloudflare API Token을 입력하세요',
+        message: 'Enter your Cloudflare API Token',
         default: '',
-        validate: (v) => v.trim().length > 0 ? true : 'API Token이 필요합니다',
+        validate: (v) => v.trim().length > 0 ? true : 'API Token is required',
       });
       apiToken = apiToken.trim();
 
       // Verify token
-      const verifySpinner = ora('API 토큰 검증 중...').start();
+      const verifySpinner = ora('Verifying API token...').start();
       try {
         const result = await verifyToken(apiToken);
         if (!result.valid) {
-          verifySpinner.fail(chalk.red('유효하지 않은 API 토큰입니다. [BN004]'));
+          verifySpinner.fail(chalk.red('Invalid API token. [BN004]'));
           process.exit(2);
         }
         verifySpinner.succeed(
-          chalk.green('토큰 검증 완료') +
+          chalk.green('Token verified') +
           (result.email ? chalk.dim(` (${result.email})`) : ''),
         );
       } catch {
-        verifySpinner.fail(chalk.red('토큰 검증 실패'));
+        verifySpinner.fail(chalk.red('Token verification failed'));
         process.exit(2);
       }
       console.log();
 
       // Auto-detect account
-      const accountsSpinner = ora('Cloudflare 계정 조회 중...').start();
+      const accountsSpinner = ora('Fetching Cloudflare accounts...').start();
       const accounts = await getAccounts(apiToken).catch(() => []);
       accountsSpinner.stop();
 
       let selectedAccountId: string;
       if (accounts.length === 0) {
         const manual = await input({
-          message: 'Cloudflare Account ID를 입력하세요',
-          validate: (v) => v.trim().length > 0 ? true : 'Account ID가 필요합니다',
+          message: 'Enter your Cloudflare Account ID',
+          validate: (v) => v.trim().length > 0 ? true : 'Account ID is required',
         });
         selectedAccountId = manual.trim();
       } else if (accounts.length === 1) {
         selectedAccountId = accounts[0].id;
-        console.log(chalk.dim(`  계정: ${accounts[0].name} (자동 선택)`));
+        console.log(chalk.dim(`  Account: ${accounts[0].name} (auto-selected)`));
       } else {
         selectedAccountId = await select<string>({
-          message: '계정을 선택하세요',
+          message: 'Select an account',
           choices: accounts.map((a) => ({ name: a.name, value: a.id })),
         });
       }
       console.log();
 
       // Prompt for zone (domain)
-      const zonesSpinner = ora('DNS 존 조회 중...').start();
+      const zonesSpinner = ora('Fetching DNS zones...').start();
       const zones = await getZones(apiToken).catch(() => []);
       zonesSpinner.stop();
 
       const activeZones = zones.filter((z) => z.status === 'active');
       if (activeZones.length === 0) {
-        console.error(chalk.red('  활성 도메인이 없습니다. domains.cloudflare.com에서 도메인을 등록해주세요.'));
+        console.error(chalk.red('  No active domains found. Please register a domain at domains.cloudflare.com.'));
         process.exit(4);
       }
 
@@ -192,10 +192,10 @@ What this command does:
       if (activeZones.length === 1) {
         selectedZoneId = activeZones[0].id;
         selectedZoneName = activeZones[0].name;
-        console.log(chalk.dim(`  도메인: ${selectedZoneName} (자동 선택)`));
+        console.log(chalk.dim(`  Domain: ${selectedZoneName} (auto-selected)`));
       } else {
         selectedZoneId = await select<string>({
-          message: '도메인(존)을 선택하세요',
+          message: 'Select a domain (zone)',
           choices: activeZones.map((z) => ({ name: z.name, value: z.id })),
         });
         selectedZoneName = activeZones.find((z) => z.id === selectedZoneId)?.name ?? selectedZoneId;
@@ -239,10 +239,10 @@ What this command does:
 
       // Display service URLs
       const routes = getActiveServiceRoutes(updatedState);
-      console.log(chalk.bold.green('  도메인 연결 완료!'));
+      console.log(chalk.bold.green('  Domain connected!'));
       console.log();
       if (routes.length > 0) {
-        console.log(chalk.bold('  서비스 주소:'));
+        console.log(chalk.bold('  Service URLs:'));
         for (const route of routes) {
           console.log(chalk.dim(`    https://${route.subdomain}.${selectedZoneName}`));
         }
@@ -255,7 +255,7 @@ What this command does:
   domain
     .command('disconnect')
     .argument('<app>', 'Name of the app to disconnect')
-    .description('앱의 외부 도메인 연결을 해제합니다')
+    .description('Disconnect external domain from an app')
     .helpOption('-h, --help', 'Show help information')
     .addHelpText('after', `
 Examples:
@@ -275,7 +275,7 @@ What this command does:
   domain
     .command('status')
     .argument('[app]', 'Optional app name (shows all if omitted)')
-    .description('도메인 연결 상태를 조회합니다')
+    .description('Show domain connection status')
     .helpOption('-h, --help', 'Show help information')
     .action(async (app: string | undefined) => {
       await handleDomainStatus(app);
@@ -285,7 +285,7 @@ What this command does:
 
   domain
     .command('list')
-    .description('모든 외부 도메인 연결을 나열합니다')
+    .description('List all external domain connections')
     .helpOption('-h, --help', 'Show help information')
     .action(async () => {
       await handleDomainList();
@@ -295,12 +295,12 @@ What this command does:
 
   const tunnel = domain
     .command('tunnel')
-    .description('터널 관리');
+    .description('Tunnel management');
 
   // domain tunnel status
   tunnel
     .command('status')
-    .description('터널 상태 조회 — 연결 수 및 서비스 접근 가능 여부 확인')
+    .description('Show tunnel status — connection count and service reachability')
     .helpOption('-h, --help', 'Show help information')
     .addHelpText('after', `
 Examples:
@@ -318,14 +318,14 @@ Prerequisites:
     .action(async () => {
       const state = loadCurrentState();
       if (!state) {
-        console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+        console.error(chalk.red('  No Brewnet project found.'));
         process.exit(1);
       }
 
       const { tunnelMode, quickTunnelUrl, tunnelId, tunnelName, accountId, tunnelToken } = state.domain.cloudflare;
 
       if (tunnelMode === 'none') {
-        console.log(chalk.dim('  터널이 설정되지 않았습니다.'));
+        console.log(chalk.dim('  No tunnel configured.'));
         process.exit(1);
       }
 
@@ -335,52 +335,52 @@ Prerequisites:
       console.log();
 
       if (tunnelMode === 'quick') {
-        const url = quickTunnelUrl || '(URL 없음 — 컨테이너 재시작 필요)';
-        console.log(chalk.dim(`  모드:   Quick Tunnel (임시, 재시작 시 URL 변경)`));
+        const url = quickTunnelUrl || '(No URL — container restart required)';
+        console.log(chalk.dim(`  Mode:   Quick Tunnel (temporary, URL changes on restart)`));
         console.log(chalk.dim(`  URL:    ${url}`));
         console.log();
-        if (url !== '(URL 없음 — 컨테이너 재시작 필요)') {
-          console.log(chalk.dim('  서비스:'));
+        if (url !== '(No URL — container restart required)') {
+          console.log(chalk.dim('  Services:'));
           console.log(chalk.dim(`    FileBrowser  ${url}/files`));
           console.log(chalk.dim(`    Gitea        ${url}/git`));
           console.log(chalk.dim(`    Uptime Kuma  ${url}/status`));
         }
         console.log();
-        console.log(chalk.yellow(`  ⚠️  영구 URL을 원하면 \`brewnet domain connect\`를 실행하세요.`));
+        console.log(chalk.yellow(`  ⚠️  For a permanent URL, run \`brewnet domain connect\`.`));
         console.log();
         return;
       }
 
       // Named Tunnel — query CF API
       if (!tunnelId || !accountId) {
-        console.error(chalk.red('  터널 정보가 없습니다. `brewnet domain connect`를 실행하세요.'));
+        console.error(chalk.red('  No tunnel info. Run `brewnet domain connect`.'));
         process.exit(2);
       }
 
       // Use tunnelToken as a proxy for API token (this is a limitation — named tunnels need apiToken for health check)
       // If we don't have apiToken persisted, we can still check the container status
-      const spinner = ora('터널 상태 조회 중...').start();
+      const spinner = ora('Checking tunnel status...').start();
       try {
         // Try to get health from CF API if we have a persisted token; otherwise show container status only
         const apiTokenForHealth = state.domain.cloudflare.apiToken;
         if (apiTokenForHealth) {
           const health = await getTunnelHealth(apiTokenForHealth, accountId, tunnelId);
           spinner.stop();
-          console.log(chalk.dim(`  터널:   ${tunnelName || tunnelId}`));
+          console.log(chalk.dim(`  Tunnel: ${tunnelName || tunnelId}`));
           console.log(chalk.dim(`  ID:     ${tunnelId}`));
           const statusIcon = health.status === 'healthy' ? chalk.green('✅ healthy') : chalk.yellow(`⚠️  ${health.status}`);
-          console.log(`  상태:   ${statusIcon} (커넥터 ${health.connectorCount}개)`);
+          console.log(`  Status: ${statusIcon} (${health.connectorCount} connectors)`);
           if (state.domain.cloudflare.zoneName) {
-            console.log(chalk.dim(`  도메인: ${state.domain.cloudflare.zoneName}`));
+            console.log(chalk.dim(`  Domain: ${state.domain.cloudflare.zoneName}`));
           }
-          console.log(chalk.dim(`  확인:   ${new Date().toISOString()}`));
+          console.log(chalk.dim(`  Checked: ${new Date().toISOString()}`));
         } else {
           spinner.stop();
-          console.log(chalk.dim(`  터널:   ${tunnelName || tunnelId}`));
+          console.log(chalk.dim(`  Tunnel: ${tunnelName || tunnelId}`));
           console.log(chalk.dim(`  ID:     ${tunnelId}`));
-          console.log(chalk.yellow('  상태:   (API 토큰 없음 — 컨테이너 상태만 확인 가능)'));
+          console.log(chalk.yellow('  Status: (No API token — container status only)'));
           if (state.domain.cloudflare.zoneName) {
-            console.log(chalk.dim(`  도메인: ${state.domain.cloudflare.zoneName}`));
+            console.log(chalk.dim(`  Domain: ${state.domain.cloudflare.zoneName}`));
           }
         }
 
@@ -388,15 +388,15 @@ Prerequisites:
         const routes = getActiveServiceRoutes(state);
         if (routes.length > 0 && state.domain.cloudflare.zoneName) {
           console.log();
-          console.log(chalk.dim('  서비스:'));
+          console.log(chalk.dim('  Services:'));
           for (const route of routes) {
             console.log(chalk.dim(`    ${route.subdomain.padEnd(12)} https://${route.subdomain}.${state.domain.cloudflare.zoneName}`));
           }
         }
         console.log();
       } catch (err) {
-        spinner.fail(chalk.red('터널 상태 조회 실패'));
-        console.error(chalk.dim(`  오류: ${err instanceof Error ? err.message : String(err)}`));
+        spinner.fail(chalk.red('Failed to check tunnel status'));
+        console.error(chalk.dim(`  Error: ${err instanceof Error ? err.message : String(err)}`));
         process.exit(2);
       }
 
@@ -406,7 +406,7 @@ Prerequisites:
   // domain tunnel restart
   tunnel
     .command('restart')
-    .description('cloudflared 컨테이너를 재시작하고 터널 재연결을 확인합니다')
+    .description('Restart the cloudflared container and verify tunnel reconnection')
     .helpOption('-h, --help', 'Show help information')
     .addHelpText('after', `
 Examples:
@@ -425,56 +425,56 @@ What this command does:
       const tunnelLogger = new TunnelLogger();
       const state = loadCurrentState();
       if (!state) {
-        console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+        console.error(chalk.red('  No Brewnet project found.'));
         process.exit(1);
       }
 
       const { tunnelMode, tunnelId, accountId } = state.domain.cloudflare;
 
       if (tunnelMode === 'none') {
-        console.log(chalk.dim('  터널이 설정되지 않았습니다.'));
+        console.log(chalk.dim('  No tunnel configured.'));
         process.exit(1);
       }
 
       console.log();
-      console.log(chalk.bold('  🔄 Cloudflare 터널을 재시작합니다...'));
+      console.log(chalk.bold('  🔄 Restarting Cloudflare tunnel...'));
       console.log();
 
       const docker = new Dockerode();
       const containerName = 'brewnet-cloudflared';
 
       // Stop container
-      const stopSpinner = ora(`  ${containerName} 컨테이너 중지 중...`).start();
+      const stopSpinner = ora(`  Stopping ${containerName}...`).start();
       try {
         const container = docker.getContainer(containerName);
         await container.stop({ t: 10 });
-        stopSpinner.succeed(chalk.green('  중지 완료'));
+        stopSpinner.succeed(chalk.green('  Stopped'));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('not running')) {
-          stopSpinner.succeed(chalk.dim('  (이미 중지됨)'));
+          stopSpinner.succeed(chalk.dim('  (already stopped)'));
         } else {
-          stopSpinner.fail(chalk.red('  컨테이너 중지 실패'));
-          console.error(chalk.dim(`  오류: ${msg}`));
+          stopSpinner.fail(chalk.red('  Failed to stop container'));
+          console.error(chalk.dim(`  Error: ${msg}`));
           process.exit(2);
         }
       }
 
       // Start container
-      const startSpinner = ora(`  ${containerName} 컨테이너 시작 중...`).start();
+      const startSpinner = ora(`  Starting ${containerName}...`).start();
       try {
         const container = docker.getContainer(containerName);
         await container.start();
-        startSpinner.succeed(chalk.green('  시작 완료'));
+        startSpinner.succeed(chalk.green('  Started'));
       } catch (err) {
-        startSpinner.fail(chalk.red('  컨테이너 시작 실패'));
-        console.error(chalk.dim(`  오류: ${err instanceof Error ? err.message : String(err)}`));
+        startSpinner.fail(chalk.red('  Failed to start container'));
+        console.error(chalk.dim(`  Error: ${err instanceof Error ? err.message : String(err)}`));
         process.exit(2);
       }
 
       // For Quick Tunnel, re-parse container logs for new URL
       if (tunnelMode === 'quick') {
-        const urlSpinner = ora('  새 Quick Tunnel URL 캡처 중...').start();
+        const urlSpinner = ora('  Capturing new Quick Tunnel URL...').start();
         try {
           const qtManager = new QuickTunnelManager(tunnelLogger);
           const container = docker.getContainer('brewnet-tunnel-quick');
@@ -485,24 +485,24 @@ What this command does:
           updatedState.domain.name = new URL(newUrl).hostname;
           saveState(updatedState);
 
-          urlSpinner.succeed(chalk.green(`  새 URL: ${newUrl}`));
+          urlSpinner.succeed(chalk.green(`  New URL: ${newUrl}`));
           void qtManager; // keep reference
         } catch {
-          urlSpinner.warn('  URL 캡처 실패 — 컨테이너 로그를 직접 확인하세요');
+          urlSpinner.warn('  URL capture failed — check container logs manually');
         }
       } else if (tunnelMode === 'named' && tunnelId && accountId && state.domain.cloudflare.apiToken) {
         // Poll CF API for healthy status
-        const healthSpinner = ora('  터널 연결 확인 중... (최대 30초)').start();
+        const healthSpinner = ora('  Verifying tunnel connection... (up to 30s)').start();
         try {
           await waitForHealthy(state.domain.cloudflare.apiToken, accountId, tunnelId, 30_000);
-          healthSpinner.succeed(chalk.green('  터널이 정상 연결되었습니다 (healthy)'));
+          healthSpinner.succeed(chalk.green('  Tunnel is healthy'));
         } catch {
-          healthSpinner.warn('  터널 상태 확인 실패 (30초 초과)');
+          healthSpinner.warn('  Tunnel health check failed (30s timeout)');
         }
       } else {
         // Just wait a few seconds for container to initialize
         await new Promise((resolve) => setTimeout(resolve, 3_000));
-        console.log(chalk.green('  터널 재시작 완료'));
+        console.log(chalk.green('  Tunnel restart complete'));
       }
 
       tunnelLogger.log({
@@ -525,7 +525,7 @@ What this command does:
             : '';
 
         if (baseUrl) {
-          console.log(chalk.bold('  서비스 주소:'));
+          console.log(chalk.bold('  Service URLs:'));
           if (tunnelMode === 'quick') {
             for (const route of routes) {
               const path = getQuickTunnelPath(route.subdomain);
@@ -556,12 +556,12 @@ async function domainConnectPathA(
 ): Promise<WizardState> {
   const updated = structuredClone(state);
 
-  console.log(chalk.bold('  Path A: Quick Tunnel → Named Tunnel 마이그레이션'));
+  console.log(chalk.bold('  Path A: Quick Tunnel → Named Tunnel migration'));
   console.log();
 
   // Create new Named Tunnel
   const tunnelName = updated.domain.cloudflare.tunnelName || updated.projectName;
-  const createSpinner = ora('Named Tunnel 생성 중...').start();
+  const createSpinner = ora('Creating Named Tunnel...').start();
   let createdTunnelId = '';
 
   try {
@@ -571,7 +571,7 @@ async function domainConnectPathA(
     updated.domain.cloudflare.tunnelToken = result.tunnelToken;
     updated.domain.cloudflare.tunnelName = tunnelName;
     updated.domain.cloudflare.accountId = accountId;
-    createSpinner.succeed(chalk.green(`터널 생성됨: ${tunnelName}`));
+    createSpinner.succeed(chalk.green(`Tunnel created: ${tunnelName}`));
 
     tunnelLogger.log({
       event: 'CREATE',
@@ -582,7 +582,7 @@ async function domainConnectPathA(
       detail: 'Named tunnel created via domain connect (migrating from Quick Tunnel)',
     });
   } catch (err) {
-    createSpinner.fail(chalk.red('터널 생성 실패'));
+    createSpinner.fail(chalk.red('Tunnel creation failed'));
     throw err;
   }
   console.log();
@@ -590,18 +590,18 @@ async function domainConnectPathA(
   // Configure ingress
   const routes = getActiveServiceRoutes(updated);
   if (routes.length > 0) {
-    const ingressSpinner = ora('인그레스 설정 중...').start();
+    const ingressSpinner = ora('Configuring ingress...').start();
     try {
       await configureTunnelIngress(apiToken, accountId, createdTunnelId, zoneName, routes);
-      ingressSpinner.succeed(chalk.green(`인그레스 설정 완료 (${routes.length}개 서비스)`));
+      ingressSpinner.succeed(chalk.green(`Ingress configured (${routes.length} services)`));
     } catch (err) {
-      ingressSpinner.fail(chalk.red('인그레스 설정 실패'));
+      ingressSpinner.fail(chalk.red('Ingress configuration failed'));
       await deleteTunnel(apiToken, accountId, createdTunnelId).catch(() => {/* best-effort */});
       throw err;
     }
 
     // Create DNS records
-    const dnsSpinner = ora('DNS 레코드 생성 중...').start();
+    const dnsSpinner = ora('Creating DNS records...').start();
     const created: string[] = [];
     for (const route of routes) {
       try {
@@ -611,18 +611,18 @@ async function domainConnectPathA(
         // Non-fatal — best-effort
       }
     }
-    dnsSpinner.succeed(chalk.green(`DNS 레코드 생성 완료 (${created.length}/${routes.length}개)`));
+    dnsSpinner.succeed(chalk.green(`DNS records created (${created.length}/${routes.length})`));
     console.log();
   }
 
   // Stop Quick Tunnel container
-  const stopSpinner = ora('Quick Tunnel 중지 중...').start();
+  const stopSpinner = ora('Stopping Quick Tunnel...').start();
   try {
     const qtManager = new QuickTunnelManager(tunnelLogger);
     await qtManager.stop();
-    stopSpinner.succeed(chalk.green('Quick Tunnel 중지 완료'));
+    stopSpinner.succeed(chalk.green('Quick Tunnel stopped'));
   } catch {
-    stopSpinner.warn('Quick Tunnel 중지 실패 (수동으로 중지하세요: docker stop brewnet-tunnel-quick)');
+    stopSpinner.warn('Failed to stop Quick Tunnel (manually stop: docker stop brewnet-tunnel-quick)');
   }
   console.log();
 
@@ -651,30 +651,30 @@ async function domainConnectPathB(
 ): Promise<WizardState> {
   const updated = structuredClone(state);
 
-  console.log(chalk.bold('  Path B: 기존 터널에 도메인 연결'));
+  console.log(chalk.bold('  Path B: Attach domain to existing tunnel'));
   console.log();
 
   const tunnelId = updated.domain.cloudflare.tunnelId;
   if (!tunnelId) {
-    throw new Error('터널 ID가 없습니다. `brewnet init`을 다시 실행하세요.');
+    throw new Error('No tunnel ID found. Run `brewnet init` again.');
   }
 
   const routes = getActiveServiceRoutes(updated);
 
   // Configure ingress
   if (routes.length > 0) {
-    const ingressSpinner = ora('인그레스 규칙 설정 중...').start();
+    const ingressSpinner = ora('Configuring ingress rules...').start();
     try {
       await configureTunnelIngress(apiToken, accountId, tunnelId, zoneName, routes);
-      ingressSpinner.succeed(chalk.green(`인그레스 설정 완료 (${routes.length}개 서비스)`));
+      ingressSpinner.succeed(chalk.green(`Ingress configured (${routes.length} services)`));
     } catch (err) {
-      ingressSpinner.fail(chalk.red('인그레스 설정 실패'));
+      ingressSpinner.fail(chalk.red('Ingress configuration failed'));
       throw err;
     }
     console.log();
 
     // Create DNS records (upsert)
-    const dnsSpinner = ora('DNS CNAME 레코드 생성 중...').start();
+    const dnsSpinner = ora('Creating DNS CNAME records...').start();
     const created: string[] = [];
     for (const route of routes) {
       try {
@@ -684,7 +684,7 @@ async function domainConnectPathB(
         // Non-fatal — record may already exist
       }
     }
-    dnsSpinner.succeed(chalk.green(`DNS 레코드 완료 (${created.length}/${routes.length}개)`));
+    dnsSpinner.succeed(chalk.green(`DNS records complete (${created.length}/${routes.length})`));
     console.log();
   }
 
@@ -709,29 +709,29 @@ async function domainConnectPathC(
 ): Promise<WizardState> {
   const updated = structuredClone(state);
 
-  console.log(chalk.bold('  Path C: 인그레스 + DNS 재동기화'));
+  console.log(chalk.bold('  Path C: Ingress + DNS re-sync'));
   console.log();
 
   const tunnelId = updated.domain.cloudflare.tunnelId;
   if (!tunnelId) {
-    throw new Error('터널 ID가 없습니다. `brewnet init`을 다시 실행하세요.');
+    throw new Error('No tunnel ID found. Run `brewnet init` again.');
   }
 
   const routes = getActiveServiceRoutes(updated);
 
   // Re-configure ingress (upsert)
   if (routes.length > 0) {
-    const ingressSpinner = ora('인그레스 재동기화 중...').start();
+    const ingressSpinner = ora('Re-syncing ingress...').start();
     try {
       await configureTunnelIngress(apiToken, accountId, tunnelId, zoneName, routes);
-      ingressSpinner.succeed(chalk.green('인그레스 재동기화 완료'));
+      ingressSpinner.succeed(chalk.green('Ingress re-sync complete'));
     } catch (err) {
-      ingressSpinner.warn(chalk.yellow(`인그레스 재동기화 실패: ${err instanceof Error ? err.message : String(err)}`));
+      ingressSpinner.warn(chalk.yellow(`Ingress re-sync failed: ${err instanceof Error ? err.message : String(err)}`));
     }
     console.log();
 
     // Upsert DNS records
-    const dnsSpinner = ora('DNS 레코드 재동기화 중...').start();
+    const dnsSpinner = ora('Re-syncing DNS records...').start();
     let count = 0;
     for (const route of routes) {
       try {
@@ -741,7 +741,7 @@ async function domainConnectPathC(
         // Non-fatal — upsert pattern
       }
     }
-    dnsSpinner.succeed(chalk.green(`DNS 재동기화 완료 (${count}/${routes.length}개)`));
+    dnsSpinner.succeed(chalk.green(`DNS re-sync complete (${count}/${routes.length})`));
     console.log();
   }
 
@@ -820,16 +820,16 @@ async function handleDomainConnect(
 
   const lastProject = getLastProject();
   if (!lastProject) {
-    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
-    console.error(chalk.dim('  먼저 `brewnet init`을 실행하세요.'));
+    console.error(chalk.red('  No Brewnet project found.'));
+    console.error(chalk.dim('  Run `brewnet init` first.'));
     process.exit(1);
   }
 
   // Parse subdomain and domain from hostname
   const dotIndex = domainHostname.indexOf('.');
   if (dotIndex === -1) {
-    console.error(chalk.red(`  잘못된 도메인 형식입니다: ${domainHostname}`));
-    console.error(chalk.dim('  예: my-api.yourdomain.com'));
+    console.error(chalk.red(`  Invalid domain format: ${domainHostname}`));
+    console.error(chalk.dim('  Example: my-api.yourdomain.com'));
     process.exit(1);
   }
   const subdomain = domainHostname.substring(0, dotIndex);
@@ -837,14 +837,14 @@ async function handleDomainConnect(
 
   console.log();
   console.log(chalk.bold.cyan('  brewnet domain connect'));
-  console.log(chalk.dim(`  앱: ${appName} → ${domainHostname}`));
+  console.log(chalk.dim(`  App: ${appName} → ${domainHostname}`));
   console.log();
 
   let manager: DomainManager;
   try {
     manager = new DomainManager(lastProject);
   } catch (err) {
-    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    console.error(chalk.red(`  Failed to load project: ${err instanceof Error ? err.message : String(err)}`));
     process.exit(1);
   }
 
@@ -854,20 +854,20 @@ async function handleDomainConnect(
   if (!state.domain.cloudflare.zoneId && state.domain.cloudflare.tunnelId) {
     // Scenario C: CNAME-only mode — show manual instructions
     const tunnelUuid = state.domain.cloudflare.tunnelId;
-    console.log(chalk.bold.yellow('  📋 Scenario C: CNAME 수동 설정 필요'));
+    console.log(chalk.bold.yellow('  Scenario C: Manual CNAME setup required'));
     console.log();
-    console.log(chalk.dim('  도메인 네임서버가 Cloudflare에 위임되지 않았습니다.'));
-    console.log(chalk.dim('  DNS 제공자에서 아래 CNAME 레코드를 직접 추가하세요:'));
+    console.log(chalk.dim('  Domain nameservers are not delegated to Cloudflare.'));
+    console.log(chalk.dim('  Add the following CNAME record at your DNS provider:'));
     console.log();
-    console.log(chalk.bold(`  이름:    ${subdomain}`));
-    console.log(chalk.bold(`  유형:    CNAME`));
-    console.log(chalk.bold(`  값:     ${tunnelUuid}.cfargotunnel.com`));
+    console.log(chalk.bold(`  Name:   ${subdomain}`));
+    console.log(chalk.bold(`  Type:   CNAME`));
+    console.log(chalk.bold(`  Value:  ${tunnelUuid}.cfargotunnel.com`));
     console.log();
-    console.log(chalk.dim('  주요 DNS 제공자 설정 방법:'));
-    console.log(chalk.dim('    GoDaddy:    DNS 관리 → 레코드 추가 → CNAME'));
-    console.log(chalk.dim('    Namecheap:  고급 DNS → 새 레코드 → CNAME'));
-    console.log(chalk.dim('    가비아:     DNS 관리 → 레코드 추가 → CNAME'));
-    console.log(chalk.dim('    Cafe24:     DNS 관리 → CNAME 추가'));
+    console.log(chalk.dim('  DNS provider instructions:'));
+    console.log(chalk.dim('    GoDaddy:    DNS Management → Add Record → CNAME'));
+    console.log(chalk.dim('    Namecheap:  Advanced DNS → New Record → CNAME'));
+    console.log(chalk.dim('    Route53:    Hosted Zones → Create Record → CNAME'));
+    console.log(chalk.dim('    Cafe24:     DNS Management → Add CNAME'));
     console.log();
     return;
   }
@@ -875,13 +875,12 @@ async function handleDomainConnect(
   // Media streaming ToS warning (FR-012)
   const mediaServices = ['jellyfin', 'media', 'plex', 'emby'];
   if (mediaServices.includes(appName.toLowerCase())) {
-    console.log(chalk.yellow('  ⚠️  주의: Cloudflare는 대용량 미디어 스트리밍(비디오 등)을'));
-    console.log(chalk.yellow('  프록시를 통해 전송하는 것을 서비스 약관(ToS)에서 제한합니다.'));
-    console.log(chalk.yellow('  미디어 서비스 외부 연결은 ToS 위반 위험이 있습니다.'));
+    console.log(chalk.yellow('  Warning: Cloudflare ToS restricts proxying large media streams (video).'));
+    console.log(chalk.yellow('  Connecting media services externally may violate ToS.'));
     console.log();
   }
 
-  const spinner = ora('외부 도메인 연결 중...').start();
+  const spinner = ora('Connecting external domain...').start();
 
   const result = await manager.connect(appName, subdomain, domain, { force });
 
@@ -919,9 +918,9 @@ async function handleDomainConnect(
       detail: `External domain connected: ${appName} → ${domainHostname}`,
     });
   } else {
-    console.error(chalk.red(`  ❌ 연결 실패: ${result.error}`));
+    console.error(chalk.red(`  Connection failed: ${result.error}`));
     if (result.error === 'CNAME_CONFLICT') {
-      console.log(chalk.dim('  기존 CNAME을 덮어쓰려면 --force 옵션을 사용하세요:'));
+      console.log(chalk.dim('  To overwrite an existing CNAME, use --force:'));
       console.log(chalk.dim(`    brewnet domain connect ${appName} --domain ${domainHostname} --force`));
     }
     process.exit(1);
@@ -937,7 +936,7 @@ async function handleDomainDisconnect(appName: string): Promise<void> {
   const tunnelLogger = new TunnelLogger();
   const lastProject = getLastProject();
   if (!lastProject) {
-    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    console.error(chalk.red('  No Brewnet project found.'));
     process.exit(1);
   }
 
@@ -945,16 +944,16 @@ async function handleDomainDisconnect(appName: string): Promise<void> {
   try {
     manager = new DomainManager(lastProject);
   } catch (err) {
-    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    console.error(chalk.red(`  Failed to load project: ${err instanceof Error ? err.message : String(err)}`));
     process.exit(1);
   }
 
   console.log();
   console.log(chalk.bold.cyan('  brewnet domain disconnect'));
-  console.log(chalk.dim(`  앱: ${appName}`));
+  console.log(chalk.dim(`  App: ${appName}`));
   console.log();
 
-  const spinner = ora('외부 도메인 연결 해제 중...').start();
+  const spinner = ora('Disconnecting external domain...').start();
   const result = await manager.disconnect(appName);
   spinner.stop();
 
@@ -973,8 +972,8 @@ async function handleDomainDisconnect(appName: string): Promise<void> {
   console.log();
 
   if (result.success) {
-    console.log(chalk.green(`  ✅ ${appName}의 외부 도메인 연결이 해제되었습니다.`));
-    console.log(chalk.dim(`  ℹ  ${appName}은(는) 로컬에서 계속 실행 중입니다.`));
+    console.log(chalk.green(`  External domain disconnected for ${appName}.`));
+    console.log(chalk.dim(`  ${appName} is still running locally.`));
 
     tunnelLogger.log({
       event: 'DOMAIN_CONNECT',
@@ -982,7 +981,7 @@ async function handleDomainDisconnect(appName: string): Promise<void> {
       detail: `External domain disconnected: ${appName} (${result.removedHostname})`,
     });
   } else {
-    console.error(chalk.red(`  ❌ 연결 해제 실패: ${result.error}`));
+    console.error(chalk.red(`  Disconnect failed: ${result.error}`));
     process.exit(1);
   }
   console.log();
@@ -995,7 +994,7 @@ async function handleDomainDisconnect(appName: string): Promise<void> {
 async function handleDomainStatus(appName?: string): Promise<void> {
   const lastProject = getLastProject();
   if (!lastProject) {
-    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    console.error(chalk.red('  No Brewnet project found.'));
     process.exit(1);
   }
 
@@ -1003,17 +1002,17 @@ async function handleDomainStatus(appName?: string): Promise<void> {
   try {
     manager = new DomainManager(lastProject);
   } catch (err) {
-    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    console.error(chalk.red(`  Failed to load project: ${err instanceof Error ? err.message : String(err)}`));
     process.exit(1);
   }
 
-  const spinner = ora('도메인 상태 조회 중...').start();
+  const spinner = ora('Checking domain status...').start();
   const statuses = await manager.status(appName);
   spinner.stop();
 
   if (statuses.length === 0) {
-    console.log(chalk.dim('  연결된 외부 도메인이 없습니다.'));
-    console.log(chalk.dim('  `brewnet domain connect <app> --domain <hostname>` 명령으로 연결하세요.'));
+    console.log(chalk.dim('  No external domains connected.'));
+    console.log(chalk.dim('  Use `brewnet domain connect <app> --domain <hostname>` to connect.'));
     console.log();
     return;
   }
@@ -1045,7 +1044,7 @@ async function handleDomainStatus(appName?: string): Promise<void> {
 async function handleDomainList(): Promise<void> {
   const lastProject = getLastProject();
   if (!lastProject) {
-    console.error(chalk.red('  설치된 brewnet 프로젝트를 찾을 수 없습니다.'));
+    console.error(chalk.red('  No Brewnet project found.'));
     process.exit(1);
   }
 
@@ -1053,7 +1052,7 @@ async function handleDomainList(): Promise<void> {
   try {
     manager = new DomainManager(lastProject);
   } catch (err) {
-    console.error(chalk.red(`  프로젝트 로드 실패: ${err instanceof Error ? err.message : String(err)}`));
+    console.error(chalk.red(`  Failed to load project: ${err instanceof Error ? err.message : String(err)}`));
     process.exit(1);
   }
 
@@ -1061,8 +1060,8 @@ async function handleDomainList(): Promise<void> {
 
   if (connections.length === 0) {
     console.log();
-    console.log(chalk.dim('  연결된 외부 도메인이 없습니다.'));
-    console.log(chalk.dim('  `brewnet domain connect <app> --domain <hostname>` 명령으로 연결하세요.'));
+    console.log(chalk.dim('  No external domains connected.'));
+    console.log(chalk.dim('  Use `brewnet domain connect <app> --domain <hostname>` to connect.'));
     console.log();
     return;
   }

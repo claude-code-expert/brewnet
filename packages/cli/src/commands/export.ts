@@ -24,6 +24,7 @@ import { join, basename } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { execa } from 'execa';
 import { loadState, getLastProject, getStateFilePath } from '../wizard/state.js';
+import { getDbPath } from '../services/db-manager.js';
 
 // ---------------------------------------------------------------------------
 // Core export logic
@@ -36,7 +37,6 @@ interface ExportResult {
 }
 
 async function buildExport(projectName: string, outputDir: string): Promise<ExportResult> {
-  const brewnetDir = join(homedir(), '.brewnet');
   const state = loadState(projectName);
   if (!state) {
     throw new Error(`No wizard state found for project "${projectName}". Run \`brewnet init\` first.`);
@@ -62,10 +62,11 @@ async function buildExport(projectName: string, outputDir: string): Promise<Expo
       included.push('config/selections.json');
     }
 
-    const appsJson = join(brewnetDir, 'apps.json');
-    if (existsSync(appsJson)) {
-      cpSync(appsJson, join(configStage, 'apps.json'));
-      included.push('config/apps.json');
+    // Copy project SQLite DB (replaces legacy apps.json)
+    const dbPath = getDbPath(projectPath);
+    if (existsSync(dbPath)) {
+      cpSync(dbPath, join(configStage, 'brewnet.db'));
+      included.push('config/brewnet.db');
     }
 
     const boilerplateJson = join(projectPath, '.brewnet-boilerplate.json');

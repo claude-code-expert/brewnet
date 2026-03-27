@@ -260,8 +260,8 @@ export interface WizardState {
   boilerplate: BoilerplateConfig;
   /** Domain and networking configuration */
   domain: DomainConfig;
-  /** Active domain connections mapping local apps to external domains via Cloudflare Tunnel */
-  domainConnections: DomainConnection[];
+  /** @deprecated Domain connections are now stored in project-level SQLite DB (.brewnet.db). Kept optional for backward-compat loading of legacy selections.json. */
+  domainConnections?: DomainConnection[];
   /**
    * Port conflict remapping. Key = original port, value = user-selected alternative.
    * Applied when generating docker-compose.yml port bindings.

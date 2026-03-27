@@ -59,17 +59,17 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
   // -------------------------------------------------------------------------
   // 2. Show credential propagation info
   // -------------------------------------------------------------------------
-  console.log(chalk.yellow('  ⚠ Nextcloud, MinIO, pgAdmin, SSH Server를 사용할 경우'));
-  console.log(chalk.yellow('    적용되는 로그인 계정이므로 신중하게 입력하세요.'));
+  console.log(chalk.yellow('  ⚠ If you use Nextcloud, MinIO, pgAdmin, or SSH Server,'));
+  console.log(chalk.yellow('    these credentials will be applied as the login account. Please choose carefully.'));
   console.log();
-  console.log(chalk.dim('  자동 적용 서비스:'));
+  console.log(chalk.dim('  Auto-configured services:'));
   for (const svc of AUTO_PROPAGATED_SERVICES) {
     console.log(chalk.dim(`    • ${svc}`));
   }
   console.log();
-  console.log(chalk.dim('  별도 설정 필요 서비스:'));
+  console.log(chalk.dim('  Services requiring separate setup:'));
   for (const svc of MANUAL_SETUP_SERVICES) {
-    console.log(chalk.dim(`    • ${svc}`) + chalk.dim.italic(' — 자체 초기 설정에서 계정 생성'));
+    console.log(chalk.dim(`    • ${svc}`) + chalk.dim.italic(' — Account created during its own initial setup'));
   }
   console.log();
 
@@ -86,7 +86,7 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
   // 4. Password — direct input (masked)
   // -------------------------------------------------------------------------
   console.log();
-  console.log(chalk.dim('  비밀번호는 모든 서비스에 동일하게 적용됩니다. 8자 이상.'));
+  console.log(chalk.dim('  This password will be applied to all services. Must be at least 8 characters.'));
 
   let adminPassword = '';
   while (true) {
@@ -94,7 +94,7 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
       message: 'Admin password',
       mask: '*',
       validate: (value: string) => {
-        if (value.length < 8) return '8자 이상 입력하세요';
+        if (value.length < 8) return 'Must be at least 8 characters';
         return true;
       },
     });
@@ -109,7 +109,7 @@ export async function runAdminSetupStep(state: WizardState): Promise<WizardState
       break;
     }
 
-    console.log(chalk.red('  비밀번호가 일치하지 않습니다. 다시 입력하세요.'));
+    console.log(chalk.red('  Passwords do not match. Please try again.'));
     console.log();
   }
 

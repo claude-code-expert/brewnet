@@ -236,7 +236,7 @@ describe('domain list', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'list']);
-    expect(output).toContain('연결된 외부 도메인이 없습니다');
+    expect(output).toContain('No external domains connected');
   });
 
   it('shows connections table when connections exist', async () => {
@@ -260,7 +260,7 @@ describe('domain list', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'list']);
-    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 
   it('shows error when DomainManager constructor throws', async () => {
@@ -295,7 +295,7 @@ describe('domain status', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'status']);
-    expect(output).toContain('연결된 외부 도메인이 없습니다');
+    expect(output).toContain('No external domains connected');
   });
 
   it('shows status table for connections', async () => {
@@ -330,7 +330,7 @@ describe('domain status', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'status']);
-    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 
   it('shows error when DomainManager constructor throws (L1006-1007)', async () => {
@@ -340,7 +340,7 @@ describe('domain status', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'status']);
-    expect(errMsg).toContain('프로젝트 로드 실패');
+    expect(errMsg).toContain('Failed to load project');
   });
 });
 
@@ -369,7 +369,7 @@ describe('domain disconnect', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'disconnect', 'git']);
-    expect(output).toContain('해제');
+    expect(output).toContain('disconnected');
   });
 
   it('shows error on disconnect failure', async () => {
@@ -393,7 +393,7 @@ describe('domain disconnect', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'disconnect', 'git']);
-    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 
   it('shows error when DomainManager constructor throws (L948-949)', async () => {
@@ -403,7 +403,7 @@ describe('domain disconnect', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'disconnect', 'git']);
-    expect(errMsg).toContain('프로젝트 로드 실패');
+    expect(errMsg).toContain('Failed to load project');
   });
 
   it('shows step error message when step fails (L970)', async () => {
@@ -440,7 +440,7 @@ describe('domain tunnel status', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'status']);
-    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 
   it('shows quick tunnel info for quick mode', async () => {
@@ -476,7 +476,7 @@ describe('domain tunnel status', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'status']);
-    expect(output).toContain('API 토큰 없음');
+    expect(output).toContain('No API token');
   });
 
   it('shows error message when getTunnelHealth throws (L397-400)', async () => {
@@ -518,7 +518,7 @@ describe('domain connect with --domain', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'my-api.example.com']);
-    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 
   it('shows error when DomainManager constructor throws', async () => {
@@ -528,7 +528,7 @@ describe('domain connect with --domain', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'my-api.example.com']);
-    expect(errMsg).toContain('프로젝트 로드 실패');
+    expect(errMsg).toContain('Failed to load project');
   });
 
   it('calls DomainManager.connect on success path', async () => {
@@ -595,7 +595,7 @@ describe('domain connect with --domain', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'connect', 'my-api', '--domain', 'invaliddomain']);
-    expect(errMsg).toContain('잘못된 도메인');
+    expect(errMsg).toContain('Invalid domain');
   });
 
   it('shows error when --domain is set but app name is missing (L99-100)', async () => {
@@ -605,7 +605,7 @@ describe('domain connect with --domain', () => {
     registerDomainCommand(p);
     // --domain set but no positional app argument
     await parseCommand(p, ['domain', 'connect', '--domain', 'my-api.example.com']);
-    expect(errMsg).toContain('앱 이름이 필요합니다');
+    expect(errMsg).toContain('App name is required');
   });
 
   it('shows step error detail when step has failed status (L905)', async () => {
@@ -663,7 +663,7 @@ describe('domain tunnel status — tunnelMode=none', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'status']);
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('터널이 설정되지 않았습니다'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No tunnel configured'));
   });
 
   it('shows error when named tunnel has no tunnelId or accountId (L356)', async () => {
@@ -677,7 +677,7 @@ describe('domain tunnel status — tunnelMode=none', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'status']);
-    expect(errMsg).toContain('터널 정보가 없습니다');
+    expect(errMsg).toContain('No tunnel info');
   });
 });
 
@@ -708,7 +708,7 @@ describe('domain tunnel restart', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'restart']);
-    expect(errMsg).toContain('프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 
   it('shows error when tunnelMode is none (L434-436)', async () => {
@@ -717,7 +717,7 @@ describe('domain tunnel restart', () => {
     const p = makeProgram();
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'restart']);
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('터널이 설정되지 않았습니다'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('No tunnel configured'));
   });
 
   it('restarts container successfully in named tunnel mode (L443-501)', async () => {
@@ -727,7 +727,7 @@ describe('domain tunnel restart', () => {
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'restart']);
     // Container stop + start + health check complete
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('재시작합니다'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Restarting'));
   });
 
   it('handles container already stopped gracefully (L454-455)', async () => {
@@ -746,7 +746,7 @@ describe('domain tunnel restart', () => {
     registerDomainCommand(p);
     await parseCommand(p, ['domain', 'tunnel', 'restart']);
     // Should succeed despite stop error
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('재시작합니다'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Restarting'));
   });
 
   it('shows error when container stop fails with non-running error (L457-459)', async () => {
@@ -839,7 +839,7 @@ describe('domain tunnel restart', () => {
     jest.runAllTimersAsync();
     await cmd;
     jest.useRealTimers();
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('재시작 완료'));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('restart complete'));
   });
 
   it('saves state with new URL when Quick Tunnel URL capture succeeds (L483-489)', async () => {
@@ -900,6 +900,6 @@ describe('domain connect — legacy path error cases', () => {
     registerDomainCommand(p);
     // No --domain flag → legacy path; state = null → lines 111-113
     await parseCommand(p, ['domain', 'connect']);
-    expect(errMsg).toContain('설치된 brewnet 프로젝트를 찾을 수 없습니다');
+    expect(errMsg).toContain('No Brewnet project found');
   });
 });
