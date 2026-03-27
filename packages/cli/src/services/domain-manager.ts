@@ -24,8 +24,8 @@ import {
   type ServiceRoute,
 } from './cloudflare-client.js';
 import { addExternalLabels, removeExternalLabels } from './compose-generator.js';
-import { loadState, saveState } from '../wizard/state.js';
-import { readApps } from './app-registry.js';
+import { loadState } from '../wizard/state.js';
+import { listApps as dbListApps, upsertDomainConnection, removeDomainConnection, listDomainConnections as dbListDomainConnections } from './project-db.js';
 import { unpatchNextConfig, patchNextConfig } from './boilerplate-manager.js';
 import { getStackById } from '../config/stacks.js';
 
@@ -171,8 +171,7 @@ export class DomainManager {
     // and the Docker image rebuilt for the app to serve at root path (/).
     if (appBasePath) {
       log(`step 0: removing basePath for dedicated subdomain — rebuilding for root-path serving`);
-      const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
-      const apps = readApps(appsJsonPath);
+      const apps = dbListApps(this.state.projectPath);
       const appEntry = apps.find((a) => a.name === appName);
       const expandedDir = appEntry?.appDir
         ? (appEntry.appDir.startsWith('~') ? path.join(os.homedir(), appEntry.appDir.slice(1)) : appEntry.appDir)
@@ -229,7 +228,7 @@ export class DomainManager {
       previousIngress = getActiveServiceRoutes(this.state);
       const projectDomain = this.state.domain.cloudflare?.zoneName || this.state.domain.name || domain;
       const builtinRoutes = previousIngress.map((r) => ({ ...r, domain: projectDomain }));
-      const existingExtRoutes = (this.state.domainConnections ?? [])
+      const existingExtRoutes = dbListDomainConnections(this.state.projectPath)
         .filter((c) => c.appName !== appName)
         .flatMap((c) => this.connectionToRoutes(c));
       const newRoutes: ServiceRoute[] = isApex
@@ -336,13 +335,7 @@ export class DomainManager {
       ...(appBasePath ? { basePath: appBasePath } : {}),
     };
 
-    if (!this.state.domainConnections) {
-      this.state.domainConnections = [];
-    }
-    // Remove existing connection for same app if any
-    this.state.domainConnections = this.state.domainConnections.filter((c) => c.appName !== appName);
-    this.state.domainConnections.push(connection);
-    saveState(this.state);
+    upsertDomainConnection(this.state.projectPath, connection);
     log(`step 5 OK`);
 
     // Step 5.5: Nextcloud post-connect — fix overwritewebroot and trusted_domains
@@ -381,7 +374,7 @@ export class DomainManager {
    */
   async disconnect(appName: string): Promise<DisconnectResult> {
     const steps: StepResult[] = [];
-    const connections = this.state.domainConnections ?? [];
+    const connections = dbListDomainConnections(this.state.projectPath);
     const conn = connections.find((c) => c.appName === appName);
 
     if (!conn) {
@@ -403,7 +396,7 @@ export class DomainManager {
       const builtinRoutes = remainingRoutes
         .filter((r) => r.subdomain !== conn.subdomain)
         .map((r) => ({ ...r, domain: projectDomain }));
-      const remainingExtRoutes = (this.state.domainConnections ?? [])
+      const remainingExtRoutes = connections
         .filter((c) => c.appName !== appName)
         .flatMap((c) => this.connectionToRoutes(c));
       const filteredRoutes = [...builtinRoutes, ...remainingExtRoutes];
@@ -440,7 +433,7 @@ export class DomainManager {
         const routes = getActiveServiceRoutes(this.state);
         const projectDomain = this.state.domain.cloudflare?.zoneName || this.state.domain.name || conn.domain;
         const allBuiltin = routes.map((r) => ({ ...r, domain: projectDomain }));
-        const allExt = (this.state.domainConnections ?? [])
+        const allExt = connections
           .flatMap((c) => this.connectionToRoutes(c));
         const allRoutes = [...allBuiltin, ...allExt];
         if (cf.apiToken && cf.accountId && cf.tunnelId) {
@@ -465,8 +458,7 @@ export class DomainManager {
     }
 
     // Step 4: Update state
-    this.state.domainConnections = connections.filter((c) => c.appName !== appName);
-    saveState(this.state);
+    removeDomainConnection(this.state.projectPath, appName);
 
     return {
       success: true,
@@ -480,7 +472,7 @@ export class DomainManager {
 
   /** Returns all active domain connections. */
   list(): DomainConnection[] {
-    return this.state.domainConnections ?? [];
+    return dbListDomainConnections(this.state.projectPath);
   }
 
   // ── status ───────────────────────────────────────────────────────────────
@@ -490,7 +482,7 @@ export class DomainManager {
    * or all connections if appName is omitted.
    */
   async status(appName?: string): Promise<DomainStatusInfo[]> {
-    const connections = this.state.domainConnections ?? [];
+    const connections = dbListDomainConnections(this.state.projectPath);
     const targets = appName
       ? connections.filter((c) => c.appName === appName)
       : connections;
@@ -568,7 +560,7 @@ export class DomainManager {
   /** Returns apps that can be connected to domains (running services not yet connected). */
   getConnectableApps(): AppInfo[] {
     const routes = getActiveServiceRoutes(this.state);
-    const connections = this.state.domainConnections ?? [];
+    const connections = dbListDomainConnections(this.state.projectPath);
 
     return routes.map((route) => {
       const existing = connections.find((c) => c.subdomain === route.subdomain);
@@ -601,8 +593,7 @@ export class DomainManager {
     if (route) return route.port;
 
     // Fallback: look up custom app created via `brewnet create-app`
-    const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
-    const apps = readApps(appsJsonPath);
+    const apps = dbListApps(this.state.projectPath);
     const found = apps.find((a) => a.name === appName);
     if (!found) return null;
 
@@ -630,8 +621,7 @@ export class DomainManager {
 
     // Custom create-app apps run in their own docker-compose network.
     // cloudflared reaches them via the host-mapped port using host.docker.internal.
-    const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
-    const apps = readApps(appsJsonPath);
+    const apps = dbListApps(this.state.projectPath);
     const found = apps.find((a) => a.name === appName);
     if (found) return 'host.docker.internal';
 
@@ -639,8 +629,7 @@ export class DomainManager {
   }
 
   private resolveAppBasePath(appName: string): string {
-    const appsJsonPath = path.join(os.homedir(), '.brewnet', 'apps.json');
-    const apps = readApps(appsJsonPath);
+    const apps = dbListApps(this.state.projectPath);
     const found = apps.find((a) => a.name === appName);
     if (!found?.appDir) return '';
 

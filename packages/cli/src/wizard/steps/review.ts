@@ -258,7 +258,7 @@ export function exportConfig(state: WizardState, projectPath: string): string {
         // tunnelToken excluded
       },
     },
-    domainConnections: state.domainConnections ?? [],
+    domainConnections: [], // Domain connections are now in project-level DB
   } as BrewnetConfig;
 
   mkdirSync(projectPath, { recursive: true });

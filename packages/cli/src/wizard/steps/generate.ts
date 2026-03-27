@@ -107,7 +107,7 @@ async function captureQuickTunnelUrl(): Promise<string> {
 
     const timer = setTimeout(() => {
       proc.kill();
-      reject(new Error('30초 내에 Quick Tunnel URL을 얻지 못했습니다.'));
+      reject(new Error('Failed to obtain Quick Tunnel URL within 30 seconds.'));
     }, TUNNEL_URL_TIMEOUT_MS);
 
     let resolved = false;
@@ -385,7 +385,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
   // -------------------------------------------------------------------------
   console.log();
   console.log(chalk.bold('  Pulling Docker images...'));
-  console.log(chalk.dim('    (네트워크 속도에 따라 수 분 소요될 수 있습니다)'));
+  console.log(chalk.dim('    (This may take several minutes depending on network speed)'));
   console.log();
   try {
     const pullCmd = buildPullCommand(composePath);
@@ -642,7 +642,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
   // -------------------------------------------------------------------------
   if (state.domain.cloudflare.tunnelMode === 'quick') {
     console.log();
-    const tunnelSpinner = ora('  Quick Tunnel URL 캡처 중...').start();
+    const tunnelSpinner = ora('  Capturing Quick Tunnel URL...').start();
     try {
       const tunnelUrl = await captureQuickTunnelUrl();
       state.domain.cloudflare.quickTunnelUrl = tunnelUrl;
@@ -690,7 +690,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             }
           }
           if (!registered) {
-            console.log(chalk.yellow('\n  ⚠ Nextcloud: occ 설정 실패 (90s 대기 초과). 수동으로 실행하세요:'));
+            console.log(chalk.yellow('\n  ⚠ Nextcloud: occ configuration failed (90s timeout). Please run manually:'));
             const d = state.domain.name || '<tunnel-url>';
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 0 --value=localhost`));
             console.log(chalk.dim(`    docker exec -u www-data brewnet-nextcloud php occ config:system:set trusted_domains 4 --value='*.trycloudflare.com'`));
@@ -702,12 +702,12 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         }
       }
     } catch (err) {
-      tunnelSpinner.fail('  Quick Tunnel URL 캡처 실패');
+      tunnelSpinner.fail('  Failed to capture Quick Tunnel URL');
       if (err instanceof Error) {
         console.log(chalk.dim(`    ${err.message}`));
       }
-      console.log(chalk.dim('  서비스는 정상 시작되었으나 외부 URL을 가져오지 못했습니다.'));
-      console.log(chalk.dim('  `docker logs brewnet-cloudflared` 로 확인하세요.'));
+      console.log(chalk.dim('  Services started successfully, but the external URL could not be retrieved.'));
+      console.log(chalk.dim('  Check with `docker logs brewnet-cloudflared`.'));
     }
 
     // Post-install FileBrowser: force credentials to wizard admin values.
@@ -846,7 +846,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       const stackId = resolveStackId(lang, frameworkId);
 
       if (!stackId) {
-        console.log(chalk.dim(`  보일러플레이트 건너뜀: ${lang}/${frameworkId}에 대한 스택 없음`));
+        console.log(chalk.dim(`  Skipping boilerplate: no stack found for ${lang}/${frameworkId}`));
         continue;
       }
 
@@ -857,12 +857,12 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       // Auto-select free ports so concurrent stacks or existing processes don't conflict.
       const backendPort = await findFreePort(defaultPort);
       if (backendPort !== defaultPort) {
-        console.log(chalk.dim(`  [${stackId}] 백엔드 포트 ${defaultPort} 사용 중 → ${backendPort} 자동 선택`));
+        console.log(chalk.dim(`  [${stackId}] Backend port ${defaultPort} in use → auto-selected ${backendPort}`));
       }
       // Non-unified stacks have a separate frontend container (default port 3000).
       const frontendPort = isUnified ? undefined : await findFreePort(3000);
       if (!isUnified && frontendPort !== 3000) {
-        console.log(chalk.dim(`  [${stackId}] 프론트 포트 3000 사용 중 → ${frontendPort} 자동 선택`));
+        console.log(chalk.dim(`  [${stackId}] Frontend port 3000 in use → auto-selected ${frontendPort}`));
       }
       const baseUrl = `http://127.0.0.1:${backendPort}`;
       const isRust = stackId.startsWith('rust-');
@@ -870,26 +870,26 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       const healthTimeoutMs = isRust ? 600_000 : (isJavaOrKotlin ? 300_000 : 120_000);
 
       console.log();
-      const bpSpinner = ora(`  [${stackId}] 클론 중...`).start();
+      const bpSpinner = ora(`  [${stackId}] Cloning...`).start();
       let stackStatus: StackStatus = 'failed';
 
       try {
         // Step 1: shallow clone from brewnet-boilerplate GitHub repo
-        bpSpinner.text = `  [${stackId}] GitHub에서 소스 클론 중... (branch: stack/${stackId})`;
+        bpSpinner.text = `  [${stackId}] Cloning from GitHub... (branch: stack/${stackId})`;
         await cloneStack(stackId, appDir);
 
         // Step 2: generate .env with wizard DB settings (hostPort/frontendPort ensure correct port bindings)
-        bpSpinner.text = `  [${stackId}] 런타임 환경 구성 중... (DB: ${dbDriver}, user: ${dbOpts.dbUser})`;
+        bpSpinner.text = `  [${stackId}] Configuring runtime environment... (DB: ${dbDriver}, user: ${dbOpts.dbUser})`;
         boilerplateGenerateEnv(appDir, stackId, dbDriver, { ...dbOpts, hostPort: backendPort, frontendPort });
 
         // Step 3: start containers (with build)
         if (isRust) {
-          bpSpinner.warn(`  [${stackId}] Rust 스택 첫 빌드는 3-10분 소요됩니다 — 잠시 기다려주세요`);
-          bpSpinner.start(`  [${stackId}] 빌드 중... (Rust: 최대 10분 소요)`);
+          bpSpinner.warn(`  [${stackId}] First Rust build takes 3-10 minutes — please wait`);
+          bpSpinner.start(`  [${stackId}] Building... (Rust: up to 10 min)`);
         } else if (isJavaOrKotlin) {
-          bpSpinner.text = `  [${stackId}] 빌드 중... (Java/Kotlin: 최대 5분 소요)`;
+          bpSpinner.text = `  [${stackId}] Building... (Java/Kotlin: up to 5 min)`;
         } else {
-          bpSpinner.text = `  [${stackId}] 빌드 및 컨테이너 시작 중...`;
+          bpSpinner.text = `  [${stackId}] Building and starting containers...`;
         }
         // Best-effort: stop previous boilerplate containers for the SAME stackId to free resources.
         // Port conflicts are already handled by findFreePort above, but stopping stale containers
@@ -900,7 +900,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             prev => prev.stackId === stackId && prev.appDir !== appDir && existsSync(prev.appDir),
           );
           for (const prev of stale) {
-            bpSpinner.text = `  [${stackId}] 이전 컨테이너 정리 중...`;
+            bpSpinner.text = `  [${stackId}] Cleaning up previous containers...`;
             try { await execaFn('docker', ['compose', 'down'], { cwd: prev.appDir }); } catch { /* ignore */ }
           }
         }
@@ -921,19 +921,19 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         // Step 4: poll health endpoint until ready
         // Next.js basePath shifts /health → /apps/{stackId}/health on direct port access
         const healthBaseUrl = isNextjsBasePath ? `${baseUrl}/apps/${stackId}` : baseUrl;
-        bpSpinner.text = `  [${stackId}] 헬스체크 대기 중... (timeout: ${Math.round(healthTimeoutMs / 1000)}s)`;
+        bpSpinner.text = `  [${stackId}] Waiting for health check... (timeout: ${Math.round(healthTimeoutMs / 1000)}s)`;
         const health = await boilerplatePollHealth(healthBaseUrl, healthTimeoutMs);
 
         if (!health.healthy) {
-          bpSpinner.warn(`  [${stackId}] 헬스체크 타임아웃 (${Math.round(healthTimeoutMs / 1000)}s 초과)`);
-          console.log(chalk.dim(`    로그 확인: docker compose -f ${appDir}/docker-compose.yml logs`));
+          bpSpinner.warn(`  [${stackId}] Health check timed out (exceeded ${Math.round(healthTimeoutMs / 1000)}s)`);
+          console.log(chalk.dim(`    Check logs: docker compose -f ${appDir}/docker-compose.yml logs`));
           stackStatus = 'timeout';
         } else {
           // Step 5: verify API endpoints (/api/hello, /api/echo)
           await boilerplateVerifyEndpoints(healthBaseUrl);
-          bpSpinner.succeed(`  [${stackId}] 완료 — 백엔드: ${chalk.cyan(baseUrl)}`);
+          bpSpinner.succeed(`  [${stackId}] Complete — backend: ${chalk.cyan(baseUrl)}`);
           if (!isUnified && frontendPort !== undefined) {
-            console.log(chalk.dim(`    프론트엔드: http://127.0.0.1:${frontendPort}`));
+            console.log(chalk.dim(`    Frontend: http://127.0.0.1:${frontendPort}`));
           }
           stackStatus = 'running';
         }
@@ -941,12 +941,12 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
         const errMsg = err instanceof Error ? err.message : String(err);
         const isPortConflict = errMsg.includes('address already in use') || errMsg.includes('ports are not available');
         if (isPortConflict) {
-          bpSpinner.warn(`  [${stackId}] 포트 ${backendPort} 충돌 — 다른 프로세스가 사용 중`);
-          console.log(chalk.dim(`    충돌 프로세스 확인: lsof -i :${backendPort}`));
-          console.log(chalk.dim(`    Docker 컨테이너 확인: docker ps | grep ${backendPort}`));
-          console.log(chalk.dim(`    해당 컨테이너 종료 후 재시도: cd ${appDir} && make up`));
+          bpSpinner.warn(`  [${stackId}] Port ${backendPort} conflict — another process is using it`);
+          console.log(chalk.dim(`    Check conflicting process: lsof -i :${backendPort}`));
+          console.log(chalk.dim(`    Check Docker containers: docker ps | grep ${backendPort}`));
+          console.log(chalk.dim(`    Stop the container and retry: cd ${appDir} && make up`));
         } else {
-          bpSpinner.warn(`  [${stackId}] 설치 실패 — 수동 실행: cd ${appDir} && make up`);
+          bpSpinner.warn(`  [${stackId}] Installation failed — run manually: cd ${appDir} && make up`);
           console.log(chalk.dim(`    ${errMsg}`));
         }
         stackStatus = 'failed';
@@ -1126,7 +1126,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
   if (state.servers.gitServer.enabled) {
     // Gitea runs in headless mode (INSTALL_LOCK=true) — no web installer.
     // Create the admin user via CLI after Gitea is healthy.
-    const gitea = ora({ text: '  Gitea: admin 계정 생성 중...', indent: 2 }).start();
+    const gitea = ora({ text: '  Gitea: Creating admin account...', indent: 2 }).start();
     try {
       const { execa: execaFn } = await import('execa');
 
@@ -1147,7 +1147,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       }
 
       if (!giteaReady) {
-        gitea.warn('  Gitea: 60s 내 응답 없음 — admin 계정 미생성. 나중에 수동으로 생성하세요.');
+        gitea.warn('  Gitea: No response within 60s — admin account not created. Please create it manually later.');
       } else {
         const adminUser = state.admin.username || 'admin';
         const adminPass = state.admin.password || '';
@@ -1184,9 +1184,9 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
             '--must-change-password=false',
           ]).catch((e: unknown) => {
             const msg = (e as { stderr?: string }).stderr ?? String(e);
-            gitea.warn(`  Gitea: 계정 동기화 실패 — ${msg.slice(0, 120)}`);
+            gitea.warn(`  Gitea: Account sync failed — ${msg.slice(0, 120)}`);
           });
-          gitea.succeed(`  Gitea: admin 계정 생성 완료 (${adminUser})`);
+          gitea.succeed(`  Gitea: Admin account created (${adminUser})`);
 
           // Eager token creation — validates mustChangePassword=false immediately,
           // not lazily at create-app time. Saves token to ~/.brewnet/gitea-token.
@@ -1208,7 +1208,7 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
                 mkdirSync(join(homedir(), '.brewnet'), { recursive: true });
                 writeFileSync(tokenPath, td.sha1, 'utf-8');
                 chmodSync(tokenPath, 0o600);
-                gitea.succeed('  Gitea: API 토큰 생성 완료');
+                gitea.succeed('  Gitea: API token created');
                 // Persist confirmed Gitea username for stable reuse in create-app
                 try {
                   const { saveGiteaConfig } = await import('../../services/app-manager.js');
@@ -1217,23 +1217,23 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
                 } catch { /* non-critical */ }
               } else {
                 const errBody = await tr.text();
-                gitea.warn(`  Gitea: API 토큰 생성 실패 (${tr.status}) — create-app 시 자동 재시도됩니다`);
+                gitea.warn(`  Gitea: API token creation failed (${tr.status}) — will auto-retry on create-app`);
                 if (errBody.includes('must change')) {
-                  gitea.warn('  Gitea: must-change-password 플래그가 여전히 설정되어 있습니다');
+                  gitea.warn('  Gitea: must-change-password flag is still set');
                   gitea.warn(`  Fix: docker exec -u git brewnet-gitea gitea admin user change-password --username ${adminUser} --password <password> --must-change-password=false`);
                 }
               }
             } catch {
-              gitea.warn('  Gitea: 토큰 사전 생성 건너뜀 — create-app 시 재시도됩니다');
+              gitea.warn('  Gitea: Skipped token pre-creation — will retry on create-app');
             }
           }
         } else {
-          gitea.warn('  Gitea: admin 계정 생성 실패 — 수동으로 생성하세요:');
+          gitea.warn('  Gitea: Admin account creation failed — please create manually:');
           console.log(chalk.dim(`    docker exec -u git brewnet-gitea gitea admin user create --username ${adminUser} --password <password> --email ${adminEmail} --admin --must-change-password false`));
         }
       }
     } catch (err) {
-      gitea.warn('  Gitea: admin 계정 생성 건너뜀');
+      gitea.warn('  Gitea: Skipped admin account creation');
       if (err instanceof Error) console.log(chalk.dim(`    ${err.message}`));
     }
     console.log();

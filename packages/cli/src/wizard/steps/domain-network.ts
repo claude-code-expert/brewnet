@@ -158,7 +158,7 @@ export async function runDomainNetworkStep(
     chalk.bold.cyan('  Step 5/8') + chalk.bold(' — Network Access'),
   );
   console.log(
-    chalk.dim('  외부 접근 방식을 선택하세요.'),
+    chalk.dim('  Please select your external access method.'),
   );
   console.log();
 
@@ -168,22 +168,22 @@ export async function runDomainNetworkStep(
   type ScenarioChoice = '1-quick' | '2-named' | '3-local';
 
   const scenario = await select<ScenarioChoice>({
-    message: '외부 접근 방식을 선택하세요',
+    message: 'Select your external access method',
     choices: [
       {
-        name: '1. Quick Tunnel (즉시 사용, 임시 URL — 도메인 불필요)',
+        name: '1. Quick Tunnel (Instant setup, temporary URL — no domain required)',
         value: '1-quick' as const,
-        description: '계정 없이 바로 시작. 단, 서버 재시작 시 URL이 변경됩니다.',
+        description: 'Get started immediately without an account. Note: URL changes on server restart.',
       },
       {
-        name: '2. Named Tunnel (Cloudflare 계정 필요, 영구 URL)',
+        name: '2. Named Tunnel (Requires Cloudflare account, permanent URL)',
         value: '2-named' as const,
-        description: 'Cloudflare 계정 + API 토큰 필요. 도메인 유무에 따라 설정이 달라집니다.',
+        description: 'Requires Cloudflare account + API token. Setup varies based on domain ownership.',
       },
       {
-        name: '3. 로컬 전용 (외부 접근 없음)',
+        name: '3. Local only (no external access)',
         value: '3-local' as const,
-        description: '내부 네트워크에서만 접근. brewnet.local 도메인 사용.',
+        description: 'Accessible only within local network. Uses brewnet.local domain.',
       },
     ],
   });
@@ -225,8 +225,8 @@ function runLocalScenario(next: WizardState): WizardState {
   next.domain.cloudflare.zoneId = '';
   next.domain.cloudflare.zoneName = '';
 
-  console.log(chalk.dim(`  접근: ${next.domain.name} (LAN 전용)`));
-  console.log(chalk.dim('  외부 접근: 비활성화'));
+  console.log(chalk.dim(`  Access: ${next.domain.name} (LAN only)`));
+  console.log(chalk.dim('  External access: disabled'));
   console.log();
   console.log(chalk.green('  Network Access configured.'));
   console.log();
@@ -243,15 +243,15 @@ async function runQuickTunnelScenario(
   _tunnelLogger: TunnelLogger,
 ): Promise<WizardState> {
   console.log(chalk.bold('  Quick Tunnel'));
-  console.log(chalk.dim('  Cloudflare 계정 없이 즉시 사용 가능한 임시 URL을 생성합니다.'));
+  console.log(chalk.dim('  Creates a temporary URL instantly — no Cloudflare account needed.'));
   console.log();
-  console.log(chalk.yellow('  ⚠️  서버 재시작 시 URL이 변경됩니다. 영구 URL이 필요하면'));
-  console.log(chalk.yellow('     설치 완료 후 `brewnet domain connect`를 실행하세요.'));
+  console.log(chalk.yellow('  ⚠️  The URL changes when the server restarts. If you need a permanent URL,'));
+  console.log(chalk.yellow('     please run `brewnet domain connect` after installation.'));
   console.log();
-  console.log(chalk.dim('  Quick Tunnel URL은 서비스 시작 후 자동으로 발급됩니다.'));
+  console.log(chalk.dim('  The Quick Tunnel URL will be issued automatically after services start.'));
   console.log();
 
-  // State 설정만 — 실제 컨테이너 시작은 Step 6 (docker compose up)에서
+  // State configuration only — actual container start happens in Step 6 (docker compose up)
   next.domain.provider = 'quick-tunnel';
   next.domain.ssl = 'cloudflare';
   next.domain.cloudflare.enabled = true;
@@ -287,43 +287,43 @@ async function runNamedTunnelApiFlow(
   // Step 1: Show token creation guide
   console.log(chalk.bold('  Cloudflare API Token — Setup Guide'));
   console.log();
-  console.log(chalk.bold.white('  [1] Cloudflare 로그인'));
-  console.log(chalk.dim('      https://dash.cloudflare.com → 로그인'));
+  console.log(chalk.bold.white('  [1] Log in to Cloudflare'));
+  console.log(chalk.dim('      https://dash.cloudflare.com → Sign in'));
   console.log();
   if (includeDns) {
-    console.log(chalk.bold.white('  [2] 도메인을 Cloudflare에 추가 (처음 사용 시)'));
-    console.log(chalk.dim('      좌측 사이드바에서 "Domains" 클릭'));
-    console.log(chalk.dim('      → "Add a domain" 버튼 → 도메인 입력 → Continue'));
-    console.log(chalk.dim('      → Free 플랜 선택 → Continue → 네임서버 2개 확인'));
-    console.log(chalk.dim('      → 도메인 등록업체에서 네임서버 교체 → 저장'));
-    console.log(chalk.dim('      (네임서버 전파 최대 24시간 소요)'));
+    console.log(chalk.bold.white('  [2] Add your domain to Cloudflare (first time only)'));
+    console.log(chalk.dim('      Click "Domains" in the left sidebar'));
+    console.log(chalk.dim('      → "Add a domain" button → Enter your domain → Continue'));
+    console.log(chalk.dim('      → Select Free plan → Continue → Note the 2 nameservers'));
+    console.log(chalk.dim('      → Update nameservers at your domain registrar → Save'));
+    console.log(chalk.dim('      (Nameserver propagation may take up to 24 hours)'));
     console.log();
   }
-  console.log(chalk.bold.white('  [3] API Token 생성'));
-  console.log(chalk.dim('      우측 상단 프로필 → My Profile → API Tokens → Create Token'));
-  console.log(chalk.dim('      → "Edit Cloudflare Tunnel" 템플릿 → Use template'));
-  console.log(chalk.dim('      → Zone Resources: 사용할 도메인 선택 → Continue → Create Token'));
+  console.log(chalk.bold.white('  [3] Create API Token'));
+  console.log(chalk.dim('      Top-right profile → My Profile → API Tokens → Create Token'));
+  console.log(chalk.dim('      → "Edit Cloudflare Tunnel" template → Use template'));
+  console.log(chalk.dim('      → Zone Resources: Select your domain → Continue → Create Token'));
   console.log();
-  console.log(chalk.dim('  필요 권한: Cloudflare Tunnel:Edit  •  DNS:Edit  •  Zone:Read'));
+  console.log(chalk.dim('  Required permissions: Cloudflare Tunnel:Edit  •  DNS:Edit  •  Zone:Read'));
   console.log();
 
   const tokenUrl = buildTokenCreationUrl(next.projectName);
-  console.log(chalk.dim('  사전 설정된 토큰 생성 URL (브라우저에서 열림):'));
+  console.log(chalk.dim('  Pre-configured token creation URL (opens in browser):'));
   console.log(`  ${chalk.cyan(tokenUrl)}`);
   console.log();
   await tryOpenUrl(tokenUrl);
 
   // Step 2: Prompt for API token
   let apiToken = await input({
-    message: 'Cloudflare API Token을 붙여넣으세요',
+    message: 'Please paste your Cloudflare API Token',
     default: '',
-    validate: (v) => v.trim().length > 0 ? true : 'API Token이 필요합니다',
+    validate: (v) => v.trim().length > 0 ? true : 'API Token is required',
   });
   apiToken = apiToken.trim();
   console.log();
 
   // Step 3: Verify token (with retry)
-  const verifySpinner = ora('API 토큰 검증 중...').start();
+  const verifySpinner = ora('Verifying API token...').start();
   let verifyResult: { valid: boolean; email?: string };
   try {
     verifyResult = await verifyToken(apiToken);
@@ -332,20 +332,20 @@ async function runNamedTunnelApiFlow(
   }
 
   if (!verifyResult.valid) {
-    verifySpinner.fail(chalk.red('유효하지 않은 API 토큰입니다. [BN004]'));
-    console.log(chalk.dim('  Cloudflare 대시보드에서 토큰을 확인해주세요.'));
+    verifySpinner.fail(chalk.red('Invalid API token. [BN004]'));
+    console.log(chalk.dim('  Please verify your token in the Cloudflare dashboard.'));
     console.log();
-    throw new Error('API 토큰 검증 실패');
+    throw new Error('API token verification failed');
   }
 
   verifySpinner.succeed(
-    chalk.green('토큰 검증 완료') +
-    (verifyResult.email ? chalk.dim(` (계정: ${verifyResult.email})`) : ''),
+    chalk.green('Token verified') +
+    (verifyResult.email ? chalk.dim(` (account: ${verifyResult.email})`) : ''),
   );
   console.log();
 
   // Step 4: Account auto-detection / selection
-  const accountsSpinner = ora('Cloudflare 계정 조회 중...').start();
+  const accountsSpinner = ora('Fetching Cloudflare accounts...').start();
   let accounts: Array<{ id: string; name: string }> = [];
   try {
     accounts = await getAccounts(apiToken);
@@ -358,21 +358,21 @@ async function runNamedTunnelApiFlow(
   let selectedAccountName: string;
 
   if (accounts.length === 0) {
-    console.log(chalk.yellow('  계정을 찾을 수 없습니다. Account ID를 직접 입력해주세요.'));
+    console.log(chalk.yellow('  No accounts found. Please enter your Account ID manually.'));
     const manualAccountId = await input({
       message: 'Cloudflare Account ID',
       default: next.domain.cloudflare.accountId || '',
-      validate: (v) => v.trim().length > 0 ? true : 'Account ID가 필요합니다',
+      validate: (v) => v.trim().length > 0 ? true : 'Account ID is required',
     });
     selectedAccountId = manualAccountId.trim();
     selectedAccountName = selectedAccountId;
   } else if (accounts.length === 1) {
     selectedAccountId = accounts[0].id;
     selectedAccountName = accounts[0].name;
-    console.log(chalk.dim(`  계정: ${selectedAccountName} (자동 선택)`));
+    console.log(chalk.dim(`  Account: ${selectedAccountName} (auto-selected)`));
   } else {
     selectedAccountId = await select<string>({
-      message: 'Cloudflare 계정을 선택하세요',
+      message: 'Please select a Cloudflare account',
       choices: accounts.map((a) => ({ name: a.name, value: a.id })),
     });
     selectedAccountName = accounts.find((a) => a.id === selectedAccountId)?.name ?? selectedAccountId;
@@ -386,7 +386,7 @@ async function runNamedTunnelApiFlow(
 
   if (includeDns) {
     // Step 5: Zone (domain) selection
-    const zonesSpinner = ora('DNS 존 조회 중...').start();
+    const zonesSpinner = ora('Fetching DNS zones...').start();
     let zones: Array<{ id: string; name: string; status: string }> = [];
     try {
       zones = await getZones(apiToken);
@@ -399,18 +399,18 @@ async function runNamedTunnelApiFlow(
 
     if (activeZones.length === 0) {
       zonesSpinner.stop();
-      console.log(chalk.yellow('  활성 도메인이 없습니다. domains.cloudflare.com에서 도메인을 등록해주세요.'));
+      console.log(chalk.yellow('  No active domains found. Please register a domain at domains.cloudflare.com.'));
       console.log();
-      throw new Error('Cloudflare 계정에 활성 도메인이 없습니다.');
+      throw new Error('No active domains found in your Cloudflare account.');
     }
 
     if (activeZones.length === 1) {
       selectedZoneId = activeZones[0].id;
       selectedZoneName = activeZones[0].name;
-      console.log(chalk.dim(`  도메인: ${selectedZoneName} (자동 선택)`));
+      console.log(chalk.dim(`  Domain: ${selectedZoneName} (auto-selected)`));
     } else {
       selectedZoneId = await select<string>({
-        message: '도메인(존)을 선택하세요',
+        message: 'Please select a domain (zone)',
         choices: activeZones.map((z) => ({ name: z.name, value: z.id })),
       });
       selectedZoneName = activeZones.find((z) => z.id === selectedZoneId)?.name ?? selectedZoneId;
@@ -424,7 +424,7 @@ async function runNamedTunnelApiFlow(
 
   // Step 6: Tunnel name
   const tunnelName = await input({
-    message: '터널 이름',
+    message: 'Tunnel name',
     default: next.domain.cloudflare.tunnelName || next.projectName,
   });
   next.domain.cloudflare.tunnelName = tunnelName.trim();
@@ -432,7 +432,7 @@ async function runNamedTunnelApiFlow(
 
   // Step 7: Create tunnel
   let createdTunnelId = '';
-  const createSpinner = ora('Cloudflare 터널 생성 중...').start();
+  const createSpinner = ora('Creating Cloudflare tunnel...').start();
   try {
     const tunnelResult = await createTunnel(
       apiToken,
@@ -442,7 +442,7 @@ async function runNamedTunnelApiFlow(
     createdTunnelId = tunnelResult.tunnelId;
     next.domain.cloudflare.tunnelId = tunnelResult.tunnelId;
     next.domain.cloudflare.tunnelToken = tunnelResult.tunnelToken;
-    createSpinner.succeed(chalk.green(`터널 생성됨: ${next.domain.cloudflare.tunnelName}`));
+    createSpinner.succeed(chalk.green(`Tunnel created: ${next.domain.cloudflare.tunnelName}`));
     console.log(chalk.dim(`    ID: ${tunnelResult.tunnelId}`));
 
     tunnelLogger.log({
@@ -454,8 +454,8 @@ async function runNamedTunnelApiFlow(
       detail: 'Named tunnel created successfully',
     });
   } catch (err) {
-    createSpinner.fail(chalk.red('터널 생성에 실패했습니다. [BN009]'));
-    console.log(chalk.yellow(`  오류: ${err instanceof Error ? err.message : String(err)}`));
+    createSpinner.fail(chalk.red('Failed to create tunnel. [BN009]'));
+    console.log(chalk.yellow(`  Error: ${err instanceof Error ? err.message : String(err)}`));
     console.log();
 
     tunnelLogger.log({
@@ -465,7 +465,7 @@ async function runNamedTunnelApiFlow(
       error: err instanceof Error ? err.message : String(err),
     });
 
-    throw new Error('터널 생성에 실패했습니다. 잠시 후 다시 시도해주세요. [BN009]');
+    throw new Error('Failed to create tunnel. Please try again later. [BN009]');
   }
   console.log();
 
@@ -473,7 +473,7 @@ async function runNamedTunnelApiFlow(
     // Step 8: Configure ingress rules
     const routes = getActiveServiceRoutes(next);
     if (routes.length > 0) {
-      const ingressSpinner = ora('터널 인그레스 규칙 설정 중...').start();
+      const ingressSpinner = ora('Configuring tunnel ingress rules...').start();
       try {
         await configureTunnelIngress(
           apiToken,
@@ -482,20 +482,20 @@ async function runNamedTunnelApiFlow(
           selectedZoneName,
           routes,
         );
-        ingressSpinner.succeed(chalk.green(`인그레스 설정 완료 (${routes.length}개 서비스)`));
+        ingressSpinner.succeed(chalk.green(`Ingress configured (${routes.length} service(s))`));
       } catch (err) {
-        ingressSpinner.fail(chalk.red('인그레스 설정 실패'));
-        console.log(chalk.yellow(`  오류: ${err instanceof Error ? err.message : String(err)}`));
+        ingressSpinner.fail(chalk.red('Ingress configuration failed'));
+        console.log(chalk.yellow(`  Error: ${err instanceof Error ? err.message : String(err)}`));
         console.log();
 
         // Rollback: delete tunnel
-        await rollbackTunnel(apiToken, selectedAccountId, createdTunnelId, tunnelLogger, 'ingress 설정 실패');
-        throw new Error('설정 실패 — 터널 롤백 완료. 다시 시도하세요.');
+        await rollbackTunnel(apiToken, selectedAccountId, createdTunnelId, tunnelLogger, 'ingress configuration failed');
+        throw new Error('Configuration failed — tunnel rolled back. Please try again.');
       }
       console.log();
 
       // Step 9: Create DNS CNAME records
-      const dnsSpinner = ora('DNS CNAME 레코드 생성 중...').start();
+      const dnsSpinner = ora('Creating DNS CNAME records...').start();
       const created: string[] = [];
       const failed: string[] = [];
 
@@ -516,40 +516,40 @@ async function runNamedTunnelApiFlow(
 
       // If ALL DNS records failed, rollback
       if (created.length === 0 && failed.length > 0) {
-        dnsSpinner.fail(chalk.red('DNS 레코드 생성 실패'));
+        dnsSpinner.fail(chalk.red('DNS record creation failed'));
         for (const record of failed) {
-          console.log(chalk.yellow(`    실패: ${record}`));
+          console.log(chalk.yellow(`    Failed: ${record}`));
         }
         console.log();
 
-        await rollbackTunnel(apiToken, selectedAccountId, createdTunnelId, tunnelLogger, 'DNS 레코드 생성 전체 실패');
-        throw new Error('설정 실패 — 터널 롤백 완료. 다시 시도하세요.');
+        await rollbackTunnel(apiToken, selectedAccountId, createdTunnelId, tunnelLogger, 'all DNS record creation failed');
+        throw new Error('Configuration failed — tunnel rolled back. Please try again.');
       }
 
       if (failed.length === 0) {
-        dnsSpinner.succeed(chalk.green(`DNS 레코드 생성 완료 (${created.length}개)`));
+        dnsSpinner.succeed(chalk.green(`DNS records created (${created.length})`));
       } else {
-        dnsSpinner.warn(chalk.yellow(`DNS 레코드: ${created.length}개 생성, ${failed.length}개 실패`));
+        dnsSpinner.warn(chalk.yellow(`DNS records: ${created.length} created, ${failed.length} failed`));
       }
 
       for (const record of created) {
         console.log(chalk.dim(`    CNAME: ${record} → ${createdTunnelId}.cfargotunnel.com`));
       }
       for (const record of failed) {
-        console.log(chalk.yellow(`    실패: ${record}`));
+        console.log(chalk.yellow(`    Failed: ${record}`));
       }
       console.log();
     }
 
     // Step 10: Health verification — poll for 'healthy' status (30s timeout)
-    const healthSpinner = ora('터널 연결 확인 중... (최대 30초)').start();
+    const healthSpinner = ora('Verifying tunnel connection... (up to 30s)').start();
     try {
       await waitForTunnelHealthy(apiToken, selectedAccountId, createdTunnelId, 30_000);
-      healthSpinner.succeed(chalk.green('터널이 정상 연결되었습니다 (healthy)'));
+      healthSpinner.succeed(chalk.green('Tunnel is connected (healthy)'));
     } catch {
-      healthSpinner.warn(chalk.yellow('터널 상태 확인 실패 (30초 초과)'));
-      console.log(chalk.dim('  터널이 백그라운드에서 계속 연결 시도 중일 수 있습니다.'));
-      console.log(chalk.dim('  `brewnet domain tunnel status`로 상태를 확인하세요.'));
+      healthSpinner.warn(chalk.yellow('Tunnel health check failed (30s timeout)'));
+      console.log(chalk.dim('  The tunnel may still be connecting in the background.'));
+      console.log(chalk.dim('  Check status with `brewnet domain tunnel status`.'));
     }
     console.log();
   }
@@ -578,40 +578,40 @@ async function runUnifiedNamedTunnelScenario(
   try {
     // Ask whether user already has a Cloudflare domain
     const hasDomain = await confirm({
-      message: 'Cloudflare에 등록된 도메인이 이미 있으신가요?',
+      message: 'Do you already have a domain registered with Cloudflare?',
       default: true,
     });
     console.log();
 
     if (!hasDomain) {
       // Domain purchase guide (previously scenario 3)
-      console.log(chalk.bold('  도메인 구입 안내'));
+      console.log(chalk.bold('  Domain Registration Guide'));
       console.log();
-      console.log(chalk.bold.white('  Cloudflare에서 도메인을 등록하는 방법:'));
+      console.log(chalk.bold.white('  How to register a domain with Cloudflare:'));
       console.log();
-      console.log(chalk.dim('  1. https://domains.cloudflare.com → 로그인 또는 계정 생성'));
-      console.log(chalk.dim('  2. 도메인 검색 → 등록 (연 $8~15 수준, .com 기준)'));
-      console.log(chalk.dim('  3. 도메인이 Cloudflare 네임서버로 자동 설정됩니다'));
-      console.log(chalk.dim('  4. 등록 완료까지 1~5분 소요'));
+      console.log(chalk.dim('  1. https://domains.cloudflare.com → Sign in or create an account'));
+      console.log(chalk.dim('  2. Search for a domain → Register (~$8-15/year for .com)'));
+      console.log(chalk.dim('  3. Domain will be auto-configured with Cloudflare nameservers'));
+      console.log(chalk.dim('  4. Registration takes 1-5 minutes'));
       console.log();
 
       // Offer Quick Tunnel bridge while waiting for domain setup
       const useBridge = await confirm({
-        message: 'Quick Tunnel로 임시 접근을 시작하겠습니까? (도메인 준비 중에도 서비스에 접근 가능)',
+        message: 'Start Quick Tunnel for temporary access? (access services while setting up your domain)',
         default: true,
       });
       console.log();
 
       if (useBridge) {
-        const spinner = ora('Quick Tunnel 시작 중...').start();
+        const spinner = ora('Starting Quick Tunnel...').start();
         try {
           qtManager = new QuickTunnelManager(tunnelLogger);
           const url = await qtManager.start();
-          spinner.succeed(chalk.green(`임시 URL: ${url}`));
-          console.log(chalk.dim('  도메인 준비가 완료되면 아래에서 Enter를 눌러 Named Tunnel로 전환합니다.'));
+          spinner.succeed(chalk.green(`Temporary URL: ${url}`));
+          console.log(chalk.dim('  Press Enter below to switch to Named Tunnel once your domain is ready.'));
           console.log();
         } catch (err) {
-          spinner.fail(chalk.yellow(`Quick Tunnel 실패: ${err instanceof Error ? err.message : String(err)}`));
+          spinner.fail(chalk.yellow(`Quick Tunnel failed: ${err instanceof Error ? err.message : String(err)}`));
           console.log();
           qtManager = null;
         }
@@ -619,7 +619,7 @@ async function runUnifiedNamedTunnelScenario(
 
       // Block until user signals domain is ready
       await input({
-        message: '도메인 설정 완료 후 Enter를 누르세요',
+        message: 'Press Enter when domain setup is complete',
         default: '',
       });
       console.log();
@@ -634,18 +634,18 @@ async function runUnifiedNamedTunnelScenario(
 
     // Stop Quick Tunnel bridge if it was running
     if (qtManager) {
-      const stopSpinner = ora('임시 Quick Tunnel 중지 중...').start();
+      const stopSpinner = ora('Stopping temporary Quick Tunnel...').start();
       try {
         await qtManager.stop();
-        stopSpinner.succeed(chalk.green('Quick Tunnel 중지 완료'));
+        stopSpinner.succeed(chalk.green('Quick Tunnel stopped'));
       } catch {
-        stopSpinner.warn('Quick Tunnel 중지 실패 (수동으로 중지하세요)');
+        stopSpinner.warn('Failed to stop Quick Tunnel (please stop it manually)');
       }
       console.log();
     }
 
     if (!hasDomain) {
-      console.log(chalk.dim('  도메인 연결: `brewnet domain connect`'));
+      console.log(chalk.dim('  Connect a domain: `brewnet domain connect`'));
       console.log();
     }
 
@@ -654,12 +654,12 @@ async function runUnifiedNamedTunnelScenario(
   } catch (err) {
     if (qtManager) {
       await qtManager.stop().catch((stopErr: unknown) => {
-        console.warn('[Named Tunnel] Quick Tunnel 중지 실패:', stopErr instanceof Error ? stopErr.message : String(stopErr));
+        console.warn('[Named Tunnel] Failed to stop Quick Tunnel:', stopErr instanceof Error ? stopErr.message : String(stopErr));
       });
     }
-    console.log(chalk.red(`  오류: ${err instanceof Error ? err.message : String(err)}`));
+    console.log(chalk.red(`  Error: ${err instanceof Error ? err.message : String(err)}`));
     console.log();
-    console.log(chalk.yellow('  Local 모드로 전환합니다.'));
+    console.log(chalk.yellow('  Falling back to Local mode.'));
     return runLocalScenario(next);
   }
 }
@@ -689,7 +689,7 @@ async function waitForTunnelHealthy(
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
-  throw new Error(`터널이 ${timeoutMs / 1000}초 내에 healthy 상태가 되지 않았습니다`);
+  throw new Error(`Tunnel did not become healthy within ${timeoutMs / 1000}s`);
 }
 
 // ---------------------------------------------------------------------------
@@ -703,10 +703,10 @@ async function rollbackTunnel(
   tunnelLogger: TunnelLogger,
   reason: string,
 ): Promise<void> {
-  const rollbackSpinner = ora('터널 롤백 중...').start();
+  const rollbackSpinner = ora('Rolling back tunnel...').start();
   try {
     await deleteTunnel(apiToken, accountId, tunnelId);
-    rollbackSpinner.succeed(chalk.yellow('터널 롤백 완료'));
+    rollbackSpinner.succeed(chalk.yellow('Tunnel rollback complete'));
 
     tunnelLogger.log({
       event: 'ROLLBACK',
@@ -715,8 +715,8 @@ async function rollbackTunnel(
       detail: `Rollback triggered: ${reason}`,
     });
   } catch (rollbackErr) {
-    rollbackSpinner.fail(chalk.red('롤백 실패 (Cloudflare 대시보드에서 수동 삭제 필요)'));
-    console.log(chalk.yellow(`  롤백 오류: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`));
+    rollbackSpinner.fail(chalk.red('Rollback failed (manual deletion required in Cloudflare dashboard)'));
+    console.log(chalk.yellow(`  Rollback error: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`));
 
     tunnelLogger.log({
       event: 'ROLLBACK',
@@ -736,25 +736,25 @@ async function rollbackTunnel(
 function printNetworkSummary(state: WizardState): void {
   console.log(chalk.bold('  Network Summary'));
   if (state.domain.provider === 'local') {
-    console.log(chalk.dim('    접근:  LAN 전용'));
-    console.log(chalk.dim(`    호스트: ${state.domain.name}`));
+    console.log(chalk.dim('    Access:  LAN only'));
+    console.log(chalk.dim(`    Host:    ${state.domain.name}`));
   } else if (state.domain.provider === 'quick-tunnel') {
-    console.log(chalk.dim('    접근:  Quick Tunnel (임시 URL)'));
-    console.log(chalk.dim(`    URL:   ${state.domain.cloudflare.quickTunnelUrl}`));
-    console.log(chalk.yellow('    ⚠️  재시작 시 URL이 변경됩니다'));
-    console.log(chalk.dim('    영구 URL: `brewnet domain connect`'));
+    console.log(chalk.dim('    Access:  Quick Tunnel (temporary URL)'));
+    console.log(chalk.dim(`    URL:     ${state.domain.cloudflare.quickTunnelUrl}`));
+    console.log(chalk.yellow('    ⚠️  URL changes on server restart'));
+    console.log(chalk.dim('    Permanent URL: `brewnet domain connect`'));
   } else {
-    console.log(chalk.dim('    접근:  Named Tunnel (외부 접근 가능)'));
-    console.log(chalk.dim(`    터널:  ${state.domain.cloudflare.tunnelName}`));
+    console.log(chalk.dim('    Access:  Named Tunnel (external access enabled)'));
+    console.log(chalk.dim(`    Tunnel:  ${state.domain.cloudflare.tunnelName}`));
     if (state.domain.cloudflare.tunnelId) {
-      console.log(chalk.dim(`    ID:    ${state.domain.cloudflare.tunnelId}`));
+      console.log(chalk.dim(`    ID:      ${state.domain.cloudflare.tunnelId}`));
     }
     if (state.domain.cloudflare.zoneName) {
-      console.log(chalk.dim(`    도메인: ${state.domain.cloudflare.zoneName}`));
+      console.log(chalk.dim(`    Domain:  ${state.domain.cloudflare.zoneName}`));
     } else {
-      console.log(chalk.dim('    도메인: 미설정 (`brewnet domain connect`로 연결)'));
+      console.log(chalk.dim('    Domain:  Not set (connect with `brewnet domain connect`)'));
     }
-    console.log(chalk.dim('    SSL:   Cloudflare 관리'));
+    console.log(chalk.dim('    SSL:     Managed by Cloudflare'));
   }
   console.log();
   console.log(chalk.green('  Network Access configured.'));

@@ -66,20 +66,34 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/gitea-client.js'
   GiteaClient: MockGiteaClient,
 }));
 
-// Mock app-registry
-const mockAddApp = jest.fn();
-const mockUpdateApp = jest.fn();
-const mockReadApps = jest.fn<() => unknown[]>(() => []);
-const mockRemoveApp = jest.fn();
-const mockReadDeployHistory = jest.fn<() => unknown[]>(() => []);
-jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js', () => ({
-  addApp: mockAddApp,
-  updateApp: mockUpdateApp,
-  readApps: mockReadApps,
-  removeApp: mockRemoveApp,
-  writeApps: jest.fn(),
-  readDeployHistory: mockReadDeployHistory,
-  appendDeployHistory: jest.fn(),
+// Mock project-db (replaces old app-registry mock)
+const mockDbAddApp = jest.fn();
+const mockDbUpdateApp = jest.fn();
+const mockDbListApps = jest.fn<() => unknown[]>(() => []);
+const mockDbGetApp = jest.fn<() => unknown>(() => null);
+const mockDbRemoveApp = jest.fn();
+const mockDbGetDeployHistory = jest.fn<() => unknown[]>(() => []);
+const mockDbAppendDeployHistory = jest.fn();
+const mockGetSetting = jest.fn<() => string | null>(() => null);
+const mockSetSetting = jest.fn();
+jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', () => ({
+  listApps: mockDbListApps,
+  getApp: mockDbGetApp,
+  addApp: mockDbAddApp,
+  updateApp: mockDbUpdateApp,
+  removeApp: mockDbRemoveApp,
+  getDeployHistory: mockDbGetDeployHistory,
+  appendDeployHistory: mockDbAppendDeployHistory,
+  getSetting: mockGetSetting,
+  setSetting: mockSetSetting,
+  listDomainConnections: jest.fn(() => []),
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: jest.fn(),
+  removeDomainConnection: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
 }));
 
 // Mock global.fetch (used by _pollHealth inside app-manager.ts)
@@ -118,7 +132,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/config/frameworks.js', ()
 // Imports (after mocks)
 // --------------------------------------------------------------------------
 
-const { readDotEnvValue, resolveAppsJsonPath, listApps, getDeployHistory, listGiteaRepos } = await import(
+const { readDotEnvValue, resolveProjectPath, listApps, getDeployHistory, listGiteaRepos } = await import(
   '../../../../packages/cli/src/services/app-manager.js'
 );
 
@@ -149,15 +163,16 @@ describe('app-manager helpers', () => {
     });
   });
 
-  describe('resolveAppsJsonPath', () => {
-    it('returns path under ~/.brewnet/apps.json', () => {
-      expect(resolveAppsJsonPath()).toBe('/home/user/.brewnet/apps.json');
+  describe('resolveProjectPath', () => {
+    it('returns cwd when no last project', () => {
+      mockGetLastProject.mockReturnValue(null);
+      expect(resolveProjectPath()).toBe(process.cwd());
     });
   });
 
   describe('listApps', () => {
     it('returns apps from registry', async () => {
-      mockReadApps.mockReturnValue([{ name: 'my-app', status: 'running' }]);
+      mockDbListApps.mockReturnValue([{ name: 'my-app', status: 'running' }]);
       const apps = await listApps();
       expect(apps).toHaveLength(1);
       expect(apps[0]!.name).toBe('my-app');
@@ -213,7 +228,7 @@ describe('createApp — mode A (installed boilerplate)', () => {
       expect.arrayContaining(['remote', 'add', 'brewnet']),
       expect.objectContaining({ cwd: '/proj/nodejs-nextjs-full' }),
     );
-    expect(mockAddApp).toHaveBeenCalledWith(
+    expect(mockDbAddApp).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ name: 'my-app', mode: 'boilerplate', stackId: 'nodejs-nextjs-full' }),
     );
@@ -323,7 +338,7 @@ describe('getDeployHistory', () => {
   });
 
   it('returns empty array when no history exists', () => {
-    mockReadDeployHistory.mockReturnValue([]);
+    mockDbGetDeployHistory.mockReturnValue([]);
     expect(getDeployHistory()).toEqual([]);
   });
 
@@ -332,16 +347,17 @@ describe('getDeployHistory', () => {
       { appName: 'app-a', commitHash: 'abc', commitMessage: 'fix', status: 'success', deployedAt: '2026-01-01T00:00:00Z' },
       { appName: 'app-b', commitHash: 'def', commitMessage: 'feat', status: 'failed', deployedAt: '2026-01-02T00:00:00Z' },
     ];
-    mockReadDeployHistory.mockReturnValue(entries);
+    mockDbGetDeployHistory.mockReturnValue(entries);
     expect(getDeployHistory()).toHaveLength(2);
   });
 
   it('filters entries by appName when provided', () => {
-    const entries = [
+    // The new DB-backed getDeployHistory passes appName directly to the DB layer,
+    // which returns only matching entries. Mock accordingly.
+    const filteredEntries = [
       { appName: 'app-a', commitHash: 'abc', commitMessage: 'fix', status: 'success', deployedAt: '2026-01-01T00:00:00Z' },
-      { appName: 'app-b', commitHash: 'def', commitMessage: 'feat', status: 'failed', deployedAt: '2026-01-02T00:00:00Z' },
     ];
-    mockReadDeployHistory.mockReturnValue(entries);
+    mockDbGetDeployHistory.mockReturnValue(filteredEntries);
     const result = getDeployHistory('app-a');
     expect(result).toHaveLength(1);
     expect(result[0]!.appName).toBe('app-a');
@@ -386,9 +402,12 @@ describe('getAppGitInfo', () => {
   beforeEach(() => {
     fsContent = {};
     jest.clearAllMocks();
-    mockReadApps.mockReturnValue([{
+    mockDbListApps.mockReturnValue([{
       name: 'my-app', appDir: '/proj/my-app', port: 3000, status: 'running',
     }]);
+    mockDbGetApp.mockReturnValue({
+      name: 'my-app', appDir: '/proj/my-app', port: 3000, status: 'running',
+    });
     fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
     fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
   });
@@ -459,9 +478,12 @@ describe('deployApp', () => {
     });
     fsContent['/proj/.env'] = 'GITEA_ADMIN_USER=admin\nGITEA_ADMIN_PASSWORD=pw\n';
     fsContent['/home/user/.brewnet/gitea-token'] = 'tk';
-    mockReadApps.mockReturnValue([{
+    mockDbListApps.mockReturnValue([{
       name: 'nodejs-express', appDir: '/proj/nodejs-express', port: 3000, status: 'running',
     }]);
+    mockDbGetApp.mockReturnValue({
+      name: 'nodejs-express', appDir: '/proj/nodejs-express', port: 3000, status: 'running',
+    });
     fsContent['/proj/nodejs-express'] = '';
     fsContent['/proj/nodejs-express/docker-compose.yml'] = 'version: "3"';
     mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as never);
@@ -526,20 +548,20 @@ describe('deployApp', () => {
 
 describe('startApp / stopApp', () => {
   it('runs docker compose up and updates status', async () => {
-    mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'stopped' }]);
+    mockDbGetApp.mockReturnValue({ name: 'my-app', appDir: '/dir', status: 'stopped' });
     mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
     const { startApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await startApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'up', '-d'], expect.objectContaining({ cwd: '/dir' }));
-    expect(mockUpdateApp).toHaveBeenCalledWith(expect.any(String), 'my-app', { status: 'running' });
+    expect(mockDbUpdateApp).toHaveBeenCalledWith(expect.any(String), 'my-app', { status: 'running' });
   });
 
   it('runs docker compose down and updates status', async () => {
-    mockReadApps.mockReturnValue([{ name: 'my-app', appDir: '/dir', status: 'running' }]);
+    mockDbGetApp.mockReturnValue({ name: 'my-app', appDir: '/dir', status: 'running' });
     mockExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
     const { stopApp } = await import('../../../../packages/cli/src/services/app-manager.js');
     await stopApp('my-app');
     expect(mockExeca).toHaveBeenCalledWith('docker', ['compose', 'down'], expect.objectContaining({ cwd: '/dir' }));
-    expect(mockUpdateApp).toHaveBeenCalledWith(expect.any(String), 'my-app', { status: 'stopped' });
+    expect(mockDbUpdateApp).toHaveBeenCalledWith(expect.any(String), 'my-app', { status: 'stopped' });
   });
 });

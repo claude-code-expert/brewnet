@@ -162,15 +162,15 @@ export async function runServerComponentsStep(
   // 3. Web Server (always ON — select service)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Web Server') + chalk.green(' (required)'));
-  console.log(chalk.dim('  모든 서비스 앞단에서 HTTPS 처리 및 도메인 라우팅을 담당하는 리버스 프록시'));
+  console.log(chalk.dim('  Reverse proxy handling HTTPS and domain routing for all services'));
   console.log();
 
   const webService = await select<WebServerService>({
     message: 'Reverse proxy',
     choices: [
-      { name: 'Traefik (recommended)', value: 'traefik', description: '자동 SSL 갱신 + Docker 레이블 기반 라우팅. 서비스 추가 시 설정 불필요' },
-      { name: 'Nginx', value: 'nginx', description: '업계 표준 웹서버 겸 프록시. 안정적이며 범용 설정 지원' },
-      { name: 'Caddy', value: 'caddy', description: '간결한 설정 파일, Let\'s Encrypt 자동화 내장' },
+      { name: 'Traefik (recommended)', value: 'traefik', description: 'Auto SSL renewal + Docker label-based routing. No config needed when adding services' },
+      { name: 'Nginx', value: 'nginx', description: 'Industry-standard web server and proxy. Stable with versatile configuration' },
+      { name: 'Caddy', value: 'caddy', description: 'Simple config file with built-in Let\'s Encrypt automation' },
     ],
     default: next.servers.webServer.service || 'traefik',
   });
@@ -178,15 +178,15 @@ export async function runServerComponentsStep(
   console.log();
 
   // -------------------------------------------------------------------------
-  // 4. Nextcloud (파일 서버)
+  // 4. Nextcloud (File Server)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Nextcloud'));
-  console.log(chalk.dim('  자체 호스팅 파일 동기화 + 캘린더·연락처·사진 앱 포함 올인원 협업 Suite'));
-  console.log(chalk.dim('  Dropbox / Google Drive 대체. 웹·데스크톱·모바일 앱 지원'));
+  console.log(chalk.dim('  Self-hosted file sync + all-in-one collaboration suite with calendar, contacts, and photos'));
+  console.log(chalk.dim('  Replaces Dropbox / Google Drive. Supports web, desktop, and mobile apps'));
   console.log();
 
   const nextcloudEnabled = await confirm({
-    message: 'Nextcloud 설치',
+    message: 'Install Nextcloud?',
     default: next.servers.fileServer.enabled,
   });
   next.servers.fileServer.enabled = nextcloudEnabled;
@@ -206,7 +206,7 @@ export async function runServerComponentsStep(
   // 6. DB Server (toggle + primary + version + password)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Database Server'));
-  console.log(chalk.dim('  앱 데이터를 영구 저장하는 관계형 DB. 대부분의 서비스에 필수'));
+  console.log(chalk.dim('  Relational database for persistent app data storage. Required by most services'));
   console.log();
 
   const dbEnabled = await confirm({
@@ -220,9 +220,9 @@ export async function runServerComponentsStep(
     const dbPrimary = await select<DbPrimary>({
       message: 'Primary database',
       choices: [
-        { name: 'PostgreSQL (recommended)', value: 'postgresql', description: '기능이 풍부한 오픈소스 RDBMS. JSON·전문검색 지원, 대규모 서비스에 적합' },
-        { name: 'MySQL', value: 'mysql', description: '세계 최다 사용 DB. WordPress·Drupal 등 PHP 생태계와 높은 호환성' },
-        { name: 'SQLite (embedded)', value: 'sqlite', description: '파일 기반 경량 DB. 외부 서버 불필요, 소규모·단일 서비스용' },
+        { name: 'PostgreSQL (recommended)', value: 'postgresql', description: 'Feature-rich open-source RDBMS. Supports JSON and full-text search, ideal for large-scale services' },
+        { name: 'MySQL', value: 'mysql', description: 'Most widely used database. Highly compatible with PHP ecosystems like WordPress and Drupal' },
+        { name: 'SQLite (embedded)', value: 'sqlite', description: 'Lightweight file-based database. No external server needed, suitable for small or single-service setups' },
       ],
       default: next.servers.dbServer.primary || 'postgresql',
     });
@@ -290,7 +290,7 @@ export async function runServerComponentsStep(
   // 7. Media (toggle jellyfin)
   // -------------------------------------------------------------------------
   console.log(chalk.bold('  Media Server'));
-  console.log(chalk.dim('  영화·드라마·음악·사진을 스트리밍하는 자체 Netflix. 브라우저·모바일·TV 앱 지원'));
+  console.log(chalk.dim('  Self-hosted Netflix for streaming movies, shows, music, and photos. Supports browser, mobile, and TV apps'));
   console.log();
 
   const mediaEnabled = await confirm({

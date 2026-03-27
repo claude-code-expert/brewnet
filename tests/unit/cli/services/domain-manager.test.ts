@@ -43,6 +43,29 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
   saveState: mockSaveState,
 }));
 
+const mockListDomainConnections = jest.fn<() => unknown[]>(() => []);
+const mockUpsertDomainConnection = jest.fn();
+const mockRemoveDomainConnection = jest.fn();
+jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', () => ({
+  listApps: jest.fn(() => []),
+  getApp: jest.fn(() => null),
+  addApp: jest.fn(),
+  updateApp: jest.fn(),
+  removeApp: jest.fn(),
+  listDomainConnections: mockListDomainConnections,
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: mockUpsertDomainConnection,
+  removeDomainConnection: mockRemoveDomainConnection,
+  getDeployHistory: jest.fn(() => []),
+  appendDeployHistory: jest.fn(),
+  getSetting: jest.fn(() => null),
+  setSetting: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
+}));
+
 // Mock execa for DNS resolution checks (dig command)
 jest.unstable_mockModule('execa', () => ({
   execa: jest.fn<() => unknown>().mockResolvedValue({ stdout: 'tun-456.cfargotunnel.com.\n', stderr: '' }),
@@ -138,7 +161,7 @@ describe('DomainManager', () => {
         hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
         containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
       };
-      state.domainConnections = [conn];
+      mockListDomainConnections.mockReturnValue([conn]);
       mockLoadState.mockReturnValue(state);
 
       const mgr = new DomainManager('test-project');
@@ -181,10 +204,10 @@ describe('DomainManager', () => {
       expect(result.success).toBe(true);
       expect(result.hostname).toBe('git.example.com');
       expect(result.externalUrl).toBe('https://git.example.com');
-      expect(mockSaveState).toHaveBeenCalled();
-      const savedState = mockSaveState.mock.calls[0][0] as WizardState;
-      expect(savedState.domainConnections).toHaveLength(1);
-      expect(savedState.domainConnections[0].appName).toBe('git');
+      expect(mockUpsertDomainConnection).toHaveBeenCalledWith(
+        state.projectPath,
+        expect.objectContaining({ appName: 'git', subdomain: 'git', domain: 'example.com' }),
+      );
     });
 
     it('detects CNAME conflict and fails without --force', async () => {
@@ -225,12 +248,14 @@ describe('DomainManager', () => {
     });
 
     it('disconnects successfully', async () => {
-      state.domainConnections = [{
+      const conn = {
         appName: 'git', subdomain: 'git', domain: 'example.com',
         hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
         containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
-      }];
+      };
+      state.domainConnections = [conn];
       mockLoadState.mockReturnValue(state);
+      mockListDomainConnections.mockReturnValue([conn]);
       mockConfigureTunnelIngress.mockResolvedValue(undefined);
       mockDeleteDnsRecord.mockResolvedValue(undefined);
 
@@ -239,18 +264,18 @@ describe('DomainManager', () => {
 
       expect(result.success).toBe(true);
       expect(result.removedHostname).toBe('git.example.com');
-      expect(mockSaveState).toHaveBeenCalled();
-      const savedState = mockSaveState.mock.calls[0][0] as WizardState;
-      expect(savedState.domainConnections).toHaveLength(0);
+      expect(mockRemoveDomainConnection).toHaveBeenCalledWith(state.projectPath, 'git');
     });
 
     it('rolls back ingress on DNS deletion failure', async () => {
-      state.domainConnections = [{
+      const conn = {
         appName: 'git', subdomain: 'git', domain: 'example.com',
         hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
         containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
-      }];
+      };
+      state.domainConnections = [conn];
       mockLoadState.mockReturnValue(state);
+      mockListDomainConnections.mockReturnValue([conn]);
       mockConfigureTunnelIngress.mockResolvedValue(undefined);
       mockDeleteDnsRecord.mockRejectedValue(new Error('DNS API error'));
 
@@ -266,12 +291,14 @@ describe('DomainManager', () => {
 
   describe('getConnectableApps()', () => {
     it('returns routes with connected status', () => {
-      state.domainConnections = [{
+      const conn = {
         appName: 'git', subdomain: 'git', domain: 'example.com',
         hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
         containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
-      }];
+      };
+      state.domainConnections = [conn];
       mockLoadState.mockReturnValue(state);
+      mockListDomainConnections.mockReturnValue([conn]);
 
       const mgr = new DomainManager('test-project');
       const apps = mgr.getConnectableApps();

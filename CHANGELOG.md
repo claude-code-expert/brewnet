@@ -3,6 +3,34 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-27 01:22
+
+### 🎯 Prompts
+1. "패치 해" (admin-daemon 크래시/종료 로깅 구현)
+2. "http://localhost:8088/catalog 에 나오는 리스트는 정상인데 install 눌러도 아무 반응이 없어. 우리 명령어 중에 service install, add 명령어가 있었던거 같은데 이게 동작 안하는건지 테스트 및 검증해봐. 안되어있으면 구현하고 테스트 케이스 작성해"
+3. "cronDelete 하고 http://localhost:8088/catalog 에 왜 설치 된 내역/설치할 내역이 제대로 동작하지 않는지 검증해서 패치해. 우리 명령어 중에 service 나 add 명령어로 앱 추가 하는거 연결하면 되는거 아냐?"
+4. "커밋해" + "브랜치 따서 따로 보관해"
+
+### ✅ Changes
+- **Added**: `admin-daemon.ts` — SIGTERM/SIGINT/uncaughtException/unhandledRejection 핸들러 4개 + 시작/실패 로그, 데몬 크래시 원인 추적 가능 (`packages/cli/src/services/admin-daemon.ts`)
+- **Fixed**: `handleInstallService` — `addService()`(compose 수정만)에 `docker compose up -d <id>` 추가, 설치 후 컨테이너 즉시 기동. 성공 시 `status: "running"`, docker 실패 시 `status: "compose_updated"` 반환 (`packages/cli/src/services/admin-server.ts`)
+- **Fixed**: `handleRemoveService` — `docker compose rm -sf` 순서 버그 수정, compose에서 제거 전 먼저 컨테이너 중지 (이전엔 compose 제거 후 rm 시도 → ENOENT 실패) (`packages/cli/src/services/admin-server.ts`)
+- **Fixed**: `findFirstAvailableAlternative` 플래키 테스트 — Docker PostgreSQL로 인해 5433 포트 선점 시 EADDRINUSE를 "외부 점유"로 처리, timeout 10초로 연장 (`tests/unit/cli/utils/port-utils.test.ts`)
+- **Added**: 서비스 설치/제거 사이클 9개 테스트 케이스 추가 — execa mock, docker compose 호출 순서/인자 검증 (`tests/unit/cli/services/admin-server.test.ts`)
+
+### 📊 Test Results
+- Total: 2879+ tests passing (pre-commit hook 통과)
+- Fix verified: `curl /api/catalog/install` → `{ status: "running" }` → `docker ps` 확인 ✅
+- Fix verified: `curl /api/catalog/remove` → 컨테이너 제거 → `/api/catalog` installed:false ✅
+
+### 📁 Files Modified
+- `packages/cli/src/services/admin-daemon.ts` (+36 lines)
+- `packages/cli/src/services/admin-server.ts` (+23, -1 lines)
+- `tests/unit/cli/services/admin-server.test.ts` (+99, -14 lines)
+- `tests/unit/cli/utils/port-utils.test.ts` (+13, -6 lines)
+
+---
+
 ## [develop] - 2026-03-26 09:30
 
 ### 🎯 Prompts

@@ -66,8 +66,27 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
   saveState: mockSaveState,
 }));
 
-jest.unstable_mockModule('../../../../packages/cli/src/services/app-registry.js', () => ({
-  readApps: mockReadApps,
+const mockListDomainConnections = jest.fn<() => unknown[]>(() => []);
+const mockUpsertDomainConnection = jest.fn();
+const mockRemoveDomainConnection = jest.fn();
+jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', () => ({
+  listApps: mockReadApps,
+  getApp: jest.fn(() => null),
+  addApp: jest.fn(),
+  updateApp: jest.fn(),
+  removeApp: jest.fn(),
+  listDomainConnections: mockListDomainConnections,
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: mockUpsertDomainConnection,
+  removeDomainConnection: mockRemoveDomainConnection,
+  getDeployHistory: jest.fn(() => []),
+  appendDeployHistory: jest.fn(),
+  getSetting: jest.fn(() => null),
+  setSetting: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
 }));
 
 const mockUnpatchNextConfig = jest.fn<() => unknown>().mockReturnValue(false);
@@ -253,16 +272,9 @@ describe('DomainManager.connect() — Traefik labels', () => {
 // connect() — saveState + DNS propagation
 // ---------------------------------------------------------------------------
 
-describe('DomainManager.connect() — saveState and DNS propagation', () => {
-  it('calls saveState and skips DNS propagation when dig returns empty', async () => {
-    // dig returns no result → pollDnsPropagation eventually times out
-    // We mock it to return empty immediately, so the 30s timeout is hit quickly
-    // Actually since timeout is 30s, we need a faster way.
-    // Solution: mock execa to return empty (no DNS) but override via state with null domainConnections
+describe('DomainManager.connect() — upsertDomainConnection and DNS propagation', () => {
+  it('calls upsertDomainConnection on successful connect', async () => {
     const state = makeState();
-    // Remove domainConnections so saveState path (L275-276) is exercised
-    // @ts-ignore
-    state.domainConnections = null;
     mockLoadState.mockReturnValue(state);
 
     mockGetDnsRecords
@@ -273,7 +285,10 @@ describe('DomainManager.connect() — saveState and DNS propagation', () => {
     const result = await mgr.connect('git', 'git', 'example.com');
 
     expect(result.success).toBe(true);
-    expect(mockSaveState).toHaveBeenCalled();
+    expect(mockUpsertDomainConnection).toHaveBeenCalledWith(
+      state.projectPath,
+      expect.objectContaining({ appName: 'git', subdomain: 'git', domain: 'example.com' }),
+    );
   });
 });
 
@@ -284,12 +299,14 @@ describe('DomainManager.connect() — saveState and DNS propagation', () => {
 describe('DomainManager.disconnect() — ingress removal failure', () => {
   it('returns error when ingress removal fails', async () => {
     const state = makeState();
-    state.domainConnections = [{
+    const connections = [{
       appName: 'git', subdomain: 'git', domain: 'example.com',
       hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
       containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
     }];
+    state.domainConnections = connections;
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue(connections);
     mockConfigureTunnelIngress.mockRejectedValueOnce(new Error('Ingress API error'));
 
     const mgr = new DomainManager('test-project');
@@ -309,13 +326,15 @@ describe('DomainManager.disconnect() — ingress removal failure', () => {
 describe('DomainManager.disconnect() — DNS fallback lookup', () => {
   it('falls back to DNS lookup when cnameRecordId is empty', async () => {
     const state = makeState();
-    state.domainConnections = [{
+    const connections = [{
       appName: 'git', subdomain: 'git', domain: 'example.com',
       hostname: 'git.example.com', tunnelId: 'tun-456',
       cnameRecordId: '',  // empty → triggers fallback
       containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
     }];
+    state.domainConnections = connections;
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue(connections);
     mockGetDnsRecords.mockResolvedValueOnce([
       { id: 'rec-lookup', name: 'git.example.com', content: 'tun-456.cfargotunnel.com', proxied: true },
     ]);
@@ -339,12 +358,14 @@ describe('DomainManager.disconnect() — Traefik cleanup', () => {
   it('calls removeExternalLabels when compose file exists', async () => {
     mockExistsSync.mockReturnValue(true);
     const state = makeState();
-    state.domainConnections = [{
+    const connections = [{
       appName: 'git', subdomain: 'git', domain: 'example.com',
       hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
       containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
     }];
+    state.domainConnections = connections;
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue(connections);
 
     const mgr = new DomainManager('test-project');
     const result = await mgr.disconnect('git');
@@ -357,12 +378,14 @@ describe('DomainManager.disconnect() — Traefik cleanup', () => {
     mockExistsSync.mockReturnValue(true);
     mockRemoveExternalLabels.mockImplementationOnce(() => { throw new Error('Label cleanup error'); });
     const state = makeState();
-    state.domainConnections = [{
+    const connections = [{
       appName: 'git', subdomain: 'git', domain: 'example.com',
       hostname: 'git.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
       containerPort: 3000, connectedAt: '2026-03-15T10:00:00Z', scenario: 'A' as const,
     }];
+    state.domainConnections = connections;
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue(connections);
 
     const mgr = new DomainManager('test-project');
     const result = await mgr.disconnect('git');
@@ -466,7 +489,7 @@ describe('DomainManager — resolveContainerName: create-app app', () => {
     // Disconnect with multiple existing connections — one is a create-app
     mockReadApps.mockReturnValue([{ name: 'my-api', port: 4000 }]);
     const state = makeState();
-    state.domainConnections = [
+    const connections = [
       {
         appName: 'my-api', subdomain: 'my-api', domain: 'example.com',
         hostname: 'my-api.example.com', tunnelId: 'tun-456', cnameRecordId: 'rec-1',
@@ -478,7 +501,9 @@ describe('DomainManager — resolveContainerName: create-app app', () => {
         containerPort: 5000, connectedAt: '2026-03-15T11:00:00Z', scenario: 'A' as const,
       },
     ];
+    state.domainConnections = connections;
     mockLoadState.mockReturnValue(state);
+    mockListDomainConnections.mockReturnValue(connections);
     // getActiveServiceRoutes has no route for 'other-api', so resolveContainerName falls back to apps.json
     mockGetActiveServiceRoutes.mockReturnValue([]);
 

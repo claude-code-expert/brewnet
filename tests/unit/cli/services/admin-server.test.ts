@@ -118,7 +118,7 @@ async function req(
 function makeContainer(id: string, state: string, labels?: Record<string, string>) {
   return {
     Id: `sha-${id}`,
-    Labels: { 'com.docker.compose.service': id, ...labels },
+    Labels: { 'com.docker.compose.service': id, 'com.docker.compose.project.working_dir': '/tmp/test-project', ...labels },
     State: state,
     Status: state === 'running' ? 'Up 2 hours' : 'Exited (0) 5 minutes ago',
     Ports: [{ PublicPort: 80 }],

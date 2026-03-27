@@ -112,19 +112,59 @@ No port forwarding required. To enable external access:
 
 > **Manual mode**: Create a tunnel at [one.dash.cloudflare.com](https://one.dash.cloudflare.com) and paste the Connector Token instead.
 
-### Service Management
+### Command Reference (19 commands)
 
+**Setup & Lifecycle**
 ```bash
-brewnet status              # Show service status table
-brewnet up                  # Start all services
-brewnet down                # Stop all services (data preserved)
-brewnet logs [service]      # View logs (-f for follow)
-brewnet add <app-name>      # Add an app (creates Gitea repo + Docker service)
-brewnet remove <app-name>   # Remove an app
-brewnet deploy <app-name>   # Deploy an app (git pull → docker compose up)
-brewnet backup              # Create backup (tar.gz)
-brewnet restore <id>        # Restore from backup
-brewnet admin               # Open local admin panel (http://localhost:8088)
+brewnet init                        # Interactive 7-step setup wizard
+brewnet admin                       # Start admin panel daemon (http://localhost:8088)
+brewnet admin --foreground          # Run admin panel in foreground
+brewnet shutdown                    # Stop the admin panel daemon
+brewnet uninstall                   # Remove all services, volumes, and project files
+brewnet uninstall --dry-run         # Preview what will be removed (no changes)
+brewnet uninstall --keep-data       # Preserve Docker volumes (DB, file data)
+```
+
+**Service Management**
+```bash
+brewnet status                      # Show running container status table
+brewnet up                          # Start all services (docker compose up -d)
+brewnet down                        # Stop all services — data preserved in volumes
+brewnet update                      # Pull latest images and restart services
+brewnet add <service>               # Add a service to docker-compose.yml
+brewnet remove <service>            # Remove a service from docker-compose.yml
+brewnet list                        # List all available services
+brewnet list --stacks               # List all available app stacks (16 boilerplates)
+brewnet logs [service]              # View logs (omit service for all; -f to follow)
+```
+
+**App Deployment**
+```bash
+brewnet deploy <path>               # Deploy a local project (auto-detects language)
+brewnet create-app <name>           # Scaffold a new app from a boilerplate stack
+brewnet create-app <name> --stack go-gin       # Skip interactive stack selection
+brewnet create-app <name> --database postgres  # Set database driver
+```
+
+**Backup & Export**
+```bash
+brewnet backup                      # Create a tar.gz backup of the project
+brewnet backup --list               # List existing backups
+brewnet restore <backup-id>         # Restore from a backup (shows confirmation prompt)
+brewnet restore <backup-id> --force # Restore without confirmation
+brewnet export                      # Export wizard state + compose config as archive
+brewnet export -o <dir>             # Specify output directory
+```
+
+**Domain & Storage**
+```bash
+brewnet domain connect              # Migrate Quick Tunnel → Named Tunnel
+brewnet domain connect <app> --domain <hostname>  # Connect app to external domain
+brewnet domain tunnel status        # Query tunnel health and service reachability
+brewnet domain tunnel restart       # Restart the cloudflared container
+brewnet storage init                # Add a file storage backend (Nextcloud, MinIO, etc.)
+brewnet storage init --service filebrowser  # Skip interactive backend selection
+brewnet storage status              # Show installed storage backends
 ```
 
 ### Admin Dashboard
@@ -333,19 +373,59 @@ brewnet init
 
 > **Manual 모드**: [one.dash.cloudflare.com](https://one.dash.cloudflare.com) 에서 직접 터널을 만들고 Connector Token을 붙여넣을 수도 있습니다.
 
-### 서비스 관리
+### 명령어 전체 목록 (19개)
 
+**설치 & 라이프사이클**
 ```bash
-brewnet status              # 서비스 상태 테이블 확인
-brewnet up                  # 모든 서비스 시작
-brewnet down                # 모든 서비스 중지 (데이터 유지)
-brewnet logs [service]      # 로그 확인 (-f 옵션으로 실시간)
-brewnet add <app-name>      # 앱 추가 (Gitea 저장소 + Docker 서비스 생성)
-brewnet remove <app-name>   # 앱 제거
-brewnet deploy <app-name>   # 앱 배포 (git pull → docker compose up)
-brewnet backup              # 백업 생성 (tar.gz)
-brewnet restore <id>        # 백업으로 복원
-brewnet admin               # 로컬 관리 패널 열기 (http://localhost:8088)
+brewnet init                        # 7단계 대화형 설치 위저드
+brewnet admin                       # 어드민 패널 데몬 시작 (http://localhost:8088)
+brewnet admin --foreground          # 포그라운드 모드로 어드민 패널 실행
+brewnet shutdown                    # 어드민 패널 데몬 종료
+brewnet uninstall                   # 서비스, 볼륨, 프로젝트 파일 전체 제거
+brewnet uninstall --dry-run         # 삭제 대상 미리 확인 (실제 변경 없음)
+brewnet uninstall --keep-data       # Docker 볼륨(DB, 파일 데이터) 보존
+```
+
+**서비스 관리**
+```bash
+brewnet status                      # 실행 중인 컨테이너 상태 테이블 확인
+brewnet up                          # 모든 서비스 시작 (docker compose up -d)
+brewnet down                        # 모든 서비스 중지 — 볼륨(데이터) 유지
+brewnet update                      # 최신 이미지 pull 후 서비스 재시작
+brewnet add <service>               # docker-compose.yml에 서비스 추가
+brewnet remove <service>            # docker-compose.yml에서 서비스 제거
+brewnet list                        # 사용 가능한 서비스 전체 목록
+brewnet list --stacks               # 앱 스택 목록 (16개 보일러플레이트)
+brewnet logs [service]              # 로그 확인 (서비스 생략 시 전체; -f 실시간)
+```
+
+**앱 배포**
+```bash
+brewnet deploy <path>               # 로컬 프로젝트 배포 (언어 자동 감지)
+brewnet create-app <name>           # 보일러플레이트 스택으로 앱 프로젝트 생성
+brewnet create-app <name> --stack go-gin       # 스택 직접 지정 (대화형 생략)
+brewnet create-app <name> --database postgres  # 데이터베이스 드라이버 지정
+```
+
+**백업 & 내보내기**
+```bash
+brewnet backup                      # 프로젝트 tar.gz 백업 생성
+brewnet backup --list               # 기존 백업 목록 확인
+brewnet restore <backup-id>         # 백업으로 복원 (확인 프롬프트 포함)
+brewnet restore <backup-id> --force # 확인 없이 복원
+brewnet export                      # 위저드 설정 + compose 설정을 아카이브로 내보내기
+brewnet export -o <dir>             # 출력 디렉터리 지정
+```
+
+**도메인 & 스토리지**
+```bash
+brewnet domain connect              # Quick Tunnel → Named Tunnel 마이그레이션
+brewnet domain connect <app> --domain <hostname>  # 앱을 외부 도메인에 연결
+brewnet domain tunnel status        # 터널 상태 및 서비스 접근 가능 여부 확인
+brewnet domain tunnel restart       # cloudflared 컨테이너 재시작
+brewnet storage init                # 파일 스토리지 백엔드 추가 (Nextcloud, MinIO 등)
+brewnet storage init --service filebrowser  # 대화형 없이 백엔드 직접 지정
+brewnet storage status              # 설치된 스토리지 백엔드 목록 확인
 ```
 
 ### 어드민 대시보드

@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { execa } from 'execa';
 import { GiteaClient } from './gitea-client.js';
-import { readApps, addApp, updateApp, removeApp as registryRemoveApp, readDeployHistory, appendDeployHistory } from './app-registry.js';
+import { listApps as dbListApps, getApp as dbGetApp, addApp as dbAddApp, updateApp as dbUpdateApp, removeApp as dbRemoveApp, getDeployHistory as dbGetDeployHistory, appendDeployHistory as dbAppendDeployHistory, getSetting, setSetting } from './project-db.js';
 import { getLastProject, loadState } from '../wizard/state.js';
 import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry, AppGitInfo, DeploySettings } from '../types/app-entry.js';
 
@@ -15,8 +15,6 @@ import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry
 
 const BREWNET_DIR = join(homedir(), '.brewnet');
 const GITEA_TOKEN_PATH = join(BREWNET_DIR, 'gitea-token');
-const GITEA_CONFIG_PATH = join(BREWNET_DIR, 'gitea-config.json');
-const DEPLOY_HISTORY_PATH = join(BREWNET_DIR, 'deploy-history.json');
 
 // ---------------------------------------------------------------------------
 // In-memory job store (ephemeral — cleared on server restart)
@@ -28,8 +26,16 @@ const jobs = new Map<string, AppJob>();
 // Exported helpers (testable in isolation)
 // ---------------------------------------------------------------------------
 
-export function resolveAppsJsonPath(): string {
-  return join(BREWNET_DIR, 'apps.json');
+export function resolveProjectPath(): string {
+  const last = getLastProject();
+  if (last) {
+    const state = loadState(last);
+    if (state?.projectPath) {
+      const raw = state.projectPath;
+      return raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
+    }
+  }
+  return process.cwd();
 }
 
 // ---------------------------------------------------------------------------
@@ -45,9 +51,12 @@ interface GiteaConfig {
 }
 
 export function loadGiteaConfig(): GiteaConfig | null {
-  if (!existsSync(GITEA_CONFIG_PATH)) return null;
   try {
-    return JSON.parse(readFileSync(GITEA_CONFIG_PATH, 'utf-8')) as GiteaConfig;
+    const pp = resolveProjectPath();
+    const baseUrl = getSetting(pp, 'gitea.baseUrl');
+    const username = getSetting(pp, 'gitea.username');
+    if (!baseUrl || !username) return null;
+    return { baseUrl, username, writtenAt: getSetting(pp, 'gitea.writtenAt') ?? '' };
   } catch {
     return null;
   }
@@ -55,10 +64,12 @@ export function loadGiteaConfig(): GiteaConfig | null {
 
 export function saveGiteaConfig(baseUrl: string, username: string): void {
   try {
-    const config: GiteaConfig = { baseUrl, username, writtenAt: new Date().toISOString() };
-    writeFileSync(GITEA_CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+    const pp = resolveProjectPath();
+    setSetting(pp, 'gitea.baseUrl', baseUrl);
+    setSetting(pp, 'gitea.username', username);
+    setSetting(pp, 'gitea.writtenAt', new Date().toISOString());
   } catch (e) {
-    console.warn('[app-manager] gitea-config.json 저장 실패:', e instanceof Error ? e.message : e);
+    console.warn('[app-manager] gitea-config save failed:', e instanceof Error ? e.message : e);
   }
 }
 
@@ -82,12 +93,12 @@ export function readDotEnvValue(envPath: string, key: string): string {
 let _boilerplateRegistered = false;
 
 export async function listApps(): Promise<AppEntry[]> {
-  const appsJson = resolveAppsJsonPath();
-  const apps = readApps(appsJson);
+  const projectPath = resolveProjectPath();
+  const apps = dbListApps(projectPath);
 
   // Auto-register wizard boilerplates (once per process lifetime).
   // This bridges the gap between `brewnet init` (writes .brewnet-boilerplate.json)
-  // and the Apps page (reads apps.json).
+  // and the Apps page (reads DB).
   if (_boilerplateRegistered) return apps;
   _boilerplateRegistered = true;
   try {
@@ -97,7 +108,6 @@ export async function listApps(): Promise<AppEntry[]> {
       const raw = JSON.parse(readFileSync(bpPath, 'utf-8'));
       const bpMetas: Array<{ stackId: string; appDir: string; lang?: string; frameworkId?: string; status?: string; backendUrl?: string }> =
         Array.isArray(raw) ? raw : [raw];
-      let changed = false;
       for (const bp of bpMetas) {
         if (!bp.stackId || !bp.appDir) continue;
         // Check if already registered by stackId or appDir
@@ -115,12 +125,9 @@ export async function listApps(): Promise<AppEntry[]> {
             status: (bp.status as AppEntry['status']) || 'running',
             createdAt: new Date().toISOString(),
           };
+          dbAddApp(projectPath, entry);
           apps.push(entry);
-          changed = true;
         }
-      }
-      if (changed) {
-        writeFileSync(appsJson, JSON.stringify(apps, null, 2), 'utf-8');
       }
     }
   } catch { /* non-critical — boilerplate auto-register is best-effort */ }
@@ -129,9 +136,8 @@ export async function listApps(): Promise<AppEntry[]> {
 }
 
 export function getDeployHistory(appName?: string): DeployHistoryEntry[] {
-  const entries = readDeployHistory(DEPLOY_HISTORY_PATH);
-  if (!appName) return entries;
-  return entries.filter((e) => e.appName === appName);
+  const projectPath = resolveProjectPath();
+  return dbGetDeployHistory(projectPath, appName);
 }
 
 export async function listGiteaRepos(): Promise<GitRepoEntry[]> {
@@ -147,27 +153,29 @@ export async function listGiteaRepos(): Promise<GitRepoEntry[]> {
 }
 
 export function getDeploySettings(appName: string): DeploySettings {
-  const apps = readApps(resolveAppsJsonPath());
-  const app = apps.find((a) => a.name === appName);
-  const settings = (app as (AppEntry & { deploySettings?: DeploySettings }) | undefined)?.deploySettings;
-  return settings ?? { autoDeploy: false, deployBranch: 'main' };
+  const pp = resolveProjectPath();
+  const autoDeploy = getSetting(pp, `deploy.${appName}.autoDeploy`);
+  const deployBranch = getSetting(pp, `deploy.${appName}.deployBranch`);
+  const webhookSecret = getSetting(pp, `deploy.${appName}.webhookSecret`);
+  return {
+    autoDeploy: autoDeploy === 'true',
+    deployBranch: deployBranch ?? 'main',
+    ...(webhookSecret ? { webhookSecret } : {}),
+  };
 }
 
 export function updateDeploySettings(appName: string, settings: Partial<DeploySettings>): void {
-  const appsJson = resolveAppsJsonPath();
-  const apps = readApps(appsJson);
-  const app = apps.find((a) => a.name === appName);
+  const pp = resolveProjectPath();
+  const app = dbGetApp(pp, appName);
   if (!app) throw new Error(`App "${appName}" not found`);
-  const existing = (app as AppEntry & { deploySettings?: DeploySettings }).deploySettings
-    ?? { autoDeploy: false, deployBranch: 'main' };
-  (app as AppEntry & { deploySettings?: DeploySettings }).deploySettings = { ...existing, ...settings };
-  updateApp(appsJson, appName, app as Partial<AppEntry>);
+  if (settings.autoDeploy !== undefined) setSetting(pp, `deploy.${appName}.autoDeploy`, String(settings.autoDeploy));
+  if (settings.deployBranch !== undefined) setSetting(pp, `deploy.${appName}.deployBranch`, settings.deployBranch);
+  if (settings.webhookSecret !== undefined) setSetting(pp, `deploy.${appName}.webhookSecret`, settings.webhookSecret);
 }
 
 export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
   const ctx = resolveContext();
-  const apps = readApps(resolveAppsJsonPath());
-  const app = apps.find((a) => a.name === appName);
+  const app = dbGetApp(resolveProjectPath(), appName);
   if (!app) throw new Error(`App "${appName}" not found`);
 
   const gitea = new GiteaClient({
@@ -214,9 +222,9 @@ export async function rollbackApp(appName: string, commitHash: string): Promise<
 }
 
 async function _runRollback(job: AppJob, appName: string, commitHash: string): Promise<void> {
+  const pp = resolveProjectPath();
   try {
-    const apps = readApps(resolveAppsJsonPath());
-    const app = apps.find((a) => a.name === appName);
+    const app = dbGetApp(pp, appName);
     if (!app) throw new Error(`App "${appName}" not found`);
 
     const target = commitHash || 'HEAD~1';
@@ -236,8 +244,8 @@ async function _runRollback(job: AppJob, appName: string, commitHash: string): P
     await _pollHealth(healthUrl, 120_000, job);
     setStep(job, 2, 'done');
 
-    updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
-    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+    dbUpdateApp(pp, appName, { status: 'running' });
+    dbAppendDeployHistory(pp, {
       appName,
       commitHash,
       commitMessage: `Rollback to ${commitHash.slice(0, 7)}`,
@@ -252,7 +260,7 @@ async function _runRollback(job: AppJob, appName: string, commitHash: string): P
     for (const step of job.steps) {
       if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
     }
-    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+    dbAppendDeployHistory(pp, {
       appName,
       commitHash,
       commitMessage: `Rollback to ${commitHash.slice(0, 7)}`,
@@ -298,7 +306,7 @@ export async function deployApp(appName: string): Promise<string> {
 
 /**
  * Deploy a local path project without Gitea — Mode D (local-path).
- * Validates the path, registers the app in apps.json, auto-scaffolds
+ * Validates the path, registers the app in the project DB, auto-scaffolds
  * docker config if missing, then runs docker compose up + health check.
  */
 export async function deployLocalApp(opts: {
@@ -314,7 +322,7 @@ export async function deployLocalApp(opts: {
 }
 
 async function _runDeployLocal(job: AppJob, appName: string, localPath: string, port: number): Promise<void> {
-  const appsJson = resolveAppsJsonPath();
+  const pp = resolveProjectPath();
   try {
     // Step 0: Validate path and project type
     setStep(job, 0, 'running');
@@ -325,10 +333,10 @@ async function _runDeployLocal(job: AppJob, appName: string, localPath: string, 
       throw new Error('Cannot detect project type and no Dockerfile found. Add a Dockerfile to deploy.');
     }
     appendLog(job, `[validate] ${projectType ? `Detected ${projectType} project` : 'Dockerfile found'}`);
-    // Register in apps.json (idempotent)
-    const existing = readApps(appsJson).find((a) => a.name === appName);
+    // Register in DB (idempotent)
+    const existing = dbGetApp(pp, appName);
     if (!existing) {
-      addApp(appsJson, {
+      dbAddApp(pp, {
         name: appName,
         mode: 'local-path',
         appDir: localPath,
@@ -337,7 +345,7 @@ async function _runDeployLocal(job: AppJob, appName: string, localPath: string, 
         createdAt: new Date().toISOString(),
       });
     } else {
-      updateApp(appsJson, appName, { appDir: localPath, port, status: 'creating' });
+      dbUpdateApp(pp, appName, { appDir: localPath, port, status: 'creating' });
     }
     setStep(job, 0, 'done');
 
@@ -359,7 +367,7 @@ async function _runDeployLocal(job: AppJob, appName: string, localPath: string, 
     await _pollHealth(healthUrl, 120_000, job);
     setStep(job, 3, 'done');
 
-    updateApp(appsJson, appName, { status: 'running' });
+    dbUpdateApp(pp, appName, { status: 'running' });
     job.status = 'done';
   } catch (err) {
     job.status = 'failed';
@@ -367,13 +375,13 @@ async function _runDeployLocal(job: AppJob, appName: string, localPath: string, 
     for (const step of job.steps) {
       if (step.status === 'running' || step.status === 'pending') step.status = 'failed';
     }
-    updateApp(appsJson, appName, { status: 'failed' });
+    dbUpdateApp(pp, appName, { status: 'failed' });
   }
 }
 
 async function _runDeploy(job: AppJob, appName: string): Promise<void> {
-  const apps = readApps(resolveAppsJsonPath());
-  const app = apps.find((a) => a.name === appName);
+  const pp = resolveProjectPath();
+  const app = dbGetApp(pp, appName);
   if (!app) { job.status = 'failed'; job.error = `App "${appName}" not found`; return; }
   try {
     const settings = getDeploySettings(appName);
@@ -475,12 +483,12 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     await _pollHealth(healthUrlDeploy, 120_000, job);
     setStep(job, 2, 'done');
 
-    updateApp(resolveAppsJsonPath(), appName, { status: 'running' });
+    dbUpdateApp(pp, appName, { status: 'running' });
     const headHash = await execa('git', ['rev-parse', 'HEAD'], { cwd: app.appDir })
       .then((r) => r.stdout.trim()).catch(() => '');
     const headMsg = await execa('git', ['log', '-1', '--format=%s'], { cwd: app.appDir })
       .then((r) => r.stdout.trim()).catch(() => 'Manual deploy');
-    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+    dbAppendDeployHistory(pp, {
       appName,
       commitHash: headHash,
       commitMessage: headMsg,
@@ -497,7 +505,7 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
     }
     const headHashFail = await execa('git', ['rev-parse', 'HEAD'], { cwd: app.appDir })
       .then((r) => r.stdout.trim()).catch(() => '');
-    appendDeployHistory(DEPLOY_HISTORY_PATH, {
+    dbAppendDeployHistory(pp, {
       appName,
       commitHash: headHashFail,
       commitMessage: 'Manual deploy',
@@ -508,8 +516,7 @@ async function _runDeploy(job: AppJob, appName: string): Promise<void> {
 }
 
 export function getAppDir(appName: string): string | undefined {
-  const apps = readApps(resolveAppsJsonPath());
-  return apps.find((a) => a.name === appName)?.appDir;
+  return dbGetApp(resolveProjectPath(), appName)?.appDir;
 }
 
 export function getJobStatus(jobId: string): AppJob | undefined {
@@ -906,7 +913,7 @@ export async function createApp(opts: CreateAppOptions): Promise<string> {
 async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void> {
   try {
     const ctx = resolveContext();
-    const appsJson = resolveAppsJsonPath();
+    const pp = resolveProjectPath();
 
     // Auto-detect mode from provided fields if not explicitly set
     if (!opts.mode) {
@@ -955,12 +962,12 @@ async function _runCreateApp(job: AppJob, opts: CreateAppOptions): Promise<void>
     setStep(job, 1, 'done', giteaPrep.message);
 
     if (opts.mode === 'boilerplate' && (opts as CreateAppOptions & { _meta?: unknown })._meta) {
-      await _createModeA(job, opts, ctx, gitea, appsJson);
+      await _createModeA(job, opts, ctx, gitea, pp);
     } else if (opts.mode === 'git-clone') {
-      await _createModeB(job, opts, ctx, gitea, appsJson);
+      await _createModeB(job, opts, ctx, gitea, pp);
     } else {
       // new-project OR boilerplate fallback (stack not installed locally)
-      await _createModeC(job, opts, ctx, gitea, appsJson);
+      await _createModeC(job, opts, ctx, gitea, pp);
     }
 
     job.status = 'done';
@@ -978,7 +985,7 @@ async function _createModeA(
   opts: CreateAppOptions,
   ctx: AppContext,
   gitea: GiteaClient,
-  appsJson: string,
+  pp: string,
 ): Promise<void> {
   // Step 0 already done in _runCreateApp — retrieve validated meta
   const meta = (opts as CreateAppOptions & { _meta?: BoilerplateMeta })._meta!;
@@ -1029,7 +1036,7 @@ async function _createModeA(
   setStep(job, 5, 'done');
 
   // Register
-  addApp(appsJson, {
+  dbAddApp(pp, {
     name: opts.appName,
     mode: 'boilerplate',
     stackId: opts.stackId,
@@ -1052,7 +1059,7 @@ async function _createModeB(
   opts: CreateAppOptions,
   ctx: AppContext,
   gitea: GiteaClient,
-  appsJson: string,
+  pp: string,
 ): Promise<void> {
   // Step 0 already done in _runCreateApp
   const port = opts.port ?? 8080;
@@ -1124,7 +1131,7 @@ async function _createModeB(
     appendLog(job, '[clone] Gitea push completed — no docker-compose.yml, skipping Docker up');
   }
 
-  addApp(appsJson, {
+  dbAddApp(pp, {
     name: opts.appName,
     mode: 'git-clone',
     sourceUrl: opts.gitUrl,
@@ -1141,7 +1148,7 @@ async function _createModeC(
   opts: CreateAppOptions,
   ctx: AppContext,
   gitea: GiteaClient,
-  appsJson: string,
+  pp: string,
 ): Promise<void> {
   const { cloneStack, generateEnv, reinitGit, findFreePort } = await import('./boilerplate-manager.js');
   const { getStackById } = await import('../config/stacks.js');
@@ -1183,7 +1190,7 @@ async function _createModeC(
   await _pollHealth(healthUrlC, 120_000, job);
   setStep(job, 5, 'done');
 
-  addApp(appsJson, {
+  dbAddApp(pp, {
     name: opts.appName,
     mode: opts.mode === 'boilerplate' ? 'boilerplate' : 'new-project',
     stackId,
@@ -1198,32 +1205,29 @@ async function _createModeC(
 }
 
 export async function startApp(appName: string): Promise<void> {
-  const appsJson = resolveAppsJsonPath();
-  const apps = readApps(appsJson);
-  const app = apps.find((a) => a.name === appName);
+  const pp = resolveProjectPath();
+  const app = dbGetApp(pp, appName);
   if (!app) throw new Error(`App "${appName}" not found`);
   await execa('docker', ['compose', 'up', '-d'], { cwd: app.appDir });
-  updateApp(appsJson, appName, { status: 'running' });
+  dbUpdateApp(pp, appName, { status: 'running' });
 }
 
 export async function stopApp(appName: string): Promise<void> {
-  const appsJson = resolveAppsJsonPath();
-  const apps = readApps(appsJson);
-  const app = apps.find((a) => a.name === appName);
+  const pp = resolveProjectPath();
+  const app = dbGetApp(pp, appName);
   if (!app) throw new Error(`App "${appName}" not found`);
   await execa('docker', ['compose', 'down'], { cwd: app.appDir }).catch((e: unknown) => {
     console.warn('[stopApp] docker compose down failed:', e instanceof Error ? e.message : String(e));
   });
-  updateApp(appsJson, appName, { status: 'stopped' });
+  dbUpdateApp(pp, appName, { status: 'stopped' });
 }
 
 export async function removeApp(appName: string): Promise<void> {
-  const appsJson = resolveAppsJsonPath();
-  const apps = readApps(appsJson);
-  const app = apps.find((a) => a.name === appName);
+  const pp = resolveProjectPath();
+  const app = dbGetApp(pp, appName);
   if (!app) throw new Error(`App "${appName}" not found`);
   await execa('docker', ['compose', 'down', '--volumes'], { cwd: app.appDir }).catch((e: unknown) => {
     console.warn('[removeApp] docker compose down failed:', e instanceof Error ? e.message : String(e));
   });
-  registryRemoveApp(appsJson, appName);
+  dbRemoveApp(pp, appName);
 }

@@ -52,6 +52,27 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
   getProjectDir: jest.fn((name: string) => `/tmp/test/${name}`),
 }));
 
+const mockDbListDomainConnections = jest.fn<() => unknown[]>(() => []);
+jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', () => ({
+  listApps: jest.fn(() => []),
+  getApp: jest.fn(() => null),
+  addApp: jest.fn(),
+  updateApp: jest.fn(),
+  removeApp: jest.fn(),
+  listDomainConnections: mockDbListDomainConnections,
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: jest.fn(),
+  removeDomainConnection: jest.fn(),
+  getDeployHistory: jest.fn(() => []),
+  appendDeployHistory: jest.fn(),
+  getSetting: jest.fn(() => null),
+  setSetting: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
+}));
+
 jest.unstable_mockModule('../../../../packages/cli/src/utils/logger.js', () => ({
   logger: {
     info: jest.fn(),
@@ -131,7 +152,7 @@ async function req(
 
 function makeStateWithConnections(connections: { appName: string; subdomain: string; domain: string }[]): WizardState {
   const base = makeState();
-  base.domainConnections = connections.map((c) => ({
+  const mapped = connections.map((c) => ({
     ...c,
     hostname: `${c.subdomain}.${c.domain}`,
     tunnelId: 'tunnel-test',
@@ -140,6 +161,9 @@ function makeStateWithConnections(connections: { appName: string; subdomain: str
     connectedAt: new Date().toISOString(),
     scenario: 'cloudflare_tunnel' as const,
   }));
+  base.domainConnections = mapped;
+  // Also set up DB mock so admin-server reads connections from DB
+  mockDbListDomainConnections.mockReturnValue(mapped);
   return base;
 }
 
