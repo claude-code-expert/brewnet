@@ -31,6 +31,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
     subdomainError,
     suggestedSubdomain,
     connecting,
+    connectingMessage,
     disconnecting,
     connect,
     disconnect,
@@ -363,12 +364,24 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
         className="btn bp"
         onClick={() => void connect()}
         disabled={connectDisabled}
-        style={{ opacity: connectDisabled ? 0.5 : 1, alignSelf: 'flex-start' }}
+        style={{ opacity: connectDisabled ? 0.5 : 1, alignSelf: 'flex-end' }}
       >
         {connecting
           ? <><Loader size={14} className="spin" /> Connecting…</>
           : <><Link size={14} /> Connect</>}
       </button>
+
+      {connectingMessage && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px', borderRadius: 'var(--r)',
+          background: 'rgba(61,214,200,0.06)', border: '1px solid rgba(61,214,200,0.15)',
+          fontSize: 12, color: 'var(--teal)', animation: 'fadeIn 0.3s ease',
+        }}>
+          <Loader size={12} className="spin" />
+          {connectingMessage}
+        </div>
+      )}
 
       <HelpDrawer helpKey={helpKey} onClose={() => setHelpKey(null)} />
     </div>

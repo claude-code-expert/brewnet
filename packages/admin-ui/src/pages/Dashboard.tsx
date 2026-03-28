@@ -24,6 +24,8 @@ export function Dashboard() {
   const [tab, setTab] = useState<Tab>('services');
 
   const [quickTunnelUrl, setQuickTunnelUrl] = useState('');
+  const [domainProvider, setDomainProvider] = useState('');
+  const [zoneName, setZoneName] = useState('');
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [catalog, setCatalog] = useState<Record<string, ServiceDetail>>({});
   const [aliases, setAliases] = useState<Record<string, string>>({});
@@ -45,7 +47,11 @@ export function Dashboard() {
 
         if (configRes.status === 'fulfilled' && configRes.value.ok) {
           const d = await configRes.value.json() as ConfigResponse;
-          if (!cancelled) setQuickTunnelUrl(d.quickTunnelUrl ?? '');
+          if (!cancelled) {
+            setQuickTunnelUrl(d.quickTunnelUrl ?? '');
+            setDomainProvider(d.domainProvider ?? '');
+            setZoneName(d.zoneName ?? '');
+          }
         }
 
         if (svcRes.status === 'fulfilled' && svcRes.value.ok) {
@@ -87,8 +93,31 @@ export function Dashboard() {
       <NavHeader />
 
       <div id="content">
-        {/* Quick Tunnel URL banner */}
-        {quickTunnelUrl && (
+        {/* External access banner */}
+        {(domainProvider === 'named-tunnel' && zoneName) ? (
+          <div
+            className="a-info"
+            style={{
+              borderRadius: 'var(--r)',
+              padding: '10px 14px',
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              fontSize: 12,
+            }}
+          >
+            <span style={{ fontFamily: 'var(--mono)', color: 'var(--teal)', fontSize: 11, fontWeight: 700 }}>NAMED TUNNEL</span>
+            <a
+              href={`https://${zoneName}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontFamily: 'var(--mono)', color: 'var(--teal)', textDecoration: 'underline' }}
+            >
+              {zoneName}
+            </a>
+          </div>
+        ) : quickTunnelUrl ? (
           <div
             className="a-info"
             style={{
@@ -111,7 +140,7 @@ export function Dashboard() {
               {quickTunnelUrl}
             </a>
           </div>
-        )}
+        ) : null}
 
         {/* Tab bar */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>

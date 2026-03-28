@@ -325,6 +325,28 @@ export function setSetting(projectPath: string, key: string, value: string): voi
   `).run({ key, value });
 }
 
+/** Get all settings matching a dot-notation prefix (e.g. 'cf.' returns cf.apiToken, cf.tunnelId, …). */
+export function getSettings(projectPath: string, prefix: string): Record<string, string> {
+  const db = resolveDb(projectPath);
+  const rows = db.prepare('SELECT key, value FROM settings WHERE key LIKE ?').all(`${prefix}%`) as { key: string; value: string }[];
+  const result: Record<string, string> = {};
+  for (const r of rows) result[r.key] = r.value;
+  return result;
+}
+
+/** Bulk-set multiple settings in a single transaction. */
+export function setSettings(projectPath: string, entries: Record<string, string>): void {
+  const db = resolveDb(projectPath);
+  const stmt = db.prepare(`INSERT INTO settings (key, value) VALUES (@key, @value)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
+  const txn = db.transaction(() => {
+    for (const [key, value] of Object.entries(entries)) {
+      if (value != null && value !== '') stmt.run({ key, value });
+    }
+  });
+  txn();
+}
+
 // ---------------------------------------------------------------------------
 // Migration — JSON → DB (one-time, idempotent)
 // ---------------------------------------------------------------------------

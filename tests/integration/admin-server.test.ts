@@ -31,6 +31,7 @@ import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@je
 
 // Mock wizard/state — prevent real ~/.brewnet reads
 jest.unstable_mockModule('../../packages/cli/src/wizard/state.js', () => ({
+  discoverProjectPath: jest.fn(() => null),
   getLastProject: jest.fn(() => null),
   loadState: jest.fn(() => null),
   createState: jest.fn(),
@@ -84,6 +85,29 @@ const mockListBackups = jest.fn(() => [{ id: 'backup-001', createdAt: new Date()
 jest.unstable_mockModule('../../packages/cli/src/services/backup-manager.js', () => ({
   createBackup: mockCreateBackup,
   listBackups: mockListBackups,
+}));
+
+// Mock project-db
+jest.unstable_mockModule('../../packages/cli/src/services/project-db.js', () => ({
+  listApps: jest.fn(() => []),
+  getApp: jest.fn(() => null),
+  addApp: jest.fn(),
+  updateApp: jest.fn(),
+  removeApp: jest.fn(),
+  listDomainConnections: jest.fn(() => []),
+  getDomainConnection: jest.fn(() => null),
+  upsertDomainConnection: jest.fn(),
+  removeDomainConnection: jest.fn(),
+  getDeployHistory: jest.fn(() => []),
+  appendDeployHistory: jest.fn(),
+  getSetting: jest.fn(() => null),
+  setSetting: jest.fn(),
+  getSettings: jest.fn(() => ({})),
+  setSettings: jest.fn(),
+  getDb: jest.fn(),
+  closeDb: jest.fn(),
+  _setDbForTest: jest.fn(),
+  migrateFromJson: jest.fn(() => ({ migrated: [] })),
 }));
 
 // ---------------------------------------------------------------------------

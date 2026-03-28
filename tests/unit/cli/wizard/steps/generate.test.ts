@@ -134,9 +134,14 @@ jest.unstable_mockModule('node:fs', () => ({
   copyFileSync: jest.fn(),
   readdirSync: jest.fn(() => []),
   chmodSync: jest.fn(),
-  statSync: jest.fn(() => ({ isDirectory: () => false, isFile: () => true, size: 0 })),
+  statSync: jest.fn(() => ({ isDirectory: () => false, isFile: () => true, size: 0, mtimeMs: Date.now() })),
   rmSync: jest.fn(),
+  renameSync: jest.fn(),
+  truncateSync: jest.fn(),
+  unlinkSync: jest.fn(),
+  appendFileSync: jest.fn(),
   createReadStream: jest.fn(),
+  createWriteStream: jest.fn(() => ({ write: jest.fn(), end: jest.fn(), on: jest.fn() })),
 }));
 
 // ---------------------------------------------------------------------------

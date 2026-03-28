@@ -21,7 +21,7 @@ import { addService, removeService } from './service-manager.js';
 import { createBackup, listBackups } from './backup-manager.js';
 import { getServiceDefinition, SERVICE_REGISTRY } from '../config/services.js';
 // SERVICE_DETAIL_MAP inlined from deleted status-page.ts (T044/T045)
-import { getLastProject, loadState } from '../wizard/state.js';
+import { getLastProject, loadState, discoverProjectPath } from '../wizard/state.js';
 import { logger } from '../utils/logger.js';
 import { DomainManager } from './domain-manager.js';
 import { verifyToken } from './cloudflare-client.js';
@@ -30,7 +30,7 @@ import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
 import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
-import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getDb } from './project-db.js';
+import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getSettings, setSettings, getDb } from './project-db.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 import { getStackById } from '../config/stacks.js';
@@ -689,8 +689,8 @@ async function handleGetServices(
       // Compute external URL from Traefik PathPrefix labels on the container
       let externalUrl: string | null = null;
       const qtUrl = quickTunnelUrl;
-      const tunnelMode = wizardState?.domain?.cloudflare?.tunnelMode ?? 'none';
-      const namedDomain = wizardState?.domain?.cloudflare?.zoneName || wizardState?.domain?.name || '';
+      const tunnelMode = getSetting(_projectPath, 'cf.tunnelMode') ?? wizardState?.domain?.cloudflare?.tunnelMode ?? 'none';
+      const namedDomain = getSetting(_projectPath, 'cf.zoneName') ?? wizardState?.domain?.cloudflare?.zoneName ?? getSetting(_projectPath, 'domain.name') ?? '';
 
       if (tunnelMode === 'named' && namedDomain) {
         // Named Tunnel: built-in services use fixed subdomains
@@ -745,23 +745,43 @@ async function handleGetServices(
         ? `${composeProject}-${composeService === 'frontend' ? 'front' : 'back'}`
         : (def?.name ?? composeService);
 
+      // Enrich with app DB data — registered apps have authoritative URLs
+      const dbApps = dbListApps(_projectPath);
+      const matchedApp = dbApps.find((a) => {
+        // Match by appDir containing the compose project working dir, or by name variants
+        const nameVariants = [composeService, serviceId, composeProject];
+        if (nameVariants.includes(a.name)) return true;
+        if (a.appDir && workingDir && a.appDir === workingDir) return true;
+        if (a.appDir && workingDir && workingDir.startsWith(a.appDir)) return true;
+        return false;
+      });
+
+      const appConn = matchedApp
+        ? dbListDomainConnections(_projectPath).find((c) => c.appName === matchedApp.name)
+        : null;
+
+      // Override name and URLs from app DB when available
+      const finalName = matchedApp ? matchedApp.name : serviceName;
+      const finalUrl = matchedApp && port && !NO_HTTP_SERVICES.has(composeService)
+        ? `http://localhost:${port}`
+        : (port && !NO_HTTP_SERVICES.has(composeService)
+          ? urlMap[composeService] ?? `http://localhost:${port}${localBasePath}`
+          : null);
+      const finalExternalUrl = appConn
+        ? `https://${appConn.hostname}`
+        : externalUrl;
+
       services.push({
         id: serviceId,
-        name: serviceName,
+        name: finalName,
         type: def ? inferType(composeService) : 'unknown',
         status,
         cpu: '—',
         memory: '—',
         uptime: c.Status?.startsWith('Up') ? c.Status.replace(/^Up /, '') : '—',
         port: port ?? null,
-        // Show a local URL for any service with a public HTTP port.
-        // Database/queue services (non-HTTP) are excluded via NO_HTTP_SERVICES.
-        // urlMap overrides apply first (e.g. Traefik-path services like gitea → /git).
-        // localBasePath: Next.js basePath stacks serve at /apps/{name} even locally.
-        url: port && !NO_HTTP_SERVICES.has(composeService)
-          ? urlMap[composeService] ?? `http://localhost:${port}${localBasePath}`
-          : null,
-        externalUrl,
+        url: finalUrl,
+        externalUrl: finalExternalUrl,
         removable: !REQUIRED_SERVICES.has(composeService),
         stackId,
       });
@@ -1032,23 +1052,45 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 } {
   const port = options.port ?? 8088;
 
-  // Resolve project path and wizard state.
-  // Always load wizard state from the last project — options.projectPath only
-  // overrides the filesystem path, not whether state is loaded.
-  let projectPath = options.projectPath ?? process.cwd();
-  let wizardState: WizardState | null = null;
-  const last = getLastProject();
-  if (last) {
-    const state = loadState(last);
-    if (state) {
-      wizardState = state;
-      // Only fall back to state.projectPath when caller didn't supply one
-      if (!options.projectPath && state.projectPath) projectPath = state.projectPath;
-    }
-  }
+  // Resolve project path: discoverProjectPath() → CLI arg → cwd
+  let projectPath = discoverProjectPath(options.projectPath) ?? options.projectPath ?? process.cwd();
   // Expand leading ~ — Node.js fs APIs do not interpret tilde as home directory
   if (projectPath.startsWith('~/') || projectPath === '~') {
     projectPath = join(homedir(), projectPath.slice(1));
+  }
+
+  // Load credentials: DB-first → selections.json fallback → secrets file fallback
+  let adminUsername = '';
+  let adminPassword = '';
+  try {
+    adminUsername = getSetting(projectPath, 'admin.username') ?? '';
+    adminPassword = getSetting(projectPath, 'admin.password') ?? '';
+  } catch { /* DB not initialized yet */ }
+
+  // Legacy fallback: selections.json
+  let wizardState: WizardState | null = null;
+  if (!adminPassword) {
+    const last = getLastProject();
+    if (last) {
+      const state = loadState(last);
+      if (state) {
+        wizardState = state;
+        adminPassword = state.admin?.password ?? '';
+        adminUsername = state.admin?.username ?? '';
+        if (!options.projectPath && state.projectPath) {
+          const pp = state.projectPath;
+          projectPath = pp.startsWith('~/') ? join(homedir(), pp.slice(1)) : pp;
+        }
+      }
+    }
+  }
+
+  // Secrets file fallback
+  if (!adminPassword) {
+    const secretsPath = join(projectPath, 'secrets', 'admin_password');
+    if (existsSync(secretsPath)) {
+      adminPassword = readFileSync(secretsPath, 'utf-8').trim();
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1092,6 +1134,38 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     logger.warn('admin-server', `Gitea config migration failed (non-fatal): ${giteaMigErr instanceof Error ? giteaMigErr.message : giteaMigErr}`);
   }
 
+  // Migrate admin/CF credentials from wizardState → DB (one-time)
+  try {
+    if (!getSetting(projectPath, 'admin.password') && (adminPassword || wizardState)) {
+      const entries: Record<string, string> = {};
+      if (adminUsername) entries['admin.username'] = adminUsername;
+      if (adminPassword) entries['admin.password'] = adminPassword;
+      if (wizardState?.projectName) entries['project.name'] = wizardState.projectName;
+      if (wizardState?.projectPath) entries['project.path'] = wizardState.projectPath;
+      if (wizardState?.domain?.provider) entries['domain.provider'] = wizardState.domain.provider;
+      if (wizardState?.domain?.name) entries['domain.name'] = wizardState.domain.name;
+      const cf = wizardState?.domain?.cloudflare;
+      if (cf) {
+        for (const [k, v] of Object.entries({
+          'cf.apiToken': cf.apiToken, 'cf.accountId': cf.accountId,
+          'cf.tunnelId': cf.tunnelId, 'cf.tunnelToken': cf.tunnelToken,
+          'cf.tunnelName': cf.tunnelName, 'cf.tunnelMode': cf.tunnelMode,
+          'cf.zoneId': cf.zoneId, 'cf.zoneName': cf.zoneName,
+          'cf.quickTunnelUrl': cf.quickTunnelUrl,
+          'cf.enabled': cf.enabled ? 'true' : '',
+        })) {
+          if (v) entries[k] = v;
+        }
+      }
+      if (Object.keys(entries).length > 0) {
+        setSettings(projectPath, entries);
+        logger.info('admin-server', `Runtime state migrated to DB: ${Object.keys(entries).join(', ')}`);
+      }
+    }
+  } catch (migErr) {
+    logger.warn('admin-server', `Runtime state migration failed: ${migErr}`);
+  }
+
   // Run log rotation eagerly on server start, then every hour
   const _logsDir = join(homedir(), '.brewnet', 'logs');
   try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
@@ -1099,9 +1173,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     try { runRotation(_logsDir, projectPath); } catch { /* non-critical */ }
   }, 60 * 60 * 1000);
 
-  // Build dashboard config from wizard state (credentials resolved lazily if needed)
-  const username = wizardState?.admin?.username ?? '';
-  const password = wizardState?.admin?.password ?? '';
+  // Build dashboard config from DB-first credentials (already resolved above)
 
   // Mask helpers
   const maskUser = (u: string) => (u.length > 2 ? u.slice(0, -2) + '**' : '**');
@@ -1131,13 +1203,22 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     } catch { /* DB not yet initialized */ }
   } catch { /* non-fatal */ }
 
+  // Load CF config from DB with wizardState fallback
+  const cfFromDb = (() => { try { return getSettings(projectPath, 'cf.'); } catch { return {} as Record<string, string>; } })();
+
+  // Derive domainProvider from actual tunnel mode — tunnelMode is authoritative
+  const cfTunnelMode = cfFromDb['cf.tunnelMode'] ?? wizardState?.domain?.cloudflare?.tunnelMode ?? '';
+  const resolvedProvider = cfTunnelMode === 'named'
+    ? 'named-tunnel'
+    : (getSetting(projectPath, 'domain.provider') ?? wizardState?.domain?.provider ?? 'local');
+
   const dashConfig: DashboardConfig = {
-    adminUsername: username ? maskUser(username) : '**',
-    passwordHint: password ? maskPass(password) : '********',
-    domainProvider: wizardState?.domain?.provider ?? 'local',
-    quickTunnelUrl: wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
-    zoneName: wizardState?.domain?.cloudflare?.zoneName ?? '',
-    tunnelId: wizardState?.domain?.cloudflare?.tunnelId ?? '',
+    adminUsername: adminUsername ? maskUser(adminUsername) : '**',
+    passwordHint: adminPassword ? maskPass(adminPassword) : '********',
+    domainProvider: resolvedProvider,
+    quickTunnelUrl: cfFromDb['cf.quickTunnelUrl'] ?? wizardState?.domain?.cloudflare?.quickTunnelUrl ?? '',
+    zoneName: cfFromDb['cf.zoneName'] ?? wizardState?.domain?.cloudflare?.zoneName ?? '',
+    tunnelId: cfFromDb['cf.tunnelId'] ?? wizardState?.domain?.cloudflare?.tunnelId ?? '',
   };
 
   // Compute runtime URL map — extends static TRAEFIK_PATH_SERVICES.
@@ -1183,7 +1264,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
    * Lazy credential detection from running Nextcloud container env vars.
    * Called once on first dashboard request when wizard state is unavailable.
    */
-  let credentialsDetected = !!(username && password);
+  let credentialsDetected = !!(adminUsername && adminPassword);
   async function detectCredentials(): Promise<void> {
     if (credentialsDetected) return;
     credentialsDetected = true; // prevent repeated attempts
@@ -1296,9 +1377,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (parts[1] === 'health' && req.method === 'GET') {
           // When a password is configured, validate it so PasswordGate can
           // use this endpoint as the real auth check.
-          if (wizardState?.admin?.password) {
+          if (adminPassword) {
             const provided = req.headers['x-admin-password'] as string | undefined;
-            if (!provided || provided !== wizardState.admin.password) {
+            if (!provided || provided !== adminPassword) {
               json(res, 401, { error: 'Unauthorized', message: 'Admin password required' });
               return;
             }
@@ -1341,12 +1422,21 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               tables: tables.map((t) => t.name),
               data: dump,
               _meta: {
-                fileStorage: [
-                  { path: '~/.brewnet/config.json', purpose: 'lastProject pointer', risk: 'low — recreated by init' },
-                  { path: '~/.brewnet/gitea-token', purpose: 'Gitea API token (plain text, chmod 600)', risk: 'medium — credential, not in DB for security' },
-                  { path: '~/.brewnet/projects/<name>/selections.json', purpose: 'Wizard state (admin creds, CF config, server selections)', risk: 'medium — contains secrets, recreated by init' },
-                  { path: '<projectPath>/.brewnet-boilerplate.json', purpose: 'Wizard-era boilerplate metadata', risk: 'low — read-only after init' },
-                  { path: '<projectPath>/.brewnet-manifest.json', purpose: 'Install manifest for uninstall', risk: 'low — read-only after init' },
+                note: 'All runtime-critical data is stored in this DB (settings table). ~/.brewnet/ files are legacy fallbacks only.',
+                dbManaged: [
+                  'admin.username, admin.password — admin credentials',
+                  'project.name, project.path — project identity',
+                  'cf.* — Cloudflare tunnel/DNS config',
+                  'gitea.* — Gitea API cache',
+                  'domain.* — domain provider config',
+                  'apps table — app registry',
+                  'domain_connections table — external domain mappings',
+                  'deploy_history table — deployment records',
+                ],
+                legacyFiles: [
+                  { path: '~/.brewnet/config.json', purpose: 'lastProject pointer (legacy fallback, not required)', risk: 'none — server discovers project via filesystem scan' },
+                  { path: '~/.brewnet/gitea-token', purpose: 'Gitea API bearer token (chmod 600)', risk: 'low — regenerated on auth failure' },
+                  { path: '<projectPath>/.brewnet-boilerplate.json', purpose: 'Wizard boilerplate metadata (read-only)', risk: 'none' },
                 ],
               },
             });
@@ -1357,16 +1447,22 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         }
 
         // GET /api/config — dashboard bootstrap data for React SPA
+        // Always read from DB for fresh values (tunnel mode may change at runtime)
         if (parts[1] === 'config' && req.method === 'GET') {
           await detectQuickTunnelUrl();
           await detectCredentials();
+          const freshCf = getSettings(projectPath, 'cf.');
+          const freshTunnelMode = freshCf['cf.tunnelMode'] ?? '';
+          const freshProvider = freshTunnelMode === 'named'
+            ? 'named-tunnel'
+            : dashConfig.domainProvider;
           json(res, 200, {
             adminUsername: dashConfig.adminUsername,
             passwordHint: dashConfig.passwordHint,
-            domainProvider: dashConfig.domainProvider,
-            quickTunnelUrl: dashConfig.quickTunnelUrl,
-            zoneName: dashConfig.zoneName,
-            tunnelId: dashConfig.tunnelId,
+            domainProvider: freshProvider,
+            quickTunnelUrl: freshCf['cf.quickTunnelUrl'] ?? dashConfig.quickTunnelUrl,
+            zoneName: freshCf['cf.zoneName'] ?? dashConfig.zoneName,
+            tunnelId: freshCf['cf.tunnelId'] ?? dashConfig.tunnelId,
           });
           return;
         }
@@ -1797,8 +1893,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             // Step 2: POST login form with admin credentials
             const formBody = new URLSearchParams({
               _csrf: csrfField,
-              user_name: username,
-              password: password,
+              user_name: adminUsername,
+              password: adminPassword,
               remember: 'on',
             });
             const loginRes = await fetch(`${giteaBase}/user/login`, {
@@ -1969,35 +2065,35 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         if (parts[1] === 'domain') {
           // GET /api/domain/list — read-only, no auth needed (local admin server)
           if (req.method === 'GET' && parts[2] === 'list') {
-            await handleDomainList(res, wizardState);
+            await handleDomainList(res, wizardState, projectPath);
             return;
           }
           if (req.method === 'GET' && parts[2] === 'apps') {
-            handleDomainApps(res, wizardState);
+            handleDomainApps(res, wizardState, projectPath);
             return;
           }
           // POST /api/domain/connect — no auth needed (apps-page uses this; server is localhost-only)
           if (req.method === 'POST' && parts[2] === 'connect') {
-            await handleDomainConnect(res, body, wizardState);
+            await handleDomainConnect(res, body, wizardState, projectPath);
             return;
           }
           // Mutating operations that remain auth-gated
-          if (!checkAdminAuth(req, res, wizardState)) return;
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'DELETE' && parts[2] === 'disconnect' && parts[3]) {
-            await handleDomainDisconnect(res, parts[3], wizardState);
+            await handleDomainDisconnect(res, parts[3], wizardState, projectPath);
             return;
           }
           if (req.method === 'GET' && parts[2] === 'status' && parts[3]) {
-            await handleDomainStatus(res, parts[3], wizardState);
+            await handleDomainStatus(res, parts[3], wizardState, projectPath);
             return;
           }
         }
 
         // ── Cloudflare API (006-domain-settings) ───────────────────
         if (parts[1] === 'cloudflare') {
-          if (!checkAdminAuth(req, res, wizardState)) return;
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'GET' && parts[2] === 'zones') {
-            await handleCloudflareZones(res, wizardState);
+            await handleCloudflareZones(res, wizardState, projectPath);
             return;
           }
           if (req.method === 'POST' && parts[2] === 'tunnel') {
@@ -2008,14 +2104,14 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // ── Settings API (T037-T038) ────────────────────────────────
         if (parts[1] === 'settings') {
-          if (!checkAdminAuth(req, res, wizardState)) return;
+          if (!checkAdminAuth(req, res, adminPassword)) return;
 
           if (req.method === 'GET' && parts[2] === 'cloudflare') {
-            handleSettingsCloudflareGet(res, wizardState);
+            handleSettingsCloudflareGet(res, wizardState, projectPath);
             return;
           }
           if (req.method === 'PUT' && parts[2] === 'cloudflare') {
-            await handleSettingsCloudflarePut(res, body, wizardState);
+            await handleSettingsCloudflarePut(res, body, wizardState, projectPath);
             return;
           }
         }
@@ -2058,14 +2154,14 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 function checkAdminAuth(
   req: IncomingMessage,
   res: ServerResponse,
-  state: WizardState | null,
+  password: string,
 ): boolean {
-  if (!state?.admin?.password) {
+  if (!password) {
     json(res, 401, { error: 'Unauthorized', message: 'Admin password not configured' });
     return false;
   }
   const provided = req.headers['x-admin-password'] as string | undefined;
-  if (!provided || provided !== state.admin.password) {
+  if (!provided || provided !== password) {
     json(res, 401, { error: 'Unauthorized', message: 'Admin password required for this operation' });
     return false;
   }
@@ -2079,30 +2175,37 @@ function checkAdminAuth(
 async function handleDomainList(
   res: ServerResponse,
   state: WizardState | null,
+  projectPath: string,
 ): Promise<void> {
-  if (!state) {
+  const projectName = state?.projectName ?? getSetting(projectPath, 'project.name') ?? '';
+  if (!projectName) {
     json(res, 200, { connections: [], tunnel: null, credentialsConfigured: false });
     return;
   }
 
   try {
-    const mgr = new DomainManager(state.projectName);
+    const mgr = new DomainManager(projectName, projectPath);
     const connections = mgr.list().map((c) => ({
       ...c,
       externalUrl: `https://${c.hostname}`,
     }));
 
     let tunnel = null;
-    const cf = state.domain.cloudflare;
-    if (cf.tunnelId && cf.apiToken && cf.accountId) {
+    const cfDb = getSettings(projectPath, 'cf.');
+    const cfApiToken = state?.domain?.cloudflare?.apiToken ?? cfDb['cf.apiToken'] ?? '';
+    const cfAccountId = state?.domain?.cloudflare?.accountId ?? cfDb['cf.accountId'] ?? '';
+    const cfTunnelId = state?.domain?.cloudflare?.tunnelId ?? cfDb['cf.tunnelId'] ?? '';
+    const cfTunnelName = state?.domain?.cloudflare?.tunnelName ?? cfDb['cf.tunnelName'] ?? '';
+    const cfZoneId = state?.domain?.cloudflare?.zoneId ?? cfDb['cf.zoneId'] ?? '';
+    if (cfTunnelId && cfApiToken && cfAccountId) {
       try {
         const { getTunnelHealth } = await import('./cloudflare-client.js');
-        const health = await getTunnelHealth(cf.apiToken, cf.accountId, cf.tunnelId);
-        tunnel = { ...health, tunnelName: cf.tunnelName, tunnelId: cf.tunnelId };
+        const health = await getTunnelHealth(cfApiToken, cfAccountId, cfTunnelId);
+        tunnel = { ...health, tunnelName: cfTunnelName, tunnelId: cfTunnelId };
       } catch { /* leave null */ }
     }
 
-    const credentialsConfigured = !!(cf.apiToken && cf.accountId && cf.zoneId && cf.tunnelId);
+    const credentialsConfigured = !!(cfApiToken && cfAccountId && cfZoneId && cfTunnelId);
 
     json(res, 200, { connections, tunnel, credentialsConfigured });
   } catch (err) {
@@ -2113,14 +2216,16 @@ async function handleDomainList(
 function handleDomainApps(
   res: ServerResponse,
   state: WizardState | null,
+  projectPath: string,
 ): void {
-  if (!state) {
+  const projectName = state?.projectName ?? getSetting(projectPath, 'project.name') ?? '';
+  if (!projectName) {
     json(res, 200, { apps: [] });
     return;
   }
 
   try {
-    const mgr = new DomainManager(state.projectName);
+    const mgr = new DomainManager(projectName, projectPath);
     const apps = mgr.getConnectableApps();
     json(res, 200, { apps });
   } catch (err) {
@@ -2132,9 +2237,11 @@ async function handleDomainConnect(
   res: ServerResponse,
   body: string,
   state: WizardState | null,
+  projectPath: string,
 ): Promise<void> {
-  if (!state) {
-    json(res, 500, { success: false, error: 'No project state' });
+  const projectName = state?.projectName ?? getSetting(projectPath, 'project.name') ?? '';
+  if (!projectName) {
+    json(res, 500, { success: false, error: 'No project configured. Please run brewnet init first.' });
     return;
   }
 
@@ -2152,14 +2259,12 @@ async function handleDomainConnect(
     return;
   }
 
-  // Validate subdomain format — "@" is the apex/root domain identifier, bypass DNS label check
   if (subdomain !== '@' && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) {
     json(res, 400, { success: false, error: 'INVALID_SUBDOMAIN', message: 'Subdomain must be a valid DNS label' });
     return;
   }
 
-  // Phase 1: local conflict check — fast, no API call needed
-  const localConflict = dbListDomainConnections(state.projectPath).find(
+  const localConflict = dbListDomainConnections(projectPath).find(
     (c) => c.subdomain === subdomain && c.domain === domain && c.appName !== appName,
   );
   if (localConflict) {
@@ -2172,38 +2277,47 @@ async function handleDomainConnect(
     return;
   }
 
+  // SSE streaming — send step progress in real time
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.flushHeaders?.();
+
+  const sendEvent = (data: Record<string, unknown>) => {
+    if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
   try {
-    const mgr = new DomainManager(state.projectName);
+    const mgr = new DomainManager(projectName, projectPath);
     const result = await mgr.connect(appName, subdomain, domain, {
-      onLog: (line) => writeDomainLog(appName, line.replace('[domain-connect] ', '')),
+      onLog: (line) => {
+        writeDomainLog(appName, line.replace('[domain-connect] ', ''));
+        // Parse step progress from log lines and send as SSE events
+        const clean = line.replace('[domain-connect] ', '');
+        if (clean.startsWith('step ')) {
+          const stepMatch = clean.match(/^step (\d+)\/(\d+): (.+)/);
+          if (stepMatch) {
+            sendEvent({ type: 'step', step: parseInt(stepMatch[1], 10), total: parseInt(stepMatch[2], 10), message: stepMatch[3] });
+          } else if (clean.includes(' OK')) {
+            sendEvent({ type: 'step_done', message: clean });
+          }
+        }
+      },
     });
 
     if (!result.success) {
-      // Map CNAME_CONFLICT (from Cloudflare DNS check) to SUBDOMAIN_CONFLICT_EXTERNAL
-      if (result.error === 'CNAME_CONFLICT') {
-        json(res, 409, {
-          success: false,
-          error: 'SUBDOMAIN_CONFLICT_EXTERNAL',
-          message: `Subdomain "${subdomain}.${domain}" already has a DNS record in Cloudflare (not created by Brewnet)`,
-          steps: result.steps,
-        });
-        return;
-      }
-      const statusCode = result.error?.startsWith('APP_NOT_RUNNING') ? 503 : 400;
-      json(res, statusCode, { success: false, error: result.error, message: result.error, steps: result.steps });
-      return;
+      const error = result.error === 'CNAME_CONFLICT' ? 'SUBDOMAIN_CONFLICT_EXTERNAL' : result.error;
+      sendEvent({ type: 'result', success: false, error, message: result.error, steps: result.steps });
+    } else {
+      sendEvent({ type: 'result', success: true, hostname: result.hostname, externalUrl: result.externalUrl, steps: result.steps });
     }
-
-    // Domain connections now live in DB — no in-memory sync needed
-
-    json(res, 200, {
-      success: true,
-      hostname: result.hostname,
-      externalUrl: result.externalUrl,
-      steps: result.steps,
-    });
   } catch (err) {
-    json(res, 500, { success: false, error: String(err) });
+    sendEvent({ type: 'result', success: false, error: String(err) });
+  } finally {
+    if (!res.writableEnded) res.end();
   }
 }
 
@@ -2211,14 +2325,16 @@ async function handleDomainDisconnect(
   res: ServerResponse,
   appName: string,
   state: WizardState | null,
+  projectPath: string,
 ): Promise<void> {
-  if (!state) {
-    json(res, 500, { success: false, error: 'No project state' });
+  const projectName = state?.projectName ?? getSetting(projectPath, 'project.name') ?? '';
+  if (!projectName) {
+    json(res, 500, { success: false, error: 'No project configured.' });
     return;
   }
 
   try {
-    const mgr = new DomainManager(state.projectName);
+    const mgr = new DomainManager(projectName, projectPath);
     const result = await mgr.disconnect(appName);
 
     if (!result.success) {
@@ -2244,14 +2360,16 @@ async function handleDomainStatus(
   res: ServerResponse,
   appName: string,
   state: WizardState | null,
+  projectPath: string,
 ): Promise<void> {
-  if (!state) {
-    json(res, 404, { success: false, error: 'No project state' });
+  const projectName = state?.projectName ?? getSetting(projectPath, 'project.name') ?? '';
+  if (!projectName) {
+    json(res, 404, { success: false, error: 'No project configured.' });
     return;
   }
 
   try {
-    const mgr = new DomainManager(state.projectName);
+    const mgr = new DomainManager(projectName, projectPath);
     const statuses = await mgr.status(appName);
 
     if (statuses.length === 0) {
@@ -2272,13 +2390,9 @@ async function handleDomainStatus(
 async function handleCloudflareZones(
   res: ServerResponse,
   state: WizardState | null,
+  projectPath: string,
 ): Promise<void> {
-  if (!state) {
-    json(res, 400, { success: false, error: 'NO_TOKEN', message: 'Cloudflare API token not configured. Complete Step 1 first.' });
-    return;
-  }
-
-  const apiToken = state.domain.cloudflare.apiToken;
+  const apiToken = state?.domain?.cloudflare?.apiToken ?? getSetting(projectPath, 'cf.apiToken') ?? '';
   if (!apiToken) {
     json(res, 400, { success: false, error: 'NO_TOKEN', message: 'Cloudflare API token not configured. Complete Step 1 first.' });
     return;
@@ -2291,12 +2405,16 @@ async function handleCloudflareZones(
     // Extract accountId from the first zone (requires only Zone:Read).
     // This ensures accountId is set before tunnel creation even when
     // Account:Read permission is absent and getAccounts() returns [].
-    if (!state.domain.cloudflare.accountId && zones.length > 0) {
+    const existingAccountId = state?.domain?.cloudflare?.accountId ?? getSetting(projectPath, 'cf.accountId') ?? '';
+    if (!existingAccountId && zones.length > 0) {
       const firstAccountId = zones[0]?.accountId;
       if (firstAccountId) {
-        state.domain.cloudflare.accountId = firstAccountId;
-        const { saveState: save } = await import('../wizard/state.js');
-        save(state);
+        if (state) {
+          state.domain.cloudflare.accountId = firstAccountId;
+          const { saveState: save } = await import('../wizard/state.js');
+          save(state);
+        }
+        setSetting(projectPath, 'cf.accountId', firstAccountId);
       }
     }
 
@@ -2325,10 +2443,8 @@ async function handleCreateTunnel(
   state: WizardState | null,
   projectPath: string,
 ): Promise<void> {
-  if (!state) {
-    json(res, 400, { success: false, error: 'CREDENTIALS_INCOMPLETE', message: 'API token and zone must be configured before creating a tunnel.' });
-    return;
-  }
+  // DB-first: load CF credentials from DB, fall back to state
+  const cfDb = getSettings(projectPath, 'cf.');
 
   let parsed: { tunnelName?: string };
   try {
@@ -2344,38 +2460,50 @@ async function handleCreateTunnel(
     return;
   }
 
-  const cf = state.domain.cloudflare;
-  if (!cf.apiToken || !cf.accountId || !cf.zoneId) {
+  const cfApiToken = cfDb['cf.apiToken'] ?? state?.domain?.cloudflare?.apiToken ?? '';
+  const cfAccountId = cfDb['cf.accountId'] ?? state?.domain?.cloudflare?.accountId ?? '';
+  const cfZoneId = cfDb['cf.zoneId'] ?? state?.domain?.cloudflare?.zoneId ?? '';
+  const cfZoneName = cfDb['cf.zoneName'] ?? state?.domain?.cloudflare?.zoneName ?? '';
+
+  if (!cfApiToken || !cfAccountId || !cfZoneId) {
     json(res, 400, { success: false, error: 'CREDENTIALS_INCOMPLETE', message: 'API token and zone must be configured before creating a tunnel.' });
     return;
   }
 
   try {
     const { createTunnel: cfCreateTunnel } = await import('./cloudflare-client.js');
-    const result = await cfCreateTunnel(cf.apiToken, cf.accountId, tunnelName.trim());
+    const result = await cfCreateTunnel(cfApiToken, cfAccountId, tunnelName.trim());
 
-    const { saveState: save } = await import('../wizard/state.js');
-    state.domain.cloudflare.tunnelId = result.tunnelId;
-    state.domain.cloudflare.tunnelToken = result.tunnelToken;
-    state.domain.cloudflare.tunnelName = tunnelName.trim();
-    state.domain.cloudflare.tunnelMode = 'named';
-    state.domain.cloudflare.enabled = true;
-    save(state);
-
-    // Also update state.domain.name to the zone name so Named Tunnel subdomain
-    // URLs (git.<zone>, cloud.<zone>, etc.) are derived from the correct base domain.
-    if (cf.zoneName) {
-      state.domain.name = cf.zoneName;
+    // Update in-memory state if available
+    if (state) {
+      const { saveState: save } = await import('../wizard/state.js');
+      state.domain.cloudflare.tunnelId = result.tunnelId;
+      state.domain.cloudflare.tunnelToken = result.tunnelToken;
+      state.domain.cloudflare.tunnelName = tunnelName.trim();
+      state.domain.cloudflare.tunnelMode = 'named';
+      state.domain.cloudflare.enabled = true;
+      if (cfZoneName) state.domain.name = cfZoneName;
       save(state);
     }
 
-    const zoneName = cf.zoneName;
+    // Always sync to DB (primary store)
+    setSettings(projectPath, {
+      'cf.tunnelId': result.tunnelId,
+      'cf.tunnelToken': result.tunnelToken,
+      'cf.tunnelName': tunnelName.trim(),
+      'cf.tunnelMode': 'named',
+      'cf.enabled': 'true',
+      'domain.provider': 'named-tunnel',
+      ...(cfZoneName ? { 'domain.name': cfZoneName } : {}),
+    });
+
+    const zoneName = cfZoneName;
 
     // Normalize gitea-config.json to local URL — admin server always uses Traefik proxy,
     // not the external Named Tunnel URL which is unavailable until tunnel is fully active.
     try {
       const { saveGiteaConfig } = await import('./app-manager.js');
-      const adminUsername = (state.admin as { username?: string } | undefined)?.username ?? 'admin';
+      const adminUsername = state?.admin?.username ?? getSetting(projectPath, 'admin.username') ?? 'admin';
       saveGiteaConfig('http://localhost/git', adminUsername);
       logger.info('tunnel', `[${tunnelName}] gitea-config.json normalized → http://localhost/git`);
     } catch (e) {
@@ -2420,11 +2548,12 @@ async function handleCreateTunnel(
       }
 
       // Configure Cloudflare ingress rules for all active built-in services
-      if (cf.apiToken && cf.accountId && cf.tunnelId && zoneName) {
+      const minState = state ?? { servers: { webServer: { enabled: true, service: 'traefik' }, gitServer: { enabled: true, service: 'gitea', port: 3000 } } } as unknown as WizardState;
+      if (cfApiToken && cfAccountId && result.tunnelId && zoneName) {
         try {
           const { configureTunnelIngress, getActiveServiceRoutes } = await import('./cloudflare-client.js');
-          const routes = getActiveServiceRoutes(state).map((r) => ({ ...r, domain: zoneName }));
-          await configureTunnelIngress(cf.apiToken, cf.accountId, cf.tunnelId, zoneName, routes);
+          const routes = getActiveServiceRoutes(minState).map((r) => ({ ...r, domain: zoneName }));
+          await configureTunnelIngress(cfApiToken, cfAccountId, result.tunnelId, zoneName, routes);
           steps.push({ step: 'ingress_configured', success: true, services: routes.map((r) => r.subdomain) });
           logger.info('tunnel', `[${tunnelName}] ingress configured for: ${routes.map((r) => r.subdomain).join(', ')}`);
         } catch (e) {
@@ -2435,12 +2564,12 @@ async function handleCreateTunnel(
 
         // Create DNS CNAME records for each active built-in service (per-service, non-fatal)
         const { createDnsRecord, getActiveServiceRoutes: getRoutes } = await import('./cloudflare-client.js');
-        const dnsRoutes = getRoutes(state);
+        const dnsRoutes = getRoutes(minState);
         const dnsResults: string[] = [];
         const dnsFailed: string[] = [];
         for (const route of dnsRoutes) {
           try {
-            await createDnsRecord(cf.apiToken, cf.zoneId, cf.tunnelId, route.subdomain, zoneName);
+            await createDnsRecord(cfApiToken, cfZoneId, result.tunnelId, route.subdomain, zoneName);
             dnsResults.push(route.subdomain);
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -2524,13 +2653,20 @@ async function handleCreateTunnel(
 function handleSettingsCloudflareGet(
   res: ServerResponse,
   state: WizardState | null,
+  projectPath: string,
 ): void {
-  if (!state) {
-    json(res, 200, { configured: false });
-    return;
-  }
+  // DB-first: read CF config from DB, fall back to wizardState
+  const cfDb = getSettings(projectPath, 'cf.');
+  const cfState = state?.domain?.cloudflare;
 
-  const cf = state.domain.cloudflare;
+  const cf = {
+    apiToken: cfDb['cf.apiToken'] ?? cfState?.apiToken ?? '',
+    accountId: cfDb['cf.accountId'] ?? cfState?.accountId ?? '',
+    zoneId: cfDb['cf.zoneId'] ?? cfState?.zoneId ?? '',
+    zoneName: cfDb['cf.zoneName'] ?? cfState?.zoneName ?? '',
+    tunnelId: cfDb['cf.tunnelId'] ?? cfState?.tunnelId ?? '',
+    tunnelName: cfDb['cf.tunnelName'] ?? cfState?.tunnelName ?? '',
+  };
   const mask = (s: string | undefined) => !s ? 'not set' : s.length > 6 ? s.slice(0, 3) + '***' + s.slice(-3) : '***set***';
 
   json(res, 200, {
@@ -2542,7 +2678,7 @@ function handleSettingsCloudflareGet(
     tunnelName: cf.tunnelName || '',
     apiTokenSet: !!cf.apiToken,
     apiTokenValid: !!cf.apiToken, // Validated on save, assumed valid if set
-    projectName: state.projectName || '',
+    projectName: state?.projectName ?? getSetting(projectPath, 'project.name') ?? '',
   });
 }
 
@@ -2550,12 +2686,8 @@ async function handleSettingsCloudflarePut(
   res: ServerResponse,
   body: string,
   state: WizardState | null,
+  projectPath: string,
 ): Promise<void> {
-  if (!state) {
-    json(res, 500, { success: false, error: 'No project state' });
-    return;
-  }
-
   let parsed: { apiToken?: string; accountId?: string; zoneId?: string; tunnelId?: string };
   try {
     parsed = JSON.parse(body);
@@ -2566,7 +2698,8 @@ async function handleSettingsCloudflarePut(
 
   const { accountId, zoneId, tunnelId } = parsed;
   // Allow zone/tunnel saves without re-sending the token when it's already stored in memory
-  const apiToken = parsed.apiToken || state.domain.cloudflare.apiToken;
+  const existingToken = state?.domain?.cloudflare?.apiToken ?? getSetting(projectPath, 'cf.apiToken') ?? '';
+  const apiToken = parsed.apiToken || existingToken;
   if (!apiToken) {
     json(res, 400, { success: false, error: 'MISSING_TOKEN', message: 'apiToken is required' });
     return;
@@ -2584,23 +2717,18 @@ async function handleSettingsCloudflarePut(
       return;
     }
 
-    // Update state in-place so in-memory wizardState is also updated immediately
-    const { saveState: save } = await import('../wizard/state.js');
-    state.domain.cloudflare.apiToken = apiToken;
-
-    // Prefer explicit accountId param, then existing stored value, then getAccounts() (requires Account:Read)
-    let resolvedAccountId = accountId || state.domain.cloudflare.accountId
+    // Prefer explicit accountId param, then DB/state stored value, then getAccounts()
+    const existingAccountId = state?.domain?.cloudflare?.accountId ?? getSetting(projectPath, 'cf.accountId') ?? '';
+    let resolvedAccountId = accountId || existingAccountId
       || await (await import('./cloudflare-client.js')).getAccounts(apiToken)
           .then((a) => a[0]?.id ?? '').catch((err: unknown) => {
             console.warn('[admin-server] getAccounts() failed (requires Account:Read permission):', err);
             return '';
           });
 
-    if (zoneId) state.domain.cloudflare.zoneId = zoneId;
-    if (tunnelId) state.domain.cloudflare.tunnelId = tunnelId;
-
-    // Get zone name for response and extract accountId from zone when getAccounts() returned nothing
-    let zoneName = state.domain.cloudflare.zoneName;
+    // Get zone name for response and extract accountId from zone
+    const existingZoneName = state?.domain?.cloudflare?.zoneName ?? getSetting(projectPath, 'cf.zoneName') ?? '';
+    let zoneName = existingZoneName;
     if (zoneId) {
       try {
         const { getZones } = await import('./cloudflare-client.js');
@@ -2608,8 +2736,6 @@ async function handleSettingsCloudflarePut(
         const found = zones.find((z) => z.id === zoneId);
         if (found) {
           zoneName = found.name;
-          state.domain.cloudflare.zoneName = zoneName;
-          // accountId from zone (requires only Zone:Read — always works)
           if (!resolvedAccountId && found.accountId) {
             resolvedAccountId = found.accountId;
           }
@@ -2617,8 +2743,24 @@ async function handleSettingsCloudflarePut(
       } catch { /* non-critical */ }
     }
 
-    if (resolvedAccountId) state.domain.cloudflare.accountId = resolvedAccountId;
-    save(state);
+    // Update in-memory state if available (legacy path)
+    if (state) {
+      const { saveState: save } = await import('../wizard/state.js');
+      state.domain.cloudflare.apiToken = apiToken;
+      if (zoneId) state.domain.cloudflare.zoneId = zoneId;
+      if (tunnelId) state.domain.cloudflare.tunnelId = tunnelId;
+      if (zoneName) state.domain.cloudflare.zoneName = zoneName;
+      if (resolvedAccountId) state.domain.cloudflare.accountId = resolvedAccountId;
+      save(state);
+    }
+
+    // Always sync to project DB (primary store)
+    const dbEntries: Record<string, string> = { 'cf.apiToken': apiToken };
+    if (resolvedAccountId) dbEntries['cf.accountId'] = resolvedAccountId;
+    if (zoneId) dbEntries['cf.zoneId'] = zoneId;
+    if (zoneName) dbEntries['cf.zoneName'] = zoneName;
+    if (tunnelId) dbEntries['cf.tunnelId'] = tunnelId;
+    try { setSettings(projectPath, dbEntries); } catch { /* non-critical */ }
 
     json(res, 200, {
       success: true,

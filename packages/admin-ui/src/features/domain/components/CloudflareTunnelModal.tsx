@@ -232,9 +232,22 @@ export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: Cloudfl
                       You can now connect your apps to subdomains from each app's Domain tab.
                     </div>
 
-                    <button className="btn bp" onClick={onComplete ?? onClose} style={{ alignSelf: 'flex-end' }}>
-                      Connect apps →
-                    </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={resetSetup}
+                        style={{
+                          background: 'none', border: '1px solid var(--bdr)',
+                          borderRadius: 'var(--r)', padding: '7px 14px',
+                          cursor: 'pointer', color: 'var(--txt3)', fontSize: 12,
+                        }}
+                      >
+                        Reset & Reconfigure
+                      </button>
+                      <button className="btn bp" onClick={onComplete ?? onClose}>
+                        Connect apps →
+                      </button>
+                    </div>
                   </div>
                 )}
               </>

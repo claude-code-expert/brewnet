@@ -47,6 +47,8 @@ import {
   collectAllServices,
   getCredentialTargets,
 } from '../../utils/resources.js';
+import { setSettings } from '../../services/project-db.js';
+import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
 // Helper: execute a shell command
@@ -1262,6 +1264,37 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       'utf-8',
     );
   } catch { /* non-critical */ }
+
+  // -------------------------------------------------------------------------
+  // 11b. Sync runtime-critical state to project DB
+  // -------------------------------------------------------------------------
+  try {
+    const entries: Record<string, string> = {
+      'admin.username': state.admin.username,
+      'admin.password': state.admin.password,
+      'project.name': state.projectName,
+      'project.path': state.projectPath,
+      'domain.provider': state.domain?.provider ?? 'local',
+      'domain.name': state.domain?.name ?? '',
+    };
+    const cf = state.domain?.cloudflare;
+    if (cf) {
+      if (cf.enabled) entries['cf.enabled'] = 'true';
+      if (cf.tunnelMode) entries['cf.tunnelMode'] = cf.tunnelMode;
+      if (cf.quickTunnelUrl) entries['cf.quickTunnelUrl'] = cf.quickTunnelUrl;
+      if (cf.accountId) entries['cf.accountId'] = cf.accountId;
+      if (cf.apiToken) entries['cf.apiToken'] = cf.apiToken;
+      if (cf.tunnelId) entries['cf.tunnelId'] = cf.tunnelId;
+      if (cf.tunnelToken) entries['cf.tunnelToken'] = cf.tunnelToken;
+      if (cf.tunnelName) entries['cf.tunnelName'] = cf.tunnelName;
+      if (cf.zoneId) entries['cf.zoneId'] = cf.zoneId;
+      if (cf.zoneName) entries['cf.zoneName'] = cf.zoneName;
+    }
+    setSettings(projectPath, entries);
+    logger.info('generate', 'Runtime state synced to project DB');
+  } catch (err) {
+    logger.warn('generate', `DB state sync failed (non-fatal): ${err}`);
+  }
 
   // -------------------------------------------------------------------------
   // 12. Success

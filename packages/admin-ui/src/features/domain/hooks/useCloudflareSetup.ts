@@ -227,7 +227,8 @@ export function useCloudflareSetup(apiFetch: ApiFetch): CloudflareSetupHook {
         setCompletedSteps((prev) => [...new Set([...prev, 'tunnel'])]);
         setCurrentStep('complete');
       } else {
-        setTunnelError(mapError((result as { error?: string }).error, 'Tunnel creation failed'));
+        const r = result as { error?: string; message?: string };
+        setTunnelError(mapError(r.error, r.message ?? 'Tunnel creation failed'));
       }
     } catch (e) {
       setTunnelError(e instanceof Error ? e.message : 'Tunnel creation failed');

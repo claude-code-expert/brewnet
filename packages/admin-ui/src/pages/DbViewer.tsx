@@ -5,7 +5,9 @@ interface DbDump {
   tables: string[];
   data: Record<string, Record<string, unknown>[]>;
   _meta: {
-    fileStorage: { path: string; purpose: string; risk: string }[];
+    note: string;
+    dbManaged: string[];
+    legacyFiles: { path: string; purpose: string; risk: string }[];
   };
 }
 
@@ -127,23 +129,34 @@ export function DbViewer() {
         </div>
       )}
 
-      {/* File storage info */}
+      {/* DB-managed data summary */}
       <div style={{ marginTop: 24, padding: 16, background: '#1a1a1a', borderRadius: 8, border: '1px solid #333' }}>
-        <h3 style={{ margin: '0 0 12px', color: '#f5a623', fontSize: 14 }}>File-based Storage (not in DB)</h3>
+        <h3 style={{ margin: '0 0 8px', color: '#6b6', fontSize: 14 }}>DB-Managed (survives ~/.brewnet/ deletion)</h3>
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: '#888' }}>{dump._meta.note}</p>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: '#aaa' }}>
+          {dump._meta.dbManaged.map((item, i) => (
+            <li key={i} style={{ marginBottom: 2 }}>{item}</li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Legacy files */}
+      <div style={{ marginTop: 12, padding: 16, background: '#1a1a1a', borderRadius: 8, border: '1px solid #333' }}>
+        <h3 style={{ margin: '0 0 12px', color: '#888', fontSize: 14 }}>Legacy Files (not required for server boot)</h3>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
-              <th style={{ textAlign: 'left', padding: '4px 8px', color: '#888' }}>Path</th>
-              <th style={{ textAlign: 'left', padding: '4px 8px', color: '#888' }}>Purpose</th>
-              <th style={{ textAlign: 'left', padding: '4px 8px', color: '#888' }}>Risk</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', color: '#666' }}>Path</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', color: '#666' }}>Purpose</th>
+              <th style={{ textAlign: 'left', padding: '4px 8px', color: '#666' }}>Risk</th>
             </tr>
           </thead>
           <tbody>
-            {dump._meta.fileStorage.map((f, i) => (
+            {dump._meta.legacyFiles.map((f, i) => (
               <tr key={i}>
-                <td style={{ padding: '4px 8px', color: '#aaa', fontFamily: 'monospace' }}>{f.path}</td>
-                <td style={{ padding: '4px 8px', color: '#ccc' }}>{f.purpose}</td>
-                <td style={{ padding: '4px 8px', color: f.risk.startsWith('medium') ? '#f5a623' : '#6b6' }}>{f.risk}</td>
+                <td style={{ padding: '4px 8px', color: '#777', fontFamily: 'monospace' }}>{f.path}</td>
+                <td style={{ padding: '4px 8px', color: '#999' }}>{f.purpose}</td>
+                <td style={{ padding: '4px 8px', color: '#6b6' }}>{f.risk}</td>
               </tr>
             ))}
           </tbody>

@@ -29,6 +29,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
   createState:      mockCreateState,
   saveState:        mockSaveState,
   loadState:        jest.fn(() => null),
+  discoverProjectPath: jest.fn(() => null),
   getLastProject:   jest.fn(() => null),
   getStateFilePath: jest.fn(() => '/tmp/state.json'),
   hasResumeState:   jest.fn(() => false),

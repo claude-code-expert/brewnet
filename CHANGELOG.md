@@ -3,6 +3,43 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-28 09:37
+
+### 🎯 Prompts
+1. "프론트엔드 포트 충돌 해결" — 배포된 앱 포트(3001)가 기존 서비스와 충돌, 3003으로 직접 변경 후 DB 레코드 업데이트
+2. "자동 포트 충돌 해소 구현" — docker compose up 실패 시 자동으로 빈 포트 탐지 후 .env 업데이트 + retry
+3. "대시보드 도메인 프로바이더 상태 버그 수정" — named tunnel 생성 후 quick tunnel URL이 계속 표시되는 문제
+4. "대시보드 Quick Tunnel 배너 named tunnel에서도 보이는 버그 수정" — 배너가 tunnelMode가 아닌 URL 존재 여부로 렌더링
+5. "서비스 명칭/URL 불일치 수정" — brewnet 서비스가 Services 탭과 Apps 탭에서 다른 이름/URL 표시
+6. "문서 구조 재편 검증" — CLAUDE.md에서 DB 스키마와 프로젝트 구조를 별도 파일로 분리 + MANDATORY 섹션 복원
+7. "Supermemory MCP 설정" — Claude Desktop에 있던 설정을 Claude Code settings.json에도 추가
+
+### ✅ Changes
+- **Added**: `discoverProjectPath()` — `~/.brewnet/config.json` → `selections.json` → `~/brewnet/*/.brewnet.db` 파일시스템 스캔 3단계 프로젝트 경로 자동 발견 (`wizard/state.ts`)
+- **Fixed**: `_dockerComposeUp()` — 포트 충돌 시 최대 2회 retry, 빈 포트 탐색 후 `.env` 자동 업데이트 (`app-manager.ts`)
+- **Fixed**: dashboard config 엔드포인트 — `cf.tunnelMode`/`cf.zoneName`을 DB에서 직접 읽어 tunnelMode 정확도 개선 (`admin-server.ts`)
+- **Fixed**: Services API — 등록된 앱이 있을 경우 앱 DB를 authoritative source로 사용해 name/url 통일 (`admin-server.ts`)
+- **Fixed**: 프로젝트 경로 해석 — `discoverProjectPath()` 통합, DB 기반 admin 자격증명 읽기 + secrets file fallback (`admin-server.ts`)
+- **Fixed**: `Dashboard.tsx` 배너 — `domainProvider === 'named-tunnel'`이면 named tunnel 배너, 아니면 quick tunnel URL 배너로 조건 분기
+- **Added**: `useAppDomain` — `connectingMessage` 상태 추가, connect 단계별 진행 메시지 표시 (`useAppDomain.ts`)
+- **Modified**: `.claude/CLAUDE.md` — DB 스키마를 `DATABASE.md`로, 프로젝트 구조를 `PROJECT_STRUCTURE.md`로 분리, `@ref` 링크로 대체
+- **Added**: `.claude/DATABASE.md` — 테이블 스키마/인덱스/known keys 전체 문서화
+- **Added**: `.claude/PROJECT_STRUCTURE.md` — 디렉토리 구조 + 코어 모듈 전체 문서화
+- **Added**: Supermemory MCP 설정 — `~/.claude/settings.json`에 `mcp-supermemory-ai` 항목 추가
+
+### 📁 Files Modified
+- `packages/cli/src/wizard/state.ts` (+74 lines) — `discoverProjectPath()`, `expandTilde()`
+- `packages/cli/src/services/admin-server.ts` (+492, -some lines) — 프로젝트 경로 발견, 자격증명 로직, Services API DB 통합, tunnelMode DB 읽기
+- `packages/cli/src/services/app-manager.ts` (+85, -27 lines) — `_dockerComposeUp()` auto port conflict retry
+- `packages/cli/src/services/project-db.ts` (+22 lines) — `getSettings`, `setSettings` bulk 연산
+- `packages/admin-ui/src/pages/Dashboard.tsx` (+37, -3 lines) — named/quick tunnel 배너 조건 분기
+- `packages/admin-ui/src/features/domain/hooks/useAppDomain.ts` (+88, -8 lines) — `connectingMessage`, 단계별 progress label
+- `.claude/CLAUDE.md` (-196 lines) — DB/구조 섹션 분리
+- `.claude/DATABASE.md` (신규)
+- `.claude/PROJECT_STRUCTURE.md` (신규)
+
+---
+
 ## [develop] - 2026-03-27 01:22
 
 ### 🎯 Prompts

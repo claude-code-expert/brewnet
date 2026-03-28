@@ -1,15 +1,22 @@
 # CLAUDE.md - Brewnet Project Context
 
+---
+## ⚠️ MANDATORY — 모든 응답 전 반드시 확인
+
+1. **응답 형식**: 모든 작업 완료 시 반드시 Korean summary로 마무리
+   - 무엇을 변경했는지
+   - 왜 그렇게 했는지
+   - 주의할 점이 있는지
+
+2. **조사 원칙**: 경로, 설정값, 코드 동작에 대해 답하기 전 반드시 소스 코드를 먼저 읽을 것. 추측으로 답변 금지.
+
+---
 
 ## Project Overview
 
 **Brewnet** — "Your Home Server, Brewed Fresh"
 
 A self-hosted home server management platform that provides an interactive CLI tool and Web Dashboard (Pro) for setting up and managing personal servers with Docker-based services.
-
-- **License**: Apache 2.0
-- **Licensor**: Brewnet (codevillain)
-- **Target Platforms**: macOS (darwin), Linux (Ubuntu/Debian, CentOS/RHEL)
 
 
 ## ⛔ NEVER Rules
@@ -88,74 +95,7 @@ A self-hosted home server management platform that provides an interactive CLI t
 
 ## Project Structure (Monorepo with pnpm)
 
-```
-brewnet/
-├── CLAUDE.md
-├── README.md
-├── LICENSE                    # Apache 2.0
-├── package.json               # Root workspace config
-├── pnpm-workspace.yaml
-├── tsconfig.json              # Root TypeScript config
-├── spec/                      # Specification documents
-│
-├── packages/
-│   ├── cli/                   # CLI application
-│   │   ├── src/
-│   │   │   ├── index.ts       # Entry point
-│   │   │   ├── commands/      # CLI commands (Commander.js)
-│   │   │   │   ├── init.ts
-│   │   │   │   ├── add.ts
-│   │   │   │   ├── remove.ts
-│   │   │   │   ├── up.ts / down.ts
-│   │   │   │   ├── status.ts
-│   │   │   │   ├── logs.ts
-│   │   │   │   ├── deploy.ts
-│   │   │   │   ├── domain.ts
-│   │   │   │   └── storage/
-│   │   │   ├── services/      # Core service modules
-│   │   │   │   ├── docker-manager.ts
-│   │   │   │   ├── runtime-manager.ts
-│   │   │   │   ├── deploy-manager.ts
-│   │   │   │   ├── ssl-manager.ts
-│   │   │   │   ├── nginx-manager.ts
-│   │   │   │   ├── acl-manager.ts
-│   │   │   │   ├── git-server.ts
-│   │   │   │   ├── file-manager.ts
-│   │   │   │   ├── db-manager.ts
-│   │   │   ├── boilerplate/   # App scaffolding templates
-│   │   │   ├── utils/
-│   │   │   └── config/
-│   │   ├── templates/         # Boilerplate templates
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   ├── dashboard/             # Web Dashboard (Pro)
-│   │   ├── src/
-│   │   │   ├── app/           # Next.js App Router
-│   │   │   ├── components/
-│   │   │   ├── hooks/
-│   │   │   ├── stores/        # Zustand stores
-│   │   │   ├── lib/
-│   │   │   └── types/
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   └── shared/                # Shared types and utilities
-│       ├── src/
-│       │   ├── types/
-│       │   ├── schemas/       # Zod schemas
-│       │   └── utils/
-│       ├── package.json
-│       └── tsconfig.json
-│
-├── docker/                    # Docker-related configs
-│   └── docker-compose.yml
-│
-└── tests/
-    ├── unit/
-    ├── integration/
-    └── e2e/
-```
+@PROJECT_STRUCTURE.md 참고 
 
 ## CLI Commands
 
@@ -181,31 +121,6 @@ brewnet storage init           # Initialize file storage
 brewnet create-app <name>      # Scaffold a new app project
 ```
 
-## Core Modules
-
-1. **Docker Manager** — Container lifecycle, docker-compose generation, health checks
-2. **Runtime Manager** — Language runtime support (Node.js, Python, Java, Go, Ruby, Rust)
-3. **Deploy Manager** — Git-based deployment pipeline, rollback support
-4. **SSL Manager** — Let's Encrypt / Certbot auto-configuration
-5. **Nginx Manager** — Reverse proxy auto-configuration, virtual hosts
-6. **ACL Manager** — Access control, user permissions, firewall rules
-7. **Git Server** — Gitea integration, repository management
-8. **File Manager** — Nextcloud, MinIO (S3), SFTP, Jellyfin streaming
-9. **Database Manager** — PostgreSQL, MySQL, MariaDB, Redis management
-11. **SSO Auth** — Single sign-on authentication system
-
-## Server Components
-
-| Component | Options |
-|-----------|---------|
-| Admin Account (required) | Username/password, stored in .env (chmod 600), propagated to all services |
-| Web Server (required) | Traefik (default), Nginx, Caddy |
-| File Server | Nextcloud, MinIO |
-| App Server | Custom app (Docker container) |
-| Database | PostgreSQL, MySQL, MariaDB, SQLite + Cache: Redis, Valkey, KeyDB |
-| Media (optional) | Jellyfin |
-| Domain & Network | Local / Custom + Cloudflare Tunnel (default ON) |
-
 ## Installation Flow (7-step wizard)
 
 ```
@@ -220,36 +135,7 @@ Step 7: Complete (endpoints, credentials summary, tunnel status, external access
 ```
 
 ## Database Schema (SQLite)
-
-Key tables: `services`, `deployments`, `domains`, `users`, `acl_rules`, `backups`, `logs`
-
-## Error Codes
-
-| Code | HTTP | Description |
-|------|------|-------------|
-| BN001 | 503 | Docker daemon not running |
-| BN002 | 409 | Port already in use |
-| BN003 | 500 | SSL issuance failed |
-| BN004 | 401 | Invalid license key |
-| BN005 | 429 | Rate limit exceeded |
-| BN006 | 500 | Build failed |
-| BN007 | 400 | Invalid Git repository |
-| BN008 | 404 | Resource not found |
-| BN009 | 500 | Database error |
-| BN010 | 403 | Feature requires Pro plan |
-
-## Data Directory
-
-```
-~/.brewnet/
-├── config.json           # Global configuration
-├── docker-compose.yml    # Generated compose file
-├── services/             # Service-specific configs
-├── storage/              # File storage data
-├── backups/              # Backup data
-├── logs/                 # Application logs
-└── db/                   # SQLite database
-```
+@DATABASE.md 참고 
 
 ## Development Conventions
 
@@ -336,55 +222,9 @@ When completing a task, always end with a Korean summary:
 
 ---
 
-## admin-server wizardState null — lastProject 빈값 — 발견일: 2026-03-19
+# PROBLEM SOLVE
 
-### 증상
-`test-cycle.sh --skip-init` 재실행 시 Phase 9.4 `/api/settings/cloudflare` → 401, `/api/git/repos` → Gitea 401, Phase 10-11 모든 create-app 작업 ~5초만에 `status=failed`.
+/changelog, /troubleshooting 으로 생성된 문서들을 참고:
+- 변경 이력: `CHANGELOG.md`
+- 에러 해결 히스토리: `troubleshooting/*.md`
 
-### 근본 원인 (Root Cause)
-`admin-server.ts:898-912`에서 서버 시작 시 `getLastProject()`로 wizardState를 한 번만 로드한다. `~/.brewnet/config.json`의 `lastProject`가 `""` (빈 문자열)이면 `wizardState = null`, `password = ''`이 된다.
-
-- `checkAdminAuth()`: `state?.admin?.password` = undefined → 즉시 401 ("Admin password not configured")
-- `resolveContext()` in `app-manager.ts:357-375`: `loadState(undefined)` → null, `projectPath = process.cwd()`, secrets 파일 없음 → `giteaPassword = ''` → Gitea 인증 실패
-- `GiteaClient.prepare()` 실패 → `~/.brewnet/gitea-token` 미생성 → 이후 모든 Gitea 의존 작업 실패
-
-`lastProject`가 비워지는 경우: `~/.brewnet/projects/` 디렉토리 삭제 (uninstall, 수동 정리) 후에도 `config.json`의 `lastProject`가 `""` 상태 유지.
-
-### 수정 내용
-| 파일 | 변경 내용 |
-|------|----------|
-| `test-cycle.sh` | `--skip-init` 시작 부분에 lastProject 자동 복원 로직 추가 |
-| `troubleshooting/admin-server-wizardstate-null-lastproject-empty.md` | 트러블슈팅 문서 신규 작성 |
-
-### 재발 방지 체크리스트
-- [ ] `test-cycle.sh --skip-init` 실행 전: `cat ~/.brewnet/config.json` 으로 `lastProject` 값 확인
-- [ ] `~/.brewnet/projects/<name>/selections.json` 존재 여부 확인
-- [ ] admin-server 재시작이 필요한 경우 lastProject 복원 후 재시작
-- [ ] test-cycle.sh `--skip-init` 시 자동 복원 로직 동작 확인 (warn 메시지 확인)
-
-### 관련 코드
-```typescript
-// admin-server.ts:898-912 — wizardState는 서버 시작 시 한 번만 로드됨
-let wizardState: WizardState | null = null;
-const last = getLastProject();  // "" → undefined
-if (last) {
-  const state = loadState(last);
-  if (state) wizardState = state;
-}
-const password = wizardState?.admin?.password ?? '';  // "" → 모든 인증 실패
-```
-
-```bash
-# 빠른 복구 방법
-mkdir -p ~/.brewnet/projects/my-homeserver
-cp /tmp/brewnet-test-config.json ~/.brewnet/projects/my-homeserver/selections.json
-node -e "
-  const fs=require('fs'),path=require('path'),os=require('os');
-  const cfg=path.join(os.homedir(),'.brewnet','config.json');
-  const d=JSON.parse(fs.readFileSync(cfg,'utf8'));
-  d.lastProject='my-homeserver';
-  fs.writeFileSync(cfg,JSON.stringify(d,null,'\t'));
-"
-lsof -ti :8088 | xargs kill -9 && sleep 2
-node packages/cli/dist/index.js admin --foreground --no-open &
-```

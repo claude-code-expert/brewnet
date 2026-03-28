@@ -8,6 +8,7 @@
  * All table creation is idempotent (CREATE TABLE IF NOT EXISTS).
  */
 
+import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
@@ -95,6 +96,9 @@ export function initDatabase(dbPath: string): Database.Database {
   for (const sql of INDEX_SQL) {
     db.exec(sql);
   }
+
+  // Protect DB file (contains admin password and CF tokens)
+  try { chmodSync(dbPath, 0o600); } catch { /* non-critical on some platforms */ }
 
   return db;
 }

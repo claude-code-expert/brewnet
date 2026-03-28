@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { execa } from 'execa';
 import { GiteaClient } from './gitea-client.js';
 import { listApps as dbListApps, getApp as dbGetApp, addApp as dbAddApp, updateApp as dbUpdateApp, removeApp as dbRemoveApp, getDeployHistory as dbGetDeployHistory, appendDeployHistory as dbAppendDeployHistory, getSetting, setSetting } from './project-db.js';
-import { getLastProject, loadState } from '../wizard/state.js';
+import { getLastProject, loadState, discoverProjectPath } from '../wizard/state.js';
 import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry, AppGitInfo, DeploySettings } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
@@ -27,15 +27,7 @@ const jobs = new Map<string, AppJob>();
 // ---------------------------------------------------------------------------
 
 export function resolveProjectPath(): string {
-  const last = getLastProject();
-  if (last) {
-    const state = loadState(last);
-    if (state?.projectPath) {
-      const raw = state.projectPath;
-      return raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-    }
-  }
-  return process.cwd();
+  return discoverProjectPath() ?? process.cwd();
 }
 
 // ---------------------------------------------------------------------------
@@ -873,27 +865,70 @@ async function _pollHealth(url: string, maxMs = 120_000, job?: AppJob): Promise<
 
 /**
  * Run `docker compose up -d --build` with stdout/stderr streamed to job logs.
+ * Automatically resolves port conflicts by finding free ports and updating .env.
  */
-async function _dockerComposeUp(cwd: string, job: AppJob): Promise<void> {
-  appendLog(job, `[docker] $ docker compose up -d --build`);
-  appendLog(job, `[docker] cwd: ${cwd}`);
-  const proc = execa('docker', ['compose', 'up', '-d', '--build'], { cwd, reject: false });
-  proc.stdout?.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().split('\n').filter(Boolean)) {
-      appendLog(job, `[docker] ${line}`);
+async function _dockerComposeUp(cwd: string, job: AppJob, maxRetries = 2): Promise<void> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    appendLog(job, `[docker] $ docker compose up -d --build${attempt > 0 ? ` (retry ${attempt})` : ''}`);
+    appendLog(job, `[docker] cwd: ${cwd}`);
+    const proc = execa('docker', ['compose', 'up', '-d', '--build'], { cwd, reject: false });
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString().split('\n').filter(Boolean)) {
+        appendLog(job, `[docker] ${line}`);
+      }
+    });
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString().split('\n').filter(Boolean)) {
+        appendLog(job, `[docker] ${line}`);
+      }
+    });
+    const result = await proc;
+
+    if (result.exitCode === 0) {
+      appendLog(job, `[docker] ✓ containers started`);
+      return;
     }
-  });
-  proc.stderr?.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().split('\n').filter(Boolean)) {
-      appendLog(job, `[docker] ${line}`);
+
+    // Check for port conflict — retry with a free port
+    const portMatch = result.stderr?.match(/Bind for 0\.0\.0\.0:(\d+) failed: port is already allocated/);
+    if (portMatch && attempt < maxRetries) {
+      const conflictPort = parseInt(portMatch[1], 10);
+      appendLog(job, `[docker] ⚠ port ${conflictPort} conflict — finding alternative...`);
+
+      const { isPortAvailable: _isPortAvailable } = await import('../utils/port-utils.js');
+      let newPort: number | undefined;
+      for (let p = conflictPort + 1; p <= conflictPort + 20; p++) {
+        if (await _isPortAvailable(p)) { newPort = p; break; }
+      }
+
+      if (newPort) {
+        // Update .env file with the new port
+        const envPath = join(cwd, '.env');
+        if (existsSync(envPath)) {
+          let env = readFileSync(envPath, 'utf-8');
+          const portRegex = new RegExp(`^([A-Z_]+=)${conflictPort}$`, 'm');
+          const envMatch = env.match(portRegex);
+          if (envMatch) {
+            env = env.replace(portRegex, `$1${newPort}`);
+            writeFileSync(envPath, env, 'utf-8');
+            appendLog(job, `[docker] ✓ .env updated: ${envMatch[1]}${conflictPort} → ${envMatch[1]}${newPort}`);
+          } else {
+            appendLog(job, `[docker] ⚠ could not find port ${conflictPort} in .env — manual fix required`);
+            throw new Error(`Port ${conflictPort} conflict and could not auto-resolve in .env`);
+          }
+        }
+
+        // Stop conflicting containers before retry
+        await execa('docker', ['compose', 'down'], { cwd, reject: false });
+        continue;
+      } else {
+        appendLog(job, `[docker] ✗ no free port found near ${conflictPort}`);
+      }
     }
-  });
-  const result = await proc;
-  if (result.exitCode !== 0) {
+
     appendLog(job, `[docker] ✗ exit code ${result.exitCode}`);
     throw new Error(`Command failed with exit code ${result.exitCode}: docker compose up -d --build\n${result.stderr}`);
   }
-  appendLog(job, `[docker] ✓ containers started`);
 }
 
 // ---------------------------------------------------------------------------
