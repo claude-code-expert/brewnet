@@ -16,6 +16,7 @@ import { join, resolve, extname } from 'node:path';
 import { existsSync, readFileSync, statSync, createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import Dockerode from 'dockerode';
 import { addService, removeService } from './service-manager.js';
 import { createBackup, listBackups } from './backup-manager.js';
@@ -639,6 +640,10 @@ async function handleGetServices(
     const allContainers = await docker.listContainers({ all: true });
     const services: ServiceStatus[] = [];
 
+    // Hoist DB reads outside the loop — same data for every container
+    const allDbApps = dbListApps(_projectPath);
+    const allDomainConns = dbListDomainConnections(_projectPath);
+
     for (const c of allContainers) {
       const composeService = c.Labels?.['com.docker.compose.service'];
       if (!composeService) continue;
@@ -705,7 +710,6 @@ async function handleGetServices(
         // (appName may match composeService directly, or be a brewnet- prefixed variant)
         if (!externalUrl) {
           const appNameVariants = [composeService, composeService.replace(/^brewnet-/, '')];
-          const allDomainConns = dbListDomainConnections(_projectPath);
           const conn = allDomainConns.find(
             (c) => appNameVariants.includes(c.appName),
           );
@@ -750,8 +754,7 @@ async function handleGetServices(
         : (def?.name ?? composeService);
 
       // Enrich with app DB data — registered apps have authoritative URLs
-      const dbApps = dbListApps(_projectPath);
-      const matchedApp = dbApps.find((a) => {
+      const matchedApp = allDbApps.find((a) => {
         // Match by appDir containing the compose project working dir, or by name variants
         const nameVariants = [composeService, serviceId, composeProject];
         if (nameVariants.includes(a.name)) return true;
@@ -761,7 +764,7 @@ async function handleGetServices(
       });
 
       const appConn = matchedApp
-        ? dbListDomainConnections(_projectPath).find((c) => c.appName === matchedApp.name)
+        ? allDomainConns.find((c) => c.appName === matchedApp.name)
         : null;
 
       const containerRole = labels['com.brewnet.role'] ?? '';
@@ -1069,7 +1072,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   let projectPath = discoverProjectPath(options.projectPath) ?? options.projectPath ?? process.cwd();
   // Expand leading ~ — Node.js fs APIs do not interpret tilde as home directory
   if (projectPath.startsWith('~/') || projectPath === '~') {
-    projectPath = join(homedir(), projectPath.slice(1));
+    projectPath = join(homedir(), projectPath.slice(2));
   }
   // Pin the resolved project path in app-manager so that resolveContext() always
   // operates on this project, regardless of which .brewnet.db is newest on disk.
@@ -1095,7 +1098,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         adminUsername = state.admin?.username ?? '';
         if (!options.projectPath && state.projectPath) {
           const pp = state.projectPath;
-          projectPath = pp.startsWith('~/') ? join(homedir(), pp.slice(1)) : pp;
+          projectPath = pp.startsWith('~/') ? join(homedir(), pp.slice(2)) : pp;
         }
       }
     }
@@ -1851,7 +1854,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             if (!checkAdminAuth(req, res, adminPassword)) return;
             const tokenAppName = decodeURIComponent(parts[2] ?? '');
             if (!getAppDir(tokenAppName)) { json(res, 404, { error: 'App not found' }); return; }
-            const { randomUUID } = await import('node:crypto');
             const token = randomUUID();
             sseTokens.set(token, { appName: tokenAppName, expiresAt: Date.now() + 30_000 });
             json(res, 200, { token });

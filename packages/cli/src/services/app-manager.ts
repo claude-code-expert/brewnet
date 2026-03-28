@@ -623,15 +623,6 @@ function resolveContext(): AppContext {
     if (existsSync(secretsPath)) giteaPassword = readFileSync(secretsPath, 'utf-8').trim();
   }
   if (!giteaPassword) giteaPassword = readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD');
-  if (!giteaPassword) {
-    // Legacy fallback: wizard state (selections.json) — only load if lastProject is non-empty
-    const last = getLastProject();
-    if (last) {
-      const state = loadState(last);
-      giteaPassword = (state?.admin as { password?: string } | undefined)?.password ?? '';
-    }
-  }
-
   // Tunnel mode & zone: DB is authoritative; wizard state as legacy fallback.
   let tunnelMode = '';
   let zoneName = '';
@@ -640,11 +631,14 @@ function resolveContext(): AppContext {
     zoneName = getSetting(projectPath, 'cf.zoneName') ?? '';
   } catch { /* DB not initialized */ }
 
-  if (!tunnelMode || !zoneName) {
+  // Single legacy fallback load — shared by both password and tunnel mode/zone lookups.
+  if (!giteaPassword || !tunnelMode || !zoneName) {
     const last = getLastProject();
-    const state = last ? loadState(last) : null;
-    if (!tunnelMode) tunnelMode = state?.domain?.cloudflare?.tunnelMode ?? '';
-    if (!zoneName) zoneName = state?.domain?.cloudflare?.zoneName ?? '';
+    const legacyState = last ? loadState(last) : null;
+    if (!giteaPassword)
+      giteaPassword = (legacyState?.admin as { password?: string } | undefined)?.password ?? '';
+    if (!tunnelMode) tunnelMode = legacyState?.domain?.cloudflare?.tunnelMode ?? '';
+    if (!zoneName) zoneName = legacyState?.domain?.cloudflare?.zoneName ?? '';
   }
 
   // Internal API URL: always local Traefik proxy — stable regardless of tunnel state.

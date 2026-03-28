@@ -45,9 +45,11 @@ export function useLogStream(appName: string, active: boolean): LogStreamState {
 
         es.addEventListener('error', () => {
           setConnected(false);
-          if (es?.readyState === EventSource.CLOSED) {
-            setError('연결이 끊겼습니다. 재연결 중...');
-          }
+          // Close immediately — the token is one-time-use and already consumed, so the
+          // browser's built-in EventSource auto-reconnect would retry with a stale token
+          // and receive 401 in a tight loop.
+          es?.close();
+          setError('로그 스트림 연결이 끊겼습니다. 모달을 닫고 다시 열어주세요.');
         });
       } catch {
         if (!cancelled) setError('로그 스트림 연결 실패');

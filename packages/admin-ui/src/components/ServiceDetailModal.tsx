@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { ServiceStatus, ServiceDetail } from '../types.js';
 
 interface ServiceDetailModalProps {
@@ -174,14 +175,14 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                 }}
               >
                 {detail.connectionParams.map(({ label, value }) => (
-                  <>
-                    <span key={`${label}-k`} style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
+                  <Fragment key={label}>
+                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
                       {label}
                     </span>
-                    <span key={`${label}-v`} style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--teal)' }}>
+                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--teal)' }}>
                       {value}
                     </span>
-                  </>
+                  </Fragment>
                 ))}
               </div>
             </div>

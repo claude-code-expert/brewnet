@@ -511,6 +511,18 @@ describe('POST /api/cloudflare/tunnel', () => {
 // POST /api/domain/connect — subdomain conflict detection (FR-018)
 // ---------------------------------------------------------------------------
 
+describe('POST /api/domain/connect — auth', () => {
+  it('returns 401 without x-admin-password header', async () => {
+    // Shared server has no adminPassword configured → 401 in both cases,
+    // but this verifies the guard is present on domain/connect.
+    const { status } = await req('POST', '/api/domain/connect', {
+      body: { appName: 'myapp', subdomain: 'blog', domain: 'example.com' },
+      auth: false,
+    });
+    expect(status).toBe(401);
+  });
+});
+
 describe('POST /api/domain/connect — conflict detection', () => {
   async function spinUp(state: WizardState) {
     mockGetLastProject.mockReturnValue('test-project');
