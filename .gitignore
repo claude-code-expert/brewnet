@@ -26,6 +26,9 @@ troubleshooting/
 # Boilerplate stack templates (cloned repos with their own .git)
 apps/sl-*/
 
+.brewnet.db 
+.brewnet.db-*
+
 Thumbs.db
 *.tmp
 *.swp

@@ -120,17 +120,30 @@ const { createAdminServer } = await import('../../packages/cli/src/services/admi
 // Helpers
 // ---------------------------------------------------------------------------
 
+const ADMIN_PASSWORD = 'integration-test-pw';
+
 let serverPort: number;
 let stopServer: () => Promise<void>;
 
-async function req(method: string, path: string, body?: object): Promise<{ status: number; data: unknown }> {
+async function req(
+  method: string,
+  path: string,
+  body?: object,
+  opts: { auth?: boolean } = {},
+): Promise<{ status: number; data: unknown }> {
+  const { auth = true } = opts;
   const url = `http://127.0.0.1:${serverPort}${path}`;
-  const opts: RequestInit = { method };
+  const fetchOpts: RequestInit = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(auth ? { 'x-admin-password': ADMIN_PASSWORD } : {}),
+    },
+  };
   if (body) {
-    opts.body = JSON.stringify(body);
-    opts.headers = { 'Content-Type': 'application/json' };
+    fetchOpts.body = JSON.stringify(body);
   }
-  const res = await fetch(url, opts);
+  const res = await fetch(url, fetchOpts);
   const contentType = res.headers.get('content-type') ?? '';
   const data = contentType.includes('application/json') ? await res.json() : await res.text();
   return { status: res.status, data };
@@ -141,7 +154,7 @@ async function req(method: string, path: string, body?: object): Promise<{ statu
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  const { server, start: _start, stop } = createAdminServer({ port: 0, projectPath: '/tmp/test-project' });
+  const { server, start: _start, stop } = createAdminServer({ port: 0, projectPath: '/tmp/test-project', adminPassword: ADMIN_PASSWORD });
   // Listen on ephemeral port
   await new Promise<void>((resolve) => {
     server.listen(0, '127.0.0.1', () => {
@@ -465,5 +478,68 @@ describe('Unknown routes', () => {
     const url = `http://127.0.0.1:${serverPort}/api/services`;
     const res = await fetch(url, { method: 'OPTIONS' });
     expect(res.status).toBe(204);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Auth — protected endpoints return 401 without x-admin-password
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('auth — protected endpoints return 401 without header', () => {
+  it('GET /api/services returns 401', async () => {
+    const { status } = await req('GET', '/api/services', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('POST /api/services/install returns 401', async () => {
+    const { status } = await req('POST', '/api/services/install', { id: 'redis' }, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('DELETE /api/services/containers/redis returns 401', async () => {
+    const { status } = await req('DELETE', '/api/services/containers/redis', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('GET /api/catalog returns 401', async () => {
+    const { status } = await req('GET', '/api/catalog', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('GET /api/backup returns 401', async () => {
+    const { status } = await req('GET', '/api/backup', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('POST /api/backup returns 401', async () => {
+    const { status } = await req('POST', '/api/backup', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('GET /api/domain/list returns 401', async () => {
+    const { status } = await req('GET', '/api/domain/list', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('POST /api/domain/connect returns 401', async () => {
+    const { status } = await req('POST', '/api/domain/connect', {}, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  // /api/health requires auth when password is configured (used by PasswordGate)
+  it('GET /api/health returns 401 without auth when password is configured', async () => {
+    const { status } = await req('GET', '/api/health', undefined, { auth: false });
+    expect(status).toBe(401);
+  });
+
+  it('GET /api/health returns 200 with valid auth', async () => {
+    const { status } = await req('GET', '/api/health');
+    expect(status).toBe(200);
+  });
+
+  // /api/config is always open (PasswordGate bootstrap)
+  it('GET /api/config returns 200 without auth', async () => {
+    const { status } = await req('GET', '/api/config', undefined, { auth: false });
+    expect(status).toBe(200);
   });
 });

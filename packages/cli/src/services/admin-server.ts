@@ -29,7 +29,7 @@ import { DOCKER_COMPOSE_FILENAME, type WizardState, type LogSource, type Unified
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
-import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath } from './app-manager.js';
+import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath, setAdminProjectPath } from './app-manager.js';
 import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getSettings, setSettings, getDb } from './project-db.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
@@ -58,6 +58,8 @@ export interface ServiceStatus {
 export interface AdminServerOptions {
   port?: number;
   projectPath?: string;
+  /** Test-only: overrides DB/file-based password resolution */
+  adminPassword?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1071,9 @@ export function createAdminServer(options: AdminServerOptions = {}): {
   if (projectPath.startsWith('~/') || projectPath === '~') {
     projectPath = join(homedir(), projectPath.slice(1));
   }
+  // Pin the resolved project path in app-manager so that resolveContext() always
+  // operates on this project, regardless of which .brewnet.db is newest on disk.
+  setAdminProjectPath(projectPath);
 
   // Load credentials: DB-first → selections.json fallback → secrets file fallback
   let adminUsername = '';
@@ -1102,6 +1107,11 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     if (existsSync(secretsPath)) {
       adminPassword = readFileSync(secretsPath, 'utf-8').trim();
     }
+  }
+
+  // Test-only override — injected via AdminServerOptions.adminPassword
+  if (options.adminPassword !== undefined) {
+    adminPassword = options.adminPassword;
   }
 
   // -----------------------------------------------------------------------
@@ -1306,6 +1316,13 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     }
   }
 
+  // SSE one-time token store — EventSource cannot send custom headers
+  const sseTokens = new Map<string, { appName: string; expiresAt: number }>();
+  const _sseTokenCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [t, m] of sseTokens) if (m.expiresAt < now) sseTokens.delete(t);
+  }, 10 * 60 * 1000).unref();
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? '/';
     const parts = url.split('?')[0].split('/').filter(Boolean);
@@ -1401,6 +1418,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // GET /api/services/catalog — SERVICE_DETAIL_MAP + NAME_ALIASES for React SPA
         if (parts[1] === 'services' && parts[2] === 'catalog' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           const adminUser = wizardState?.admin?.username ?? 'USER';
           const catalog = { ...SERVICE_DETAIL_MAP };
           if (catalog['SSH Server']) {
@@ -1421,6 +1439,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // GET /api/debug/db — dev-only: dump all SQLite tables for debugging
         if (parts[1] === 'debug' && parts[2] === 'db' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           try {
             const db = getDb(projectPath);
             const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[];
@@ -1479,6 +1498,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         }
 
         if (parts[1] === 'services') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'GET' && parts.length === 2) {
             await handleGetServices(req, res, parts, body, projectPath, runtimeUrlMap, dashConfig.quickTunnelUrl, allowedWorkingDirs, wizardState);
             return;
@@ -1504,17 +1524,20 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         }
 
         if (parts[1] === 'catalog' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           await handleGetCatalog(req, res, parts, body, projectPath);
           return;
         }
 
         if (parts[1] === 'backup') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           await handleBackup(req, res, parts, body, projectPath);
           return;
         }
 
         // ── Logs API (T021-T022) ────────────────────────────────────
         if (parts[1] === 'logs') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'GET' && parts[2] === 'stats') {
             const stats = await getLogStats(projectPath);
             json(res, 200, stats);
@@ -1550,6 +1573,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         }
 
         if (parts[1] === 'apps') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'GET' && parts.length === 2) {
             const apps = await listApps();
             // Enrich with lastDeployedAt + localUrl (with basePath for Next.js)
@@ -1822,12 +1846,41 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             return;
           }
 
-          // GET /api/apps/:name/logs — SSE stream (auth: X-Admin-Password header or ?token query)
+          // GET /api/apps/:name/logs/token — issue one-time SSE auth token (30s TTL)
+          if (req.method === 'GET' && parts[3] === 'logs' && parts[4] === 'token') {
+            if (!checkAdminAuth(req, res, adminPassword)) return;
+            const tokenAppName = decodeURIComponent(parts[2] ?? '');
+            if (!getAppDir(tokenAppName)) { json(res, 404, { error: 'App not found' }); return; }
+            const { randomUUID } = await import('node:crypto');
+            const token = randomUUID();
+            sseTokens.set(token, { appName: tokenAppName, expiresAt: Date.now() + 30_000 });
+            json(res, 200, { token });
+            return;
+          }
+
+          // GET /api/apps/:name/logs — SSE stream (auth via one-time ?token or x-admin-password header)
           if (req.method === 'GET' && parts[3] === 'logs') {
             const appDir = getAppDir(decodeURIComponent(parts[2] ?? ''));
             if (!appDir) { json(res, 404, { error: 'App not found' }); return; }
-            // SSE: EventSource cannot send custom headers so this endpoint is
-            // intentionally unauthenticated (log data is read-only, non-sensitive).
+
+            // EventSource cannot send custom headers; verify via one-time token or header
+            const sseQParams = new URL(req.url ?? '/', 'http://localhost').searchParams;
+            const sseToken = sseQParams.get('token');
+            let sseAuthed = false;
+            if (sseToken) {
+              const meta = sseTokens.get(sseToken);
+              if (meta && meta.expiresAt > Date.now() && meta.appName === decodeURIComponent(parts[2] ?? '')) {
+                sseTokens.delete(sseToken); // one-time: consume immediately
+                sseAuthed = true;
+              }
+            } else {
+              sseAuthed = !adminPassword || req.headers['x-admin-password'] === adminPassword;
+            }
+            if (!sseAuthed) {
+              json(res, 401, { error: 'Unauthorized', message: 'SSE auth required' });
+              return;
+            }
+
             res.writeHead(200, {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
@@ -1874,6 +1927,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         // Server-side: log into Gitea with admin creds, forward session cookie,
         // redirect browser to the target Gitea page — no plaintext creds in client.
         if (parts[1] === 'gitea' && parts[2] === 'autologin' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           const reqUrl = new URL(req.url ?? '/', 'http://localhost');
           const redirectPath = reqUrl.searchParams.get('redirect') ?? '/git';
           const giteaBase = 'http://localhost/git';
@@ -1946,6 +2000,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // ── Deploy history, Git repos & Webhook ────────────────────
         if (parts[1] === 'deploy' && parts[2] === 'history' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           const reqUrl = new URL(req.url ?? '/', 'http://localhost');
           const appFilter = reqUrl.searchParams.get('app') ?? undefined;
           const entries = getDeployHistory(appFilter);
@@ -1954,6 +2009,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         }
 
         if (parts[1] === 'git' && parts[2] === 'repos' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           try {
             const repos = await listGiteaRepos();
             const appsForEnrich = await listApps();
@@ -1983,6 +2039,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // POST /api/git/repos/:name/connect — Associate repo with an app
         if (parts[1] === 'git' && parts[2] === 'repos' && parts[3] && parts[4] === 'connect' && req.method === 'POST') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           const repoName = decodeURIComponent(parts[3]);
           let parsed: { appName?: string } = {};
           try { parsed = JSON.parse(body); } catch { json(res, 400, { error: 'Invalid JSON' }); return; }
@@ -2035,6 +2092,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // GET /api/apps/check-port?port=N — Check if a local port is available
         if (parts[1] === 'apps' && parts[2] === 'check-port' && req.method === 'GET') {
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           const reqUrl = new URL(req.url ?? '/', 'http://localhost');
           const portStr = reqUrl.searchParams.get('port') ?? '';
           const port = parseInt(portStr, 10);
@@ -2063,6 +2121,22 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             const branch = (payload.ref ?? '').replace('refs/heads/', '');
             if (appName) {
               const settings = getDeploySettings(appName);
+              // HMAC signature verification — skip if no secret configured (backward compat)
+              if (settings.webhookSecret) {
+                const sigHeader = req.headers['x-gitea-signature'] as string | undefined;
+                if (!sigHeader) {
+                  json(res, 200, { status: 'rejected', reason: 'missing signature' });
+                  return;
+                }
+                const { createHmac, timingSafeEqual } = await import('node:crypto');
+                const expected = createHmac('sha256', settings.webhookSecret).update(body).digest('hex');
+                const sigBuf = Buffer.from(sigHeader.replace(/^sha256=/, ''), 'hex');
+                const expBuf = Buffer.from(expected, 'hex');
+                if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+                  json(res, 200, { status: 'rejected', reason: 'invalid signature' });
+                  return;
+                }
+              }
               if (settings.autoDeploy && branch === settings.deployBranch) {
                 void deployApp(appName);
               }
@@ -2074,7 +2148,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
 
         // ── Domain API (T031-T036) ──────────────────────────────────
         if (parts[1] === 'domain') {
-          // GET /api/domain/list — read-only, no auth needed (local admin server)
+          if (!checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'GET' && parts[2] === 'list') {
             await handleDomainList(res, wizardState, projectPath);
             return;
@@ -2083,13 +2157,11 @@ export function createAdminServer(options: AdminServerOptions = {}): {
             handleDomainApps(res, wizardState, projectPath);
             return;
           }
-          // POST /api/domain/connect — no auth needed (apps-page uses this; server is localhost-only)
           if (req.method === 'POST' && parts[2] === 'connect') {
             await handleDomainConnect(res, body, wizardState, projectPath);
             return;
           }
-          // Mutating operations that remain auth-gated
-          if (!checkAdminAuth(req, res, adminPassword)) return;
+          // Disconnect, status — also auth-gated (guard already applied above)
           if (req.method === 'DELETE' && parts[2] === 'disconnect' && parts[3]) {
             await handleDomainDisconnect(res, parts[3], wizardState, projectPath);
             return;
@@ -2152,6 +2224,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
     stop: () =>
       new Promise((resolve, reject) => {
         clearInterval(_rotationTimer);
+        clearInterval(_sseTokenCleanupTimer);
         closeDb();
         server.close((err) => (err ? reject(err) : resolve()));
       }),

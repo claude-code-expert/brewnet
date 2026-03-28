@@ -47,6 +47,7 @@ A self-hosted home server management platform that provides an interactive CLI t
   - 예: 에러 복구 방식, 실패 시 동작, UX 흐름 등이 spec에 없으면 → 구현 전 먼저 질문
 - **같은 문제가 두 번 이상 반복될 경우**: 표면적 수정 전에 반드시 근본 원인(root cause)을 소스 레벨에서 확인할 것.
 - **수정 후 반드시 runtime 검증**: 코드 변경 후 빌드 성공만으로 완료 판단 금지 — 실제 동작 경로를 소스 레벨에서 추적해서 fix가 실제로 작동하는지 확인.
+- **이 프로젝트는 오픈소스 배포용** — 버그나 잘못된 동작 발생 시 임시 해결책(workaround)이 아닌 근본적인 문제 해결을 위한 코드 수정 방안을 수립하여 패치한다. 증상만 가리는 패치(환경변수 수동 변경, 파일 직접 수정 안내 등)는 금지.
 
 
 ## Investigation Rules

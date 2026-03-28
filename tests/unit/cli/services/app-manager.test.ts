@@ -112,14 +112,17 @@ jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => (
   loadState: mockLoadState,
 }));
 
-// Mock boilerplate-manager (used by Mode B and C for reinitGit / cloneStack)
+// Mock boilerplate-manager (used by Mode A/B/C for reinitGit / cloneStack / findFreePort)
 const mockReinitGit = jest.fn<(...args: unknown[]) => Promise<void>>();
 const mockCloneStack = jest.fn<(...args: unknown[]) => Promise<void>>();
 const mockGenerateEnv = jest.fn();
+// findFreePort: returns requested port (no actual port scanning in unit tests)
+const mockFindFreePort = jest.fn<(port: number) => Promise<number>>((port) => Promise.resolve(port));
 jest.unstable_mockModule('../../../../packages/cli/src/services/boilerplate-manager.js', () => ({
   reinitGit: mockReinitGit,
   cloneStack: mockCloneStack,
   generateEnv: mockGenerateEnv,
+  findFreePort: mockFindFreePort,
 }));
 
 // Mock frameworks.ts (resolveStackId) — must be before await import(app-manager.js)
@@ -133,7 +136,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/config/frameworks.js', ()
 // Imports (after mocks)
 // --------------------------------------------------------------------------
 
-const { readDotEnvValue, resolveProjectPath, listApps, getDeployHistory, listGiteaRepos } = await import(
+const { readDotEnvValue, resolveProjectPath, listApps, getDeployHistory, listGiteaRepos, setAdminProjectPath } = await import(
   '../../../../packages/cli/src/services/app-manager.js'
 );
 
@@ -182,6 +185,16 @@ describe('app-manager helpers', () => {
 });
 
 describe('createApp — mode A (installed boilerplate)', () => {
+  beforeEach(() => {
+    // resolveProjectPath() now uses _adminProjectPath as primary source.
+    // Pin to '/proj' so resolveContext() and readBoilerplateMeta() use the same path as test fixtures.
+    setAdminProjectPath('/proj');
+  });
+  afterEach(() => {
+    // Reset so other describe blocks use process.cwd() fallback.
+    setAdminProjectPath(process.cwd());
+  });
+
   it('creates Gitea repo, sets git remote, pushes, starts docker, registers app', async () => {
     mockLoadState.mockReturnValue({
       projectPath: '/proj',

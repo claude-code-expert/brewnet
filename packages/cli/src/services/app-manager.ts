@@ -27,7 +27,27 @@ const jobs = new Map<string, AppJob>();
 // ---------------------------------------------------------------------------
 
 export function resolveProjectPath(): string {
-  return discoverProjectPath() ?? process.cwd();
+  return _adminProjectPath ?? discoverProjectPath() ?? process.cwd();
+}
+
+// ---------------------------------------------------------------------------
+// Admin server project path override
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level project path set by admin-server at startup.
+ * Ensures resolveContext() always operates on the correct project even when
+ * multiple .brewnet.db files exist (discoverProjectPath picks by mtime which
+ * can return a different project than the one admin-server was started with).
+ */
+let _adminProjectPath: string | null = null;
+
+/**
+ * Called by admin-server immediately after it resolves its project path.
+ * All subsequent resolveContext() calls in this process will use this path.
+ */
+export function setAdminProjectPath(path: string): void {
+  _adminProjectPath = path;
 }
 
 // ---------------------------------------------------------------------------
@@ -576,39 +596,62 @@ interface AppContext {
 }
 
 function resolveContext(): AppContext {
-  // Read from persistent cache first — avoids fragile re-derivation from wizardState
-  // on every call. Cache is written at wizard completion and Named Tunnel setup.
-  const cached = loadGiteaConfig();
-
-  const last = getLastProject();
-  const state = loadState(last ?? '');
-  const raw = (state as { projectPath?: string } | null)?.projectPath ?? process.cwd();
-  const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-
+  // Use the same project-path resolution as the rest of the codebase.
+  // The old approach (getLastProject() → loadState() → projectPath) breaks whenever
+  // ~/.brewnet/config.json has lastProject="" (e.g. after DB migration) because
+  // loadState("") returns null and the fallback becomes process.cwd() — a completely
+  // wrong path that causes all credential lookups to silently produce empty strings.
+  const projectPath = resolveProjectPath();
   const envPath = join(projectPath, '.env');
-  const giteaUser =
-    cached?.username ??
-    (readDotEnvValue(envPath, 'GITEA_ADMIN_USER') ||
-      (state?.admin as { username?: string } | undefined)?.username ||
-      'admin');
 
-  // GITEA_ADMIN_PASSWORD is a Docker secret, NOT in .env — read from secrets file first
-  const secretsPath = join(projectPath, 'secrets', 'admin_password');
-  const secretsPassword = existsSync(secretsPath) ? readFileSync(secretsPath, 'utf-8').trim() : '';
-  const giteaPassword =
-    secretsPassword ||
-    readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') ||
-    (state?.admin as { password?: string } | undefined)?.password ||
-    '';
+  // Username: DB (gitea.username) → env file → default "admin"
+  const cached = loadGiteaConfig();
+  const giteaUser =
+    cached?.username ||
+    readDotEnvValue(envPath, 'GITEA_ADMIN_USER') ||
+    'admin';
+
+  // Password: SQLite DB is now the authoritative source (written during init/migration).
+  // Falls back through secrets file → .env → legacy wizard state for backwards compatibility.
+  let giteaPassword = '';
+  try {
+    giteaPassword = getSetting(projectPath, 'admin.password') ?? '';
+  } catch { /* DB not initialized yet — continue to fallbacks */ }
+
+  if (!giteaPassword) {
+    const secretsPath = join(projectPath, 'secrets', 'admin_password');
+    if (existsSync(secretsPath)) giteaPassword = readFileSync(secretsPath, 'utf-8').trim();
+  }
+  if (!giteaPassword) giteaPassword = readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD');
+  if (!giteaPassword) {
+    // Legacy fallback: wizard state (selections.json) — only load if lastProject is non-empty
+    const last = getLastProject();
+    if (last) {
+      const state = loadState(last);
+      giteaPassword = (state?.admin as { password?: string } | undefined)?.password ?? '';
+    }
+  }
+
+  // Tunnel mode & zone: DB is authoritative; wizard state as legacy fallback.
+  let tunnelMode = '';
+  let zoneName = '';
+  try {
+    tunnelMode = getSetting(projectPath, 'cf.tunnelMode') ?? '';
+    zoneName = getSetting(projectPath, 'cf.zoneName') ?? '';
+  } catch { /* DB not initialized */ }
+
+  if (!tunnelMode || !zoneName) {
+    const last = getLastProject();
+    const state = last ? loadState(last) : null;
+    if (!tunnelMode) tunnelMode = state?.domain?.cloudflare?.tunnelMode ?? '';
+    if (!zoneName) zoneName = state?.domain?.cloudflare?.zoneName ?? '';
+  }
 
   // Internal API URL: always local Traefik proxy — stable regardless of tunnel state.
   const giteaBaseUrl = 'http://localhost/git';
-
-  // Display URL: use external subdomain in Named Tunnel mode so dashboard links open correctly.
-  // In Named Tunnel mode, Gitea's ROOT_URL has no /git subpath, so local /git/ auth redirects
+  // Display URL: external subdomain in Named Tunnel mode so dashboard links open correctly.
+  // In Named Tunnel mode Gitea's ROOT_URL has no /git subpath, so local /git/ auth redirects
   // break in the browser. The external URL https://git.<zone>/ works correctly.
-  const tunnelMode = state?.domain?.cloudflare?.tunnelMode ?? '';
-  const zoneName = state?.domain?.cloudflare?.zoneName ?? '';
   const giteaDisplayUrl =
     tunnelMode === 'named' && zoneName ? `https://git.${zoneName}` : giteaBaseUrl;
 

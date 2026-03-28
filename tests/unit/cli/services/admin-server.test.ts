@@ -108,6 +108,8 @@ const { createAdminServer } = await import(
 // Helpers
 // ---------------------------------------------------------------------------
 
+const ADMIN_PASSWORD = 'test-secret-pw';
+
 let serverPort: number;
 let stopServer: () => Promise<void>;
 
@@ -115,7 +117,9 @@ async function req(
   method: string,
   path: string,
   body?: unknown,
+  opts: { auth?: boolean } = {},
 ): Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }> {
+  const { auth = true } = opts;
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : undefined;
     const options: http.RequestOptions = {
@@ -125,6 +129,7 @@ async function req(
       method,
       headers: {
         'Content-Type': 'application/json',
+        ...(auth ? { 'x-admin-password': ADMIN_PASSWORD } : {}),
         ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
       },
     };
@@ -154,7 +159,7 @@ function makeContainer(id: string, state: string, labels?: Record<string, string
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  const instance = createAdminServer({ port: 0, projectPath: '/tmp/test' });
+  const instance = createAdminServer({ port: 0, projectPath: '/tmp/test', adminPassword: ADMIN_PASSWORD });
   await instance.start();
   // port: 0 lets OS assign a free port; read actual port from server.address()
   serverPort = (instance.server.address() as AddressInfo).port;
@@ -611,5 +616,78 @@ describe('404 fallback', () => {
     expect(res.status).toBe(404);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auth — protected endpoints return 401 without x-admin-password header
+// ---------------------------------------------------------------------------
+
+describe('auth — protected endpoints return 401 without header', () => {
+  it('GET /api/debug/db returns 401', async () => {
+    const res = await req('GET', '/api/debug/db', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/services/install returns 401', async () => {
+    const res = await req('POST', '/api/services/install', { id: 'jellyfin' }, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('DELETE /api/services/containers/jellyfin returns 401', async () => {
+    const res = await req('DELETE', '/api/services/containers/jellyfin', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/apps returns 401', async () => {
+    const res = await req('GET', '/api/apps', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/apps returns 401', async () => {
+    const res = await req('POST', '/api/apps', { name: 'testapp' }, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/apps/check-port returns 401', async () => {
+    const res = await req('GET', '/api/apps/check-port?port=3000', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/logs returns 401', async () => {
+    const res = await req('GET', '/api/logs', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/backup returns 401', async () => {
+    const res = await req('GET', '/api/backup', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('POST /api/domain/connect returns 401', async () => {
+    const res = await req('POST', '/api/domain/connect', {}, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/domain/list returns 401', async () => {
+    const res = await req('GET', '/api/domain/list', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  // /api/health is used as the auth-check endpoint by PasswordGate.
+  // When adminPassword is configured it requires credentials (returns 401 without them).
+  it('GET /api/health returns 401 without auth when password is configured', async () => {
+    const res = await req('GET', '/api/health', undefined, { auth: false });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/health returns 200 with valid auth', async () => {
+    const res = await req('GET', '/api/health');
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /api/config returns 200 without auth', async () => {
+    const res = await req('GET', '/api/config', undefined, { auth: false });
+    expect(res.status).toBe(200);
   });
 });
