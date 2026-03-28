@@ -12,6 +12,7 @@ export interface ServiceStatus {
   port: number | null;
   url: string | null;
   externalUrl: string | null;
+  backendApiUrl?: string | null;
   removable: boolean;
   stackId?: string;
 }

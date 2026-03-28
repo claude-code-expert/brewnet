@@ -50,6 +50,7 @@ export interface ServiceStatus {
   port: number | null;
   url: string | null;
   externalUrl: string | null;
+  backendApiUrl?: string | null;
   removable: boolean;
   stackId?: string;
 }
@@ -711,10 +712,11 @@ async function handleGetServices(
       } else if (qtUrl && traefikPath) {
         // Quick Tunnel: PathPrefix-based URL
         let extPath = traefikPath;
-        // Unified API-only stacks (e.g. nextjs-app): append /api/hello
-        // so the external URL points to the API endpoint, not the empty root
+        // Backend role or unified API-only stacks: append /api/hello so the
+        // external URL points to the API endpoint, not the empty root.
         const stackLabel = labels['com.brewnet.stack'] ?? '';
-        if (stackLabel === 'nodejs-nextjs' || (composeService === 'backend' && extPath.includes('nextjs-app'))) {
+        const _role = labels['com.brewnet.role'] ?? '';
+        if (stackLabel === 'nodejs-nextjs' || _role === 'backend' || (composeService === 'backend' && extPath.includes('nextjs-app'))) {
           extPath += '/api/hello';
         }
         externalUrl = qtUrl.replace(/\/$/, '') + extPath;
@@ -760,6 +762,8 @@ async function handleGetServices(
         ? dbListDomainConnections(_projectPath).find((c) => c.appName === matchedApp.name)
         : null;
 
+      const containerRole = labels['com.brewnet.role'] ?? '';
+
       // Override name and URLs from app DB when available
       const finalName = matchedApp ? matchedApp.name : serviceName;
       const finalUrl = matchedApp && port && !NO_HTTP_SERVICES.has(composeService)
@@ -770,6 +774,12 @@ async function handleGetServices(
       const finalExternalUrl = appConn
         ? `https://${appConn.hostname}`
         : externalUrl;
+
+      // Backend role: expose API endpoint URL so the dashboard can display it explicitly.
+      // All brewnet boilerplate backends expose /api/hello as the health/test endpoint.
+      const backendApiUrl = (containerRole === 'backend' && finalUrl)
+        ? `${finalUrl}/api/hello`
+        : null;
 
       services.push({
         id: serviceId,
@@ -782,6 +792,7 @@ async function handleGetServices(
         port: port ?? null,
         url: finalUrl,
         externalUrl: finalExternalUrl,
+        backendApiUrl,
         removable: !REQUIRED_SERVICES.has(composeService),
         stackId,
       });

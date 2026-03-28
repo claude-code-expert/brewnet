@@ -247,11 +247,11 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
           )}
 
           {/* URLs */}
-          {(service.url || service.externalUrl) && (
+          {(service.url || service.externalUrl || service.backendApiUrl) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {service.url && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 52, flexShrink: 0 }}>LOCAL</span>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 70, flexShrink: 0 }}>LOCAL</span>
                   <a
                     href={service.url}
                     target="_blank"
@@ -276,9 +276,36 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                   </a>
                 </div>
               )}
+              {service.backendApiUrl && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 70, flexShrink: 0 }}>BACKEND</span>
+                  <a
+                    href={service.backendApiUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 12,
+                      fontFamily: 'var(--mono)',
+                      color: 'var(--teal)',
+                      background: 'rgba(61,214,200,0.07)',
+                      border: '1px solid rgba(61,214,200,0.18)',
+                      borderRadius: 4,
+                      padding: '3px 10px',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textDecoration: 'none',
+                    }}
+                    title={service.backendApiUrl}
+                  >
+                    ↗ {service.backendApiUrl}
+                  </a>
+                </div>
+              )}
               {service.externalUrl && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 52, flexShrink: 0 }}>EXTERNAL</span>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 70, flexShrink: 0 }}>EXTERNAL</span>
                   <a
                     href={service.externalUrl}
                     target="_blank"
