@@ -3,6 +3,7 @@ import type { AppEntry, AppGitInfo, BoilerplateMeta } from '../types.js';
 import { BOILERPLATE_GITHUB_BASE } from '../lib/constants.js';
 import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
 import { useI18n } from '../i18n/useI18n.js';
+import { CopyButton } from './ServiceCard.js';
 
 interface OverviewTabProps {
   app: AppEntry;
@@ -363,17 +364,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--txt2)' }}>
                 {git.cloneUrlHttp}
               </span>
-              <button
-                onClick={() => { void navigator.clipboard.writeText(git.cloneUrlHttp); }}
-                style={{
-                  marginLeft: 8, background: 'none', border: '1px solid var(--bdr2)',
-                  borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
-                  color: 'var(--txt3)', fontSize: 11, fontFamily: 'var(--mono)',
-                }}
-                title="Copy"
-              >
-                copy
-              </button>
+              <CopyButton text={git.cloneUrlHttp} style={{ marginLeft: 8 }} />
             </InfoRow>
           </div>
         ) : (

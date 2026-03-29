@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import type { ServiceStatus, ServiceDetail } from '../types.js';
+import { CopyButton } from './ServiceCard.js';
 
 interface ServiceDetailModalProps {
   service: ServiceStatus;
@@ -222,17 +223,7 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                 >
                   {detail.credentials.command}
                 </div>
-                <button
-                  onClick={() => { void navigator.clipboard.writeText(detail.credentials!.command!); }}
-                  style={{
-                    flexShrink: 0, background: 'none', border: '1px solid var(--bdr2)',
-                    borderRadius: 4, padding: '6px 10px', cursor: 'pointer',
-                    color: 'var(--txt3)', fontSize: 11, fontFamily: 'var(--mono)',
-                  }}
-                  title="Copy"
-                >
-                  copy
-                </button>
+                <CopyButton text={detail.credentials!.command!} />
               </div>
             </div>
           )}

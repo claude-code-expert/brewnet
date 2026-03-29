@@ -69,20 +69,6 @@ const en: Record<string, string> = {
   'appdomain.apex_both_suffix': ' will both be connected.',
   'appdomain.apex_warning': 'All traffic for this domain will be routed to this app.',
 
-  // ExternalDomainsSection (DNS provider Korean steps)
-  'dns.gabia_step1': 'Log in to Gabia → My Page → Domain Management',
-  'dns.gabia_step2': 'Click "DNS Settings" for the target domain',
-  'dns.gabia_step3': 'Click "Add Record"',
-  'dns.gabia_step4': 'Type: CNAME, Host: {subdomain}, Value: {target}',
-  'dns.gabia_step5': 'TTL: 3600 (or default)',
-  'dns.gabia_step6': 'Click "Confirm" to save',
-  'dns.cafe24_step1': 'Log in to Cafe24 → My Service Management',
-  'dns.cafe24_step2': 'Domain Management → DNS Management',
-  'dns.cafe24_step3': 'Click "Add DNS Record"',
-  'dns.cafe24_step4': 'Type: CNAME, Host: {subdomain}, Value: {target}',
-  'dns.cafe24_step5': 'Save',
-  'dns.cafe24_step6': 'Wait for DNS propagation (5-30 min)',
-
   // useLogStream
   'logs.stream_disconnected': 'Log stream disconnected. Close the modal and reopen.',
   'logs.stream_failed': 'Log stream connection failed',

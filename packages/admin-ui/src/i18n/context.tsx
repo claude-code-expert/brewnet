@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useState, useCallback, type ReactNode } from 'react';
 
 export type Locale = 'ko' | 'en';
 
@@ -23,14 +23,10 @@ export const LocaleContext = createContext<LocaleContextValue>({
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(detectLocale);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, locale);
-  }, [locale]);
-
-  const setLocale = (next: Locale) => {
+  const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
     localStorage.setItem(STORAGE_KEY, next);
-  };
+  }, []);
 
   return (
     <LocaleContext.Provider value={{ locale, setLocale }}>

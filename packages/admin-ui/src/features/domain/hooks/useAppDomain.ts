@@ -187,6 +187,7 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
           showToast('Domain connected');
           await load();
           setJustConnected(true);
+          setTimeout(() => setJustConnected(false), 8000);
         } else {
           const errorCode = finalResult?.error;
           const errorMsg = finalResult?.message ?? errorCode ?? 'Failed to connect domain';

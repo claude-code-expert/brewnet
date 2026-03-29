@@ -276,13 +276,13 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     credentials: {
       method: 'env',
       summary: 'Configured via POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB environment variables.',
-      command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet',
+      command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet_db',
     },
     connectionParams: [
       { label: 'host', value: 'localhost' },
       { label: 'port', value: '5432' },
       { label: 'user', value: 'brewnet' },
-      { label: 'db', value: 'brewnet' },
+      { label: 'db', value: 'brewnet_db' },
     ],
     tips: [
       'Internal network only (brewnet-internal) — no host port exposed',
@@ -303,13 +303,13 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     credentials: {
       method: 'env',
       summary: 'Configured via MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD environment variables.',
-      command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet',
+      command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet_db',
     },
     connectionParams: [
       { label: 'host', value: 'localhost' },
       { label: 'port', value: '3306' },
       { label: 'user', value: 'brewnet' },
-      { label: 'db', value: 'brewnet' },
+      { label: 'db', value: 'brewnet_db' },
     ],
     tips: [
       'Internal network only (brewnet-internal) — no host port exposed',

@@ -46,34 +46,23 @@ export function NavHeader() {
           border: '1px solid var(--bdr2)', borderRadius: 14,
           overflow: 'hidden', position: 'relative',
         }}>
-          <button
-            onClick={() => setLocale('ko')}
-            style={{
-              background: locale === 'ko' ? 'var(--amber)' : 'transparent',
-              border: 'none', cursor: 'pointer',
-              padding: '3px 10px',
-              color: locale === 'ko' ? '#0a1020' : 'var(--txt3)',
-              fontWeight: 600,
-              fontFamily: 'var(--mono)', fontSize: 11,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
-            KO
-          </button>
-          <button
-            onClick={() => setLocale('en')}
-            style={{
-              background: locale === 'en' ? 'var(--amber)' : 'transparent',
-              border: 'none', cursor: 'pointer',
-              padding: '3px 10px',
-              color: locale === 'en' ? '#0a1020' : 'var(--txt3)',
-              fontWeight: 600,
-              fontFamily: 'var(--mono)', fontSize: 11,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
-            EN
-          </button>
+          {(['ko', 'en'] as const).map((loc) => (
+            <button
+              key={loc}
+              onClick={() => setLocale(loc)}
+              style={{
+                background: locale === loc ? 'var(--amber)' : 'transparent',
+                border: 'none', cursor: 'pointer',
+                padding: '3px 10px',
+                color: locale === loc ? '#0a1020' : 'var(--txt3)',
+                fontWeight: 600,
+                fontFamily: 'var(--mono)', fontSize: 11,
+                transition: 'background 0.2s, color 0.2s',
+              }}
+            >
+              {loc.toUpperCase()}
+            </button>
+          ))}
         </div>
       </div>
     </div>
