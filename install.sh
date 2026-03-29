@@ -159,7 +159,10 @@ step 5 "Downloading Brewnet source..."
 
 if [ -d "$BREWNET_SOURCE/.git" ]; then
   spinner_start "Updating source"
-  git -C "$BREWNET_SOURCE" pull --ff-only --quiet 2>&1
+  # Shallow clone may fail ff-only pull after force-pushes or merge commits.
+  # Fetch + reset ensures we always get the latest main regardless of history.
+  git -C "$BREWNET_SOURCE" fetch --depth 1 origin main --quiet 2>&1
+  git -C "$BREWNET_SOURCE" reset --hard origin/main --quiet 2>&1
   spinner_stop 0 "Source updated"
 else
   mkdir -p "$(dirname "$BREWNET_SOURCE")"
