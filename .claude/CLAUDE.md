@@ -134,6 +134,26 @@ Step 7  Complete (endpoints, credentials, tunnel status)
 - `.env.example` — user onboarding template; changes affect first-run experience
 - `admin-server.ts` — logic and structure are frozen; UI edits only
 
+### Release & Deployment
+- **Version bump MUST be committed and pushed before tagging.**
+  GitHub Actions builds from the remote branch, not local state.
+  Uncommitted version changes result in silent publish failures.
+- Release sequence: version bump commit → push → tag → push tag.
+  Never create a tag before the version bump commit is on remote.
+- Use `bash scripts/release.sh` (dry-run) to verify before `--publish`.
+  Step 1 pre-flight catches uncommitted changes, wrong branch, stale tags.
+- `packages/cli/package.json` is the single source of truth for npm version.
+  Root `package.json` version is irrelevant to npm publish.
+- Tag format: `v{version}` (e.g., `v0.0.11`). Tags trigger `.github/workflows/publish.yml`.
+- After publish, verify: `npm view @brewnet/cli version` (npm registry may cache for ~30s).
+- **Two install paths exist** — changes must work for both:
+  - `npm install -g @brewnet/cli` → npm registry tarball
+  - `curl install.sh` → git clone + local build from main branch
+- `install.sh` uses `git fetch --depth 1 + reset --hard` (not `pull --ff-only`)
+  to handle shallow clone + merge commit history correctly.
+- Never modify `install.sh` without testing on a clean machine
+  (or `rm -rf ~/.brewnet/source && curl ... | bash`).
+
 ---
 
 ## Troubleshooting Reference
