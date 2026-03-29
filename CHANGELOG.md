@@ -3,6 +3,110 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop/main] - 2026-03-29 23:00 — v0.0.11 Release
+
+### 🎯 Prompts
+1. "i18n KO/EN 언어 설정 메뉴 추가 — 헤더에 [KO]|[EN] 토글, 브라우저 언어 자동 감지"
+2. "GitHub 아이콘 Footer로, Bug Report 우측 정렬, 토스트 teal 글로우 pulse"
+3. "Local Path 메뉴 삭제 및 관련 코드 정리"
+4. "Debug DB 메뉴/페이지/API endpoint 전체 삭제"
+5. "Catalog install 시 Named Tunnel ingress/DNS 미등록 수정"
+6. "PostgreSQL/pgAdmin 환경변수 미설정 → 컨테이너 crash 수정"
+7. "catalogEnv 하드코딩 → admin 설정 DB 기반 credential 동적 주입"
+8. "SERVICE_DETAIL_MAP DB credential 동적 패치 → 제거 (wizard 기본값과 불일치)"
+9. "wizard에서 db.user/db.password/db.name을 settings DB에 저장하도록 수정"
+10. "GET /api/apps/:name에 tunnelMode 가드 누락 → Quick Tunnel URL 반복 표시 근본 수정"
+11. "도메인 연결 step 메시지 순서 버그 수정 (dns 키워드 충돌 → step 번호 매칭)"
+12. "step 메시지 최소 1초 표시 큐잉"
+13. "Deploy 완료 토스트 누락 → jobType='deploy' prop 추가"
+14. "install.sh shallow clone update 실패 수정 (pull --ff-only → fetch + reset --hard)"
+15. "react-grab 프로덕션 빌드에서 제거 (devDependencies + CDN script)"
+16. "HelpDrawer 섹션 헤더 한글 → t() 래핑 누락 수정"
+17. "release.sh 배포 파이프라인 스크립트 생성"
+18. "CLAUDE.md에 Release & Deployment 가드레일 추가"
+19. "docs/MANUAL.md 사용 매뉴얼 작성 (1483줄)"
+20. "docs/PRESENTATION.md 발표자료 20페이지 작성 → 소스 기반 재작성 (1252줄)"
+
+### ✅ Changes
+
+**i18n (KO/EN 다국어 지원)**
+- **Added**: `src/i18n/context.tsx` — LocaleProvider (브라우저 감지 + localStorage)
+- **Added**: `src/i18n/useI18n.ts` — `t(key, fallback, vars?)` hook + interpolation
+- **Added**: `src/i18n/en.ts` — 영어 번역 딕셔너리 (~55 keys)
+- **Added**: `src/i18n/en-help.ts` — HelpDrawer 영어 콘텐츠 (5개 도움말 항목)
+- **Modified**: 16개 컴포넌트에 `t()` 래핑 적용
+- **Modified**: `NavHeader.tsx` — [KO|EN] pill 토글, nav-links 센터 정렬
+- **Modified**: `HelpDrawer.tsx` — locale 분기 + 섹션 헤더 t() 래핑
+
+**Catalog Install — Named Tunnel 통합**
+- **Fixed**: `handleInstallService` — Named Tunnel 모드에서 `configureTunnelIngress()` + `createDnsRecord()` 자동 호출
+- **Fixed**: `buildCatalogServiceEnv()` — DB 크레덴셜을 settings DB에서 읽어 사용 (`db.user`/`db.password`/`db.name`)
+- **Fixed**: `addService()` — `options.env`/`options.domain` 파라미터 추가, `{{DOMAIN}}` 플레이스홀더 해석
+- **Fixed**: `handleInstallService` — compose에 이미 존재하지만 컨테이너 없는 경우 `docker compose up -d` 시도
+
+**Quick Tunnel URL 라이프사이클 근본 수정**
+- **Fixed**: `GET /api/apps` + `GET /api/apps/:name` — 양쪽 모두 `tunnelMode !== 'named'` 가드 + `domainRequired` 플래그
+- **Fixed**: Gitea URL 리라이트 — Named Tunnel 모드에서 `http://localhost/git/...` → `https://git.<zone>/...`
+- **Fixed**: `cloneUrlHttp` — `giteaBaseUrl` → `giteaDisplayUrl`로 변경
+
+**DB Credential 체인 정상화**
+- **Fixed**: `generate.ts` — wizard에서 `db.user`/`db.password`/`db.name` settings DB 저장
+- **Fixed**: `admin-server.ts` — catalog endpoint에서 `db.*` settings 읽어서 접속 명령어 표시
+- **Removed**: `SERVICE_DETAIL_MAP` DB credential 동적 패치 (wizard 기본값과 불일치 유발)
+
+**UI 개선**
+- **Added**: `useElapsed` 공통 hook — 모든 대기 상태에 경과 시간 표시
+- **Added**: AppCard front/backend chips + 하단 고정 레이아웃 (230px)
+- **Added**: 도메인 연결 성공 배너 (justConnected → 8초 후 자동 해제)
+- **Added**: Apps 페이지 Refresh 버튼
+- **Added**: Clone URL + docker exec 명령어 copy 버튼 (`CopyButton` 재사용)
+- **Modified**: 토스트 — 14px/500, teal 글로우 테두리, pulse 애니메이션
+- **Modified**: Footer — GitHub 센터, Bug Report 우측 20px 마진
+- **Modified**: OverviewTab — grid 컬럼 비율 조정 (port↓, language↑)
+- **Fixed**: Deploy 완료 토스트 — `jobType="deploy"` prop 누락 수정
+- **Fixed**: 도메인 연결 step 메시지 — step 번호 기반 매칭 + 1초 최소 표시 큐잉
+
+**삭제/정리**
+- **Removed**: Local Path 모드 (CreateAppModal UI + admin-server API 핸들러)
+- **Removed**: Debug DB 뷰어 (DbViewer.tsx + NavHeader 링크 + /api/debug/db endpoint)
+- **Removed**: react-grab devDependency + CDN script (프로덕션 빌드 정리)
+- **Removed**: `en.ts` dns.* 데드코드 12개 키
+
+**배포 인프라**
+- **Added**: `scripts/release.sh` — 빌드-검증-배포 통합 파이프라인 (dry-run / --publish)
+- **Added**: `scripts/README.md` — 릴리스 프로세스 단계별 문서
+- **Fixed**: `install.sh` — shallow clone `pull --ff-only` → `fetch --depth 1 + reset --hard`
+- **Fixed**: `generate.test.ts` — `process.platform` mock 추가 (Linux CI 호환)
+- **Added**: `CLAUDE.md` Release & Deployment 가드레일 섹션
+
+**문서**
+- **Added**: `docs/MANUAL.md` — 사용 매뉴얼 (1483줄, 한국어)
+- **Added**: `docs/PRESENTATION.md` — 발표자료 20페이지 (소스 기반 재작성, 1252줄)
+
+### 📊 Test Results
+- Total: 143+ tests passing (admin-server + service-manager suites)
+- 22 new tests: credential propagation, enrichment, env/domain options, install named tunnel
+
+### 📁 Files Modified (주요)
+- `packages/cli/src/services/admin-server.ts` (+350, -80 lines)
+- `packages/cli/src/services/service-manager.ts` (+26, -1 lines)
+- `packages/cli/src/wizard/steps/generate.ts` (+3 lines)
+- `packages/admin-ui/src/i18n/` (4 new files, ~360 lines)
+- `packages/admin-ui/src/components/` (16 files modified)
+- `packages/admin-ui/src/features/domain/` (7 files modified)
+- `docs/MANUAL.md` (new, 1483 lines)
+- `docs/PRESENTATION.md` (rewritten, 1252 lines)
+- `scripts/release.sh` (new, 229 lines)
+- `install.sh` (+4, -1 lines)
+
+### 🌿 Branches
+- `main` (commit: 0702dc4)
+- `develop` (commit: 0702dc4)
+- `feature/i18n` (merged into develop)
+- npm: `@brewnet/cli@0.0.11` published
+
+---
+
 ## [develop] - 2026-03-29 11:30
 
 ### 🎯 Prompts
