@@ -1,1 +1,0 @@
-../tests/install/npm-install.test.sh
