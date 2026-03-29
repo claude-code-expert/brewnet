@@ -1,6 +1,7 @@
 // T029 — AppCard component
 import type { AppEntry } from '../types.js';
 import { showToast } from './Toast.js';
+import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
 
 interface AppCardProps {
   app: AppEntry;
@@ -35,6 +36,7 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete }: AppCardProps) {
+  const openGitea = useGiteaOpen();
   const handleStart = () => {
     if (!app.lastDeployedAt) {
       showToast('⚠️ Deploy first before starting');
@@ -52,7 +54,7 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
       display: 'flex',
       flexDirection: 'column',
       gap: 12,
-      height: 200,
+      height: 230,
       overflow: 'hidden',
     }}>
       {/* Top row: name + status */}
@@ -89,7 +91,7 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
         </span>
       </div>
 
-      {/* Chips row: lang, framework, mode */}
+      {/* Chips row: lang, framework, mode, role */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {app.lang && (
           <span style={{
@@ -128,6 +130,32 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
         }}>
           {app.mode}
         </span>
+        {app.backendLocalUrl && (
+          <>
+            <span style={{
+              fontSize: 11,
+              fontFamily: 'var(--mono)',
+              color: 'var(--teal)',
+              background: 'rgba(61,214,200,0.06)',
+              border: '1px solid rgba(61,214,200,0.2)',
+              borderRadius: 20,
+              padding: '2px 9px',
+            }}>
+              front
+            </span>
+            <span style={{
+              fontSize: 11,
+              fontFamily: 'var(--mono)',
+              color: 'var(--amber)',
+              background: 'rgba(232,168,73,0.06)',
+              border: '1px solid rgba(232,168,73,0.2)',
+              borderRadius: 20,
+              padding: '2px 9px',
+            }}>
+              backend
+            </span>
+          </>
+        )}
       </div>
 
       {/* Last deployed */}
@@ -139,9 +167,19 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
         )}
       </div>
 
-      {/* Access links */}
-      {(app.localUrl || app.externalUrl || app.giteaRepoUrl) && (
+      {/* Access links + Action buttons — pinned to card bottom */}
+      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {(app.localUrl || app.externalUrl || app.giteaRepoUrl || app.domainRequired) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {app.domainRequired && (
+            <span style={{
+              fontSize: 11,
+              color: 'var(--amber)',
+              fontFamily: 'var(--mono)',
+            }}>
+              ⚠ Quick Tunnel ended — domain connection required
+            </span>
+          )}
           {app.localUrl && (
             <a
               href={app.localUrl}
@@ -150,7 +188,23 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
               className="domain-link"
               style={{ fontSize: 11 }}
             >
-              ↗ Local
+              {app.backendLocalUrl ? '↗ Front' : '↗ Local'}
+            </a>
+          )}
+          {app.backendLocalUrl && (
+            <a
+              href={app.backendLocalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="domain-link"
+              style={{
+                fontSize: 11,
+                background: 'rgba(232,168,73,0.07)',
+                borderColor: 'rgba(232,168,73,0.18)',
+                color: 'var(--amber)',
+              }}
+            >
+              ↗ API
             </a>
           )}
           {app.externalUrl && (
@@ -170,20 +224,19 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
             </a>
           )}
           {app.giteaRepoUrl && (
-            <a
-              href={app.giteaRepoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openGitea(app.giteaRepoUrl!)}
               className="domain-link"
               style={{
                 fontSize: 11,
                 background: 'rgba(61,214,200,0.07)',
                 borderColor: 'rgba(61,214,200,0.18)',
                 color: 'var(--teal)',
+                cursor: 'pointer',
               }}
             >
               ⎇ Gitea
-            </a>
+            </button>
           )}
         </div>
       )}
@@ -216,6 +269,7 @@ export function AppCard({ app, onOpenDetail, onStart, onStop, onDeploy, onDelete
           ✕ Delete
         </button>
       </div>
+      </div>{/* end bottom-pinned wrapper */}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ShieldCheck, Loader, KeyRound } from 'lucide-react';
 import { HelpTooltip } from './HelpTooltip.js';
+import { useI18n } from '../../../i18n/useI18n.js';
 
 interface TokenStepProps {
   tokenValidating: boolean;
@@ -15,6 +16,7 @@ interface TokenStepProps {
 }
 
 export function TokenStep({ tokenValidating, tokenError, tokenEmail, adminPasswordRequired, onSaveToken, onAdminPassword, onHelp }: TokenStepProps) {
+  const { t } = useI18n();
   const [token, setToken] = useState('');
   const [adminPw, setAdminPw] = useState('');
   const handleSubmit = () => {
@@ -91,7 +93,7 @@ export function TokenStep({ tokenValidating, tokenError, tokenEmail, adminPasswo
               Admin password required
             </div>
             <div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.5 }}>
-              브루넷 설치 시 설정한 관리자 비밀번호를 입력하세요.
+              {t('token.admin_pw_desc', '브루넷 설치 시 설정한 관리자 비밀번호를 입력하세요.')}
             </div>
             <input
               className="fi"

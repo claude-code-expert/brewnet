@@ -10,6 +10,7 @@ import { CreateAppModal } from '../components/CreateAppModal.js';
 import { ProgressModal } from '../components/ProgressModal.js';
 import { CloudflareTunnelModal } from '../features/domain/index.js';
 import { AppDetailModal } from '../components/AppDetailModal.js';
+import { useI18n } from '../i18n/useI18n.js';
 import { ExternalDomainsSection } from '../components/ExternalDomainsSection.js';
 import { ConfirmModal } from '../components/ConfirmModal.js';
 import { showToast } from '../components/Toast.js';
@@ -21,6 +22,7 @@ interface DomainListResponse {
 
 export function Apps() {
   const { apiFetch } = useAuth();
+  const { t } = useI18n();
 
   const [apps, setApps]             = useState<AppEntry[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -146,6 +148,13 @@ export function Apps() {
         <div className="tbr">
           <button
             className="btn bg bsm"
+            onClick={() => window.location.reload()}
+            title="Refresh"
+          >
+            ↻
+          </button>
+          <button
+            className="btn bg bsm"
             onClick={() => setShowDomainSetting(true)}
           >
             ⚙ Domain Setting
@@ -254,8 +263,8 @@ export function Apps() {
       )}
       {confirmDelete && (
         <ConfirmModal
-          message={`"${confirmDelete}" 앱과 관련된 모든 데이터가 영구 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`}
-          confirmLabel="영구 삭제"
+          message={t('apps.delete_message', '"{name}" 앱과 관련된 모든 데이터가 영구 삭제됩니다. 이 작업은 되돌릴 수 없습니다.', { name: confirmDelete })}
+          confirmLabel={t('apps.delete_label', '영구 삭제')}
           danger
           requiredInput={confirmDelete}
           onConfirm={() => doDelete(confirmDelete)}

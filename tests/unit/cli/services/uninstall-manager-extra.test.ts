@@ -41,6 +41,7 @@ const mockLoadState = jest.fn(() => null);
 const mockGetProjectDir = jest.fn((name: string) => join(homedir(), '.brewnet', 'projects', name));
 
 jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
+  discoverProjectPath: jest.fn(() => null),
   getLastProject: mockGetLastProject,
   loadState: mockLoadState,
   getProjectDir: mockGetProjectDir,

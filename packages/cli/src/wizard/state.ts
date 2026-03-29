@@ -16,6 +16,7 @@ import {
   writeFileSync,
   mkdirSync,
   readdirSync,
+  statSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -247,4 +248,77 @@ export function listProjects(): string[] {
  */
 export function _resetGlobalConfig(): void {
   _globalConfig = null;
+}
+
+// ---------------------------------------------------------------------------
+// Project Auto-Discovery
+// ---------------------------------------------------------------------------
+
+function expandTilde(p: string): string {
+  if (p === '~') return homedir();
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  return p;
+}
+
+/**
+ * Discover the project path without depending on ~/.brewnet/ files.
+ *
+ * Priority:
+ *   1. Explicit CLI argument (highest)
+ *   2. ~/.brewnet/config.json → lastProject → selections.json (legacy, best-effort)
+ *   3. Filesystem scan: ~/brewnet/*\/.brewnet.db (most recently modified)
+ *
+ * Returns null only if no project can be found anywhere.
+ */
+export function discoverProjectPath(cliPath?: string): string | null {
+  // 1. CLI argument
+  if (cliPath) return expandTilde(cliPath);
+
+  // 2. Legacy config.json → selections.json
+  try {
+    const last = getLastProject();
+    if (last) {
+      const state = loadState(last);
+      if (state?.projectPath) {
+        const pp = expandTilde(state.projectPath);
+        if (existsSync(join(pp, '.brewnet.db'))) return pp;
+        // DB doesn't exist yet but projectPath dir exists — still valid
+        if (existsSync(pp)) return pp;
+      }
+    }
+  } catch { /* config.json or selections.json missing — continue */ }
+
+  // 3. Filesystem scan: ~/brewnet/*/.brewnet.db
+  try {
+    const brewnetRoot = join(homedir(), 'brewnet');
+    if (existsSync(brewnetRoot)) {
+      const entries = readdirSync(brewnetRoot, { withFileTypes: true })
+        .filter((e) => e.isDirectory());
+
+      let bestPath: string | null = null;
+      let bestMtime = 0;
+
+      for (const entry of entries) {
+        const dbPath = join(brewnetRoot, entry.name, '.brewnet.db');
+        if (existsSync(dbPath)) {
+          try {
+            const stat = statSync(dbPath);
+            if (stat.mtimeMs > bestMtime) {
+              bestMtime = stat.mtimeMs;
+              bestPath = join(brewnetRoot, entry.name);
+            }
+          } catch { /* skip unreadable */ }
+        }
+      }
+      if (bestPath) return bestPath;
+
+      // No DB files, but check for docker-compose.yml (pre-DB installations)
+      for (const entry of entries) {
+        const composePath = join(brewnetRoot, entry.name, 'docker-compose.yml');
+        if (existsSync(composePath)) return join(brewnetRoot, entry.name);
+      }
+    }
+  } catch { /* filesystem scan failed — continue */ }
+
+  return null;
 }

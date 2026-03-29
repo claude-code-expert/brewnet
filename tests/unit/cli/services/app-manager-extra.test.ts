@@ -95,6 +95,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/gitea-client.js'
 const mockLoadState = jest.fn();
 const mockGetLastProject = jest.fn(() => 'my-project');
 jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
+  discoverProjectPath: jest.fn(() => null),
   getLastProject: mockGetLastProject,
   loadState: mockLoadState,
 }));

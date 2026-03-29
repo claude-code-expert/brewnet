@@ -79,6 +79,7 @@ const mockLoadState = jest.fn();
 const mockSaveState = jest.fn();
 
 jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
+  discoverProjectPath: jest.fn(() => null),
   getLastProject: mockGetLastProject,
   loadState: mockLoadState,
   saveState: mockSaveState,

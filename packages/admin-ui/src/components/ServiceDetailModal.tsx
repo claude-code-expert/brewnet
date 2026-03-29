@@ -1,4 +1,6 @@
+import { Fragment } from 'react';
 import type { ServiceStatus, ServiceDetail } from '../types.js';
+import { CopyButton } from './ServiceCard.js';
 
 interface ServiceDetailModalProps {
   service: ServiceStatus;
@@ -174,14 +176,14 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                 }}
               >
                 {detail.connectionParams.map(({ label, value }) => (
-                  <>
-                    <span key={`${label}-k`} style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
+                  <Fragment key={label}>
+                    <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--txt3)' }}>
                       {label}
                     </span>
-                    <span key={`${label}-v`} style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--teal)' }}>
+                    <span style={{ fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--teal)' }}>
                       {value}
                     </span>
-                  </>
+                  </Fragment>
                 ))}
               </div>
             </div>
@@ -204,20 +206,24 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                   Terminal only
                 </span>
               </div>
-              <div
-                style={{
-                  background: '#0a1020',
-                  border: '1px solid var(--bdr)',
-                  borderRadius: 'var(--r)',
-                  padding: '10px 14px',
-                  fontFamily: 'var(--mono)',
-                  fontSize: 12,
-                  color: 'var(--teal)',
-                  overflowX: 'auto',
-                  whiteSpace: 'pre',
-                }}
-              >
-                {detail.credentials.command}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    background: '#0a1020',
+                    border: '1px solid var(--bdr)',
+                    borderRadius: 'var(--r)',
+                    padding: '10px 14px',
+                    fontFamily: 'var(--mono)',
+                    fontSize: 12,
+                    color: 'var(--teal)',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre',
+                  }}
+                >
+                  {detail.credentials.command}
+                </div>
+                <CopyButton text={detail.credentials!.command!} />
               </div>
             </div>
           )}
@@ -247,11 +253,11 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
           )}
 
           {/* URLs */}
-          {(service.url || service.externalUrl) && (
+          {(service.url || service.externalUrl || service.backendApiUrl) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {service.url && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 52, flexShrink: 0 }}>LOCAL</span>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 70, flexShrink: 0 }}>LOCAL</span>
                   <a
                     href={service.url}
                     target="_blank"
@@ -276,9 +282,36 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                   </a>
                 </div>
               )}
+              {service.backendApiUrl && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 70, flexShrink: 0 }}>BACKEND</span>
+                  <a
+                    href={service.backendApiUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 12,
+                      fontFamily: 'var(--mono)',
+                      color: 'var(--teal)',
+                      background: 'rgba(61,214,200,0.07)',
+                      border: '1px solid rgba(61,214,200,0.18)',
+                      borderRadius: 4,
+                      padding: '3px 10px',
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textDecoration: 'none',
+                    }}
+                    title={service.backendApiUrl}
+                  >
+                    ↗ {service.backendApiUrl}
+                  </a>
+                </div>
+              )}
               {service.externalUrl && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 52, flexShrink: 0 }}>EXTERNAL</span>
+                  <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--txt3)', width: 70, flexShrink: 0 }}>EXTERNAL</span>
                   <a
                     href={service.externalUrl}
                     target="_blank"

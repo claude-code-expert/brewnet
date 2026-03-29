@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ApiFetch } from '../types.js';
 import { useCloudflareSetup } from '../hooks/useCloudflareSetup.js';
 import { useAuth } from '../../../auth-context.js';
+import { useI18n } from '../../../i18n/useI18n.js';
 import { StepIndicator } from './StepIndicator.js';
 import { TokenStep } from './TokenStep.js';
 import { ZoneStep } from './ZoneStep.js';
@@ -23,6 +24,7 @@ const WIZARD_STEPS = [
 ];
 
 export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: CloudflareTunnelModalProps) {
+  const { t } = useI18n();
   const setup = useCloudflareSetup(apiFetch);
   const { setPassword } = useAuth();
   const [helpKey, setHelpKey] = useState<string | null>(null);
@@ -108,7 +110,7 @@ export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: Cloudfl
                   }}>
                     One-time setup — complete these steps once to connect all your apps to a public domain.
                     <span style={{ marginLeft: 6, color: 'var(--txt3)', fontSize: 11 }}>
-                      각 항목의 <strong style={{ fontFamily: 'var(--mono)', fontSize: 10 }}>?</strong> 버튼을 누르면 도움말이 표시됩니다.
+                      {t('cf.help_hint', '각 항목의 ? 버튼을 누르면 도움말이 표시됩니다.')}
                     </span>
                   </div>
                 )}
@@ -195,7 +197,7 @@ export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: Cloudfl
                         fontSize: 12, color: 'var(--teal)',
                       }}>
                         <span style={{ fontWeight: 700 }}>✓</span>
-                        cloudflared 컨테이너가 자동으로 재시작됐습니다
+                        {t('cf.container_restarted', 'cloudflared 컨테이너가 자동으로 재시작됐습니다')}
                       </div>
                     )}
 
@@ -205,12 +207,12 @@ export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: Cloudfl
                         background: 'rgba(232,168,73,0.07)', border: '1px solid rgba(232,168,73,0.25)',
                         fontSize: 12, color: 'var(--amber)', lineHeight: 1.6,
                       }}>
-                        ⚠ docker-compose.yml은 업데이트됐지만 cloudflared 재시작에 실패했습니다.<br />
-                        수동으로{' '}
+                        ⚠ {t('cf.compose_restart_failed', 'docker-compose.yml은 업데이트됐지만 cloudflared 재시작에 실패했습니다.')}<br />
+                        {t('cf.manual_run', '수동으로')}{' '}
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                           docker compose up -d --force-recreate cloudflared
                         </span>
-                        을 실행하세요.
+                        {t('cf.run_suffix', '을 실행하세요.')}
                       </div>
                     )}
 
@@ -220,11 +222,8 @@ export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: Cloudfl
                         background: 'rgba(232,168,73,0.07)', border: '1px solid rgba(232,168,73,0.25)',
                         fontSize: 12, color: 'var(--amber)', lineHeight: 1.6,
                       }}>
-                        ⚠ docker-compose.yml을 자동으로 업데이트하지 못했습니다.<br />
-                        cloudflared 서비스의{' '}
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>command</span>와{' '}
-                        <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>TUNNEL_TOKEN</span>을
-                        수동으로 업데이트하고 재시작하세요.
+                        ⚠ {t('cf.compose_update_failed', 'docker-compose.yml을 자동으로 업데이트하지 못했습니다.')}<br />
+                        {t('cf.manual_update', 'cloudflared 서비스의 {command}와 {token}을 수동으로 업데이트하고 재시작하세요.', { command: 'command', token: 'TUNNEL_TOKEN' })}
                       </div>
                     )}
 
@@ -232,9 +231,22 @@ export function CloudflareTunnelModal({ apiFetch, onClose, onComplete }: Cloudfl
                       You can now connect your apps to subdomains from each app's Domain tab.
                     </div>
 
-                    <button className="btn bp" onClick={onComplete ?? onClose} style={{ alignSelf: 'flex-end' }}>
-                      Connect apps →
-                    </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={resetSetup}
+                        style={{
+                          background: 'none', border: '1px solid var(--bdr)',
+                          borderRadius: 'var(--r)', padding: '7px 14px',
+                          cursor: 'pointer', color: 'var(--txt3)', fontSize: 12,
+                        }}
+                      >
+                        Reset & Reconfigure
+                      </button>
+                      <button className="btn bp" onClick={onComplete ?? onClose}>
+                        Connect apps →
+                      </button>
+                    </div>
                   </div>
                 )}
               </>

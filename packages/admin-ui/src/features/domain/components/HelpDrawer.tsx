@@ -1,6 +1,8 @@
 // features/domain/components/HelpDrawer.tsx
 // Right-side slide-in help panel for the Cloudflare domain setup wizard.
 import { createPortal } from 'react-dom';
+import { useI18n } from '../../../i18n/useI18n.js';
+import { HELP_CONTENT_EN } from '../../../i18n/en-help.js';
 
 interface HelpItem {
   title: string;
@@ -167,7 +169,9 @@ interface HelpDrawerProps {
 }
 
 export function HelpDrawer({ helpKey, onClose }: HelpDrawerProps) {
-  const item = helpKey ? (HELP_CONTENT[helpKey] ?? null) : null;
+  const { locale } = useI18n();
+  const dict = locale === 'en' ? HELP_CONTENT_EN : HELP_CONTENT;
+  const item = helpKey ? (dict[helpKey] ?? null) : null;
   const isOpen = !!item;
 
   return createPortal(

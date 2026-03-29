@@ -3,6 +3,7 @@ import { showToast } from './Toast.js';
 import { StepIndicator } from '../features/domain/components/StepIndicator.js';
 import { HelpTooltip } from '../features/domain/components/HelpTooltip.js';
 import { HelpDrawer } from '../features/domain/components/HelpDrawer.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 interface CloudflareSettings {
   token?: string;
@@ -22,6 +23,7 @@ const STEPS = [
 ];
 
 export function DomainSettingModal({ apiFetch, onClose }: DomainSettingModalProps) {
+  const { t } = useI18n();
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
@@ -132,9 +134,7 @@ export function DomainSettingModal({ apiFetch, onClose }: DomainSettingModalProp
                   marginBottom: 20,
                   lineHeight: 1.6,
                 }}>
-                  각 항목의{' '}
-                  <strong style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--teal)' }}>?</strong>
-                  {' '}버튼을 누르면 도움말이 표시됩니다.
+                  {t('cf.help_hint', '각 항목의 ? 버튼을 누르면 도움말이 표시됩니다.')}
                 </div>
 
                 {/* Step indicator */}

@@ -29,6 +29,7 @@ jest.unstable_mockModule('node:fs', () => ({
   writeFileSync: mockWriteFileSync,
   mkdirSync: mockMkdirSync,
   readdirSync: mockReaddirSync,
+  statSync: jest.fn(() => ({ mtimeMs: Date.now() })),
 }));
 
 // Mock node:os to return a predictable home directory

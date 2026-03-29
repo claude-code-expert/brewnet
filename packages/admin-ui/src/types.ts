@@ -12,6 +12,7 @@ export interface ServiceStatus {
   port: number | null;
   url: string | null;
   externalUrl: string | null;
+  backendApiUrl?: string | null;
   removable: boolean;
   stackId?: string;
 }
@@ -48,7 +49,7 @@ export interface ConfigResponse {
 
 export interface AppEntry {
   name: string;
-  mode: 'boilerplate' | 'git-clone' | 'new-project' | 'local-path';
+  mode: 'boilerplate' | 'git-clone' | 'new-project';
   stackId?: string;
   sourceUrl?: string;
   appDir: string;
@@ -64,6 +65,7 @@ export interface AppEntry {
   externalUrl?: string | null;
   backendLocalUrl?: string | null;
   backendExternalUrl?: string | null;
+  domainRequired?: boolean;
 }
 
 export interface AppJob {

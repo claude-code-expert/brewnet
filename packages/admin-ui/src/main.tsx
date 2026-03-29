@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { LocaleProvider } from './i18n/context.js';
 import { AuthProvider } from './auth-context.js';
 import { PasswordGate } from './components/PasswordGate.js';
 import { Router } from './router.js';
@@ -11,13 +12,15 @@ if (!root) throw new Error('Root element not found');
 
 createRoot(root).render(
   <StrictMode>
-    <AuthProvider>
-      <PasswordGate>
-        <div id="shell">
-          <Router />
-        </div>
-        <Toast />
-      </PasswordGate>
-    </AuthProvider>
+    <LocaleProvider>
+      <AuthProvider>
+        <PasswordGate>
+          <div id="shell">
+            <Router />
+          </div>
+          <Toast />
+        </PasswordGate>
+      </AuthProvider>
+    </LocaleProvider>
   </StrictMode>,
 );

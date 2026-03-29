@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { ApiFetch, DomainConnectionEntry } from '../types.js';
-import { listDomains, connectDomain, disconnectDomain } from '../api/domain-api.js';
+import { listDomains, disconnectDomain } from '../api/domain-api.js';
 import { toSubdomainSlug, validateSubdomainLabel } from '../utils/subdomain.js';
 import { showToast, showPersistentToast } from '../../../components/Toast.js';
 
@@ -27,7 +27,9 @@ export interface AppDomainHook {
   setSubdomain: (v: string) => void;
   subdomainError: string | null;
   connecting: boolean;
+  connectingMessage: string | null;
   disconnecting: boolean;
+  justConnected: boolean;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   reload: () => Promise<void>;
@@ -43,7 +45,9 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
   const [subdomain, setSubdomain] = useState(suggested);
   const [subdomainError, setSubdomainError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [connectingMessage, setConnectingMessage] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [justConnected, setJustConnected] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,7 +92,6 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
   const connectedDomain = connections.find((c) => c.appName === appName) ?? null;
 
   const connect = useCallback(async () => {
-    // Client-side validation first
     const validation = validateSubdomainLabel(subdomain);
     if (!validation.valid) {
       setSubdomainError(validation.error ?? 'Invalid subdomain');
@@ -102,22 +105,110 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
     }
 
     setConnecting(true);
+    setConnectingMessage('Connecting...');
+
+    const STEP_LABELS: Record<number, string> = {
+      1: 'Checking app health...',
+      2: 'Updating tunnel ingress...',
+      3: 'Creating DNS record...',
+      4: 'Updating Traefik labels...',
+      5: 'Saving connection...',
+      6: 'Waiting for DNS propagation...',
+    };
+
     try {
-      const result = await connectDomain(apiFetch, appName, subdomain, zoneName);
-      if (result.success) {
-        showToast('Domain connected');
-        await load();
+      const pw = sessionStorage.getItem('adminPassword') ?? '';
+      const response = await fetch('/api/domain/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pw },
+        body: JSON.stringify({ appName, subdomain, domain: zoneName }),
+      });
+
+      const contentType = response.headers.get('content-type') ?? '';
+
+      if (contentType.includes('text/event-stream')) {
+        // SSE streaming response — read step-by-step progress
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let finalResult: { success?: boolean; error?: string; message?: string } | null = null;
+
+        // Queue step messages so each is visible for at least 1 second,
+        // even if the server completes multiple steps within milliseconds.
+        const stepQueue: string[] = [];
+        let lastStepTime = 0;
+        const MIN_DISPLAY_MS = 1000;
+
+        const flushQueue = async () => {
+          while (stepQueue.length > 0) {
+            const msg = stepQueue.shift()!;
+            const now = Date.now();
+            const elapsed = now - lastStepTime;
+            if (elapsed < MIN_DISPLAY_MS && lastStepTime > 0) {
+              await new Promise((r) => setTimeout(r, MIN_DISPLAY_MS - elapsed));
+            }
+            setConnectingMessage(msg);
+            lastStepTime = Date.now();
+          }
+        };
+
+        if (reader) {
+          let buffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              try {
+                const event = JSON.parse(line.slice(6)) as { type: string; step?: number; total?: number; message?: string; success?: boolean; error?: string };
+                if (event.type === 'step') {
+                  const label = STEP_LABELS[event.step ?? 0] ?? event.message ?? '';
+                  stepQueue.push(`Step ${event.step}/${event.total}: ${label}`);
+                } else if (event.type === 'step_done') {
+                  // step_done events are informational; skip display
+                } else if (event.type === 'result') {
+                  finalResult = event;
+                }
+              } catch { /* skip malformed SSE */ }
+            }
+            // Drain queued messages between reads
+            await flushQueue();
+          }
+        }
+        // Drain any remaining queued messages after stream ends
+        await flushQueue();
+
+        if (finalResult?.success) {
+          setConnectingMessage('Connected!');
+          showToast('Domain connected');
+          await load();
+          setJustConnected(true);
+          setTimeout(() => setJustConnected(false), 8000);
+        } else {
+          const errorCode = finalResult?.error;
+          const errorMsg = finalResult?.message ?? errorCode ?? 'Failed to connect domain';
+          showPersistentToast(mapError(errorCode, errorMsg));
+        }
       } else {
-        const errorCode = (result as { error?: string }).error;
-        const errorMsg = (result as { message?: string }).message ?? errorCode ?? 'Failed to connect domain';
-        console.error(`[domain-connect] FAIL — error=${errorCode} message=${errorMsg}`, result);
-        showPersistentToast(mapError(errorCode, errorMsg));
+        // Non-SSE fallback (error responses are still JSON)
+        const result = await response.json() as { success?: boolean; error?: string; message?: string };
+        if (result.success) {
+          showToast('Domain connected');
+          await load();
+        } else {
+          showPersistentToast(mapError(result.error, result.message ?? 'Failed to connect domain'));
+        }
       }
     } catch (e) {
       console.error('[domain-connect] exception:', e);
       showPersistentToast(e instanceof Error ? e.message : 'Failed to connect domain');
     } finally {
       setConnecting(false);
+      setConnectingMessage(null);
     }
   }, [apiFetch, appName, subdomain, zoneName, load]);
 
@@ -154,7 +245,9 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
     setSubdomain: handleSetSubdomain,
     subdomainError,
     connecting,
+    connectingMessage,
     disconnecting,
+    justConnected,
     connect,
     disconnect,
     reload: load,

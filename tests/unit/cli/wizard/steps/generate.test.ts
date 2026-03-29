@@ -52,6 +52,20 @@ jest.unstable_mockModule(
   }),
 );
 
+const mockIsDaemonRunning = jest.fn<() => Promise<boolean>>();
+const mockLaunchDockerDesktop = jest.fn<() => Promise<void>>();
+const mockWaitForDockerDaemon = jest.fn<() => Promise<boolean>>();
+
+jest.unstable_mockModule(
+  '../../../../../packages/cli/src/services/docker-installer.js',
+  () => ({
+    isDaemonRunning: mockIsDaemonRunning,
+    launchDockerDesktop: mockLaunchDockerDesktop,
+    waitForDockerDaemon: mockWaitForDockerDaemon,
+    augmentedEnv: jest.fn(() => ({})),
+  }),
+);
+
 const mockBuildPullCommand = jest.fn(() => ({ cmd: 'docker', args: ['compose', 'pull'] }));
 const mockBuildUpCommand = jest.fn(() => ({ cmd: 'docker', args: ['compose', 'up', '-d'] }));
 const mockBuildDownCommand = jest.fn(() => ({ cmd: 'docker', args: ['compose', 'down'] }));
@@ -134,9 +148,14 @@ jest.unstable_mockModule('node:fs', () => ({
   copyFileSync: jest.fn(),
   readdirSync: jest.fn(() => []),
   chmodSync: jest.fn(),
-  statSync: jest.fn(() => ({ isDirectory: () => false, isFile: () => true, size: 0 })),
+  statSync: jest.fn(() => ({ isDirectory: () => false, isFile: () => true, size: 0, mtimeMs: Date.now() })),
   rmSync: jest.fn(),
+  renameSync: jest.fn(),
+  truncateSync: jest.fn(),
+  unlinkSync: jest.fn(),
+  appendFileSync: jest.fn(),
   createReadStream: jest.fn(),
+  createWriteStream: jest.fn(() => ({ write: jest.fn(), end: jest.fn(), on: jest.fn() })),
 }));
 
 // ---------------------------------------------------------------------------
@@ -181,6 +200,10 @@ function mockSuccessfulDockerExeca() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Default: daemon is running — no auto-recovery needed
+  mockIsDaemonRunning.mockResolvedValue(true);
+  mockLaunchDockerDesktop.mockResolvedValue(undefined);
+  mockWaitForDockerDaemon.mockResolvedValue(true);
   mockGenerateComposeConfig.mockReturnValue({});
   mockComposeConfigToYaml.mockReturnValue('version: "3"\nservices: {}');
   mockGenerateEnvFiles.mockReturnValue({
@@ -293,6 +316,53 @@ describe('runGenerateStep', () => {
     });
     const result = await runGenerateStep(makeState());
     expect(result).toBe('error');
+  });
+
+  // -------------------------------------------------------------------------
+  // Docker daemon auto-recovery (proactive check before pull)
+  // -------------------------------------------------------------------------
+
+  describe('Docker daemon proactive recovery', () => {
+    it('proceeds directly to pull when daemon is already running', async () => {
+      mockIsDaemonRunning.mockResolvedValue(true);
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+      expect(mockLaunchDockerDesktop).not.toHaveBeenCalled();
+      expect(mockWaitForDockerDaemon).not.toHaveBeenCalled();
+    });
+
+    it('auto-starts daemon and retries pull when daemon is not running on macOS', async () => {
+      mockIsDaemonRunning.mockResolvedValue(false);
+      mockLaunchDockerDesktop.mockResolvedValue(undefined);
+      mockWaitForDockerDaemon.mockResolvedValue(true);
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+      expect(mockLaunchDockerDesktop).toHaveBeenCalledTimes(1);
+      expect(mockWaitForDockerDaemon).toHaveBeenCalledWith(90_000);
+    });
+
+    it('returns error when daemon fails to start and user declines', async () => {
+      mockIsDaemonRunning.mockResolvedValue(false);
+      mockLaunchDockerDesktop.mockResolvedValue(undefined);
+      mockWaitForDockerDaemon.mockResolvedValue(false); // daemon never became ready
+      mockConfirm.mockResolvedValue(false);
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('error');
+      expect(mockWaitForDockerDaemon).toHaveBeenCalledWith(90_000);
+    });
+
+    it('continues installation when daemon fails to start but user confirms', async () => {
+      mockIsDaemonRunning.mockResolvedValue(false);
+      mockLaunchDockerDesktop.mockResolvedValue(undefined);
+      mockWaitForDockerDaemon.mockResolvedValue(false); // daemon never became ready
+      mockConfirm.mockResolvedValue(true); // user wants to continue without images
+
+      const result = await runGenerateStep(makeState());
+      expect(result).toBe('success');
+    });
   });
 
   // -------------------------------------------------------------------------

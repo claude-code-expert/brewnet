@@ -3,6 +3,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Save, Play, Loader, RefreshCw, Undo2 } from 'lucide-react';
 import type { AppGitInfo, DeployHistoryEntry, DeploySettings } from '../types.js';
 import { showToast } from './Toast.js';
+import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
+import { useElapsed } from '../hooks/useElapsed.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 type ApiFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -32,11 +35,15 @@ function HistoryStatusBadge({ status }: { status: DeployHistoryEntry['status'] }
 }
 
 export function DeploymentTab({ appName, git, settings: initialSettings, apiFetch, onDeployStarted }: DeploymentTabProps) {
+  const { t } = useI18n();
+  const openGitea = useGiteaOpen();
   const [deployBranch, setDeployBranch] = useState(initialSettings?.deployBranch ?? 'main');
   const [autoDeploy, setAutoDeploy]     = useState(initialSettings?.autoDeploy ?? false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [deploying, setDeploying]       = useState(false);
   const [rollbackingHash, setRollbackingHash] = useState<string | null>(null);
+  const deployElapsed   = useElapsed(deploying);
+  const rollbackElapsed = useElapsed(!!rollbackingHash);
   const [history, setHistory]           = useState<DeployHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [branches, setBranches]         = useState<string[]>([]);
@@ -166,23 +173,21 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
         <div className="card" style={{ padding: '10px 16px' }}>
           <div className="section-title" style={{ marginBottom: 12 }}>Git Repository</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <a
-              href={(() => {
-                if (git.giteaUrl.startsWith('https://')) return git.giteaUrl;
-                try { return `/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`; }
-                catch { return git.giteaUrl; }
-              })()}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => openGitea(git.giteaUrl)}
               style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
                 fontSize: 13,
                 fontFamily: 'var(--mono)',
                 color: 'var(--teal)',
-                textDecoration: 'none',
+                textAlign: 'left',
               }}
             >
               ⎇ {git.giteaUrl}
-            </a>
+            </button>
 
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11.5, color: 'var(--txt2)', fontFamily: 'var(--mono)' }}>
@@ -212,7 +217,7 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
               borderRadius: 'var(--r)',
               padding: '8px 12px',
             }}>
-              💡 Gitea 로그인은 brewnet 설치 시 설정한 관리자 계정을 사용하세요. 앱 생성 시 이 저장소가 자동으로 만들어지고 코드가 push됩니다.
+              💡 {t('deployment.gitea_hint', 'Gitea 로그인은 brewnet 설치 시 설정한 관리자 계정을 사용하세요. 앱 생성 시 이 저장소가 자동으로 만들어지고 코드가 push됩니다.')}
             </div>
           </div>
         </div>
@@ -307,7 +312,7 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
                 disabled={deploying || !!rollbackingHash}
                 style={{ opacity: deploying ? 0.6 : 1 }}
               >
-                {deploying ? <><Loader size={14} className="spin" /> Deploying…</> : <><Play size={14} /> Deploy Now</>}
+                {deploying ? <><Loader size={14} className="spin" /> Deploying…{deployElapsed > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 4 }}>({deployElapsed}s)</span>}</> : <><Play size={14} /> Deploy Now</>}
               </button>
             ) : (
               /* Already deployed — show Redeploy + Rollback */
@@ -319,7 +324,7 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
                   style={{ opacity: deploying || !!rollbackingHash ? 0.6 : 1 }}
                   title="Redeploy latest commit on branch"
                 >
-                  {deploying ? <><Loader size={14} className="spin" /> Redeploying…</> : <><RefreshCw size={14} /> Redeploy</>}
+                  {deploying ? <><Loader size={14} className="spin" /> Redeploying…{deployElapsed > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 4 }}>({deployElapsed}s)</span>}</> : <><RefreshCw size={14} /> Redeploy</>}
                 </button>
                 {history.length >= 2 && (
                   <button
@@ -333,7 +338,7 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
                     style={{ opacity: deploying || !!rollbackingHash ? 0.6 : 1 }}
                     title="Roll back to previous deployment"
                   >
-                    {rollbackingHash ? <><Loader size={14} className="spin" /> Rolling back…</> : <><Undo2 size={14} /> Rollback</>}
+                    {rollbackingHash ? <><Loader size={14} className="spin" /> Rolling back…{rollbackElapsed > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 4 }}>({rollbackElapsed}s)</span>}</> : <><Undo2 size={14} /> Rollback</>}
                   </button>
                 )}
               </>

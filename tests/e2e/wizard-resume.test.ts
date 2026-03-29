@@ -144,6 +144,7 @@ jest.unstable_mockModule('node:fs', () => ({
   readFileSync: mockReadFileSync,
   readdirSync: mockReaddirSync,
   chmodSync: mockChmodSync,
+  statSync: jest.fn(() => ({ mtimeMs: Date.now() })),
 }));
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../auth-context.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 export interface LogEntry {
   line: string;
@@ -15,33 +17,53 @@ export function useLogStream(appName: string, active: boolean): LogStreamState {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { apiFetch } = useAuth();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!active || !appName) return;
+    let es: EventSource | null = null;
+    let cancelled = false;
 
-    const url = `/api/apps/${encodeURIComponent(appName)}/logs`;
-    const es = new EventSource(url);
+    (async () => {
+      try {
+        const tokenRes = await apiFetch(`/api/apps/${encodeURIComponent(appName)}/logs/token`);
+        if (!tokenRes.ok || cancelled) return;
+        const { token } = (await tokenRes.json()) as { token: string };
+        if (cancelled) return;
 
-    es.addEventListener('open', () => {
-      setConnected(true);
-      setError(null);
-    });
+        const url = `/api/apps/${encodeURIComponent(appName)}/logs?token=${token}`;
+        es = new EventSource(url);
 
-    es.addEventListener('message', (e: MessageEvent<string>) => {
-      const entry: LogEntry = { line: e.data, receivedAt: Date.now() };
-      setLogs((prev) => [...prev.slice(-500), entry]);
-    });
+        es.addEventListener('open', () => {
+          setConnected(true);
+          setError(null);
+        });
 
-    es.addEventListener('error', () => {
-      setConnected(false);
-      if (es.readyState === EventSource.CLOSED) {
-        setError('연결이 끊겼습니다. 재연결 중...');
+        es.addEventListener('message', (e: MessageEvent<string>) => {
+          const entry: LogEntry = { line: e.data, receivedAt: Date.now() };
+          setLogs((prev) => [...prev.slice(-500), entry]);
+        });
+
+        es.addEventListener('error', () => {
+          setConnected(false);
+          // Close immediately — the token is one-time-use and already consumed, so the
+          // browser's built-in EventSource auto-reconnect would retry with a stale token
+          // and receive 401 in a tight loop.
+          es?.close();
+          setError(t('logs.stream_disconnected', '로그 스트림 연결이 끊겼습니다. 모달을 닫고 다시 열어주세요.'));
+        });
+      } catch {
+        if (!cancelled) setError(t('logs.stream_failed', '로그 스트림 연결 실패'));
       }
-    });
+    })();
 
     return () => {
-      es.close();
+      cancelled = true;
+      es?.close();
     };
+    // apiFetch is stable (useCallback) — no need to list in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appName, active]);
 
   return { logs, connected, error };

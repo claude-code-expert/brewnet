@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { LogIn, Loader } from 'lucide-react';
 import { useAuth } from '../auth-context.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 export function PasswordGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, setPassword } = useAuth();
+  const { t } = useI18n();
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,10 +24,10 @@ export function PasswordGate({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         setPassword(input);
       } else {
-        setError('잘못된 비밀번호입니다.');
+        setError(t('gate.wrong_password', '잘못된 비밀번호입니다.'));
       }
     } catch {
-      setError('서버에 연결할 수 없습니다.');
+      setError(t('gate.server_unreachable', '서버에 연결할 수 없습니다.'));
     } finally {
       setLoading(false);
     }
@@ -48,7 +50,7 @@ export function PasswordGate({ children }: { children: React.ReactNode }) {
           />
           {error && <p className="password-gate-error">{error}</p>}
           <button className="btn bp" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center', opacity: loading ? 0.6 : 1 }}>
-            {loading ? <><Loader size={14} className="spin" /> 확인 중…</> : <><LogIn size={14} /> 확인</>}
+            {loading ? <><Loader size={14} className="spin" /> {t('gate.verifying', '확인 중…')}</> : <><LogIn size={14} /> {t('gate.verify_button', '확인')}</>}
           </button>
         </form>
       </div>

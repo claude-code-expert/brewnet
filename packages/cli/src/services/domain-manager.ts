@@ -24,8 +24,8 @@ import {
   type ServiceRoute,
 } from './cloudflare-client.js';
 import { addExternalLabels, removeExternalLabels } from './compose-generator.js';
-import { loadState } from '../wizard/state.js';
-import { listApps as dbListApps, upsertDomainConnection, removeDomainConnection, listDomainConnections as dbListDomainConnections } from './project-db.js';
+import { loadState, discoverProjectPath } from '../wizard/state.js';
+import { listApps as dbListApps, upsertDomainConnection, removeDomainConnection, listDomainConnections as dbListDomainConnections, getSetting, getSettings } from './project-db.js';
 import { unpatchNextConfig, patchNextConfig } from './boilerplate-manager.js';
 import { getStackById } from '../config/stacks.js';
 
@@ -90,13 +90,82 @@ export class DomainManager {
   private projectName: string;
   private state: WizardState;
 
-  constructor(projectName: string) {
+  constructor(projectName: string, projectPath?: string) {
     this.projectName = projectName;
     const loaded = loadState(projectName);
-    if (!loaded) {
-      throw new Error(`Project "${projectName}" not found. Run \`brewnet init\` first.`);
+
+    if (loaded) {
+      this.state = loaded;
+    } else if (projectPath) {
+      this.state = this.synthesizeFromDb(projectPath, projectName);
+    } else {
+      const discovered = discoverProjectPath();
+      if (discovered) {
+        this.state = this.synthesizeFromDb(discovered, projectName);
+      } else {
+        throw new Error(`Project "${projectName}" not found. Run \`brewnet init\` first.`);
+      }
     }
-    this.state = loaded;
+
+    // Always override CF config from DB (authoritative source) —
+    // selections.json may have stale/empty CF values after ~/.brewnet/ reset
+    const pp = projectPath ?? this.state.projectPath;
+    const resolvedPath = pp.startsWith('~/') ? path.join(os.homedir(), pp.slice(2)) : pp;
+    try {
+      const cfDb = getSettings(resolvedPath, 'cf.');
+      if (cfDb['cf.apiToken'] || cfDb['cf.tunnelId']) {
+        const cf = this.state.domain.cloudflare;
+        if (!cf.apiToken && cfDb['cf.apiToken']) cf.apiToken = cfDb['cf.apiToken'];
+        if (!cf.accountId && cfDb['cf.accountId']) cf.accountId = cfDb['cf.accountId'];
+        if (!cf.tunnelId && cfDb['cf.tunnelId']) cf.tunnelId = cfDb['cf.tunnelId'];
+        if (!cf.tunnelToken && cfDb['cf.tunnelToken']) cf.tunnelToken = cfDb['cf.tunnelToken'];
+        if (!cf.tunnelName && cfDb['cf.tunnelName']) cf.tunnelName = cfDb['cf.tunnelName'];
+        if (!cf.tunnelMode && cfDb['cf.tunnelMode']) cf.tunnelMode = cfDb['cf.tunnelMode'] as typeof cf.tunnelMode;
+        if (!cf.zoneId && cfDb['cf.zoneId']) cf.zoneId = cfDb['cf.zoneId'];
+        if (!cf.zoneName && cfDb['cf.zoneName']) cf.zoneName = cfDb['cf.zoneName'];
+        if (!cf.enabled && cfDb['cf.enabled'] === 'true') cf.enabled = true;
+      }
+    } catch { /* DB not available — use state as-is */ }
+  }
+
+  private synthesizeFromDb(projectPath: string, projectName: string): WizardState {
+    const cf = getSettings(projectPath, 'cf.');
+    const adminUser = getSetting(projectPath, 'admin.username') ?? 'admin';
+    const adminPass = getSetting(projectPath, 'admin.password') ?? '';
+
+    return {
+      schemaVersion: 7,
+      projectName,
+      projectPath,
+      setupType: 'full',
+      admin: { username: adminUser, password: adminPass, storage: 'local' as const },
+      servers: {
+        webServer: true,
+        fileServer: false,
+        appServer: false,
+        database: false,
+        media: false,
+      },
+      domain: {
+        provider: (getSetting(projectPath, 'domain.provider') ?? 'local') as 'local' | 'custom',
+        name: getSetting(projectPath, 'domain.name') ?? '',
+        ssl: 'cloudflare' as const,
+        cloudflare: {
+          enabled: cf['cf.enabled'] === 'true',
+          tunnelMode: (cf['cf.tunnelMode'] ?? 'none') as 'none' | 'quick' | 'named',
+          quickTunnelUrl: cf['cf.quickTunnelUrl'] ?? '',
+          accountId: cf['cf.accountId'] ?? '',
+          apiToken: cf['cf.apiToken'] ?? '',
+          tunnelId: cf['cf.tunnelId'] ?? '',
+          tunnelToken: cf['cf.tunnelToken'] ?? '',
+          tunnelName: cf['cf.tunnelName'] ?? '',
+          zoneId: cf['cf.zoneId'] ?? '',
+          zoneName: cf['cf.zoneName'] ?? '',
+        },
+      },
+      domainConnections: [],
+      portRemapping: {},
+    } as unknown as WizardState;
   }
 
   /** Reload state from disk */

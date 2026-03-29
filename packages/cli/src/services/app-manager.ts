@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { execa } from 'execa';
 import { GiteaClient } from './gitea-client.js';
 import { listApps as dbListApps, getApp as dbGetApp, addApp as dbAddApp, updateApp as dbUpdateApp, removeApp as dbRemoveApp, getDeployHistory as dbGetDeployHistory, appendDeployHistory as dbAppendDeployHistory, getSetting, setSetting } from './project-db.js';
-import { getLastProject, loadState } from '../wizard/state.js';
+import { getLastProject, loadState, discoverProjectPath } from '../wizard/state.js';
 import type { AppEntry, AppJob, AppJobStep, CreateAppOptions, DeployHistoryEntry, GitRepoEntry, AppGitInfo, DeploySettings } from '../types/app-entry.js';
 
 // ---------------------------------------------------------------------------
@@ -27,15 +27,27 @@ const jobs = new Map<string, AppJob>();
 // ---------------------------------------------------------------------------
 
 export function resolveProjectPath(): string {
-  const last = getLastProject();
-  if (last) {
-    const state = loadState(last);
-    if (state?.projectPath) {
-      const raw = state.projectPath;
-      return raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-    }
-  }
-  return process.cwd();
+  return _adminProjectPath ?? discoverProjectPath() ?? process.cwd();
+}
+
+// ---------------------------------------------------------------------------
+// Admin server project path override
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level project path set by admin-server at startup.
+ * Ensures resolveContext() always operates on the correct project even when
+ * multiple .brewnet.db files exist (discoverProjectPath picks by mtime which
+ * can return a different project than the one admin-server was started with).
+ */
+let _adminProjectPath: string | null = null;
+
+/**
+ * Called by admin-server immediately after it resolves its project path.
+ * All subsequent resolveContext() calls in this process will use this path.
+ */
+export function setAdminProjectPath(path: string): void {
+  _adminProjectPath = path;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +218,7 @@ export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
 
   return {
     giteaUrl: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${appName}`,
-    cloneUrlHttp: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`,
+    cloneUrlHttp: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${appName}.git`,
     cloneUrlSsh,
     localPath: app.appDir,
     branch,
@@ -584,39 +596,56 @@ interface AppContext {
 }
 
 function resolveContext(): AppContext {
-  // Read from persistent cache first — avoids fragile re-derivation from wizardState
-  // on every call. Cache is written at wizard completion and Named Tunnel setup.
-  const cached = loadGiteaConfig();
-
-  const last = getLastProject();
-  const state = loadState(last ?? '');
-  const raw = (state as { projectPath?: string } | null)?.projectPath ?? process.cwd();
-  const projectPath = raw.startsWith('~') ? join(homedir(), raw.slice(1)) : raw;
-
+  // Use the same project-path resolution as the rest of the codebase.
+  // The old approach (getLastProject() → loadState() → projectPath) breaks whenever
+  // ~/.brewnet/config.json has lastProject="" (e.g. after DB migration) because
+  // loadState("") returns null and the fallback becomes process.cwd() — a completely
+  // wrong path that causes all credential lookups to silently produce empty strings.
+  const projectPath = resolveProjectPath();
   const envPath = join(projectPath, '.env');
-  const giteaUser =
-    cached?.username ??
-    (readDotEnvValue(envPath, 'GITEA_ADMIN_USER') ||
-      (state?.admin as { username?: string } | undefined)?.username ||
-      'admin');
 
-  // GITEA_ADMIN_PASSWORD is a Docker secret, NOT in .env — read from secrets file first
-  const secretsPath = join(projectPath, 'secrets', 'admin_password');
-  const secretsPassword = existsSync(secretsPath) ? readFileSync(secretsPath, 'utf-8').trim() : '';
-  const giteaPassword =
-    secretsPassword ||
-    readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD') ||
-    (state?.admin as { password?: string } | undefined)?.password ||
-    '';
+  // Username: DB (gitea.username) → env file → default "admin"
+  const cached = loadGiteaConfig();
+  const giteaUser =
+    cached?.username ||
+    readDotEnvValue(envPath, 'GITEA_ADMIN_USER') ||
+    'admin';
+
+  // Password: SQLite DB is now the authoritative source (written during init/migration).
+  // Falls back through secrets file → .env → legacy wizard state for backwards compatibility.
+  let giteaPassword = '';
+  try {
+    giteaPassword = getSetting(projectPath, 'admin.password') ?? '';
+  } catch { /* DB not initialized yet — continue to fallbacks */ }
+
+  if (!giteaPassword) {
+    const secretsPath = join(projectPath, 'secrets', 'admin_password');
+    if (existsSync(secretsPath)) giteaPassword = readFileSync(secretsPath, 'utf-8').trim();
+  }
+  if (!giteaPassword) giteaPassword = readDotEnvValue(envPath, 'GITEA_ADMIN_PASSWORD');
+  // Tunnel mode & zone: DB is authoritative; wizard state as legacy fallback.
+  let tunnelMode = '';
+  let zoneName = '';
+  try {
+    tunnelMode = getSetting(projectPath, 'cf.tunnelMode') ?? '';
+    zoneName = getSetting(projectPath, 'cf.zoneName') ?? '';
+  } catch { /* DB not initialized */ }
+
+  // Single legacy fallback load — shared by both password and tunnel mode/zone lookups.
+  if (!giteaPassword || !tunnelMode || !zoneName) {
+    const last = getLastProject();
+    const legacyState = last ? loadState(last) : null;
+    if (!giteaPassword)
+      giteaPassword = (legacyState?.admin as { password?: string } | undefined)?.password ?? '';
+    if (!tunnelMode) tunnelMode = legacyState?.domain?.cloudflare?.tunnelMode ?? '';
+    if (!zoneName) zoneName = legacyState?.domain?.cloudflare?.zoneName ?? '';
+  }
 
   // Internal API URL: always local Traefik proxy — stable regardless of tunnel state.
   const giteaBaseUrl = 'http://localhost/git';
-
-  // Display URL: use external subdomain in Named Tunnel mode so dashboard links open correctly.
-  // In Named Tunnel mode, Gitea's ROOT_URL has no /git subpath, so local /git/ auth redirects
+  // Display URL: external subdomain in Named Tunnel mode so dashboard links open correctly.
+  // In Named Tunnel mode Gitea's ROOT_URL has no /git subpath, so local /git/ auth redirects
   // break in the browser. The external URL https://git.<zone>/ works correctly.
-  const tunnelMode = state?.domain?.cloudflare?.tunnelMode ?? '';
-  const zoneName = state?.domain?.cloudflare?.zoneName ?? '';
   const giteaDisplayUrl =
     tunnelMode === 'named' && zoneName ? `https://git.${zoneName}` : giteaBaseUrl;
 
@@ -626,9 +655,13 @@ function resolveContext(): AppContext {
 /** Inject Traefik Quick Tunnel labels if running in quick tunnel mode. */
 async function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: number): Promise<void> {
   try {
+    const pp = resolveProjectPath();
+    // DB setting is authoritative (written at wizard completion and admin-server startup).
+    // Wizard state is a fallback for environments where DB migration has not yet run.
     const last = getLastProject();
     const state = loadState(last ?? '');
-    if (state?.domain?.cloudflare?.tunnelMode !== 'quick') return;
+    const tunnelMode = getSetting(pp, 'cf.tunnelMode') ?? state?.domain?.cloudflare?.tunnelMode ?? 'none';
+    if (tunnelMode !== 'quick') return;
     const { injectTraefikForQuickTunnel } = await import('./boilerplate-manager.js');
     injectTraefikForQuickTunnel(appDir, appName, port);
   } catch (err) {
@@ -873,27 +906,70 @@ async function _pollHealth(url: string, maxMs = 120_000, job?: AppJob): Promise<
 
 /**
  * Run `docker compose up -d --build` with stdout/stderr streamed to job logs.
+ * Automatically resolves port conflicts by finding free ports and updating .env.
  */
-async function _dockerComposeUp(cwd: string, job: AppJob): Promise<void> {
-  appendLog(job, `[docker] $ docker compose up -d --build`);
-  appendLog(job, `[docker] cwd: ${cwd}`);
-  const proc = execa('docker', ['compose', 'up', '-d', '--build'], { cwd, reject: false });
-  proc.stdout?.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().split('\n').filter(Boolean)) {
-      appendLog(job, `[docker] ${line}`);
+async function _dockerComposeUp(cwd: string, job: AppJob, maxRetries = 2): Promise<void> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    appendLog(job, `[docker] $ docker compose up -d --build${attempt > 0 ? ` (retry ${attempt})` : ''}`);
+    appendLog(job, `[docker] cwd: ${cwd}`);
+    const proc = execa('docker', ['compose', 'up', '-d', '--build'], { cwd, reject: false });
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString().split('\n').filter(Boolean)) {
+        appendLog(job, `[docker] ${line}`);
+      }
+    });
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString().split('\n').filter(Boolean)) {
+        appendLog(job, `[docker] ${line}`);
+      }
+    });
+    const result = await proc;
+
+    if (result.exitCode === 0) {
+      appendLog(job, `[docker] ✓ containers started`);
+      return;
     }
-  });
-  proc.stderr?.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().split('\n').filter(Boolean)) {
-      appendLog(job, `[docker] ${line}`);
+
+    // Check for port conflict — retry with a free port
+    const portMatch = result.stderr?.match(/Bind for 0\.0\.0\.0:(\d+) failed: port is already allocated/);
+    if (portMatch && attempt < maxRetries) {
+      const conflictPort = parseInt(portMatch[1], 10);
+      appendLog(job, `[docker] ⚠ port ${conflictPort} conflict — finding alternative...`);
+
+      const { isPortAvailable: _isPortAvailable } = await import('../utils/port-utils.js');
+      let newPort: number | undefined;
+      for (let p = conflictPort + 1; p <= conflictPort + 20; p++) {
+        if (await _isPortAvailable(p)) { newPort = p; break; }
+      }
+
+      if (newPort) {
+        // Update .env file with the new port
+        const envPath = join(cwd, '.env');
+        if (existsSync(envPath)) {
+          let env = readFileSync(envPath, 'utf-8');
+          const portRegex = new RegExp(`^([A-Z_]+=)${conflictPort}$`, 'm');
+          const envMatch = env.match(portRegex);
+          if (envMatch) {
+            env = env.replace(portRegex, `$1${newPort}`);
+            writeFileSync(envPath, env, 'utf-8');
+            appendLog(job, `[docker] ✓ .env updated: ${envMatch[1]}${conflictPort} → ${envMatch[1]}${newPort}`);
+          } else {
+            appendLog(job, `[docker] ⚠ could not find port ${conflictPort} in .env — manual fix required`);
+            throw new Error(`Port ${conflictPort} conflict and could not auto-resolve in .env`);
+          }
+        }
+
+        // Stop conflicting containers before retry
+        await execa('docker', ['compose', 'down'], { cwd, reject: false });
+        continue;
+      } else {
+        appendLog(job, `[docker] ✗ no free port found near ${conflictPort}`);
+      }
     }
-  });
-  const result = await proc;
-  if (result.exitCode !== 0) {
+
     appendLog(job, `[docker] ✗ exit code ${result.exitCode}`);
     throw new Error(`Command failed with exit code ${result.exitCode}: docker compose up -d --build\n${result.stderr}`);
   }
-  appendLog(job, `[docker] ✓ containers started`);
 }
 
 // ---------------------------------------------------------------------------

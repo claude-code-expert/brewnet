@@ -193,6 +193,19 @@ export function ServiceCard({ service, detail, onOpenDetail }: ServiceCardProps)
           </a>
         )}
 
+        {service.backendApiUrl && (
+          <a
+            href={service.backendApiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="domain-link"
+            style={{ fontSize: 11 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            ↗ API
+          </a>
+        )}
+
         {service.externalUrl && (
           <a
             href={service.externalUrl}

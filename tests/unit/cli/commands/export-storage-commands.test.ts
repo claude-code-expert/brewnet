@@ -57,6 +57,7 @@ const mockGetLastProject = jest.fn(() => 'my-project');
 const mockGetStateFilePath = jest.fn(() => '/home/user/.brewnet/projects/my-project/selections.json');
 jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
   loadState: mockLoadState,
+  discoverProjectPath: jest.fn(() => null),
   getLastProject: mockGetLastProject,
   getStateFilePath: mockGetStateFilePath,
 }));

@@ -8,5 +8,8 @@
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "supermemory": "^4.17.0"
   }
 }

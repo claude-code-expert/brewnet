@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DomainConnection } from '../types.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 interface ExternalDomainsSectionProps {
   connections: DomainConnection[];
@@ -7,7 +8,7 @@ interface ExternalDomainsSectionProps {
   zoneName: string;
 }
 
-const DNS_PROVIDERS = [
+const DNS_PROVIDERS_KO = [
   {
     name: 'GoDaddy',
     steps: [
@@ -52,7 +53,54 @@ const DNS_PROVIDERS = [
   },
 ];
 
+const DNS_PROVIDERS_EN = [
+  {
+    name: 'GoDaddy',
+    steps: [
+      'Log in to your GoDaddy account → DNS Management',
+      'Find the CNAME record for your subdomain',
+      `Set the "Value" to: <tunnel-id>.cfargotunnel.com`,
+      'TTL: 1 hour (or Auto)',
+      'Save and wait for propagation (up to 30 min)',
+    ],
+  },
+  {
+    name: 'Namecheap',
+    steps: [
+      'Log in → Domain List → Manage → Advanced DNS',
+      'Add / Edit CNAME record',
+      `Host: your subdomain (e.g. "app")`,
+      `Value: <tunnel-id>.cfargotunnel.com`,
+      'TTL: Automatic → Save All Changes',
+    ],
+  },
+  {
+    name: 'Gabia',
+    steps: [
+      'Log in to Gabia → My Gabia → DNS Management',
+      'Click DNS Settings for the target domain',
+      'Record type: Select CNAME',
+      `Hostname: subdomain (e.g. app)`,
+      `Value: <tunnel-id>.cfargotunnel.com`,
+      'TTL: 3600 → Confirm/Save',
+    ],
+  },
+  {
+    name: 'Cafe24',
+    steps: [
+      'Log in to Cafe24 Hosting Center → My Services → Domain Management',
+      'Click DNS Management for the domain',
+      'Add CNAME record',
+      `Name (subdomain): desired hostname`,
+      `Target: <tunnel-id>.cfargotunnel.com`,
+      'Save and wait for propagation (up to 1-2 hours)',
+    ],
+  },
+];
+
 export function ExternalDomainsSection({ connections, tunnelId, zoneName }: ExternalDomainsSectionProps) {
+  const { locale } = useI18n();
+  const DNS_PROVIDERS = locale === 'en' ? DNS_PROVIDERS_EN : DNS_PROVIDERS_KO;
   const [showCnameModal, setShowCnameModal] = useState(false);
   const [activeProvider, setActiveProvider] = useState(0);
 

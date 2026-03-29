@@ -1,6 +1,8 @@
 import { NavLink } from 'react-router-dom';
+import { useI18n } from '../i18n/useI18n.js';
 
 export function NavHeader() {
+  const { locale, setLocale } = useI18n();
   return (
     <div id="header">
       <NavLink to="/" className="logo">
@@ -44,6 +46,31 @@ export function NavHeader() {
         >
           DB
         </NavLink>
+      </div>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          border: '1px solid var(--bdr2)', borderRadius: 14,
+          overflow: 'hidden', position: 'relative',
+        }}>
+          {(['ko', 'en'] as const).map((loc) => (
+            <button
+              key={loc}
+              onClick={() => setLocale(loc)}
+              style={{
+                background: locale === loc ? 'var(--amber)' : 'transparent',
+                border: 'none', cursor: 'pointer',
+                padding: '3px 10px',
+                color: locale === loc ? '#0a1020' : 'var(--txt3)',
+                fontWeight: 600,
+                fontFamily: 'var(--mono)', fontSize: 11,
+                transition: 'background 0.2s, color 0.2s',
+              }}
+            >
+              {loc.toUpperCase()}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

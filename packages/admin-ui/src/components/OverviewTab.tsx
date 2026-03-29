@@ -1,6 +1,9 @@
 // T036 — OverviewTab: app metadata, URLs, git info, boilerplate stack details
 import type { AppEntry, AppGitInfo, BoilerplateMeta } from '../types.js';
 import { BOILERPLATE_GITHUB_BASE } from '../lib/constants.js';
+import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
+import { useI18n } from '../i18n/useI18n.js';
+import { CopyButton } from './ServiceCard.js';
 
 interface OverviewTabProps {
   app: AppEntry;
@@ -39,13 +42,15 @@ function formatDate(iso: string) {
 }
 
 export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
+  const { t } = useI18n();
+  const openGitea = useGiteaOpen();
   const domainBase = app.backendExternalUrl ?? null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {/* App Info Card */}
       <div className="card" style={{ padding: '10px 20px' }}>
         <div className="section-title" style={{ marginBottom: 12 }}>App Info</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px 12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 1.3fr 1fr', gap: '16px 12px' }}>
           <InfoCell label="Name">
             <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{app.name}</span>
           </InfoCell>
@@ -74,7 +79,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
       </div>
 
       {/* Access URLs */}
-      {(app.localUrl || app.externalUrl || app.backendLocalUrl || app.backendExternalUrl) && (
+      {(app.localUrl || app.externalUrl || app.backendLocalUrl || app.backendExternalUrl || app.domainRequired) && (
         <div className="card" style={{ padding: '10px 20px' }}>
           <div className="section-title" style={{ marginBottom: 12 }}>Access</div>
           {app.backendLocalUrl ? (
@@ -100,6 +105,14 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                         style={{ color: 'var(--amber)', fontSize: 12.5, fontFamily: 'var(--mono)', textDecoration: 'none' }}>
                         {app.externalUrl} <span style={{ fontSize: 10, color: 'var(--txt3)' }}>↗</span>
                       </a>
+                    </div>
+                  )}
+                  {app.domainRequired && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 60, fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>external</span>
+                      <span style={{ color: 'var(--amber)', fontSize: 12, fontFamily: 'var(--mono)' }}>
+                        ⚠ Quick Tunnel ended — domain connection required
+                      </span>
                     </div>
                   )}
                 </div>
@@ -148,6 +161,14 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                     style={{ color: 'var(--amber)', fontSize: 13, fontFamily: 'var(--mono)', textDecoration: 'none' }}>
                     {app.externalUrl} <span style={{ fontSize: 11, color: 'var(--txt3)' }}>↗</span>
                   </a>
+                </div>
+              )}
+              {app.domainRequired && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ width: 80, fontSize: 12, color: 'var(--txt2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>External</span>
+                  <span style={{ color: 'var(--amber)', fontSize: 12.5, fontFamily: 'var(--mono)' }}>
+                    ⚠ Quick Tunnel ended — domain connection required
+                  </span>
                 </div>
               )}
             </div>
@@ -288,7 +309,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
             color: 'var(--amber)',
           }}>
             <span>⚠</span>
-            <span>Deploy를 먼저 실행하면 Gitea 저장소가 초기화되고 접속 주소가 활성화됩니다.</span>
+            <span>{t('overview.deploy_hint', 'Deploy를 먼저 실행하면 Gitea 저장소가 초기화되고 접속 주소가 활성화됩니다.')}</span>
           </div>
         )}
         {git ? (
@@ -300,25 +321,24 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
             </InfoRow>
             {git.giteaUrl && (
               <InfoRow label="Gitea URL">
-                <a
-                  href={
-                    git.giteaUrl.startsWith('https://')
-                      ? git.giteaUrl
-                      : `/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => openGitea(git.giteaUrl)}
                   style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
                     color: app.lastDeployedAt ? 'var(--teal)' : 'var(--txt2)',
                     fontSize: 13,
                     fontFamily: 'var(--mono)',
                     textDecoration: 'none',
                     opacity: app.lastDeployedAt ? 1 : 0.6,
+                    textAlign: 'left',
                   }}
                 >
                   {git.giteaUrl}
                   <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--txt3)' }}>↗</span>
-                </a>
+                </button>
               </InfoRow>
             )}
             {git.latestCommit ? (
@@ -344,6 +364,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--txt2)' }}>
                 {git.cloneUrlHttp}
               </span>
+              <CopyButton text={git.cloneUrlHttp} style={{ marginLeft: 8 }} />
             </InfoRow>
           </div>
         ) : (

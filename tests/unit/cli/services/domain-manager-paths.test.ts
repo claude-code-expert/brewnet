@@ -62,6 +62,7 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/compose-generato
 }));
 
 jest.unstable_mockModule('../../../../packages/cli/src/wizard/state.js', () => ({
+  discoverProjectPath: jest.fn(() => null),
   loadState: mockLoadState,
   saveState: mockSaveState,
 }));
@@ -82,6 +83,8 @@ jest.unstable_mockModule('../../../../packages/cli/src/services/project-db.js', 
   getDeployHistory: jest.fn(() => []),
   appendDeployHistory: jest.fn(),
   getSetting: jest.fn(() => null),
+  getSettings: jest.fn(() => ({})),
+  setSettings: jest.fn(),
   setSetting: jest.fn(),
   getDb: jest.fn(),
   closeDb: jest.fn(),
