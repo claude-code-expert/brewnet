@@ -69,6 +69,10 @@ const en: Record<string, string> = {
   'appdomain.apex_both_suffix': ' will both be connected.',
   'appdomain.apex_warning': 'All traffic for this domain will be routed to this app.',
 
+  // HelpDrawer section headers
+  'help.what_is': 'What is this?',
+  'help.how_to_get': 'Where do I get it?',
+
   // useLogStream
   'logs.stream_disconnected': 'Log stream disconnected. Close the modal and reopen.',
   'logs.stream_failed': 'Log stream connection failed',

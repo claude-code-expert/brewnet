@@ -169,7 +169,7 @@ interface HelpDrawerProps {
 }
 
 export function HelpDrawer({ helpKey, onClose }: HelpDrawerProps) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const dict = locale === 'en' ? HELP_CONTENT_EN : HELP_CONTENT;
   const item = helpKey ? (dict[helpKey] ?? null) : null;
   const isOpen = !!item;
@@ -241,7 +241,7 @@ export function HelpDrawer({ helpKey, onClose }: HelpDrawerProps) {
               {/* What is it */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#ffffff', fontFamily: 'var(--mono)', letterSpacing: '0.06em', marginBottom: 8 }}>
-                  이게 뭔가요?
+                  {t('help.what_is', '이게 뭔가요?')}
                 </div>
                 <p style={{ fontSize: 13, color: '#c8d4e8', lineHeight: 1.7, margin: 0 }}>
                   {item.what}
@@ -251,7 +251,7 @@ export function HelpDrawer({ helpKey, onClose }: HelpDrawerProps) {
               {/* How to get */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#ffffff', fontFamily: 'var(--mono)', letterSpacing: '0.06em', marginBottom: 10 }}>
-                  어디서 가져오나요?
+                  {t('help.how_to_get', '어디서 가져오나요?')}
                 </div>
                 <ol style={{ margin: 0, padding: '0 0 0 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {item.howToGet.map((s, i) => (
