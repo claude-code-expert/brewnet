@@ -333,6 +333,8 @@ describe('runGenerateStep', () => {
     });
 
     it('auto-starts daemon and retries pull when daemon is not running on macOS', async () => {
+      const origPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
       mockIsDaemonRunning.mockResolvedValue(false);
       mockLaunchDockerDesktop.mockResolvedValue(undefined);
       mockWaitForDockerDaemon.mockResolvedValue(true);
@@ -341,6 +343,7 @@ describe('runGenerateStep', () => {
       expect(result).toBe('success');
       expect(mockLaunchDockerDesktop).toHaveBeenCalledTimes(1);
       expect(mockWaitForDockerDaemon).toHaveBeenCalledWith(90_000);
+      Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
     });
 
     it('returns error when daemon fails to start and user declines', async () => {
