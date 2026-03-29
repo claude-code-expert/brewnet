@@ -475,8 +475,13 @@ export function injectTraefikForQuickTunnel(
   appName: string,
   _backendPort: number,
 ): void {
-  const composePath = join(projectDir, 'docker-compose.yml');
-  if (!existsSync(composePath)) return;
+  // Support both docker-compose.yml (legacy) and compose.yml (Compose V2 standard)
+  const composePath = existsSync(join(projectDir, 'docker-compose.yml'))
+    ? join(projectDir, 'docker-compose.yml')
+    : existsSync(join(projectDir, 'compose.yml'))
+    ? join(projectDir, 'compose.yml')
+    : null;
+  if (!composePath) return;
 
   const raw = readFileSync(composePath, 'utf-8');
   const doc = yaml.load(raw) as Record<string, unknown>;

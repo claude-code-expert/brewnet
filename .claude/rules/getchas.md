@@ -111,3 +111,30 @@
 - `handleDomainConnect/Disconnect` 등 DomainManager가 디스크 저장 후
   → `loadState()` → `state.domainConnections = fresh` 필수
 - 누락 시 `GET /api/apps` 가 stale 데이터 반환
+
+---
+
+## Catalog Install — Credential / Label 3중 체크
+
+- `buildServiceBlock`은 `requiredEnvVars`를 무시함 — 호출자가 `options.env`로 전달해야 함
+- 카탈로그 설치 시 반드시 settings DB에서 `admin.username`/`admin.password` 읽어서 env 구성
+- `ServiceDefinition.traefikLabels`의 `{{DOMAIN}}` 플레이스홀더는 `options.domain`으로 해석 필수
+- 정적 기본값(하드코딩 비밀번호)은 CLAUDE.md 위반 — 반드시 런타임 설정에서 읽을 것
+- pgAdmin4는 `.local` TLD 이메일을 거부 — `{user}@brewnet.dev` 패턴 사용
+
+---
+
+## Catalog Install — Named Tunnel Ingress
+
+- `addService()`는 compose만 수정 — Cloudflare 터널 ingress/DNS는 업데이트하지 않음
+- Named Tunnel 모드에서 카탈로그 서비스 추가 시 반드시 `configureTunnelIngress()` + `createDnsRecord()` 호출
+- `SERVICE_DETAIL_MAP`의 connection 명령어는 정적 — catalog endpoint에서 admin username으로 동적 패치
+
+---
+
+## App Enrichment 코드 중복 — List vs Detail
+
+- `/api/apps` (list)와 `/api/apps/:name` (detail)에 **동일한 enrichment 로직**이 별도 구현됨
+- tunnelMode 체크, domainRequired, giteaRepoUrl 리라이트 등 한쪽만 패치하면 다른쪽 미적용
+- 패치 시 반드시 **두 endpoint 모두** 수정할 것 (grep `quickTunnelUrl\|const qt` 로 전수 확인)
+- 장기적으로 공통 enrichApp() 함수로 추출 필요

@@ -655,9 +655,13 @@ function resolveContext(): AppContext {
 /** Inject Traefik Quick Tunnel labels if running in quick tunnel mode. */
 async function _injectQuickTunnelIfNeeded(appDir: string, appName: string, port: number): Promise<void> {
   try {
+    const pp = resolveProjectPath();
+    // DB setting is authoritative (written at wizard completion and admin-server startup).
+    // Wizard state is a fallback for environments where DB migration has not yet run.
     const last = getLastProject();
     const state = loadState(last ?? '');
-    if (state?.domain?.cloudflare?.tunnelMode !== 'quick') return;
+    const tunnelMode = getSetting(pp, 'cf.tunnelMode') ?? state?.domain?.cloudflare?.tunnelMode ?? 'none';
+    if (tunnelMode !== 'quick') return;
     const { injectTraefikForQuickTunnel } = await import('./boilerplate-manager.js');
     injectTraefikForQuickTunnel(appDir, appName, port);
   } catch (err) {

@@ -1,27 +1,35 @@
-# CLAUDE.md - Brewnet Project Context
+# CLAUDE.md — Brewnet Project
+
+> Self-hosted home server management platform.
+> "Your Home Server, Brewed Fresh"
+> This is a public open-source project. Every decision must meet production quality standards.
 
 ---
-## MANDATORY — 모든 응답 전 반드시 확인
 
-1. **응답 형식**: 모든 작업 완료 시 반드시 Korean summary로 마무리
+## ⚠️ MANDATORY — Every Session, Every Response
+
+1. **Source first**: Never answer questions about paths, config values, or runtime behavior
+   without reading the actual source code. No guessing, no assumptions.
+
+2. **After /compact**: Re-read this file in full before continuing any work.
+
+3. **Korean summary required**: Every completed task must end with a Korean summary:
    - 무엇을 변경했는지
    - 왜 그렇게 했는지
    - 주의할 점이 있는지
 
-2. **조사 원칙**: 경로, 설정값, 코드 동작에 대해 답하기 전 반드시 소스 코드를 먼저 읽을 것. 추측으로 답변 금지.
+4. **No partial completion**: If a task cannot be completed fully, stop and report
+   what is blocking — never commit or leave code in a half-finished state.
+
+5. **New bug pattern discovered**: Add it to `.claude/rules/gotchas.md` immediately.
+   Do not assume it will be remembered.
 
 ---
 
 ## Project Overview
 
-**Brewnet** — "Your Home Server, Brewed Fresh"
-
-A self-hosted home server management platform that provides an interactive CLI tool and Web Dashboard (Pro) for setting up and managing personal servers with Docker-based services.
-
-# Brewnet
-
-Self-hosted home server management platform — interactive CLI + Web Dashboard (Pro).
-Docker-based service orchestration, Traefik routing, Cloudflare Tunnel support.
+Brewnet is a self-hosted home server management platform providing an interactive CLI
+and Web Dashboard (Pro) for setting up and managing personal servers with Docker-based services.
 
 ## Tech Stack
 
@@ -30,22 +38,18 @@ Docker-based service orchestration, Traefik routing, Cloudflare Tunnel support.
 | `packages/cli` | TypeScript 5, Node.js 20+, Commander.js, @inquirer/prompts, execa, dockerode, better-sqlite3, simple-git |
 | `packages/dashboard` | Next.js 14 App Router, Tailwind + shadcn/ui, Zustand, TanStack Query, React Hook Form + Zod, xterm.js, Monaco Editor |
 | `packages/shared` | Shared TypeScript types, Zod schemas |
-| System (external) | Docker Compose, Traefik, Nginx, Certbot, SQLite, Gitea, Cloudflare Tunnel |
+| System | Docker Compose, Traefik, Nginx, Certbot, SQLite, Gitea, Cloudflare Tunnel |
 
-## Project Structure
+## References
 @PROJECT_STRUCTURE.md
-
-## CLI Commands
 @CLI_REFERENCE.md
-
-## Database Schema
 @DATABASE.md
-
-## Spec Documents
 @SPEC_REFERENCE.md
+@.claude/rules/gotchas.md
+
+---
 
 ## Installation Flow (Wizard)
-
 ```
 Step 0  System check (OS, Docker, ports, disk)
 Step 1  Project setup (name, path, Full / Partial Install)
@@ -57,50 +61,83 @@ Step 6  Docker Compose generation → service startup → credential propagation
 Step 7  Complete (endpoints, credentials, tunnel status)
 ```
 
+---
+
 ## Language Policy
 
 - Code, variable names, comments, git commits: **English**
 - User-facing responses, summaries, explanations: **Korean**
 - Error messages: keep original English text; describe cause and fix in Korean
 
+---
+
 ## Investigation Rules
 
-- Always read source code before answering questions about paths, config values, or behavior. No guessing.
+- Always read source code before answering questions about paths, config values, or behavior.
 - When the same problem recurs, identify root cause at source level before patching.
-- After a code change, do not declare success based on build passing alone — trace the actual runtime path in source to confirm the fix works.
-- After /compact, re-read CLAUDE.md before continuing work.
+- After a code change, do not declare success based on build passing alone —
+  trace the actual runtime path in source to confirm the fix works.
+- Never propose workarounds. This is an open-source project — identify what is
+  structurally wrong and apply a complete patch so the issue never recurs.
 
 ## Process Rules
 
-- Do not make arbitrary decisions on behavior not defined in spec (error recovery, UX flows, etc.) — ask the user first.
-- When an error occurs, do not only provide manual fix instructions — auto-recover if possible, then report the result.
-- Before reporting a test as "passing", verify the actual user-facing path — direct port curl and browser External URL are different paths.
+- Do not make arbitrary decisions on behavior not defined in spec
+  (error recovery, UX flows, etc.) — ask the user first.
+- When an error occurs, auto-recover if possible, then report the result.
+  Do not only provide manual fix instructions.
+- Before reporting a test as "passing", verify the actual user-facing path —
+  direct port curl and browser External URL are different paths.
+- Never guess External URLs from the client side —
+  always derive from server-side Traefik label resolution.
+- When calling external APIs (Cloudflare, Gitea, etc.), always use upsert patterns —
+  never assume a resource does not already exist.
+
+---
 
 ## Guardrails
 
-### Code
+### Code Quality
+- Never use `any` type in TypeScript — use proper types or `unknown` with narrowing
+- Never use regex literals (`/.../`) inside template literals —
+  use `new RegExp('...')` to avoid template escape consuming `\/` as `//`
 - Never silently swallow errors with `.catch(() => {})` — at minimum log them
 - Never use `console.log` directly — use the project logger
+- Never hardcode secrets, credentials, API keys, or tokens in source code
+- Never commit `.env` files or files containing real credentials
+
+### Testing
+- All new features and bug fixes require a test
+- Never mark a task complete if the affected code path has no test coverage
+- Tests must cover both the success path and the primary failure path
+
+### Versioning
+- Follow semver strictly: breaking CLI changes require a major bump
+- Never make a breaking change to a public CLI command without explicit user approval
+- Document breaking changes in `CHANGELOG.md` before release
 
 ### Git
 - Never run: `git push --force`, `git reset --hard`, `git commit --no-verify`
 - Never auto-commit or auto-push — only on explicit user request
 
-### Admin Dashboard
-- `admin-server.ts` is complete — do not change logic or structure without an explicit prior request; UI edits only
-- For Admin UI debugging, always start the dev server with `pnpm --filter @brewnet/admin-ui dev` (runs at `localhost:5173`)
+### Docker & System
+- Never run: `docker system prune`, `docker volume rm`, `docker network rm`
+  without explicit user approval and confirmation that data is expendable
+- Never remove named volumes — they may contain user data (Nextcloud, Gitea, DB)
+- Never modify a running production container directly — always go through compose
 
-## Response Format
+### Critical Files — Explicit User Approval Required
+- `docker-compose.yml` and `docker-compose.*.yml` — infrastructure definition
+- `traefik/` config — routing and SSL termination
+- `packages/shared/` types and Zod schemas — breaking changes affect all packages
+- `packages/*/package.json` dependencies — require justification before change
+- `.env.example` — user onboarding template; changes affect first-run experience
+- `admin-server.ts` — logic and structure are frozen; UI edits only
 
-Always end every completed task with a Korean summary covering:
-- What was changed
-- Why it was changed
-- Any caveats to be aware of
+---
 
-## Problem Solve Reference
+## Troubleshooting Reference
 
 - Change history: `CHANGELOG.md`
 - Error resolution history: `troubleshooting/*.md`
-
-@.claude/rules/gotchas.md
-
+- Project-specific bug patterns: `.claude/rules/gotchas.md`

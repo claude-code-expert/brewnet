@@ -30,7 +30,7 @@ import { DOCKER_COMPOSE_FILENAME, type WizardState, type LogSource, type Unified
 import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
-import { createApp, deployLocalApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath, setAdminProjectPath } from './app-manager.js';
+import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath, setAdminProjectPath } from './app-manager.js';
 import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getSettings, setSettings, getDb } from './project-db.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
@@ -276,13 +276,13 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     credentials: {
       method: 'env',
       summary: 'Configured via POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB environment variables.',
-      command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet_db',
+      command: 'docker exec -it brewnet-postgresql psql -U brewnet -d brewnet',
     },
     connectionParams: [
       { label: 'host', value: 'localhost' },
       { label: 'port', value: '5432' },
       { label: 'user', value: 'brewnet' },
-      { label: 'db', value: 'brewnet_db' },
+      { label: 'db', value: 'brewnet' },
     ],
     tips: [
       'Internal network only (brewnet-internal) — no host port exposed',
@@ -303,13 +303,13 @@ const SERVICE_DETAIL_MAP: Record<string, ServiceDetailInfo> = {
     credentials: {
       method: 'env',
       summary: 'Configured via MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD environment variables.',
-      command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet_db',
+      command: 'docker exec -it brewnet-mysql mysql -u brewnet -p brewnet',
     },
     connectionParams: [
       { label: 'host', value: 'localhost' },
       { label: 'port', value: '3306' },
       { label: 'user', value: 'brewnet' },
-      { label: 'db', value: 'brewnet_db' },
+      { label: 'db', value: 'brewnet' },
     ],
     tips: [
       'Internal network only (brewnet-internal) — no host port exposed',
@@ -803,10 +803,38 @@ async function handleGetServices(
       });
     }
 
-    const running = services.filter((s) => s.status === 'running').length;
+    // Merge non-unified boilerplate containers: frontend + backend → one card.
+    // Detect pairs: same (name, stackId), one has backendApiUrl (backend) one doesn't (frontend).
+    const frontendUrls = new Map<string, string>(); // `name:stackId` → frontendUrl
+    for (const svc of services) {
+      if (!svc.backendApiUrl && svc.stackId && svc.url) {
+        const key = `${svc.name}:${svc.stackId}`;
+        const hasSibling = services.some((s) => s.backendApiUrl && s.name === svc.name && s.stackId === svc.stackId);
+        if (hasSibling) frontendUrls.set(key, svc.url);
+      }
+    }
+    const mergedServices = frontendUrls.size > 0
+      ? services
+          .filter((svc) => {
+            // Remove frontend container entry when a backend sibling exists
+            if (!svc.backendApiUrl && svc.stackId) {
+              return !frontendUrls.has(`${svc.name}:${svc.stackId}`);
+            }
+            return true;
+          })
+          .map((svc) => {
+            // Update backend container's url to point at the frontend (user-facing) port
+            if (svc.backendApiUrl && svc.stackId) {
+              const feUrl = frontendUrls.get(`${svc.name}:${svc.stackId}`);
+              if (feUrl) return { ...svc, url: feUrl };
+            }
+            return svc;
+          })
+      : services;
+    const running = mergedServices.filter((s) => s.status === 'running').length;
     json(res, 200, {
-      services,
-      summary: { total: services.length, running, stopped: services.length - running },
+      services: mergedServices,
+      summary: { total: mergedServices.length, running, stopped: mergedServices.length - running },
     });
   } catch (err) {
     json(res, 500, { success: false, error: String(err), code: 'BN001' });
@@ -872,6 +900,79 @@ async function handleServiceAction(
   }
 }
 
+// Subdomain and port for each catalog service in Named Tunnel mode.
+// Must stay in sync with NAMED_SUBDOMAIN_MAP in handleGetServices and
+// getActiveServiceRoutes in cloudflare-client.ts.
+const CATALOG_TUNNEL_ROUTES: Record<string, { subdomain: string; port: number }> = {
+  gitea:       { subdomain: 'git',      port: 3000 },
+  nextcloud:   { subdomain: 'cloud',    port: 80   },
+  jellyfin:    { subdomain: 'media',    port: 8096 },
+  filebrowser: { subdomain: 'files',    port: 80   },
+  pgadmin:     { subdomain: 'pgadmin',  port: 80   },
+  minio:       { subdomain: 'minio',    port: 9001 },
+};
+
+/**
+ * Build environment variables for a catalog service install.
+ * Mirrors the per-service env functions in compose-generator.ts (getPostgresEnv,
+ * getPgAdminEnv, etc.) but reads credentials from the admin settings DB instead
+ * of wizardState, ensuring catalog-installed services use the same credentials
+ * the wizard would have used.
+ */
+function buildCatalogServiceEnv(
+  serviceId: string,
+  adminUser: string,
+  adminPass: string,
+  tunnelMode: string,
+): Record<string, string> | undefined {
+  switch (serviceId) {
+    case 'postgresql':
+      return {
+        POSTGRES_USER: adminUser,
+        POSTGRES_PASSWORD: adminPass,
+        POSTGRES_DB: 'brewnet_db',
+      };
+    case 'mysql':
+      return {
+        MYSQL_ROOT_PASSWORD: adminPass,
+        MYSQL_DATABASE: 'brewnet_db',
+        MYSQL_USER: adminUser,
+        MYSQL_PASSWORD: adminPass,
+      };
+    case 'pgadmin': {
+      const env: Record<string, string> = {
+        PGADMIN_DEFAULT_EMAIL: `${adminUser}@brewnet.dev`,
+        PGADMIN_DEFAULT_PASSWORD: adminPass,
+      };
+      if (tunnelMode === 'quick') env['SCRIPT_NAME'] = '/pgadmin';
+      return env;
+    }
+    case 'minio':
+      return {
+        MINIO_ROOT_USER: adminUser,
+        MINIO_ROOT_PASSWORD: adminPass,
+      };
+    case 'filebrowser': {
+      const env: Record<string, string> = {
+        FB_USERNAME: adminUser,
+        FB_PASSWORD: adminPass,
+      };
+      if (tunnelMode === 'quick') env['FB_BASEURL'] = '/files';
+      return env;
+    }
+    case 'nextcloud': {
+      const env: Record<string, string> = {
+        NEXTCLOUD_ADMIN_USER: adminUser,
+        NEXTCLOUD_ADMIN_PASSWORD: adminPass,
+        NEXTCLOUD_TRUSTED_DOMAINS: 'localhost',
+      };
+      return env;
+    }
+    default:
+      return undefined;
+  }
+}
+
 async function handleInstallService(
   _req: IncomingMessage,
   res: ServerResponse,
@@ -883,23 +984,86 @@ async function handleInstallService(
     const { id } = JSON.parse(body) as { id: string };
     if (!id) { json(res, 400, { success: false, error: 'Missing service id' }); return; }
 
-    const result = await addService(id, projectPath);
+    // Read admin credentials from settings DB — same source the wizard uses.
+    // Catalog installs use these to generate env vars identical to wizard-generated compose.
+    const adminUser = getSetting(projectPath, 'admin.username') ?? 'admin';
+    const adminPass = getSetting(projectPath, 'admin.password') ?? 'brewnet';
+    const domainName = getSetting(projectPath, 'cf.zoneName')
+      ?? getSetting(projectPath, 'domain.name')
+      ?? '';
+    const tunnelMode = getSetting(projectPath, 'cf.tunnelMode');
+
+    // Build env vars per service type, mirroring compose-generator.ts logic:
+    // getPostgresEnv, getMysqlEnv, getPgAdminEnv, getMinioEnv, etc.
+    const env = buildCatalogServiceEnv(id, adminUser, adminPass, tunnelMode ?? '');
+
+    const result = await addService(id, projectPath, { env, domain: domainName || undefined });
     if (!result.success) {
       const code = result.error?.includes('already') ? 'ALREADY_EXISTS' : 'BN006';
       json(res, result.error?.includes('already') ? 409 : 500, { success: false, error: result.error, code });
       return;
     }
 
-    // Start the service after adding it to the compose file.
-    // addService() only writes docker-compose.yml; the container must be explicitly started.
+    // Patch compose env vars BEFORE starting the container:
+    // Named Tunnel: switch ROOT_URL/OVERWRITEHOST to subdomain-based URLs,
+    // remove path-based SCRIPT_NAME/FB_BASEURL that would break subdomain routing.
+    const composePath = join(projectPath, DOCKER_COMPOSE_FILENAME);
+    const zoneName = domainName;
+    if (tunnelMode === 'named' && zoneName) {
+      try {
+        const { patchBuiltinServicesForNamedTunnel } = await import('./compose-generator.js');
+        patchBuiltinServicesForNamedTunnel(composePath, zoneName);
+      } catch (patchErr) {
+        logger.warn('admin-server', `[install] compose patch for named tunnel failed (non-fatal): ${String(patchErr)}`);
+      }
+    }
+
+    // Start the service after adding (and patching) it to the compose file.
+    let status = 'compose_updated';
     try {
       const { execa: execaInstall } = await import('execa');
       await execaInstall('docker', ['compose', 'up', '-d', id], { cwd: projectPath });
-      json(res, 202, { success: true, id, status: 'running', message: `Service ${id} installed and started` });
+      status = 'running';
     } catch (startErr) {
       logger.warn('admin-server', `[install] docker compose up -d failed for ${id}: ${String(startErr)}`);
-      json(res, 202, { success: true, id, status: 'compose_updated', message: `Service ${id} added to compose but failed to start` });
     }
+
+    // Named Tunnel: update Cloudflare tunnel ingress + create DNS CNAME for the new service.
+    // Without this step, the subdomain URL is shown in the UI but Cloudflare has no ingress
+    // rule for it, so every request falls through to http_status:404.
+    const newRoute = CATALOG_TUNNEL_ROUTES[id];
+    if (tunnelMode === 'named' && newRoute && zoneName) {
+      const cfDb = getSettings(projectPath, 'cf.');
+      const cfApiToken = cfDb['cf.apiToken'] ?? '';
+      const cfAccountId = cfDb['cf.accountId'] ?? '';
+      const cfTunnelId = cfDb['cf.tunnelId'] ?? '';
+      const cfZoneId = cfDb['cf.zoneId'] ?? '';
+      if (cfApiToken && cfAccountId && cfTunnelId) {
+        try {
+          // Build routes from all services currently in compose that have tunnel route defs.
+          const composePath = join(projectPath, DOCKER_COMPOSE_FILENAME);
+          const { default: yaml } = await import('js-yaml');
+          const compose = yaml.load(readFileSync(composePath, 'utf-8')) as { services?: Record<string, unknown> };
+          const routes = Object.keys(compose.services ?? {})
+            .filter((svc) => svc in CATALOG_TUNNEL_ROUTES)
+            .map((svc) => ({
+              subdomain: CATALOG_TUNNEL_ROUTES[svc]!.subdomain,
+              port: CATALOG_TUNNEL_ROUTES[svc]!.port,
+              containerName: svc,
+            }));
+          const { configureTunnelIngress, createDnsRecord } = await import('./cloudflare-client.js');
+          await configureTunnelIngress(cfApiToken, cfAccountId, cfTunnelId, zoneName, routes);
+          if (cfZoneId) {
+            await createDnsRecord(cfApiToken, cfZoneId, cfTunnelId, newRoute.subdomain, zoneName);
+          }
+          logger.info('admin-server', `[install] tunnel ingress + DNS updated for ${id} (${newRoute.subdomain}.${zoneName})`);
+        } catch (tunnelErr) {
+          logger.warn('admin-server', `[install] tunnel ingress update failed (non-fatal): ${String(tunnelErr)}`);
+        }
+      }
+    }
+
+    json(res, 202, { success: true, id, status, message: `Service ${id} installed and started` });
   } catch (err) {
     json(res, 500, { success: false, error: String(err) });
   }
@@ -1422,7 +1586,7 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         // GET /api/services/catalog — SERVICE_DETAIL_MAP + NAME_ALIASES for React SPA
         if (parts[1] === 'services' && parts[2] === 'catalog' && req.method === 'GET') {
           if (!checkAdminAuth(req, res, adminPassword)) return;
-          const adminUser = wizardState?.admin?.username ?? 'USER';
+          const adminUser = getSetting(projectPath, 'admin.username') ?? wizardState?.admin?.username ?? 'admin';
           const catalog = { ...SERVICE_DETAIL_MAP };
           if (catalog['SSH Server']) {
             catalog['SSH Server'] = {
@@ -1434,6 +1598,40 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               connectionParams: catalog['SSH Server'].connectionParams?.map((p) =>
                 p.label === 'user' ? { ...p, value: adminUser } : p,
               ),
+            };
+          }
+          // Dynamically patch DB connection commands with admin username
+          if (catalog['PostgreSQL']) {
+            catalog['PostgreSQL'] = {
+              ...catalog['PostgreSQL'],
+              credentials: {
+                ...catalog['PostgreSQL'].credentials!,
+                command: `docker exec -it brewnet-postgresql psql -U ${adminUser} -d brewnet_db`,
+              },
+              connectionParams: catalog['PostgreSQL'].connectionParams?.map((p) =>
+                p.label === 'user' ? { ...p, value: adminUser } : p,
+              ),
+            };
+          }
+          if (catalog['MySQL']) {
+            catalog['MySQL'] = {
+              ...catalog['MySQL'],
+              credentials: {
+                ...catalog['MySQL'].credentials!,
+                command: `docker exec -it brewnet-mysql mysql -u ${adminUser} -p brewnet_db`,
+              },
+              connectionParams: catalog['MySQL'].connectionParams?.map((p) =>
+                p.label === 'user' ? { ...p, value: adminUser } : p,
+              ),
+            };
+          }
+          if (catalog['pgAdmin']) {
+            catalog['pgAdmin'] = {
+              ...catalog['pgAdmin'],
+              credentials: {
+                ...catalog['pgAdmin'].credentials!,
+                summary: `Login: ${adminUser}@brewnet.dev / (admin password)`,
+              },
             };
           }
           json(res, 200, { catalog, aliases: NAME_ALIASES });
@@ -1576,7 +1774,16 @@ export function createAdminServer(options: AdminServerOptions = {}): {
         }
 
         if (parts[1] === 'apps') {
-          if (!checkAdminAuth(req, res, adminPassword)) return;
+          // SSE log stream authenticates via a one-time token (?token=...) issued by
+          // GET /api/apps/:name/logs/token.  EventSource cannot send custom headers,
+          // so the outer X-Admin-Password check must be skipped for this endpoint only.
+          // The inner handler (parts[3]==='logs', parts.length===4) validates the token.
+          const isSseLogsStream =
+            req.method === 'GET' &&
+            parts[3] === 'logs' &&
+            parts.length === 4 &&
+            new URL(req.url ?? '/', 'http://localhost').searchParams.has('token');
+          if (!isSseLogsStream && !checkAdminAuth(req, res, adminPassword)) return;
           if (req.method === 'GET' && parts.length === 2) {
             const apps = await listApps();
             // Enrich with lastDeployedAt + localUrl (with basePath for Next.js)
@@ -1593,9 +1800,19 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                 for (const m of metas) bpMetaMap.set(m.stackId, m);
               } catch { /* ignore parse errors */ }
             }
+            // Re-read tunnelMode from DB per-request — tunnelMode can change at runtime
+            // when the user connects a Named Tunnel while the server is already running.
+            const rtTunnelMode = getSetting(projectPath, 'cf.tunnelMode') ?? cfTunnelMode;
+            const rtQt = rtTunnelMode !== 'named'
+              ? (getSetting(projectPath, 'cf.quickTunnelUrl') ?? dashConfig.quickTunnelUrl)
+              : '';
+            // For Named Tunnel: rewrite internal Gitea URLs to the display (external) URL.
+            // DB stores http://localhost/git/... but the browser must open https://git.<zone>/...
+            const giteaBase = (getSetting(projectPath, 'gitea.baseUrl') ?? '').replace(/\/$/, '');
+            const giteaZone = rtTunnelMode === 'named' ? (getSetting(projectPath, 'cf.zoneName') ?? '') : '';
             const enrichedApps = apps.map((a) => {
               const lastDeploy = historyByApp.get(a.name) ?? null;
-              const qt = dashConfig.quickTunnelUrl;
+              const qt = rtQt;
               // Non-unified: bpMeta says so, or fall back to stack catalog (for create-app apps)
               const bpMeta = a.mode === 'boilerplate' && a.stackId ? bpMetaMap.get(a.stackId) : undefined;
               const isNonUnified = bpMeta
@@ -1629,10 +1846,39 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                 }
                 externalUrl = domainConn ? `https://${domainConn.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${a.name}` : null);
               }
-              return { ...a, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl, externalUrl, backendLocalUrl, backendExternalUrl };
+              // Rewrite internal Gitea URL to external display URL for Named Tunnel mode.
+              const giteaRepoUrl = (a.giteaRepoUrl && giteaZone && giteaBase && a.giteaRepoUrl.startsWith(giteaBase))
+                ? a.giteaRepoUrl.replace(giteaBase, `https://git.${giteaZone}`)
+                : a.giteaRepoUrl;
+              return {
+                ...a,
+                giteaRepoUrl,
+                lastDeployedAt: lastDeploy?.deployedAt ?? null,
+                localUrl,
+                externalUrl,
+                backendLocalUrl,
+                backendExternalUrl,
+                domainRequired: rtTunnelMode === 'named' && !domainConn,
+              };
             });
-            logger.info('admin-server', `[GET /api/apps] returning ${apps.length} app(s): ${JSON.stringify(apps.map((a) => a.name))}`);
-            json(res, 200, { apps: enrichedApps });
+            // Deduplicate non-unified boilerplate siblings.
+            // A non-unified entry (backendLocalUrl set) already contains the frontend URL
+            // via localUrl. If a separate frontend-container entry exists at the same
+            // appDir and port, hide it — the combined entry represents both.
+            const hiddenSiblings = new Set<string>();
+            for (const a of enrichedApps) {
+              if (a.backendLocalUrl && a.localUrl && a.appDir) {
+                try {
+                  const fp = parseInt(new URL(a.localUrl).port, 10);
+                  if (!isNaN(fp) && fp !== a.port) hiddenSiblings.add(`${a.appDir}:${fp}`);
+                } catch { /* ignore malformed URLs */ }
+              }
+            }
+            const visibleApps = hiddenSiblings.size > 0
+              ? enrichedApps.filter(a => !hiddenSiblings.has(`${a.appDir}:${a.port}`))
+              : enrichedApps;
+            logger.info('admin-server', `[GET /api/apps] returning ${visibleApps.length} app(s): ${JSON.stringify(visibleApps.map((a) => a.name))}`);
+            json(res, 200, { apps: visibleApps });
             return;
           }
           if (req.method === 'GET' && parts[2] === 'boilerplates') {
@@ -1711,14 +1957,8 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
           if (req.method === 'POST' && parts[2] === 'create') {
             const opts = JSON.parse(body) as CreateAppOptions;
-            if (opts.mode === 'local-path') {
-              if (!opts.localPath) { json(res, 400, { error: 'localPath is required for local-path mode' }); return; }
-              const jobId = await deployLocalApp({ appName: opts.appName, localPath: opts.localPath, port: opts.port ?? 3000 });
-              json(res, 202, { jobId });
-            } else {
-              const jobId = await createApp(opts);
-              json(res, 202, { jobId });
-            }
+            const jobId = await createApp(opts);
+            json(res, 202, { jobId });
             return;
           }
           if (req.method === 'GET' && parts[2] === 'jobs' && parts[3]) {
@@ -1744,13 +1984,22 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           }
 
           // GET /api/apps/:name — single app detail (enriched with lastDeployedAt + URLs)
+          // Uses the same tunnelMode / quickTunnelUrl / domainRequired logic as the
+          // list endpoint to avoid stale Quick Tunnel URLs in Named Tunnel mode.
           if (req.method === 'GET' && parts[2] && !['boilerplates', 'jobs', 'check-port'].includes(parts[2]) && parts.length === 3) {
             const apps = await listApps();
             const found = apps.find((a) => a.name === decodeURIComponent(parts[2]!));
             if (!found) { json(res, 404, { error: 'App not found' }); return; }
             const history = getDeployHistory();
             const lastDeploy = history.filter((h) => h.appName === found.name && h.status === 'success').pop() ?? null;
-            const qt = dashConfig.quickTunnelUrl;
+            // Same tunnelMode-aware qt guard as list endpoint
+            const detailTunnelMode = getSetting(projectPath, 'cf.tunnelMode') ?? cfTunnelMode;
+            const qt = detailTunnelMode !== 'named'
+              ? (getSetting(projectPath, 'cf.quickTunnelUrl') ?? dashConfig.quickTunnelUrl)
+              : '';
+            // Gitea URL rewrite for Named Tunnel
+            const detailGiteaBase = (getSetting(projectPath, 'gitea.baseUrl') ?? '').replace(/\/$/, '');
+            const detailGiteaZone = detailTunnelMode === 'named' ? (getSetting(projectPath, 'cf.zoneName') ?? '') : '';
             const bpMetaSingle = found.mode === 'boilerplate' && found.stackId
               ? (() => {
                   const p = join(projectPath, '.brewnet-boilerplate.json');
@@ -1762,7 +2011,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
                   } catch { return undefined; }
                 })()
               : undefined;
-            // Non-unified: bpMeta says so, or fall back to stack catalog (for create-app apps)
             const isNonUnified = bpMetaSingle
               ? bpMetaSingle.isUnified === false
               : !!(found.stackId && getStackById(found.stackId)?.isUnified === false);
@@ -1790,7 +2038,20 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               }
               externalUrlSingle = domainConnSingle ? `https://${domainConnSingle.hostname}` : (qt ? `${qt.replace(/\/$/, '')}/apps/${found.name}` : null);
             }
-            const app = { ...found, lastDeployedAt: lastDeploy?.deployedAt ?? null, localUrl: localUrlSingle, externalUrl: externalUrlSingle, backendLocalUrl: backendLocalUrlSingle, backendExternalUrl: backendExternalUrlSingle };
+            // Rewrite internal Gitea URL for Named Tunnel mode
+            const giteaRepoUrlSingle = (found.giteaRepoUrl && detailGiteaZone && detailGiteaBase && found.giteaRepoUrl.startsWith(detailGiteaBase))
+              ? found.giteaRepoUrl.replace(detailGiteaBase, `https://git.${detailGiteaZone}`)
+              : found.giteaRepoUrl;
+            const app = {
+              ...found,
+              giteaRepoUrl: giteaRepoUrlSingle,
+              lastDeployedAt: lastDeploy?.deployedAt ?? null,
+              localUrl: localUrlSingle,
+              externalUrl: externalUrlSingle,
+              backendLocalUrl: backendLocalUrlSingle,
+              backendExternalUrl: backendExternalUrlSingle,
+              domainRequired: detailTunnelMode === 'named' && !domainConnSingle,
+            };
             json(res, 200, { app });
             return;
           }

@@ -459,7 +459,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
   <div id="svc-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#0a0a0a;
     flex-direction:column;align-items:center;justify-content:center;gap:20px;
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#c9d1d9;">
-    <div style="font-size:2.4rem;line-height:1">&#x1F37A;</div>
+    <div style="font-size:2.4rem;line-height:1">&#x2615;</div>
     <div id="svc-name" style="font-size:1.1rem;font-weight:600;color:#e6edf3"></div>
     <div style="width:36px;height:36px;border:3px solid #1f1f1f;border-top-color:#f59e0b;
       border-radius:50%;animation:svc-spin .8s linear infinite"></div>

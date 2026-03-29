@@ -598,6 +598,48 @@ describe('injectTraefikForQuickTunnel', () => {
       composePath, 'my-app', 'app', 8080, false,
     );
   });
+
+  // ── compose.yml (Compose V2 standard) fallback ──────────────────────────
+
+  it('injects into compose.yml when docker-compose.yml is absent', () => {
+    const composePath = join(tmpDir, 'compose.yml');
+    writeFileSync(composePath, [
+      'services:',
+      '  app:',
+      '    image: myapp',
+      '    ports:',
+      '      - "8080:8080"',
+    ].join('\n'), 'utf-8');
+
+    injectTraefikForQuickTunnel(tmpDir, 'my-app', 8080);
+
+    expect(mockAddQuickTunnelAppLabels).toHaveBeenCalledWith(
+      composePath, 'my-app', 'app', 8080, false,
+    );
+  });
+
+  it('prefers docker-compose.yml over compose.yml when both exist', () => {
+    const dockerComposePath = join(tmpDir, 'docker-compose.yml');
+    const composePath = join(tmpDir, 'compose.yml');
+    writeFileSync(dockerComposePath, [
+      'services:',
+      '  backend:',
+      '    image: myapp',
+      '    ports:',
+      '      - "8080:8080"',
+    ].join('\n'), 'utf-8');
+    writeFileSync(composePath, [
+      'services:',
+      '  other:',
+      '    image: other',
+    ].join('\n'), 'utf-8');
+
+    injectTraefikForQuickTunnel(tmpDir, 'my-app', 8080);
+
+    expect(mockAddQuickTunnelAppLabels).toHaveBeenCalledWith(
+      dockerComposePath, 'my-app', 'backend', 8080, false,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

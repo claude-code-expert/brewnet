@@ -161,7 +161,14 @@ function getServiceVolumes(serviceId: string): string[] {
  * Build a ComposeService block from a ServiceDefinition.
  * Used when adding a service to an existing compose file.
  */
-function buildServiceBlock(def: ServiceDefinition): ComposeService {
+export interface AddServiceOptions {
+  /** Environment variables to inject into the service (e.g. credentials from admin settings). */
+  env?: Record<string, string>;
+  /** Domain name to resolve {{DOMAIN}} placeholder in Traefik labels. */
+  domain?: string;
+}
+
+function buildServiceBlock(def: ServiceDefinition, options?: AddServiceOptions): ComposeService {
   const svc: ComposeService = {
     image: def.image,
     container_name: `${BREWNET_PREFIX}-${def.id}`,
@@ -176,9 +183,21 @@ function buildServiceBlock(def: ServiceDefinition): ComposeService {
     svc.volumes = volumes;
   }
 
-  // Traefik labels — only when service has a subdomain
+  // Environment variables — caller (handleInstallService) reads admin credentials
+  // from the settings DB and passes them here, matching wizard-generated compose.
+  if (options?.env && Object.keys(options.env).length > 0) {
+    svc.environment = { ...options.env };
+  }
+
+  // Traefik labels — resolve {{DOMAIN}} with actual zone name at write time,
+  // mirroring how compose-generator resolves it during wizard setup.
   if (def.subdomain && def.traefikLabels) {
     svc.labels = { ...def.traefikLabels };
+    if (options?.domain) {
+      for (const [key, value] of Object.entries(svc.labels)) {
+        svc.labels[key] = value.replace(/\{\{DOMAIN\}\}/g, options.domain);
+      }
+    }
   }
 
   return svc;
@@ -216,6 +235,7 @@ function extractNamedVolumes(volumeMounts: string[]): string[] {
 export async function addService(
   serviceId: string,
   projectPath: string,
+  options?: AddServiceOptions,
 ): Promise<ServiceOperationResult> {
   // Validate service ID
   const def = getServiceDefinition(serviceId);
@@ -247,7 +267,7 @@ export async function addService(
   const backupPath = backupComposeFile(composePath);
 
   // Build and add service block
-  const serviceBlock = buildServiceBlock(def);
+  const serviceBlock = buildServiceBlock(def, options);
   if (!compose.services) {
     compose.services = {};
   }

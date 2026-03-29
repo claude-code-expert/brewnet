@@ -1,6 +1,6 @@
 // T031 — CreateAppModal: multi-step wizard for app creation
 import { useState, useEffect, useRef } from 'react';
-import { Package, GitBranch, FolderOpen } from 'lucide-react';
+import { Package, GitBranch } from 'lucide-react';
 import type { AppEntry } from '../types.js';
 import { showToast } from './Toast.js';
 
@@ -85,7 +85,6 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
   const [lang, setLang]         = useState('');
   const [frameworkId, setFrameworkId] = useState('');
   const [gitUrl, setGitUrl]     = useState('');
-  const [localPath, setLocalPath] = useState('');
   const [port, setPort]         = useState(3000);
   const [submitting, setSubmitting] = useState(false);
   const [nameError, setNameError]   = useState('');
@@ -148,8 +147,6 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
       const trimmedUrl = gitUrl.trim();
       if (!trimmedUrl) { showToast('Git URL is required'); return; }
       if (!/^https?:\/\/.+/.test(trimmedUrl)) { showToast('Enter a valid Git URL (https://)'); return; }
-    } else if (mode === 'local-path') {
-      if (!localPath.trim()) { showToast('Project path is required'); return; }
     }
     setStep(3);
   };
@@ -163,7 +160,6 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
         port,
         ...(mode === 'boilerplate' ? { stackId } : {}),
         ...(mode === 'git-clone'   ? { gitUrl: gitUrl.trim() } : {}),
-        ...(mode === 'local-path'  ? { localPath: localPath.trim() } : {}),
       };
       const res = await apiFetch('/api/apps/create', {
         method: 'POST',
@@ -240,7 +236,6 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
                   {([
                     { id: 'boilerplate', label: 'Boilerplate', Icon: Package },
                     { id: 'git-clone',   label: 'Git Clone',   Icon: GitBranch },
-                    { id: 'local-path',  label: 'Local Path',  Icon: FolderOpen },
                   ] as { id: AppEntry['mode']; label: string; Icon: typeof Package }[]).map(({ id, label, Icon }) => {
                     const sel = mode === id;
                     return (
@@ -348,24 +343,6 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
             </div>
           )}
 
-          {/* Step 2c: Local Path — directory path input */}
-          {step === 2 && mode === 'local-path' && (
-            <div className="fg">
-              <label className="fl">Local Project Path</label>
-              <input
-                className="fi"
-                value={localPath}
-                onChange={(e) => setLocalPath(e.target.value)}
-                placeholder="/home/user/my-project"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === 'Enter') goNext2(); }}
-                style={{ fontFamily: 'var(--mono)' }}
-              />
-              <div className="fhint">
-                Absolute path to the project directory. Dockerfile or package.json/requirements.txt/go.mod/Cargo.toml must exist.
-              </div>
-            </div>
-          )}
 
           {/* Step 3: Port */}
           {step === 3 && (
@@ -433,7 +410,6 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
                 disabled={step === 2 && (
                   mode === 'boilerplate' ? !frameworkId :
                   mode === 'git-clone'   ? !gitUrl.trim() :
-                  mode === 'local-path'  ? !localPath.trim() :
                   false
                 )}
               >

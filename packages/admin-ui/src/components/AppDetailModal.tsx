@@ -196,6 +196,7 @@ export function AppDetailModal({ appName, onClose, onOpenDomainSettings, initial
         <ProgressModal
           jobId={progressJob.jobId}
           appName={progressJob.appName}
+          jobType="deploy"
           apiFetch={apiFetch}
           onClose={() => setProgressJob(null)}
           onComplete={() => setProgressJob(null)}

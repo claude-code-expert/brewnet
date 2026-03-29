@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 
-let _show: ((msg: string, persist: boolean) => void) | null = null;
+let _show: ((msg: string) => void) | null = null;
 let _hideTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearHideTimer() {
@@ -8,16 +8,16 @@ function clearHideTimer() {
 }
 
 /** Imperative API — call from anywhere. Auto-hides after `ms`. */
-export function showToast(msg: string, ms = 2600): void {
+export function showToast(msg: string, ms = 3000): void {
   clearHideTimer();
-  _show?.(msg, false);
-  _hideTimer = setTimeout(() => _show?.('', false), ms);
+  _show?.(msg);
+  _hideTimer = setTimeout(() => _show?.(''), ms);
 }
 
 /** Show a toast that stays until the user dismisses it. */
 export function showPersistentToast(msg: string): void {
   clearHideTimer();
-  _show?.(msg, true);
+  _show?.(msg);
 }
 
 export function Toast() {
@@ -32,14 +32,14 @@ export function Toast() {
   }, []);
 
   useEffect(() => {
-    _show = (msg: string, persist: boolean) => {
+    _show = (msg: string) => {
       const wrap = wrapRef.current;
       const text = textRef.current;
       const btn = btnRef.current;
       if (!wrap || !text || !btn) return;
       if (!msg) { wrap.style.display = 'none'; return; }
       text.textContent = msg;
-      btn.style.display = persist ? 'flex' : 'none';
+      btn.style.display = 'flex';
       wrap.style.display = 'flex';
     };
     return () => {
@@ -56,16 +56,19 @@ export function Toast() {
         onClick={hide}
         aria-label="Close"
         style={{
-          display: 'none',
+          display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          flexShrink: 0,
           background: 'none',
           border: 'none',
           color: 'var(--txt3)',
           cursor: 'pointer',
-          padding: '0 2px',
-          fontSize: 15,
+          padding: '2px 4px',
+          fontSize: 14,
           lineHeight: 1,
+          borderRadius: 4,
+          opacity: 0.7,
         }}
       >
         ✕

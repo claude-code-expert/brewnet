@@ -1,6 +1,7 @@
 // T036 — OverviewTab: app metadata, URLs, git info, boilerplate stack details
 import type { AppEntry, AppGitInfo, BoilerplateMeta } from '../types.js';
 import { BOILERPLATE_GITHUB_BASE } from '../lib/constants.js';
+import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
 
 interface OverviewTabProps {
   app: AppEntry;
@@ -39,6 +40,7 @@ function formatDate(iso: string) {
 }
 
 export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
+  const openGitea = useGiteaOpen();
   const domainBase = app.backendExternalUrl ?? null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -74,7 +76,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
       </div>
 
       {/* Access URLs */}
-      {(app.localUrl || app.externalUrl || app.backendLocalUrl || app.backendExternalUrl) && (
+      {(app.localUrl || app.externalUrl || app.backendLocalUrl || app.backendExternalUrl || app.domainRequired) && (
         <div className="card" style={{ padding: '10px 20px' }}>
           <div className="section-title" style={{ marginBottom: 12 }}>Access</div>
           {app.backendLocalUrl ? (
@@ -100,6 +102,14 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                         style={{ color: 'var(--amber)', fontSize: 12.5, fontFamily: 'var(--mono)', textDecoration: 'none' }}>
                         {app.externalUrl} <span style={{ fontSize: 10, color: 'var(--txt3)' }}>↗</span>
                       </a>
+                    </div>
+                  )}
+                  {app.domainRequired && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 60, fontSize: 11, color: 'var(--txt3)', fontFamily: 'var(--mono)' }}>external</span>
+                      <span style={{ color: 'var(--amber)', fontSize: 12, fontFamily: 'var(--mono)' }}>
+                        ⚠ Quick Tunnel ended — domain connection required
+                      </span>
                     </div>
                   )}
                 </div>
@@ -148,6 +158,14 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
                     style={{ color: 'var(--amber)', fontSize: 13, fontFamily: 'var(--mono)', textDecoration: 'none' }}>
                     {app.externalUrl} <span style={{ fontSize: 11, color: 'var(--txt3)' }}>↗</span>
                   </a>
+                </div>
+              )}
+              {app.domainRequired && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ width: 80, fontSize: 12, color: 'var(--txt2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>External</span>
+                  <span style={{ color: 'var(--amber)', fontSize: 12.5, fontFamily: 'var(--mono)' }}>
+                    ⚠ Quick Tunnel ended — domain connection required
+                  </span>
                 </div>
               )}
             </div>
@@ -300,25 +318,24 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
             </InfoRow>
             {git.giteaUrl && (
               <InfoRow label="Gitea URL">
-                <a
-                  href={
-                    git.giteaUrl.startsWith('https://')
-                      ? git.giteaUrl
-                      : `/api/gitea/autologin?redirect=${encodeURIComponent(new URL(git.giteaUrl).pathname)}`
-                  }
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={() => openGitea(git.giteaUrl)}
                   style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
                     color: app.lastDeployedAt ? 'var(--teal)' : 'var(--txt2)',
                     fontSize: 13,
                     fontFamily: 'var(--mono)',
                     textDecoration: 'none',
                     opacity: app.lastDeployedAt ? 1 : 0.6,
+                    textAlign: 'left',
                   }}
                 >
                   {git.giteaUrl}
                   <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--txt3)' }}>↗</span>
-                </a>
+                </button>
               </InfoRow>
             )}
             {git.latestCommit ? (

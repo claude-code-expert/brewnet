@@ -279,7 +279,7 @@ describe('POST /api/services/install', () => {
 
   it('calls addService with correct service id', async () => {
     await req('POST', '/api/services/install', { id: 'nextcloud' });
-    expect(mockAddService).toHaveBeenCalledWith('nextcloud', expect.any(String));
+    expect(mockAddService).toHaveBeenCalledWith('nextcloud', expect.any(String), expect.objectContaining({ env: expect.any(Object) }));
   });
 
   it('returns 409 when service already exists', async () => {

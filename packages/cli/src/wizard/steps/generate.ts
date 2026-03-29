@@ -44,6 +44,11 @@ import {
   sortByDependency,
 } from '../../services/health-checker.js';
 import {
+  isDaemonRunning,
+  launchDockerDesktop,
+  waitForDockerDaemon,
+} from '../../services/docker-installer.js';
+import {
   collectAllServices,
   getCredentialTargets,
 } from '../../utils/resources.js';
@@ -389,23 +394,61 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
   console.log(chalk.bold('  Pulling Docker images...'));
   console.log(chalk.dim('    (This may take several minutes depending on network speed)'));
   console.log();
-  try {
+
+  // Proactive daemon check: verify Docker daemon is up BEFORE attempting pull.
+  // This prevents confusing "Cannot connect to the Docker daemon" output from
+  // docker compose pull and auto-recovers without user intervention.
+  const daemonUpBeforePull = await isDaemonRunning();
+  if (!daemonUpBeforePull) {
+    console.log(chalk.yellow('  ⚠  Docker daemon is not running. Attempting to start it automatically...'));
+
+    if (process.platform === 'darwin') {
+      await launchDockerDesktop();
+    } else {
+      const { execa: execaStart } = await import('execa');
+      await execaStart('sudo', ['systemctl', 'start', 'docker'], {
+        stdio: 'inherit',
+        reject: false,
+      });
+    }
+
+    const daemonSpinner = ora({ text: 'Waiting for Docker daemon to be ready...', indent: 2 }).start();
+    const daemonReady = await waitForDockerDaemon(90_000);
+    if (daemonReady) {
+      daemonSpinner.succeed('  Docker daemon is ready.');
+      console.log();
+    } else {
+      daemonSpinner.fail('  Docker daemon did not start within 90 seconds.');
+      console.log(chalk.red('  ✗ Unable to start Docker daemon. Cannot pull images.'));
+      const shouldContinue = await confirm({
+        message: 'Continue without pulling images? (existing local images will be used)',
+        default: false,
+      });
+      if (!shouldContinue) {
+        return 'error';
+      }
+    }
+  }
+
+  async function attemptPull(): Promise<boolean> {
     const pullCmd = buildPullCommand(composePath);
     const { execa: execaPull } = await import('execa');
     const pullResult = await execaPull(pullCmd.cmd, pullCmd.args, {
       stdio: 'inherit',
       reject: false,
     });
+    return pullResult.exitCode === 0;
+  }
 
-    if (pullResult.exitCode !== 0) {
+  try {
+    const pullOk = await attemptPull();
+
+    if (!pullOk) {
       console.log(chalk.red('  ✗ Failed to pull Docker images'));
-
-      // Offer to continue anyway
       const shouldContinue = await confirm({
         message: 'Continue without pulling images? (existing images will be used)',
         default: false,
       });
-
       if (!shouldContinue) {
         return 'error';
       }

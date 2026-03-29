@@ -3,6 +3,88 @@
 > 이 문서는 Brewnet 프로젝트의 개발 히스토리를 기록합니다.
 > 각 엔트리는 프롬프트, 변경사항, 영향받은 파일을 포함합니다.
 
+## [develop] - 2026-03-29 11:30
+
+### 🎯 Prompts
+1. "AppCard에 front/backend chips 추가, 대시보드 두 개 카드 → 한 개로 머지"
+2. "Gitea 버튼 Named Tunnel 모드에서 localhost 리다이렉트 수정"
+3. "AppCard 높이/레이아웃 개선, 버튼+링크 하단 고정"
+4. "도메인 연결 성공 배너 추가 (justConnected state)"
+5. "Footer에 Bug Report 링크 추가, GitHub 링크 Header로 이동"
+6. "모든 대기 상태에 elapsed timer 공통 기능 추가"
+7. "Catalog에서 앱 설치 시 Named Tunnel ingress/DNS 자동 등록"
+8. "PostgreSQL/pgAdmin 카탈로그 설치 시 환경변수 미설정 → 컨테이너 crash 수정"
+9. "catalogEnv 하드코딩 → admin 설정 DB 기반 credential 동적 주입으로 근본 수정"
+10. "{{DOMAIN}} 플레이스홀더 미치환 수정 (addService에서 domain 해석)"
+11. "pgAdmin .local 이메일 TLD 거부 수정 → @brewnet.dev"
+12. "SERVICE_DETAIL_MAP DB 연결 명령어 동적 패치 (admin username 반영)"
+13. "Local Path 메뉴 UI 및 admin-server API 핸들러 제거"
+14. "토스트 스타일 강화 — 폰트 확대, teal 글로우 테두리, pulse 애니메이션"
+15. "Deploy 완료 토스트 미표시 → jobType='deploy' prop 누락 수정"
+16. "Apps 페이지 Refresh 버튼 추가"
+17. "도메인 연결 step 메시지 순서 버그 수정 (dns 키워드 충돌 → step 번호 매칭)"
+18. "도메인 연결 step 메시지 최소 1초 표시 (빠른 step 큐잉)"
+19. "GET /api/apps/:name 단일 앱 endpoint에 tunnelMode 가드 누락 수정 (Quick Tunnel URL 반복 표시 근본 원인)"
+
+### ✅ Changes
+
+**Catalog Install — Named Tunnel 통합**
+- **Fixed**: `handleInstallService` — Named Tunnel 모드에서 카탈로그 서비스 설치 시 `configureTunnelIngress()` + `createDnsRecord()` 자동 호출. 이전에는 compose만 업데이트되고 CF 터널 ingress 미등록 → 404 (`admin-server.ts`)
+- **Fixed**: `buildCatalogServiceEnv()` — admin 설정 DB에서 `admin.username`/`admin.password` 읽어 서비스별 env 동적 생성. 하드코딩 기본값 제거 (`admin-server.ts`)
+- **Fixed**: `addService()` — `options.env`/`options.domain` 파라미터 추가, `buildServiceBlock`에서 `{{DOMAIN}}` 플레이스홀더 해석 + env 주입 (`service-manager.ts`)
+- **Fixed**: `patchBuiltinServicesForNamedTunnel()` — 카탈로그 설치 시 컨테이너 시작 전 Named Tunnel용 env 패치 (ROOT_URL, OVERWRITEHOST 등) (`admin-server.ts`)
+- **Fixed**: pgAdmin `.local` TLD 이메일 → `@brewnet.dev` 패턴 사용 (`admin-server.ts`)
+- **Fixed**: `SERVICE_DETAIL_MAP` PostgreSQL/MySQL/pgAdmin 연결 명령어 admin username 동적 패치 (`admin-server.ts`)
+
+**Quick Tunnel → Named Tunnel URL 라이프사이클 근본 수정**
+- **Fixed**: `GET /api/apps` — `rtTunnelMode !== 'named'` 가드 + `domainRequired` 플래그 추가 (`admin-server.ts`)
+- **Fixed**: `GET /api/apps/:name` — 동일한 tunnelMode 가드/domainRequired/giteaRepoUrl 리라이트 누락 패치. 이 endpoint 미패치가 Quick Tunnel URL 반복 표시의 근본 원인 (`admin-server.ts`)
+- **Added**: AppCard `domainRequired` 힌트 — "⚠ Quick Tunnel ended — domain connection required" (`AppCard.tsx`)
+- **Added**: OverviewTab `domainRequired` 힌트 — external URL 위치에 도메인 연결 안내 (`OverviewTab.tsx`)
+
+**Dashboard UI 개선**
+- **Added**: `useElapsed` 공통 hook — ProgressModal, AppDomainTab, DeploymentTab의 모든 대기 상태에 경과 시간 표시 (`useElapsed.ts`)
+- **Added**: AppCard front/backend role chips + 분리된 Front/API 접근 링크 (`AppCard.tsx`)
+- **Fixed**: AppCard 높이 230px 고정, 접근 링크+버튼 하단 고정 레이아웃 (`AppCard.tsx`)
+- **Added**: 도메인 연결 성공 배너 — DNS 전파 완료 시 클릭 가능한 성공 메시지 (`useAppDomain.ts`, `AppDomainTab.tsx`)
+- **Added**: Footer Bug Report 링크 → GitHub Issues (`Footer.tsx`)
+- **Moved**: GitHub 링크 Footer → NavHeader (`NavHeader.tsx`, `Footer.tsx`)
+- **Fixed**: 토스트 스타일 — 14px/500, teal 글로우 테두리, pulse 애니메이션 (`global.css`, `Toast.tsx`)
+- **Fixed**: Deploy 완료 토스트 미표시 — `jobType="deploy"` prop 누락 (`AppDetail.tsx`, `AppDetailModal.tsx`)
+- **Added**: Apps 페이지 Refresh 버튼 (`Apps.tsx`)
+- **Removed**: Local Path 메뉴 UI + admin-server API 핸들러 (`CreateAppModal.tsx`, `types.ts`, `admin-server.ts`)
+
+**도메인 연결 UX**
+- **Fixed**: step 메시지 순서 — `dns` 키워드가 step 3/6 모두 매칭하던 버그 → step 번호 기반 매칭 (`useAppDomain.ts`)
+- **Added**: step 메시지 최소 1초 표시 큐잉 — 빠른 step(4,5)도 순차적으로 확인 가능 (`useAppDomain.ts`)
+
+**서비스 카드 머지**
+- **Fixed**: `/api/services` — 동일 (name, stackId) frontend/backend 컨테이너 쌍을 단일 카드로 머지 (`admin-server.ts`)
+- **Fixed**: `/api/apps` — non-unified 보일러플레이트 sibling entry 중복 제거 (`admin-server.ts`)
+- **Fixed**: Gitea URL 리라이트 — Named Tunnel 모드에서 `http://localhost/git/...` → `https://git.<zone>/...` (`admin-server.ts`)
+
+### 📊 Test Results
+- Total: 143+ tests passing (admin-server + service-manager suites)
+- New: 13 tests — Named Tunnel ingress update + credential propagation (`admin-server-install-named-tunnel.test.ts`)
+- New: 4 tests — addService env/domain options (`service-manager.test.ts`)
+- New: 5 tests — apps enrichment tunnelMode + deduplication (`admin-server-apps-enrichment.test.ts`)
+
+### 📁 Files Modified
+- `packages/cli/src/services/admin-server.ts` (+321, -2 lines)
+- `packages/cli/src/services/service-manager.ts` (+26, -1 lines)
+- `packages/admin-ui/src/features/domain/hooks/useAppDomain.ts` (+50, -1 lines)
+- `packages/admin-ui/src/components/AppCard.tsx` (+74, -1 lines)
+- `packages/admin-ui/src/components/CreateAppModal.tsx` (+0, -26 lines)
+- `packages/admin-ui/src/styles/global.css` (+32 lines)
+- `packages/admin-ui/src/components/Toast.tsx` (+23, -1 lines)
+- `packages/admin-ui/src/hooks/useElapsed.ts` (new)
+- `packages/admin-ui/src/hooks/useGiteaOpen.ts` (new)
+- `tests/unit/cli/services/admin-server-install-named-tunnel.test.ts` (new)
+- `tests/unit/cli/services/admin-server-apps-enrichment.test.ts` (new)
+- +19 other files modified
+
+---
+
 ## [develop] - 2026-03-27 01:22
 
 ### 🎯 Prompts

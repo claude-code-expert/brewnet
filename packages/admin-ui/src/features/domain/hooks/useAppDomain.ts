@@ -29,6 +29,7 @@ export interface AppDomainHook {
   connecting: boolean;
   connectingMessage: string | null;
   disconnecting: boolean;
+  justConnected: boolean;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   reload: () => Promise<void>;
@@ -46,6 +47,7 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
   const [connecting, setConnecting] = useState(false);
   const [connectingMessage, setConnectingMessage] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [justConnected, setJustConnected] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,13 +107,13 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
     setConnecting(true);
     setConnectingMessage('Connecting...');
 
-    const STEP_LABELS: Record<string, string> = {
-      'health': 'Checking app health...',
-      'ingress': 'Updating tunnel ingress...',
-      'dns': 'Creating DNS record...',
-      'traefik': 'Updating Traefik labels...',
-      'persist': 'Saving connection...',
-      'poll': 'Waiting for DNS propagation...',
+    const STEP_LABELS: Record<number, string> = {
+      1: 'Checking app health...',
+      2: 'Updating tunnel ingress...',
+      3: 'Creating DNS record...',
+      4: 'Updating Traefik labels...',
+      5: 'Saving connection...',
+      6: 'Waiting for DNS propagation...',
     };
 
     try {
@@ -130,6 +132,25 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
         const decoder = new TextDecoder();
         let finalResult: { success?: boolean; error?: string; message?: string } | null = null;
 
+        // Queue step messages so each is visible for at least 1 second,
+        // even if the server completes multiple steps within milliseconds.
+        const stepQueue: string[] = [];
+        let lastStepTime = 0;
+        const MIN_DISPLAY_MS = 1000;
+
+        const flushQueue = async () => {
+          while (stepQueue.length > 0) {
+            const msg = stepQueue.shift()!;
+            const now = Date.now();
+            const elapsed = now - lastStepTime;
+            if (elapsed < MIN_DISPLAY_MS && lastStepTime > 0) {
+              await new Promise((r) => setTimeout(r, MIN_DISPLAY_MS - elapsed));
+            }
+            setConnectingMessage(msg);
+            lastStepTime = Date.now();
+          }
+        };
+
         if (reader) {
           let buffer = '';
           while (true) {
@@ -145,25 +166,27 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
               try {
                 const event = JSON.parse(line.slice(6)) as { type: string; step?: number; total?: number; message?: string; success?: boolean; error?: string };
                 if (event.type === 'step') {
-                  // Map step messages to user-friendly labels
-                  const msg = event.message ?? '';
-                  const label = Object.entries(STEP_LABELS).find(([k]) => msg.toLowerCase().includes(k))?.[1] ?? msg;
-                  setConnectingMessage(`Step ${event.step}/${event.total}: ${label}`);
+                  const label = STEP_LABELS[event.step ?? 0] ?? event.message ?? '';
+                  stepQueue.push(`Step ${event.step}/${event.total}: ${label}`);
                 } else if (event.type === 'step_done') {
-                  const msg = event.message ?? '';
-                  if (msg.includes('step 6')) setConnectingMessage('DNS propagation complete');
+                  // step_done events are informational; skip display
                 } else if (event.type === 'result') {
                   finalResult = event;
                 }
               } catch { /* skip malformed SSE */ }
             }
+            // Drain queued messages between reads
+            await flushQueue();
           }
         }
+        // Drain any remaining queued messages after stream ends
+        await flushQueue();
 
         if (finalResult?.success) {
           setConnectingMessage('Connected!');
           showToast('Domain connected');
           await load();
+          setJustConnected(true);
         } else {
           const errorCode = finalResult?.error;
           const errorMsg = finalResult?.message ?? errorCode ?? 'Failed to connect domain';
@@ -223,6 +246,7 @@ export function useAppDomain(appName: string, apiFetch: ApiFetch): AppDomainHook
     connecting,
     connectingMessage,
     disconnecting,
+    justConnected,
     connect,
     disconnect,
     reload: load,

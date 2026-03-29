@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Settings, Unlink, Link, Loader, HelpCircle, Globe } from 'lucide-react';
 import type { ApiFetch } from '../types.js';
 import { useAppDomain } from '../hooks/useAppDomain.js';
+import { useElapsed } from '../../../hooks/useElapsed.js';
 import { HelpTooltip } from './HelpTooltip.js';
 import { HelpDrawer } from './HelpDrawer.js';
 import { ConfirmModal } from '../../../components/ConfirmModal.js';
@@ -33,9 +34,13 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
     connecting,
     connectingMessage,
     disconnecting,
+    justConnected,
     connect,
     disconnect,
   } = hook;
+
+  const connectElapsed = useElapsed(connecting);
+  const disconnectElapsed = useElapsed(disconnecting);
 
   const handleModeChange = (mode: 'subdomain' | 'apex') => {
     setConnectionMode(mode);
@@ -153,6 +158,25 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
       : `This will remove the DNS record for "${connectedDomain.hostname}" and the app will no longer be publicly accessible.`;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Just-connected success banner */}
+        {justConnected && (
+          <a
+            href={externalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 14px', borderRadius: 'var(--r)',
+              background: 'rgba(61,214,200,0.08)', border: '1px solid rgba(61,214,200,0.25)',
+              fontSize: 12.5, color: 'var(--teal)', textDecoration: 'none',
+              animation: 'fadeIn 0.3s ease',
+            }}
+          >
+            <span style={{ fontSize: 15 }}>✓</span>
+            DNS 전파 완료, 도메인이 세팅되었습니다. 클릭하면 연결된 도메인으로 이동합니다.
+            <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>↗</span>
+          </a>
+        )}
         {/* Connected URL card */}
         <div style={{
           padding: '16px 20px',
@@ -213,6 +237,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--txt2)', fontSize: 13 }}>
             <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span>
             Removing DNS record{isApexConn ? 's' : ''}…
+            {disconnectElapsed > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>({disconnectElapsed}s)</span>}
           </div>
         ) : (
           <button
@@ -367,7 +392,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
         style={{ opacity: connectDisabled ? 0.5 : 1, alignSelf: 'flex-end' }}
       >
         {connecting
-          ? <><Loader size={14} className="spin" /> Connecting…</>
+          ? <><Loader size={14} className="spin" /> Connecting…{connectElapsed > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 4 }}>({connectElapsed}s)</span>}</>
           : <><Link size={14} /> Connect</>}
       </button>
 
@@ -380,6 +405,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
         }}>
           <Loader size={12} className="spin" />
           {connectingMessage}
+          {connectElapsed > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, marginLeft: 'auto', color: 'var(--txt3)' }}>({connectElapsed}s)</span>}
         </div>
       )}
 

@@ -295,3 +295,60 @@ describe('isServiceInCompose', () => {
     expect(result).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// addService — env and domain options
+// ---------------------------------------------------------------------------
+
+describe('addService — env and domain options', () => {
+  beforeEach(() => {
+    composeFsContent = {};
+    mockWriteFileSync.mockReset();
+    mockCopyFileSync.mockReset();
+    mockReaddirSync.mockReturnValue([]);
+  });
+
+  it('writes environment variables from options.env into compose block', async () => {
+    setCompose(COMPOSE_PATH, makeComposeYaml());
+    const result = await addService('postgresql', '/tmp/project', {
+      env: { POSTGRES_USER: 'myuser', POSTGRES_PASSWORD: 'mypass', POSTGRES_DB: 'mydb' },
+    });
+    expect(result.success).toBe(true);
+    // Check the YAML written to disk
+    const writtenYaml = mockWriteFileSync.mock.calls[0]?.[1] as string;
+    expect(writtenYaml).toContain('POSTGRES_USER: myuser');
+    expect(writtenYaml).toContain('POSTGRES_PASSWORD: mypass');
+    expect(writtenYaml).toContain('POSTGRES_DB: mydb');
+  });
+
+  it('resolves {{DOMAIN}} in Traefik labels when options.domain is set', async () => {
+    setCompose(COMPOSE_PATH, makeComposeYaml());
+    const result = await addService('pgadmin', '/tmp/project', {
+      env: { PGADMIN_DEFAULT_EMAIL: 'a@b.dev', PGADMIN_DEFAULT_PASSWORD: 'pass' },
+      domain: 'example.com',
+    });
+    expect(result.success).toBe(true);
+    const writtenYaml = mockWriteFileSync.mock.calls[0]?.[1] as string;
+    // Should resolve {{DOMAIN}} to example.com
+    expect(writtenYaml).toContain('pgadmin.example.com');
+    expect(writtenYaml).not.toContain('{{DOMAIN}}');
+  });
+
+  it('leaves {{DOMAIN}} unresolved when options.domain is not provided', async () => {
+    setCompose(COMPOSE_PATH, makeComposeYaml());
+    const result = await addService('pgadmin', '/tmp/project', {
+      env: { PGADMIN_DEFAULT_EMAIL: 'a@b.dev', PGADMIN_DEFAULT_PASSWORD: 'pass' },
+    });
+    expect(result.success).toBe(true);
+    const writtenYaml = mockWriteFileSync.mock.calls[0]?.[1] as string;
+    expect(writtenYaml).toContain('{{DOMAIN}}');
+  });
+
+  it('service without env option gets no environment section', async () => {
+    setCompose(COMPOSE_PATH, makeComposeYaml());
+    const result = await addService('jellyfin', '/tmp/project');
+    expect(result.success).toBe(true);
+    const writtenYaml = mockWriteFileSync.mock.calls[0]?.[1] as string;
+    expect(writtenYaml).not.toContain('environment:');
+  });
+});

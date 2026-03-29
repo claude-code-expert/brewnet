@@ -146,6 +146,13 @@ export function Apps() {
         <div className="tbr">
           <button
             className="btn bg bsm"
+            onClick={() => window.location.reload()}
+            title="Refresh"
+          >
+            ↻
+          </button>
+          <button
+            className="btn bg bsm"
             onClick={() => setShowDomainSetting(true)}
           >
             ⚙ Domain Setting
