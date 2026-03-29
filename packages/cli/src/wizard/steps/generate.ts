@@ -1317,6 +1317,9 @@ export async function runGenerateStep(state: WizardState): Promise<GenerateResul
       'admin.password': state.admin.password,
       'project.name': state.projectName,
       'project.path': state.projectPath,
+      'db.user': state.servers.dbServer?.dbUser || 'brewnet',
+      'db.password': state.servers.dbServer?.dbPassword || state.admin.password,
+      'db.name': state.servers.dbServer?.dbName || 'brewnet_db',
       'domain.provider': state.domain?.provider ?? 'local',
       'domain.name': state.domain?.name ?? '',
     };

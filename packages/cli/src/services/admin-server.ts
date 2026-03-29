@@ -921,23 +921,22 @@ const CATALOG_TUNNEL_ROUTES: Record<string, { subdomain: string; port: number }>
  */
 function buildCatalogServiceEnv(
   serviceId: string,
-  adminUser: string,
-  adminPass: string,
-  tunnelMode: string,
+  opts: { adminUser: string; adminPass: string; dbUser: string; dbPass: string; dbName: string; tunnelMode: string },
 ): Record<string, string> | undefined {
+  const { adminUser, adminPass, dbUser, dbPass, dbName, tunnelMode } = opts;
   switch (serviceId) {
     case 'postgresql':
       return {
-        POSTGRES_USER: adminUser,
-        POSTGRES_PASSWORD: adminPass,
-        POSTGRES_DB: 'brewnet_db',
+        POSTGRES_USER: dbUser,
+        POSTGRES_PASSWORD: dbPass,
+        POSTGRES_DB: dbName,
       };
     case 'mysql':
       return {
-        MYSQL_ROOT_PASSWORD: adminPass,
-        MYSQL_DATABASE: 'brewnet_db',
-        MYSQL_USER: adminUser,
-        MYSQL_PASSWORD: adminPass,
+        MYSQL_ROOT_PASSWORD: dbPass,
+        MYSQL_DATABASE: dbName,
+        MYSQL_USER: dbUser,
+        MYSQL_PASSWORD: dbPass,
       };
     case 'pgadmin': {
       const env: Record<string, string> = {
@@ -984,10 +983,13 @@ async function handleInstallService(
     const { id } = JSON.parse(body) as { id: string };
     if (!id) { json(res, 400, { success: false, error: 'Missing service id' }); return; }
 
-    // Read admin credentials from settings DB — same source the wizard uses.
-    // Catalog installs use these to generate env vars identical to wizard-generated compose.
+    // Read credentials from settings DB — wizard stores these during installation.
+    // DB services use db.* keys; other services fall back to admin.* keys.
     const adminUser = getSetting(projectPath, 'admin.username') ?? 'admin';
     const adminPass = getSetting(projectPath, 'admin.password') ?? 'brewnet';
+    const dbUser = getSetting(projectPath, 'db.user') ?? adminUser;
+    const dbPass = getSetting(projectPath, 'db.password') ?? adminPass;
+    const dbName = getSetting(projectPath, 'db.name') ?? 'brewnet_db';
     const domainName = getSetting(projectPath, 'cf.zoneName')
       ?? getSetting(projectPath, 'domain.name')
       ?? '';
@@ -995,7 +997,7 @@ async function handleInstallService(
 
     // Build env vars per service type, mirroring compose-generator.ts logic:
     // getPostgresEnv, getMysqlEnv, getPgAdminEnv, getMinioEnv, etc.
-    const env = buildCatalogServiceEnv(id, adminUser, adminPass, tunnelMode ?? '');
+    const env = buildCatalogServiceEnv(id, { adminUser, adminPass, dbUser, dbPass, dbName, tunnelMode: tunnelMode ?? '' });
 
     const result = await addService(id, projectPath, { env, domain: domainName || undefined });
     if (!result.success) {
@@ -1608,6 +1610,36 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               },
               connectionParams: catalog['SSH Server'].connectionParams?.map((p) =>
                 p.label === 'user' ? { ...p, value: adminUser } : p,
+              ),
+            };
+          }
+          // Patch DB service credentials with actual user-configured values from settings DB.
+          // Wizard stores db.user/db.name during installation (generate step 11b).
+          const dbUser = getSetting(projectPath, 'db.user') ?? 'brewnet';
+          const dbName = getSetting(projectPath, 'db.name') ?? 'brewnet_db';
+          if (catalog['PostgreSQL']) {
+            catalog['PostgreSQL'] = {
+              ...catalog['PostgreSQL'],
+              credentials: {
+                ...catalog['PostgreSQL'].credentials!,
+                command: `docker exec -it brewnet-postgresql psql -U ${dbUser} -d ${dbName}`,
+              },
+              connectionParams: catalog['PostgreSQL'].connectionParams?.map((p) =>
+                p.label === 'user' ? { ...p, value: dbUser } :
+                p.label === 'db' ? { ...p, value: dbName } : p,
+              ),
+            };
+          }
+          if (catalog['MySQL']) {
+            catalog['MySQL'] = {
+              ...catalog['MySQL'],
+              credentials: {
+                ...catalog['MySQL'].credentials!,
+                command: `docker exec -it brewnet-mysql mysql -u ${dbUser} -p ${dbName}`,
+              },
+              connectionParams: catalog['MySQL'].connectionParams?.map((p) =>
+                p.label === 'user' ? { ...p, value: dbUser } :
+                p.label === 'db' ? { ...p, value: dbName } : p,
               ),
             };
           }
