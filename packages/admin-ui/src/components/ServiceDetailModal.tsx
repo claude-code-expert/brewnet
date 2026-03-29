@@ -205,20 +205,34 @@ export function ServiceDetailModal({ service, detail, onClose }: ServiceDetailMo
                   Terminal only
                 </span>
               </div>
-              <div
-                style={{
-                  background: '#0a1020',
-                  border: '1px solid var(--bdr)',
-                  borderRadius: 'var(--r)',
-                  padding: '10px 14px',
-                  fontFamily: 'var(--mono)',
-                  fontSize: 12,
-                  color: 'var(--teal)',
-                  overflowX: 'auto',
-                  whiteSpace: 'pre',
-                }}
-              >
-                {detail.credentials.command}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    background: '#0a1020',
+                    border: '1px solid var(--bdr)',
+                    borderRadius: 'var(--r)',
+                    padding: '10px 14px',
+                    fontFamily: 'var(--mono)',
+                    fontSize: 12,
+                    color: 'var(--teal)',
+                    overflowX: 'auto',
+                    whiteSpace: 'pre',
+                  }}
+                >
+                  {detail.credentials.command}
+                </div>
+                <button
+                  onClick={() => { void navigator.clipboard.writeText(detail.credentials!.command!); }}
+                  style={{
+                    flexShrink: 0, background: 'none', border: '1px solid var(--bdr2)',
+                    borderRadius: 4, padding: '6px 10px', cursor: 'pointer',
+                    color: 'var(--txt3)', fontSize: 11, fontFamily: 'var(--mono)',
+                  }}
+                  title="Copy"
+                >
+                  copy
+                </button>
               </div>
             </div>
           )}

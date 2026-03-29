@@ -310,14 +310,25 @@ describe('POST /api/services/install — Named Tunnel ingress update', () => {
     expect(mockCreateDnsRecord).not.toHaveBeenCalled();
   });
 
-  it('named tunnel: addService failure returns 409/500 without calling CF APIs', async () => {
+  it('named tunnel: addService "already exists" starts container instead of 409', async () => {
     setupNamedTunnel();
     mockAddService.mockResolvedValue({ success: false, error: 'Service "jellyfin" already exists in compose' } as { success: boolean });
     writeCompose('traefik', 'jellyfin');
 
     const { status } = await postInstall('jellyfin');
 
-    expect(status).toBe(409);
+    // Now tries docker compose up instead of returning 409
+    expect(status).toBe(202);
+  });
+
+  it('named tunnel: addService non-duplicate failure returns 500 without calling CF APIs', async () => {
+    setupNamedTunnel();
+    mockAddService.mockResolvedValue({ success: false, error: 'compose write error' } as { success: boolean });
+    writeCompose('traefik', 'jellyfin');
+
+    const { status } = await postInstall('jellyfin');
+
+    expect(status).toBe(500);
     expect(mockConfigureTunnelIngress).not.toHaveBeenCalled();
     expect(mockCreateDnsRecord).not.toHaveBeenCalled();
   });

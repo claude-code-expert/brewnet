@@ -1,5 +1,6 @@
 // T040 — ConfirmModal: replaces window.confirm() throughout the app
 import { useState } from 'react';
+import { useI18n } from '../i18n/useI18n.js';
 
 interface ConfirmModalProps {
   message: string;
@@ -21,6 +22,7 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { t } = useI18n();
   const [inputValue, setInputValue] = useState('');
   const canConfirm = !requiredInput || inputValue === requiredInput;
 
@@ -32,7 +34,7 @@ export function ConfirmModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 20 }}>⚠️</span>
             <span style={{ fontSize: 14, fontWeight: 700, color: danger ? 'var(--red)' : 'var(--txt)' }}>
-              {danger ? '위험한 작업입니다' : '확인'}
+              {danger ? t('confirm.danger_title', '위험한 작업입니다') : t('confirm.default_title', '확인')}
             </span>
           </div>
 
@@ -41,7 +43,7 @@ export function ConfirmModal({
           {requiredInput && (
             <div className="fg">
               <label className="fl" style={{ color: 'var(--txt2)' }}>
-                확인을 위해 <code style={{ color: 'var(--amber)', fontFamily: 'var(--mono)', fontSize: 12 }}>{requiredInput}</code> 를 입력하세요
+                {t('confirm.type_prefix', '확인을 위해')} <code style={{ color: 'var(--amber)', fontFamily: 'var(--mono)', fontSize: 12 }}>{requiredInput}</code> {t('confirm.type_suffix', '를 입력하세요')}
               </label>
               <input
                 className="fi"

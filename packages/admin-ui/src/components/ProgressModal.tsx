@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppJob } from '../types.js';
 import { showToast } from './Toast.js';
 import { useElapsed } from '../hooks/useElapsed.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 interface ProgressModalProps {
   jobId: string;
@@ -37,6 +38,7 @@ function StepIcon({ status }: { status: AppJob['steps'][number]['status'] }) {
 }
 
 export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, onClose, onComplete }: ProgressModalProps) {
+  const { t } = useI18n();
   const [job, setJob] = useState<AppJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const doneRef = useRef(false);
@@ -68,7 +70,7 @@ export function ProgressModal({ jobId, appName, jobType = 'create', apiFetch, on
       }
       if (data.status === 'done' && !doneRef.current) {
         doneRef.current = true;
-        showToast(jobType === 'deploy' ? 'Deploy가 성공적으로 수행되었습니다.' : '앱이 성공적으로 생성되었습니다.');
+        showToast(jobType === 'deploy' ? t('progress.deploy_success', 'Deploy가 성공적으로 수행되었습니다.') : t('progress.app_created', '앱이 성공적으로 생성되었습니다.'));
         onComplete?.();
         return false; // stop polling
       }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../auth-context.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 export interface LogEntry {
   line: string;
@@ -17,6 +18,7 @@ export function useLogStream(appName: string, active: boolean): LogStreamState {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { apiFetch } = useAuth();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (!active || !appName) return;
@@ -49,10 +51,10 @@ export function useLogStream(appName: string, active: boolean): LogStreamState {
           // browser's built-in EventSource auto-reconnect would retry with a stale token
           // and receive 401 in a tight loop.
           es?.close();
-          setError('로그 스트림 연결이 끊겼습니다. 모달을 닫고 다시 열어주세요.');
+          setError(t('logs.stream_disconnected', '로그 스트림 연결이 끊겼습니다. 모달을 닫고 다시 열어주세요.'));
         });
       } catch {
-        if (!cancelled) setError('로그 스트림 연결 실패');
+        if (!cancelled) setError(t('logs.stream_failed', '로그 스트림 연결 실패'));
       }
     })();
 

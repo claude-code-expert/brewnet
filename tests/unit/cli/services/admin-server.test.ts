@@ -341,10 +341,13 @@ describe('POST /api/services/install', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 409 when service already exists', async () => {
+  it('starts existing compose service when already in compose', async () => {
     mockAddService.mockResolvedValue({ success: false, error: 'Service already installed' });
+    mockExeca.mockResolvedValue({ exitCode: 0 });
     const res = await req('POST', '/api/services/install', { id: 'jellyfin' });
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(202);
+    const body = JSON.parse(res.body);
+    expect(body.success).toBe(true);
   });
 
   it('returns 500 when addService fails with non-duplicate error', async () => {
@@ -392,8 +395,8 @@ describe('POST /api/services/install', () => {
     expect(body.status).toBe('compose_updated');
   });
 
-  it('does NOT call docker compose when addService fails', async () => {
-    mockAddService.mockResolvedValue({ success: false, error: 'Service already installed' });
+  it('does NOT call docker compose when addService fails with non-duplicate error', async () => {
+    mockAddService.mockResolvedValue({ success: false, error: 'compose write error' });
 
     await req('POST', '/api/services/install', { id: 'jellyfin' });
     expect(mockExeca).not.toHaveBeenCalled();
@@ -624,11 +627,6 @@ describe('404 fallback', () => {
 // ---------------------------------------------------------------------------
 
 describe('auth — protected endpoints return 401 without header', () => {
-  it('GET /api/debug/db returns 401', async () => {
-    const res = await req('GET', '/api/debug/db', undefined, { auth: false });
-    expect(res.status).toBe(401);
-  });
-
   it('POST /api/services/install returns 401', async () => {
     const res = await req('POST', '/api/services/install', { id: 'jellyfin' }, { auth: false });
     expect(res.status).toBe(401);

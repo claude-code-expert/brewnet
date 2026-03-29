@@ -31,7 +31,7 @@ import { queryLogs, getLogStats } from '../utils/log-aggregator.js';
 import { runRotation } from '../utils/log-rotation.js';
 // apps-page.ts import removed — HTML generation replaced by React SPA (T044)
 import { createApp, getJobStatus, listApps, startApp, stopApp, removeApp as appRemove, getDeployHistory, listGiteaRepos, deployApp, rollbackApp, getAppGitInfo, getAppBranches, updateDeploySettings, getDeploySettings, getAppDir, detectBasePath, setAdminProjectPath } from './app-manager.js';
-import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getSettings, setSettings, getDb } from './project-db.js';
+import { listApps as dbListApps, listDomainConnections as dbListDomainConnections, getDomainConnection, addApp as dbAddApp, getApp as dbGetApp, updateApp as dbUpdateApp, closeDb, migrateFromJson, getSetting, setSetting, getSettings, setSettings } from './project-db.js';
 import type { DeploySettings } from '../types/app-entry.js';
 import type { CreateAppOptions } from '../types/app-entry.js';
 import { getStackById } from '../config/stacks.js';
@@ -999,8 +999,19 @@ async function handleInstallService(
 
     const result = await addService(id, projectPath, { env, domain: domainName || undefined });
     if (!result.success) {
-      const code = result.error?.includes('already') ? 'ALREADY_EXISTS' : 'BN006';
-      json(res, result.error?.includes('already') ? 409 : 500, { success: false, error: result.error, code });
+      // Service already in compose but container may be missing (e.g. after docker rm).
+      // Try starting the existing compose service instead of returning an error.
+      if (result.error?.includes('already')) {
+        try {
+          const { execa: execaRetry } = await import('execa');
+          await execaRetry('docker', ['compose', 'up', '-d', id], { cwd: projectPath });
+          json(res, 202, { success: true, id, status: 'running', message: `Service ${id} started (already in compose)` });
+        } catch (startErr) {
+          json(res, 409, { success: false, error: result.error, code: 'ALREADY_EXISTS', detail: String(startErr) });
+        }
+        return;
+      }
+      json(res, 500, { success: false, error: result.error, code: 'BN006' });
       return;
     }
 
@@ -1638,44 +1649,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
           return;
         }
 
-        // GET /api/debug/db — dev-only: dump all SQLite tables for debugging
-        if (parts[1] === 'debug' && parts[2] === 'db' && req.method === 'GET') {
-          if (!checkAdminAuth(req, res, adminPassword)) return;
-          try {
-            const db = getDb(projectPath);
-            const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[];
-            const dump: Record<string, unknown[]> = {};
-            for (const { name } of tables) {
-              dump[name] = db.prepare(`SELECT * FROM "${name}"`).all();
-            }
-            json(res, 200, {
-              dbPath: projectPath + '/.brewnet.db',
-              tables: tables.map((t) => t.name),
-              data: dump,
-              _meta: {
-                note: 'All runtime-critical data is stored in this DB (settings table). ~/.brewnet/ files are legacy fallbacks only.',
-                dbManaged: [
-                  'admin.username, admin.password — admin credentials',
-                  'project.name, project.path — project identity',
-                  'cf.* — Cloudflare tunnel/DNS config',
-                  'gitea.* — Gitea API cache',
-                  'domain.* — domain provider config',
-                  'apps table — app registry',
-                  'domain_connections table — external domain mappings',
-                  'deploy_history table — deployment records',
-                ],
-                legacyFiles: [
-                  { path: '~/.brewnet/config.json', purpose: 'lastProject pointer (legacy fallback, not required)', risk: 'none — server discovers project via filesystem scan' },
-                  { path: '~/.brewnet/gitea-token', purpose: 'Gitea API bearer token (chmod 600)', risk: 'low — regenerated on auth failure' },
-                  { path: '<projectPath>/.brewnet-boilerplate.json', purpose: 'Wizard boilerplate metadata (read-only)', risk: 'none' },
-                ],
-              },
-            });
-          } catch (err) {
-            json(res, 500, { error: 'DB read failed', message: err instanceof Error ? err.message : String(err) });
-          }
-          return;
-        }
 
         // GET /api/config — dashboard bootstrap data for React SPA
         // Always read from DB for fresh values (tunnel mode may change at runtime)

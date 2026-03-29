@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Package, GitBranch } from 'lucide-react';
 import type { AppEntry } from '../types.js';
 import { showToast } from './Toast.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 // CreateAppOptions mirrors what admin-server expects (packages/cli/src/types/app-entry.ts)
 interface CreateAppOptions {
@@ -78,6 +79,7 @@ function chipStyle(selected: boolean) {
 }
 
 export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalProps) {
+  const { t } = useI18n();
   const [step, setStep] = useState(1);
   const [appName, setAppName]   = useState('');
   const [mode, setMode]         = useState<AppEntry['mode']>('boilerplate');
@@ -359,12 +361,12 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
                 style={{ borderColor: portStatus === 'conflict' ? 'var(--red)' : undefined }}
               />
               {portStatus === 'checking' && (
-                <div className="fhint">포트 확인 중…</div>
+                <div className="fhint">{t('create.port_checking', '포트 확인 중…')}</div>
               )}
               {portStatus === 'conflict' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
                   <div className="fhint" style={{ color: 'var(--red)', margin: 0 }}>
-                    ⚠ 포트 {port} 사용 중.
+                    ⚠ {t('create.port_conflict', '포트 {port} 사용 중.', { port })}
                   </div>
                   {suggestedPort && (
                     <button
@@ -372,7 +374,7 @@ export function CreateAppModal({ apiFetch, onCreated, onClose }: CreateAppModalP
                       style={{ fontSize: 11, padding: '3px 10px' }}
                       onClick={() => setPort(suggestedPort)}
                     >
-                      {suggestedPort} 사용
+                      {t('create.port_suggest', '{port} 사용', { port: suggestedPort })}
                     </button>
                   )}
                 </div>

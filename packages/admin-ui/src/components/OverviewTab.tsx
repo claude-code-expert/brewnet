@@ -2,6 +2,7 @@
 import type { AppEntry, AppGitInfo, BoilerplateMeta } from '../types.js';
 import { BOILERPLATE_GITHUB_BASE } from '../lib/constants.js';
 import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 interface OverviewTabProps {
   app: AppEntry;
@@ -40,6 +41,7 @@ function formatDate(iso: string) {
 }
 
 export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
+  const { t } = useI18n();
   const openGitea = useGiteaOpen();
   const domainBase = app.backendExternalUrl ?? null;
   return (
@@ -47,7 +49,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
       {/* App Info Card */}
       <div className="card" style={{ padding: '10px 20px' }}>
         <div className="section-title" style={{ marginBottom: 12 }}>App Info</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px 12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.7fr 1.3fr 1fr', gap: '16px 12px' }}>
           <InfoCell label="Name">
             <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{app.name}</span>
           </InfoCell>
@@ -306,7 +308,7 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
             color: 'var(--amber)',
           }}>
             <span>⚠</span>
-            <span>Deploy를 먼저 실행하면 Gitea 저장소가 초기화되고 접속 주소가 활성화됩니다.</span>
+            <span>{t('overview.deploy_hint', 'Deploy를 먼저 실행하면 Gitea 저장소가 초기화되고 접속 주소가 활성화됩니다.')}</span>
           </div>
         )}
         {git ? (
@@ -361,6 +363,17 @@ export function OverviewTab({ app, git, boilerplate }: OverviewTabProps) {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--txt2)' }}>
                 {git.cloneUrlHttp}
               </span>
+              <button
+                onClick={() => { void navigator.clipboard.writeText(git.cloneUrlHttp); }}
+                style={{
+                  marginLeft: 8, background: 'none', border: '1px solid var(--bdr2)',
+                  borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
+                  color: 'var(--txt3)', fontSize: 11, fontFamily: 'var(--mono)',
+                }}
+                title="Copy"
+              >
+                copy
+              </button>
             </InfoRow>
           </div>
         ) : (

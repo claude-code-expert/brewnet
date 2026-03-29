@@ -10,6 +10,7 @@ import { HelpTooltip } from './HelpTooltip.js';
 import { HelpDrawer } from './HelpDrawer.js';
 import { ConfirmModal } from '../../../components/ConfirmModal.js';
 import { CopyButton } from '../../../components/ServiceCard.js';
+import { useI18n } from '../../../i18n/useI18n.js';
 
 interface AppDomainTabProps {
   appName: string;
@@ -19,6 +20,7 @@ interface AppDomainTabProps {
 }
 
 export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSettings }: AppDomainTabProps) {
+  const { t } = useI18n();
   const [helpKey, setHelpKey] = useState<string | null>(null);
   const [connectionMode, setConnectionMode] = useState<'subdomain' | 'apex'>('subdomain');
   const hook = useAppDomain(appName, apiFetch);
@@ -52,9 +54,9 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
   // CF not configured — step-by-step setup guide
   if (!loading && !cfConfigured) {
     const steps = [
-      { num: 1, label: 'API Token', desc: 'Cloudflare API Token 발급 및 검증' },
-      { num: 2, label: 'Zone', desc: '사용할 도메인(Zone) 선택' },
-      { num: 3, label: 'Tunnel', desc: 'Cloudflare Tunnel 생성' },
+      { num: 1, label: 'API Token', desc: t('appdomain.step1_desc', 'Cloudflare API Token 발급 및 검증') },
+      { num: 2, label: 'Zone', desc: t('appdomain.step2_desc', '사용할 도메인(Zone) 선택') },
+      { num: 3, label: 'Tunnel', desc: t('appdomain.step3_desc', 'Cloudflare Tunnel 생성') },
     ];
     return (
       <>
@@ -73,8 +75,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
                 Public Domain Not Configured
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--txt2)', lineHeight: 1.6 }}>
-                공인 IP나 포트포워딩 없이 앱을 외부 도메인으로 공개하려면 Cloudflare Tunnel 설정이 필요합니다.
-                설정은 최초 1회만 필요하며, 이후 앱마다 서브도메인만 연결하면 됩니다.
+                {t('appdomain.no_config_desc', '공인 IP나 포트포워딩 없이 앱을 외부 도메인으로 공개하려면 Cloudflare Tunnel 설정이 필요합니다. 설정은 최초 1회만 필요하며, 이후 앱마다 서브도메인만 연결하면 됩니다.')}
               </div>
             </div>
           </div>
@@ -128,7 +129,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
                 cursor: 'pointer', color: 'var(--txt2)', fontSize: 12.5,
               }}
             >
-              <HelpCircle size={13} /> 설정 가이드 보기
+              <HelpCircle size={13} /> {t('appdomain.setup_guide', '설정 가이드 보기')}
             </button>
           </div>
         </div>
@@ -173,7 +174,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
             }}
           >
             <span style={{ fontSize: 15 }}>✓</span>
-            DNS 전파 완료, 도메인이 세팅되었습니다. 클릭하면 연결된 도메인으로 이동합니다.
+            {t('appdomain.connected_banner', 'DNS 전파 완료, 도메인이 세팅되었습니다. 클릭하면 연결된 도메인으로 이동합니다.')}
             <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>↗</span>
           </a>
         )}
@@ -285,7 +286,7 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
           <span style={{ fontFamily: 'var(--mono)', color: 'var(--txt)' }}>
             {zoneName || 'your domain'}
           </span>.{' '}
-          Cloudflare DNS CNAME 레코드와 Tunnel ingress 규칙이 자동으로 생성됩니다.
+          {t('appdomain.cname_auto_info', 'Cloudflare DNS CNAME 레코드와 Tunnel ingress 규칙이 자동으로 생성됩니다.')}
         </div>
       </div>
 
@@ -369,12 +370,12 @@ export function AppDomainTab({ appName, apiFetch, appStatus, onOpenDomainSetting
         }}>
           <div style={{ color: 'var(--txt)' }}>
             <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{zoneName}</span>
-            {' '}과{' '}
+            {' '}{t('appdomain.apex_both_and', '과')}{' '}
             <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>www.{zoneName}</span>
-            {' '}이 모두 연결됩니다.
+            {' '}{t('appdomain.apex_both_suffix', '이 모두 연결됩니다.')}
           </div>
           <div style={{ color: 'var(--amber)', marginTop: 4, fontSize: 12 }}>
-            ⚠ 이 도메인의 모든 트래픽이 이 앱으로 라우팅됩니다.
+            ⚠ {t('appdomain.apex_warning', '이 도메인의 모든 트래픽이 이 앱으로 라우팅됩니다.')}
           </div>
         </div>
       )}

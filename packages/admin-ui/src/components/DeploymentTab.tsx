@@ -5,6 +5,7 @@ import type { AppGitInfo, DeployHistoryEntry, DeploySettings } from '../types.js
 import { showToast } from './Toast.js';
 import { useGiteaOpen } from '../hooks/useGiteaOpen.js';
 import { useElapsed } from '../hooks/useElapsed.js';
+import { useI18n } from '../i18n/useI18n.js';
 
 type ApiFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -34,6 +35,7 @@ function HistoryStatusBadge({ status }: { status: DeployHistoryEntry['status'] }
 }
 
 export function DeploymentTab({ appName, git, settings: initialSettings, apiFetch, onDeployStarted }: DeploymentTabProps) {
+  const { t } = useI18n();
   const openGitea = useGiteaOpen();
   const [deployBranch, setDeployBranch] = useState(initialSettings?.deployBranch ?? 'main');
   const [autoDeploy, setAutoDeploy]     = useState(initialSettings?.autoDeploy ?? false);
@@ -215,7 +217,7 @@ export function DeploymentTab({ appName, git, settings: initialSettings, apiFetc
               borderRadius: 'var(--r)',
               padding: '8px 12px',
             }}>
-              💡 Gitea 로그인은 brewnet 설치 시 설정한 관리자 계정을 사용하세요. 앱 생성 시 이 저장소가 자동으로 만들어지고 코드가 push됩니다.
+              💡 {t('deployment.gitea_hint', 'Gitea 로그인은 brewnet 설치 시 설정한 관리자 계정을 사용하세요. 앱 생성 시 이 저장소가 자동으로 만들어지고 코드가 push됩니다.')}
             </div>
           </div>
         </div>

@@ -218,7 +218,7 @@ export async function getAppGitInfo(appName: string): Promise<AppGitInfo> {
 
   return {
     giteaUrl: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${appName}`,
-    cloneUrlHttp: `${ctx.giteaBaseUrl}/${ctx.giteaUser}/${appName}.git`,
+    cloneUrlHttp: `${ctx.giteaDisplayUrl}/${ctx.giteaUser}/${appName}.git`,
     cloneUrlSsh,
     localPath: app.appDir,
     branch,
