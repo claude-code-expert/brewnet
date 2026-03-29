@@ -1611,40 +1611,6 @@ export function createAdminServer(options: AdminServerOptions = {}): {
               ),
             };
           }
-          // Dynamically patch DB connection commands with admin username
-          if (catalog['PostgreSQL']) {
-            catalog['PostgreSQL'] = {
-              ...catalog['PostgreSQL'],
-              credentials: {
-                ...catalog['PostgreSQL'].credentials!,
-                command: `docker exec -it brewnet-postgresql psql -U ${adminUser} -d brewnet_db`,
-              },
-              connectionParams: catalog['PostgreSQL'].connectionParams?.map((p) =>
-                p.label === 'user' ? { ...p, value: adminUser } : p,
-              ),
-            };
-          }
-          if (catalog['MySQL']) {
-            catalog['MySQL'] = {
-              ...catalog['MySQL'],
-              credentials: {
-                ...catalog['MySQL'].credentials!,
-                command: `docker exec -it brewnet-mysql mysql -u ${adminUser} -p brewnet_db`,
-              },
-              connectionParams: catalog['MySQL'].connectionParams?.map((p) =>
-                p.label === 'user' ? { ...p, value: adminUser } : p,
-              ),
-            };
-          }
-          if (catalog['pgAdmin']) {
-            catalog['pgAdmin'] = {
-              ...catalog['pgAdmin'],
-              credentials: {
-                ...catalog['pgAdmin'].credentials!,
-                summary: `Login: ${adminUser}@brewnet.dev / (admin password)`,
-              },
-            };
-          }
           json(res, 200, { catalog, aliases: NAME_ALIASES });
           return;
         }
