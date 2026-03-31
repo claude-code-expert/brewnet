@@ -30,6 +30,8 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerDeployCommand } from './commands/deploy.js';
 import { registerExportCommand } from './commands/export.js';
 import { registerStorageCommand } from './commands/storage.js';
+import { registerStartCommand } from './commands/start.js';
+import { registerServiceCommand } from './commands/service.js';
 
 /**
  * Build and return a fully configured Commander.js program with all
@@ -67,6 +69,8 @@ export function createProgram(): Command {
   registerDeployCommand(program);
   registerExportCommand(program);
   registerStorageCommand(program);
+  registerStartCommand(program);
+  registerServiceCommand(program);
 
   return program;
 }

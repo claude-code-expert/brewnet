@@ -16,6 +16,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { confirm } from '@inquirer/prompts';
 import type { WizardState } from '@brewnet/shared';
 import { buildServiceUrlMap } from '../../utils/service-verifier.js';
 import {
@@ -24,6 +25,7 @@ import {
 } from '../../utils/resources.js';
 import { sortByDependency } from '../../services/health-checker.js';
 import { launchAdminDaemon } from '../../services/admin-launcher.js';
+import { installBrewnetService } from '../../services/system-service.js';
 
 /**
  * Kill any process listening on the given port (best-effort).
@@ -311,6 +313,26 @@ export async function runCompleteStep(
         await execa(cmd, [adminUrl]);
       } catch { /* best-effort */ }
     }
+
+    // Prompt: register OS service for auto-start on reboot
+    try {
+      const autoStart = await confirm({
+        message: '재부팅 후 Brewnet을 자동으로 시작할까요?',
+        default: true,
+      });
+      if (autoStart) {
+        try {
+          await installBrewnetService({
+            brewnetBin: process.argv[1],
+            port: ADMIN_PORT,
+            projectPath: state.projectPath,
+          });
+          console.log(chalk.green('  ✓ 부팅 시 자동 시작 서비스가 등록되었습니다.'));
+          console.log(chalk.dim(`  확인: brewnet service status`));
+          console.log();
+        } catch { /* non-fatal */ }
+      }
+    } catch { /* Ctrl+C or non-interactive — skip */ }
 
     // CLI can now exit — daemon continues independently
   } catch {

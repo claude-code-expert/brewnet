@@ -64,6 +64,24 @@ brewnet init
 
 ---
 
+## 재부팅 시 활성화 방법
+
+```bash
+# 방법 1: 수동 단일 명령어 (docker compose up -d + admin 서버 통합)
+brewnet start
+
+# 방법 2: OS 서비스 자동 시작 등록 (최초 1회)
+brewnet service install
+
+# 등록 상태 확인
+brewnet service status
+
+# 등록 해제
+brewnet service uninstall
+```
+
+---
+
 ## 자주 쓰는 조합
 
 ```bash

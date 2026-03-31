@@ -42,6 +42,28 @@ jest.unstable_mockModule('execa', () => ({
   execa: mockExeca,
 }));
 
+const mockInstallBrewnetService = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+jest.unstable_mockModule(
+  '../../../../../packages/cli/src/services/system-service.js',
+  () => ({
+    installBrewnetService: mockInstallBrewnetService,
+    uninstallBrewnetService: jest.fn().mockResolvedValue(false),
+    isBrewnetServiceInstalled: jest.fn().mockReturnValue(false),
+    getServiceFilePath: jest.fn(() => '/tmp/test.plist'),
+  }),
+);
+
+const mockConfirm = jest.fn<() => Promise<boolean>>().mockResolvedValue(false);
+
+jest.unstable_mockModule('@inquirer/prompts', () => ({
+  confirm: mockConfirm,
+  input: jest.fn(),
+  select: jest.fn(),
+  checkbox: jest.fn(),
+  password: jest.fn(),
+}));
+
 const mockGenerateEndpoints = jest.fn<() => { service: string; url: string }[]>();
 const mockSortByDependency = jest.fn<(s: string[]) => string[]>((s) => s);
 
@@ -100,6 +122,8 @@ beforeEach(() => {
   ]);
   mockGetCredentialTargets.mockReturnValue(['Gitea', 'Traefik Dashboard']);
   mockLaunchAdminDaemon.mockResolvedValue({ pid: 99999, port: 8088, logFile: '/tmp/test.log' });
+  mockInstallBrewnetService.mockResolvedValue(undefined);
+  mockConfirm.mockResolvedValue(false);
 });
 
 describe('runCompleteStep', () => {
@@ -321,5 +345,57 @@ describe('runCompleteStep', () => {
     const allOutput = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allOutput).toMatch(/Quick Tunnel/i);
     consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-start service prompt
+// ---------------------------------------------------------------------------
+
+describe('auto-start service prompt', () => {
+  it('prompts "재부팅 후 Brewnet을 자동으로 시작할까요?" after daemon starts', async () => {
+    const state = makeState({ projectPath: '/home/user/brewnet-home' });
+    await runCompleteStep(state);
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('재부팅 후 Brewnet을 자동으로 시작할까요'),
+      }),
+    );
+  });
+
+  it('calls installBrewnetService when user answers yes', async () => {
+    mockConfirm.mockResolvedValue(true);
+    const state = makeState({ projectPath: '/home/user/brewnet-home' });
+    await runCompleteStep(state);
+    expect(mockInstallBrewnetService).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 8088, projectPath: '/home/user/brewnet-home' }),
+    );
+  });
+
+  it('does not call installBrewnetService when user answers no', async () => {
+    mockConfirm.mockResolvedValue(false);
+    const state = makeState({ projectPath: '/home/user/brewnet-home' });
+    await runCompleteStep(state);
+    expect(mockInstallBrewnetService).not.toHaveBeenCalled();
+  });
+
+  it('does not prompt when admin daemon fails to start', async () => {
+    mockLaunchAdminDaemon.mockRejectedValue(new Error('port in use'));
+    const state = makeState();
+    await runCompleteStep(state);
+    expect(mockConfirm).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when installBrewnetService fails (non-fatal)', async () => {
+    mockConfirm.mockResolvedValue(true);
+    mockInstallBrewnetService.mockRejectedValue(new Error('launchctl failed'));
+    const state = makeState({ projectPath: '/home/user/brewnet-home' });
+    await expect(runCompleteStep(state)).resolves.toBeUndefined();
+  });
+
+  it('does not throw when confirm is interrupted (Ctrl+C)', async () => {
+    mockConfirm.mockRejectedValue(new Error('User force closed the prompt'));
+    const state = makeState();
+    await expect(runCompleteStep(state)).resolves.toBeUndefined();
   });
 });

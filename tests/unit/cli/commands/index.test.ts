@@ -238,10 +238,10 @@ describe('TC-01-03 (extended): various invalid inputs', () => {
 // ---------------------------------------------------------------------------
 
 describe('TC-01-05 (partial): subcommand registration', () => {
-  it('has exactly 18 registered subcommands', () => {
+  it('has exactly 21 registered subcommands', () => {
     const program = createProgram();
     const subcommands = program.commands.map((cmd) => cmd.name());
-    expect(subcommands).toHaveLength(19);
+    expect(subcommands).toHaveLength(21);
   });
 
   const requiredSubcommands = [
@@ -260,6 +260,8 @@ describe('TC-01-05 (partial): subcommand registration', () => {
     'deploy',
     'export',
     'storage',
+    'start',
+    'service',
   ];
 
   it.each(requiredSubcommands)(

@@ -3,7 +3,7 @@
 > **Your Home Server, Brewed Fresh**
 >
 > 이 문서는 Brewnet의 설치부터 운영까지 모든 과정을 안내하는 공식 사용 매뉴얼입니다.
-> 최종 업데이트: 2026-03-28
+> 최종 업데이트: 2026-03-31
 
 ---
 
@@ -38,15 +38,14 @@ Brewnet은 오픈소스로 개발된 셀프 호스팅 홈 서버 관리 플랫�
 | **인터랙티브 설정 마법사** | 7단계 대화형 마법사로 서버 환경을 자동 구성 |
 | **Docker 자동 설치** | Docker가 없으면 macOS / Linux에서 자동 설치 |
 | **Git 서버 (Gitea)** | 내장 Git 서버로 코드 관리 및 배포 파이프라인 구축 |
-| **파일 서버** | Nextcloud, MinIO를 통한 파일 저장 및 공유 |
-| **데이터베이스** | PostgreSQL, MySQL, MariaDB + Redis/Valkey/KeyDB 캐시 |
-| **미디어 서버** | Jellyfin을 통한 미디어 스트리밍 |
-| **앱 서버** | 16개 보일러플레이트 스택으로 즉시 앱 생성 |
-| **리버스 프록시** | Traefik(기본), Nginx, Caddy 자동 구성 |
+| **파일 서버** | Nextcloud, MinIO를 통한 파일 저장 및 공유, 구글 드라이브와 비슷한 파일 공유관리 |
+| **데이터베이스** | PostgreSQL, MySQL |
+| **미디어 서버** | Jellyfin을 통한 미디어 스트리밍, 영상 공유 |
+| **앱 서버** | 16개 보일러플레이트 스택으로 즉시 앱 생성, 홈페이지를 비롯한 엔터프라이즈 급 애플리케이션 호스팅 가능 |
+| **리버스 프록시** | Traefik(기본 권장), Nginx, Caddy 자동 구성 |
 | **외부 접근** | Cloudflare Tunnel로 공인 IP 없이 외부 도메인 연결 |
 | **관리자 대시보드** | 웹 브라우저 기반 실시간 모니터링 및 관리 |
-| **백업/복원** | 프로젝트 전체를 .tar.gz로 백업 및 복원 |
-| **앱 배포** | Git 기반 자동 빌드, 배포, 롤백 지원 |
+| **앱 배포** | Git 기반 자동 빌드, 배포, 롤백 지원, 도메인 연결 지원 (full domain, subdomain) |
 
 ### 1.3 시스템 요구사항
 
@@ -68,21 +67,22 @@ Brewnet은 오픈소스로 개발된 셀프 호스팅 홈 서버 관리 플랫�
 
 Brewnet을 설치하는 방법은 두 가지입니다.
 
-#### 방법 A: curl (권장)
 
-가장 간단한 방법입니다. 설치 스크립트가 바이너리를 `/usr/local/bin/brewnet`에 배치하며, `sudo` 비밀번호를 요청할 수 있습니다. 설치 후 셸 재시작이 필요하지 않습니다.
+#### 방법 A: npm (권장)
+
+가장 간단하게 방법입니다. Node.js가 이미 설치되어 있다면 npm을 통해 전역 설치할 수 있습니다. 
+
+```bash
+npm install -g @brewnet/cli
+```
+#### 방법 B: curl
+
+설치 스크립트가 바이너리를 `/usr/local/bin/brewnet`에 배치하며, `sudo` 비밀번호를 요청할 수 있습니다. 설치 후 셸 재시작이 필요하지 않습니다.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
-#### 방법 B: npm
-
-Node.js가 이미 설치되어 있다면 npm을 통해 전역 설치할 수 있습니다.
-
-```bash
-npm install -g @brewnet/cli
-```
 
 #### 설치 확인
 
@@ -97,27 +97,21 @@ brewnet --version
 ### 2.2 초기 설정 마법사 (7-Step Wizard)
 
 Brewnet의 핵심은 7단계 인터랙티브 설정 마법사입니다. 다음 명령어로 시작합니다.
+**Brewnet 설치 단계에서 외부로 전송되는 데이터는 아무것도 없고, 개인정보 혹은 PC 정보를 수집하지 않습니다.** 
 
 ```bash
 brewnet init
 ```
+실행시 SQLite를 기본으로 설치하고, 빌드도구인 prebuild-install 이 더이상 유지보수 되지 않는다는 경고문(npm warn deprecated prebuild-install@7.1.3: No longer maintained.) 이 나오는데, 사용에는 지장이 없으므로 다음 단계로 넘어가면 됩니다. 
 
 마법사는 각 단계에서 사용자의 입력을 받아 프로젝트 환경을 자동으로 구성합니다. 진행 중 언제든지 이전 단계로 돌아갈 수 있으며, `Ctrl+C`로 중단할 수도 있습니다. 중단된 마법사는 다시 `brewnet init`을 실행하면 이어서 진행할 수 있습니다.
 
 #### Step 0: 시스템 체크
 
-마법사가 시작되면 먼저 현재 시스템 환경을 자동으로 점검합니다.
-
-**점검 항목:**
-- **운영체제**: macOS 12+ 또는 Ubuntu 20.04+ 인지 확인
-- **Docker**: Docker Engine이 설치되어 있는지, 설치되어 있지 않으면 자동 설치 제안
-- **포트 사용**: 기본 포트(80, 443, 8080, 8088 등)가 이미 사용 중인지 확인
-- **디스크 공간**: 최소 20GB 이상의 여유 공간이 있는지 확인
-- **Node.js 버전**: Node.js 20 이상인지 확인
-
-Docker가 설치되어 있지 않은 경우, Brewnet이 운영체제에 맞는 방법으로 자동 설치를 시도합니다.
-
-모든 점검 항목이 통과되면 다음 단계로 자동 진행됩니다.
+- 마법사가 시작되면 먼저 현재 시스템 환경을 자동으로 점검합니다.
+- 운영체제와 Docker 체크, 포트 및 디스크 공간과 Node 버전을 체크합니다.
+- Docker가 설치되어 있지 않은 경우, Brewnet이 운영체제에 맞는 방법으로 자동 설치를 시도합니다.
+- 모든 점검 항목이 통과되면 다음 단계로 자동 진행됩니다.
 
 #### Step 1: 프로젝트 설정
 
@@ -126,35 +120,36 @@ Docker가 설치되어 있지 않은 경우, Brewnet이 운영체제에 맞는 �
 **입력 항목:**
 - **프로젝트 이름**: 영문 소문자, 숫자, 하이픈으로 구성 (예: `my-server`, `home-lab`)
 - **프로젝트 경로**: 프로젝트 파일이 저장될 디렉토리 (기본값: `~/brewnet/<프로젝트명>/`)
-- **설치 유형**: Full Install 또는 Partial Install 선택
+- **설치 유형**: Full Install 또는 Minimal Install 선택
 
-**Full Install vs Partial Install:**
+**Full Install vs Minimal Install:**
 
-| 구분 | Full Install | Partial Install |
+| 구분 | Full Install | Minimal Install |
 |------|-------------|-----------------|
-| 설명 | 모든 핵심 서비스를 한 번에 설치 | 필요한 서비스만 선택적으로 설치 |
-| 포함 서비스 | Web Server + Git Server + File Server + DB + App Server | 사용자가 직접 선택 |
-| 적합한 경우 | 처음 시작하는 사용자, 올인원 환경 원하는 경우 | 리소스가 제한적이거나 특정 서비스만 필요한 경우 |
-| 설치 시간 | 상대적으로 오래 걸림 | 선택 서비스에 따라 다름 |
+| 설명 | 모든 핵심 서비스를 한 번에 설치 | Traefik + Gitea + Quick Tunnel 고정 구성 |
+| 포함 서비스 | Web Server + Git Server + File Server + DB + App Server | Web Server (Traefik) + Git Server (Gitea) only |
+| 적합한 경우 | 처음 시작하는 사용자, 올인원 환경 원하는 경우 | 웹 서버 + Git만 빠르게 올리고 싶은 경우 |
+
+
+> Minimal Install은 사용자 선택 없이 Traefik + Gitea + Quick Tunnel 조합으로 고정됩니다. 외부 도메인이 없어도 Quick Tunnel URL로 즉시 외부 접속이 가능하고 도메인이 있다면 설치부터 도메인 연결까지 3분 이내 (인터넷 속도에 따라 다름)로 처리됩니다.
 
 #### Step 2: 관리자 계정 + 서버 구성요소 선택
 
-관리자 계정을 설정하고 서버에 설치할 구성요소를 선택합니다.
+관리자 계정을 설정하고 서버에 설치할 구성요소를 선택합니다. 
+**Brewnet은 외부로 데이터를 전파하지 않으므로 안전합니다.** 
 
 **관리자 계정 설정:**
 - **사용자 이름**: 관리자 ID 입력 (기본값: `admin`)
 - **비밀번호**: 관리자 비밀번호 입력 (최소 8자, 영문+숫자 조합 권장)
-- 설정된 자격증명은 `.env` 파일에 `chmod 600` 권한으로 저장되며, 모든 서비스에 자동 전파됩니다.
 
 **서버 구성요소:**
 
 | 구성요소 | 옵션 | 필수 여부 | 설명 |
 |---------|------|---------|------|
-| **Web Server** | Traefik (기본), Nginx, Caddy | 필수 | HTTP/HTTPS 리버스 프록시 |
+| **Web Server** | Traefik (기본 권장), Nginx, Caddy | 필수 | HTTP/HTTPS 리버스 프록시 |
 | **File Server** | Nextcloud, MinIO | 선택 | 파일 저장 및 공유 |
 | **App Server** | 사용자 정의 앱 | 선택 | Docker 컨테이너 기반 앱 실행 |
 | **Database** | PostgreSQL, MySQL, MariaDB | 선택 | 관계형 데이터베이스 |
-| **Cache** | Redis, Valkey, KeyDB | 선택 | 인메모리 캐시 |
 | **Media** | Jellyfin | 선택 | 미디어 스트리밍 서버 |
 
 각 서비스를 선택하면 해당 서비스의 리소스 요구사항(RAM, 디스크)이 표시됩니다.
@@ -178,7 +173,9 @@ App Server를 선택한 경우에만 이 단계가 나타납니다. 앱 개발�
 
 **지원 언어 및 프레임워크:**
 
-Brewnet은 16개의 사전 구축된 보일러플레이트 스택을 제공합니다. 먼저 언어를 선택하면 해당 언어에서 사용 가능한 프레임워크 목록이 표시됩니다.
+Brewnet은 16개의 사전 구축된 보일러플레이트 스택을 제공합니다. 먼저 언어를 선택하면 해당 언어에서 사용 가능한 프레임워크 목록이 표시됩니다. 
+Go, Rust, Java, Kotlin, Node, Python 런타임을 자동으로 지원합니다. 
+API 서버와 프론트엔드 서버를 동시에 관리할 수 있습니다. 
 
 | 언어 | 프레임워크 | 버전 | ORM |
 |------|----------|------|-----|
@@ -199,10 +196,6 @@ Brewnet은 16개의 사전 구축된 보일러플레이트 스택을 제공합�
 | **Python** | Django 6 | Python 3.13 | Django ORM |
 | **Python** | Flask 3.1 | Python 3.13 | Flask-SQLAlchemy |
 
-**Unified vs Non-unified 스택:**
-
-- **Unified 스택** (`isUnified: true`): 프론트엔드와 백엔드가 하나의 컨테이너에서 실행됩니다. Next.js 15 (API Routes)와 Next.js 15 (Full-Stack)이 이에 해당합니다. 단일 포트로 프론트엔드와 API를 모두 제공합니다.
-- **Non-unified 스택** (`isUnified: false`): 백엔드 API만 제공하는 순수 서버 애플리케이션입니다. 프론트엔드가 필요하면 별도로 구성해야 합니다. 나머지 14개 스택이 이에 해당합니다.
 
 **데이터베이스 드라이버 선택:**
 
@@ -212,11 +205,13 @@ Brewnet은 16개의 사전 구축된 보일러플레이트 스택을 제공합�
 | `postgres` | PostgreSQL 컨테이너 자동 생성 |
 | `mysql` | MySQL 컨테이너 자동 생성 |
 
-> Rust 스택(Actix-web, Axum)은 빌드 시간이 상대적으로 오래 걸립니다. 첫 빌드 시 수 분이 소요될 수 있으며, 마법사에서 경고 메시지가 표시됩니다.
+> Rust 스택(Actix-web, Axum)은 , Java 스택은 빌드 시간이 상대적으로 오래 걸립니다. 첫 빌드 시 수 분이 소요될 수 있으며, 마법사에서 경고 메시지가 표시됩니다.
 
 #### Step 4: 도메인 & 네트워크
 
 외부에서 서버에 접근하는 방법을 설정합니다. 세 가지 모드 중 하나를 선택합니다.
+첫 설치시에는 Quick Tunnel 모드로 빠르게 외부 접속 연결을 시도하고 그 뒤에 Domain을 연결하면
+자동으로 Named Tunnel모드로 변경됩니다.
 
 **Local Only 모드:**
 - 외부 접근 없이 로컬 네트워크에서만 사용
@@ -251,21 +246,8 @@ Brewnet은 16개의 사전 구축된 보일러플레이트 스택을 제공합�
 
 지금까지 설정한 모든 항목을 한눈에 보여주는 리뷰 화면입니다.
 
-표시 항목:
-- 프로젝트 이름 및 경로
-- 선택된 서비스 목록
-- 관리자 계정 정보
-- 런타임/프레임워크 (선택한 경우)
-- 도메인/네트워크 모드
-- 예상 리소스 사용량
-
 이 단계에서 "Confirm"을 선택하면 설치가 시작됩니다. 변경이 필요한 경우 이전 단계로 돌아갈 수 있습니다.
 
-또한 `--config` 옵션을 사용하면 JSON 파일로 사전에 정의된 설정값을 불러올 수도 있습니다.
-
-```bash
-brewnet init --config ./my-config.json
-```
 
 #### Step 6: Docker Compose 생성 & 서비스 시작
 
@@ -294,8 +276,7 @@ brewnet init --config ./my-config.json
 - **터널 상태**: Quick Tunnel URL 또는 Named Tunnel 도메인 정보
 - **다음 단계 안내**: 관리자 대시보드 접속 방법, 앱 생성 방법 등
 
-설정이 완료되면 자동으로 브라우저에서 관리자 대시보드가 열립니다. (`--no-open` 옵션으로 비활성화 가능)
-
+설정이 완료되면 자동으로 브라우저에서 관리자 대시보드가 열립니다. 
 ---
 
 ## 3. 관리자 대시보드
@@ -311,10 +292,6 @@ http://localhost:8088
 
 접속하면 로그인 화면이 나타납니다. Step 2에서 설정한 관리자 비밀번호를 입력하여 로그인합니다.
 
-**접속이 안 되는 경우:**
-1. 서비스가 실행 중인지 확인: `brewnet status`
-2. 포트 8088이 사용 가능한지 확인
-3. 서비스를 재시작: `brewnet up`
 
 ### 3.2 Dashboard 페이지
 
@@ -843,6 +820,38 @@ brewnet down
 
 관리자 대시보드에서 개별 서비스의 시작/중지를 관리할 수 있습니다. Dashboard 페이지에서 서비스 카드를 클릭하면 상세 모달에서 해당 서비스만 제어할 수 있습니다.
 
+### 6.1.1 재부팅 시 활성화 방법
+
+재부팅 후 Docker 서비스(cloudflared, traefik 등)는 `restart: unless-stopped` 정책으로 자동 복원됩니다. Named Tunnel 도메인 연결도 자동으로 유지됩니다.
+
+어드민 패널(`localhost:8088`)은 별도로 시작해야 합니다.
+
+**방법 1 — 수동 (단일 명령어)**
+
+```bash
+brewnet start
+```
+
+Docker 서비스 확인 + 어드민 패널을 한 번에 시작합니다.
+
+**방법 2 — 자동 (OS 서비스 등록, 권장)**
+
+```bash
+brewnet service install    # 최초 1회 등록
+```
+
+등록 후 재부팅 시 어드민 패널이 자동으로 시작됩니다.
+
+| 플랫폼 | 방식 |
+|--------|------|
+| macOS | `~/Library/LaunchAgents/com.brewnet.admin.plist` |
+| Linux | `~/.config/systemd/user/brewnet-admin.service` |
+
+```bash
+brewnet service status     # 등록 상태 확인
+brewnet service uninstall  # 자동 시작 해제
+```
+
 ### 6.2 서비스 추가
 
 새로운 서비스를 기존 프로젝트에 추가합니다.
@@ -1018,22 +1027,6 @@ brewnet restore <backup-id>
 ```
 
 지정된 백업 ID의 아카이브에서 프로젝트를 복원합니다.
-
-**옵션:**
-- `-p, --path <path>`: 복원할 대상 경로 (기본값: 현재 디렉토리)
-- `--backups-dir <dir>`: 백업 저장 디렉토리
-- `--force`: 확인 프롬프트 건너뛰기
-
-```bash
-# 백업 복원 (확인 프롬프트 표시)
-brewnet restore backup-20260328-143022-a1b2c3
-
-# 확인 없이 즉시 복원
-brewnet restore backup-20260328-143022-a1b2c3 --force
-```
-
-복원 후 `brewnet up`을 실행하여 복원된 설정으로 서비스를 시작합니다.
-
 > 복원 시 디스크 공간이 충분한지 자동으로 확인됩니다. 공간이 부족하면 오류 메시지와 함께 필요 용량/가용 용량이 표시됩니다.
 
 ---
@@ -1045,6 +1038,12 @@ brewnet restore backup-20260328-143022-a1b2c3 --force
 | 명령어 | 설명 |
 |--------|------|
 | `brewnet init` | 인터랙티브 설정 마법사 실행 (7단계) |
+| `brewnet start` | Docker 서비스 + 어드민 패널 통합 시작 (재부팅 후 사용) |
+| `brewnet admin` | 어드민 패널만 시작 (http://localhost:8088) |
+| `brewnet shutdown` | 어드민 패널 종료 |
+| `brewnet service install` | 어드민 패널 OS 자동 시작 서비스 등록 |
+| `brewnet service uninstall` | OS 자동 시작 서비스 제거 |
+| `brewnet service status` | OS 서비스 등록 상태 확인 |
 | `brewnet add <service>` | 서비스 추가 (예: jellyfin, nextcloud, postgresql) |
 | `brewnet remove <service>` | 서비스 제거 |
 | `brewnet up` | 모든 서비스 시작 (docker compose up) |
@@ -1061,273 +1060,13 @@ brewnet restore backup-20260328-143022-a1b2c3 --force
 | `brewnet domain tunnel status` | 터널 상태 확인 |
 | `brewnet domain tunnel restart` | cloudflared 컨테이너 재시작 |
 | `brewnet list` | 설치된 서비스 목록 |
-| `brewnet shutdown` | 프로젝트 종료 |
 | `brewnet uninstall` | 완전 삭제 |
-
-### 주요 명령어 상세
-
-#### brewnet init
-
-```bash
-brewnet init [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `-c, --config <path>` | 사전 정의된 JSON 설정 파일 경로 |
-| `--non-interactive` | 비대화형 모드 (--config 필수) |
-| `--no-open` | 설정 완료 후 브라우저 자동 열기 비활성화 |
-
-#### brewnet create-app
-
-```bash
-brewnet create-app <project-name> [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `--stack <STACK_ID>` | 보일러플레이트 스택 직접 지정 (프롬프트 건너뛰기) |
-| `--database <DB_DRIVER>` | 데이터베이스 드라이버 (sqlite3, postgres, mysql) |
-
-사용 예시:
-```bash
-brewnet create-app my-api                              # 인터랙티브 선택
-brewnet create-app my-api --stack go-gin               # Go Gin 스택
-brewnet create-app my-api --stack python-fastapi --database postgres  # FastAPI + PostgreSQL
-brewnet create-app my-blog --stack nodejs-nextjs-full   # Next.js Full-Stack
-```
-
-#### brewnet deploy
-
-```bash
-brewnet deploy <path> [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `-n, --name <name>` | 앱 이름 (기본값: 디렉토리 이름) |
-| `-p, --port <port>` | 컨테이너 포트 (기본값: 3000) |
-
-#### brewnet domain connect
-
-```bash
-brewnet domain connect [app] [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `--domain <hostname>` | 외부 호스트명 (예: my-api.example.com) |
-| `--force` | 기존 CNAME 레코드 충돌 시 덮어쓰기 |
-
-사용 예시:
-```bash
-# Quick Tunnel → Named Tunnel 전환
-brewnet domain connect
-
-# 특정 앱에 도메인 연결
-brewnet domain connect my-api --domain my-api.example.com
-
-# 기존 CNAME 충돌 시 강제 덮어쓰기
-brewnet domain connect my-api --domain my-api.example.com --force
-```
-
-#### brewnet logs
-
-```bash
-brewnet logs [service] [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `-f, --follow` | 실시간 로그 스트리밍 |
-| `-n, --tail <lines>` | 마지막 N줄 표시 |
-| `-p, --path <path>` | 프로젝트 경로 |
-| `--all` | 통합 로그 표시 |
-| `--source <type>` | 소스 필터 (cli/tunnel/access/service) |
-| `--level <level>` | 심각도 필터 (info/warn/error/debug) |
-| `--since <duration>` | 시간 범위 (1h, 30m, 1d, ISO 날짜) |
-| `--json` | JSON 라인 형식 출력 |
-
-#### brewnet remove
-
-```bash
-brewnet remove <service> [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `--purge` | 관련 볼륨과 설정 데이터도 함께 삭제 |
-| `--force` | 확인 프롬프트 건너뛰기 |
-| `-p, --path <path>` | 프로젝트 경로 |
-
-#### brewnet status
-
-```bash
-brewnet status [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `-p, --path <path>` | 프로젝트 경로 |
-| `--json` | JSON 형식 출력 |
-
-#### brewnet backup
-
-```bash
-brewnet backup [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `-p, --path <path>` | 백업할 프로젝트 경로 |
-| `--backups-dir <dir>` | 백업 저장 디렉토리 |
-| `--list` | 기존 백업 목록 표시 |
-
-#### brewnet restore
-
-```bash
-brewnet restore <backup-id> [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `-p, --path <path>` | 복원 대상 경로 |
-| `--backups-dir <dir>` | 백업 저장 디렉토리 |
-| `--force` | 확인 프롬프트 건너뛰기 |
-
-#### brewnet uninstall
-
-```bash
-brewnet uninstall [options]
-```
-
-| 옵션 | 설명 |
-|------|------|
-| `--dry-run` | 삭제 대상만 표시 (실제 변경 없음) |
-| `--keep-data` | Docker 볼륨 보존 (데이터 유지) |
-| `--keep-config` | 프로젝트 디렉토리 보존 (컨테이너만 중지) |
-| `--force` | 확인 프롬프트 건너뛰기 |
 
 ---
 
 ## 8. 문제 해결 (FAQ)
 
-### Q: `brewnet init` 실행 시 Docker가 설치되어 있지 않다고 나옵니다
-
-**A:** Brewnet은 Docker가 없으면 자동으로 설치를 시도합니다. 자동 설치가 실패하는 경우 수동으로 설치하세요.
-
-- **macOS**: [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/) 설치
-- **Ubuntu/Debian**:
-  ```bash
-  curl -fsSL https://get.docker.com | sh
-  sudo usermod -aG docker $USER
-  ```
-  설치 후 로그아웃/로그인하여 docker 그룹 적용
-
-### Q: 포트가 이미 사용 중이라고 나옵니다 (BN002)
-
-**A:** 다른 프로그램이 해당 포트를 사용하고 있습니다.
-
-```bash
-# macOS/Linux에서 포트 사용 프로세스 확인
-lsof -i :80
-lsof -i :8088
-
-# 해당 프로세스를 종료하거나, Brewnet 설정에서 다른 포트 사용
-```
-
-주로 충돌하는 서비스: Apache, Nginx, 다른 Docker 컨테이너
-
-### Q: 관리자 대시보드에 접속이 안 됩니다
-
-**A:** 다음을 순서대로 확인하세요.
-
-1. 서비스가 실행 중인지 확인:
-   ```bash
-   brewnet status
-   ```
-2. 포트 8088이 열려 있는지 확인:
-   ```bash
-   curl http://localhost:8088
-   ```
-3. Docker 컨테이너 상태 확인:
-   ```bash
-   docker ps -a | grep brewnet
-   ```
-4. 서비스 재시작:
-   ```bash
-   brewnet down && brewnet up
-   ```
-
-### Q: Quick Tunnel URL이 변경되었습니다
-
-**A:** Quick Tunnel의 URL은 임시이며, 서버를 재시작하면 변경됩니다. 이는 정상적인 동작입니다. 영구 URL이 필요하다면 Named Tunnel로 전환하세요.
-
-```bash
-brewnet domain connect
-```
-
-### Q: Named Tunnel 연결 후에도 도메인으로 접근이 안 됩니다
-
-**A:** 다음을 확인하세요.
-
-1. **DNS 전파 대기**: DNS 레코드가 전파되기까지 최대 수 분이 걸릴 수 있습니다.
-   ```bash
-   dig my-app.example.com CNAME
-   ```
-2. **Cloudflare 도메인 상태**: 도메인이 Active 상태인지 확인 (Pending이면 네임서버 전파 대기 중)
-3. **터널 상태 확인**:
-   ```bash
-   brewnet domain tunnel status
-   ```
-4. **cloudflared 컨테이너 재시작**:
-   ```bash
-   brewnet domain tunnel restart
-   ```
-
-### Q: Nextcloud에 접속하면 "Access through untrusted domain" 오류가 나옵니다
-
-**A:** Nextcloud의 trusted domains 설정에 현재 접속 URL이 등록되어 있지 않은 경우 발생합니다. Brewnet은 자동으로 `*.trycloudflare.com`을 trusted domain에 추가하지만, 커스텀 도메인을 사용하는 경우 추가 설정이 필요할 수 있습니다.
-
-### Q: Jellyfin 초기 설정 화면이 나오지 않습니다
-
-**A:** Jellyfin의 초기 설정 URL은 반드시 다음 형식을 사용해야 합니다.
-
-```
-http://<host>:8096/web/#/wizard/start
-```
-
-`/web/#/home` 경로를 사용하면 초기 설정 마법사가 나타나지 않습니다.
-
-### Q: 앱 배포가 실패합니다 (BN006)
-
-**A:** 배포 실패의 일반적인 원인:
-
-1. **Dockerfile 오류**: 앱 디렉토리에 유효한 Dockerfile이 있는지 확인
-2. **빌드 의존성 문제**: Docker 빌드 로그에서 구체적인 오류 확인
-   ```bash
-   brewnet logs <app-name>
-   ```
-3. **Health Check 실패**: 앱이 시작은 되지만 `/health` 엔드포인트가 응답하지 않는 경우
-4. **포트 불일치**: 앱이 리스닝하는 포트와 설정된 포트가 다른 경우
-
-### Q: 디스크 공간이 부족합니다
-
-**A:** Docker 이미지와 컨테이너가 디스크 공간을 많이 차지할 수 있습니다.
-
-```bash
-# Docker 디스크 사용량 확인
-docker system df
-
-# 사용하지 않는 이미지 정리 (주의: 필요한 이미지까지 삭제될 수 있음)
-docker image prune
-```
-
-> `docker system prune`은 모든 미사용 리소스를 삭제하므로 주의해서 사용하세요. 중요 데이터가 있는 볼륨은 절대 삭제하지 마세요.
-
-### Q: Gitea에서 clone URL이 잘못 표시됩니다
-
-**A:** Traefik strip-prefix 뒤의 Gitea는 `X-Forwarded-Host` 기반으로 subpath가 없는 URL을 반환할 수 있습니다 (예: `/git` 경로 누락). Brewnet 내부에서는 `authedCloneUrl()`이 올바른 URL을 자동 생성하므로, Gitea API에서 반환하는 `clone_url`을 직접 사용하지 마세요.
+공식 홈페이지의 FAQ를 http://localhost:3000/ko#faq을 참고하세요
 
 ### 에러 코드 참조
 
@@ -1369,34 +1108,6 @@ brewnet uninstall
    - cloudflared 시스템 서비스 제거 (macOS: LaunchDaemon, Linux: systemd)
 7. **~/.brewnet 메타데이터 정리**: 전역 설정 및 상태 데이터 삭제
 
-### 삭제 옵션
-
-```bash
-# 실제 변경 없이 삭제 대상만 미리 확인
-brewnet uninstall --dry-run
-
-# Docker 볼륨(데이터) 보존 — 재설치 시 데이터 복구 가능
-brewnet uninstall --keep-data
-
-# 프로젝트 디렉토리 보존 — 컨테이너만 중지/제거
-brewnet uninstall --keep-config
-
-# 확인 프롬프트 없이 즉시 삭제
-brewnet uninstall --force
-```
-
-### 옵션 조합 예시
-
-```bash
-# 데이터와 설정 모두 보존하면서 컨테이너만 제거
-brewnet uninstall --keep-data --keep-config
-
-# 삭제 대상 미리 확인 (안전)
-brewnet uninstall --dry-run
-
-# 스크립트에서 비대화형 삭제
-brewnet uninstall --force
-```
 
 ### Cloudflare 리소스 자동 정리
 
@@ -1425,19 +1136,21 @@ API Token이 만료되었거나 삭제된 경우 자동 정리가 불가능합�
    - 도메인 선택 → DNS → Records
    - `*.cfargotunnel.com`을 가리키는 CNAME 레코드 삭제
 
+** subdomain으로 연결된 앱들은 클라우드 플레어에서 수동으로 정리해주셔야 안전합니다.**
+
 ### 재설치
 
 삭제 후 다시 설치하려면:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
+npm install -g @brewnet/cli
+brewnet init
 ```
 
 또는:
 
 ```bash
-npm install -g @brewnet/cli
-brewnet init
+curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
 ---
@@ -1461,25 +1174,8 @@ Brewnet은 `~/.brewnet/` 디렉토리에 전역 메타데이터를 저장합니�
 
 ---
 
-## 부록: 지원 서비스 목록
-
-| 서비스 | Docker 이미지 | 카테고리 | 기본 포트 | 서브도메인 |
-|--------|-------------|---------|---------|----------|
-| Traefik | `traefik:v2.11` | Web Server | 80, 443, 8080 | `traefik` |
-| Nginx | `nginx:1.25-alpine` | Web Server | 80, 443 | - |
-| Caddy | `caddy:2-alpine` | Web Server | 80, 443 | - |
-| Gitea | `gitea/gitea:latest` | Git Server | 3000, 3022 | `git` |
-| FileBrowser | `filebrowser/filebrowser:latest` | File | 80 | `files` |
-| Nextcloud | `nextcloud:29-apache` | File | 80 | `cloud` |
-| MinIO | `minio/minio:latest` | File | 9000 | `minio` |
-| Jellyfin | `jellyfin/jellyfin:latest` | Media | 8096 | `jellyfin` |
-| PostgreSQL | `postgres:18.3-alpine` | Database | 5432 | - |
-| MySQL | `mysql:8.4` | Database | 3306 | - |
-| pgAdmin | `dpage/pgadmin4:latest` | Admin | 5050 | `pgadmin` |
-| OpenSSH Server | `linuxserver/openssh-server:latest` | SSH | 2222 | - |
-| Cloudflare Tunnel | `cloudflare/cloudflared:latest` | Tunnel | - | - |
-
----
 
 *Brewnet은 Apache 2.0 라이선스 하에 공개된 오픈소스 프로젝트입니다.*
+*brewnet.dev@gmail.com으로 문의사항이 있으면 보내주세요.*
+*Show your support with a Star*
 *GitHub: [https://github.com/claude-code-expert/brewnet](https://github.com/claude-code-expert/brewnet)*

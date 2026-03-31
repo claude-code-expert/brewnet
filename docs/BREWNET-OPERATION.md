@@ -7,7 +7,13 @@
 
 ## 1. 설치 (Installation)
 
-### 방법 A: 설치 스크립트 (권장)
+### 방법 A: npm 글로벌 설치 (권장)
+
+```bash
+npm install -g @brewnet/cli
+```
+
+### 방법 B: 설치 스크립트
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
@@ -27,12 +33,6 @@ curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/ins
 | 8 | `/usr/local/bin/brewnet` 래퍼 설치 |
 | 9 | PATH 설정 및 검증 |
 
-### 방법 B: npm 글로벌 설치
-
-```bash
-npm install -g @brewnet/cli
-```
-
 ### 사전 요구사항
 
 | 항목 | 요구 버전 |
@@ -45,11 +45,11 @@ npm install -g @brewnet/cli
 ### 업데이트
 
 ```bash
-# 스크립트 설치 — 동일 명령어 재실행 (git pull → rebuild)
-curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-
 # npm — 표준 업데이트
 npm update -g @brewnet/cli
+
+# 스크립트 설치 — 동일 명령어 재실행 (git pull → rebuild)
+curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
 ---
@@ -80,7 +80,6 @@ Step 2: Server Components
          ├── Git Server: Gitea (필수)
          ├── File Server: Nextcloud / MinIO (선택)
          ├── Database: PostgreSQL / MySQL (선택)
-         ├── Cache: Redis / Valkey (선택)
          └── Media: Jellyfin (선택)
 Step 3: Dev Stack & Runtime (appServer 선택 시만)
 Step 4: Domain & Network
@@ -325,8 +324,6 @@ packages/
 | | FileBrowser | filebrowser:latest | 80 |
 | **DB** | PostgreSQL | postgres:latest | 5432 |
 | | MySQL | mysql:latest | 3306 |
-| **Cache** | Redis | redis:latest | 6379 |
-| | Valkey | valkey:latest | 6379 |
 | **Admin** | pgAdmin | pgadmin:latest | 80 |
 | | phpMyAdmin | phpmyadmin:latest | 80 |
 | **Media** | Jellyfin | jellyfin:latest | 8096 |

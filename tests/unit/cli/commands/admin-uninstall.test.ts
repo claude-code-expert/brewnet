@@ -79,6 +79,18 @@ jest.unstable_mockModule('execa', () => ({
   execa: mockExeca,
 }));
 
+const mockUninstallBrewnetService = jest.fn<() => Promise<boolean>>().mockResolvedValue(false);
+
+jest.unstable_mockModule(
+  '../../../../packages/cli/src/services/system-service.js',
+  () => ({
+    uninstallBrewnetService: mockUninstallBrewnetService,
+    installBrewnetService: jest.fn().mockResolvedValue(undefined),
+    isBrewnetServiceInstalled: jest.fn().mockReturnValue(false),
+    getServiceFilePath: jest.fn(() => '/tmp/test.plist'),
+  }),
+);
+
 // ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------
@@ -507,6 +519,54 @@ describe('uninstall command action', () => {
 
     const output = consoleSpy.mock.calls.flat().join(' ');
     expect(output).toMatch(/Removed 1 orphaned network/);
+
+    consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// uninstall calls uninstallBrewnetService
+// ---------------------------------------------------------------------------
+
+describe('uninstall calls uninstallBrewnetService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockListInstallations.mockReturnValue(['/home/user/brewnet-home']);
+    mockGetLastProject.mockReturnValue('/home/user/brewnet-home');
+    mockBuildUninstallTargets.mockReturnValue([
+      { label: 'Docker containers', skipped: false },
+    ]);
+    mockRunUninstall.mockResolvedValue({
+      removed: ['Docker containers'],
+      skipped: [],
+      errors: [],
+      success: true,
+    });
+    mockUninstallBrewnetService.mockResolvedValue(false);
+  });
+
+  it('calls uninstallBrewnetService after successful uninstall', async () => {
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const p = makeProgram();
+    registerUninstallCommand(p);
+    await parseCommand(p, ['uninstall', '--force']);
+
+    expect(mockUninstallBrewnetService).toHaveBeenCalled();
+
+    consoleSpy.mockRestore();
+  });
+
+  it('uninstallBrewnetService failure does not prevent uninstall from completing', async () => {
+    mockUninstallBrewnetService.mockRejectedValue(new Error('service removal failed'));
+    const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    const p = makeProgram();
+    registerUninstallCommand(p);
+    await parseCommand(p, ['uninstall', '--force']);
+
+    // runUninstall still ran — uninstall completed despite service removal failure
+    expect(mockRunUninstall).toHaveBeenCalled();
 
     consoleSpy.mockRestore();
   });
