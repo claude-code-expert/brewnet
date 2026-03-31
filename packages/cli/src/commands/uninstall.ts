@@ -20,6 +20,7 @@ import {
 } from '../services/uninstall-manager.js';
 import { getLastProject, loadState } from '../wizard/state.js';
 import { listDomainConnections } from '../services/project-db.js';
+import { uninstallBrewnetService } from '../services/system-service.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -333,6 +334,11 @@ export function registerUninstallCommand(program: Command): void {
           }
           console.log();
         }
+
+        // Remove OS service (macOS LaunchAgent / Linux systemd) — non-fatal
+        try {
+          await uninstallBrewnetService();
+        } catch { /* non-fatal */ }
 
         // --- Re-install hint ---
         console.log(

@@ -47,11 +47,11 @@ A fully self-hosted home server management platform. Set up and manage a persona
 ### Quick Start
 
 ```bash
-# Option A — curl (recommended)
-curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-
-# Option B — npm
+# Option A — npm (recommended)
 npm install -g @brewnet/cli
+
+# Option B — curl
+curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
 ```bash
@@ -72,7 +72,15 @@ brewnet init
 
 ### Installation
 
-**Option A — curl (recommended)**
+**Option A — npm (recommended)**
+
+```bash
+npm install -g @brewnet/cli
+brewnet --version
+brewnet init
+```
+
+**Option B — curl**
 
 The installer will prompt for your `sudo` password to place the binary at `/usr/local/bin/brewnet`. No shell reload needed afterward.
 
@@ -82,20 +90,12 @@ brewnet --version
 brewnet init
 ```
 
-**Option B — npm**
-
-```bash
-npm install -g @brewnet/cli
-brewnet --version
-brewnet init
-```
-
 ### Init Wizard — 8 Steps
 
 | Step | Description |
 |------|-------------|
 | **Step 0** | System check — OS, Docker, ports 80/443, disk/RAM |
-| **Step 1** | Project setup — name, path, Full / Partial install |
+| **Step 1** | Project setup — name, path, Full / Minimal Install |
 | **Step 2** | Admin account + server components — Web server, File server, DB, Media |
 | **Step 3** | Dev stack — runtime + framework selection *(only shown when App Server is enabled in Step 2)* |
 | **Step 4** | Domain & network — Local (LAN) or Cloudflare Tunnel (external) |
@@ -115,14 +115,18 @@ No port forwarding required. To enable external access:
 
 > **Manual mode**: Create a tunnel at [one.dash.cloudflare.com](https://one.dash.cloudflare.com) and paste the Connector Token instead.
 
-### Command Reference (19 commands)
+### Command Reference (21 commands)
 
 **Setup & Lifecycle**
 ```bash
 brewnet init                        # Interactive 7-step setup wizard
-brewnet admin                       # Start admin panel daemon (http://localhost:8088)
+brewnet start                       # Start Docker services + admin panel (use after reboot)
+brewnet admin                       # Start admin panel daemon only (http://localhost:8088)
 brewnet admin --foreground          # Run admin panel in foreground
 brewnet shutdown                    # Stop the admin panel daemon
+brewnet service install             # Register admin panel as a boot-time OS service
+brewnet service uninstall           # Remove the OS service
+brewnet service status              # Show whether the OS service is installed
 brewnet uninstall                   # Remove all services, volumes, and project files
 brewnet uninstall --dry-run         # Preview what will be removed (no changes)
 brewnet uninstall --keep-data       # Preserve Docker volumes (DB, file data)
@@ -212,7 +216,24 @@ brewnet down          # Stop containers — data preserved in Docker volumes
 brewnet down && brewnet up   # Restart
 ```
 
-All containers use `restart: unless-stopped`. After a server reboot, Docker automatically restarts them.
+### After Reboot
+
+All Docker containers use `restart: unless-stopped` — they start automatically when Docker starts. Named Tunnel domain connections are also restored automatically.
+
+To restore the admin panel after reboot:
+
+```bash
+# Option A — manual (one command)
+brewnet start
+
+# Option B — auto-start on login/boot (register once)
+brewnet service install
+```
+
+| Platform | Mechanism |
+|----------|-----------|
+| macOS | LaunchAgent (`~/Library/LaunchAgents/com.brewnet.admin.plist`) |
+| Linux | systemd user service (`~/.config/systemd/user/brewnet-admin.service`) |
 
 ### Uninstall
 
@@ -285,11 +306,11 @@ A: Step 0 of the wizard detects port conflicts and guides you through resolving 
 ### 빠른 시작
 
 ```bash
-# 방법 A — curl (권장)
-curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-
-# 방법 B — npm
+# 방법 A — npm (권장)
 npm install -g @brewnet/cli
+
+# 방법 B — curl
+curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
 ```
 
 ```bash
@@ -310,7 +331,15 @@ brewnet init
 
 ### 설치
 
-**방법 A — curl (권장)**
+**방법 A — npm (권장)**
+
+```bash
+npm install -g @brewnet/cli
+brewnet --version
+brewnet init
+```
+
+**방법 B — curl**
 
 설치 중 `sudo` 비밀번호를 입력하면 `/usr/local/bin/brewnet`에 설치됩니다. 셸 재로드(`source ~/.zshrc`) 없이 바로 사용 가능합니다.
 
@@ -320,20 +349,12 @@ brewnet --version
 brewnet init
 ```
 
-**방법 B — npm**
-
-```bash
-npm install -g @brewnet/cli
-brewnet --version
-brewnet init
-```
-
 ### 초기 설정 위저드 — 8단계
 
 | 단계 | 내용 |
 |------|------|
 | **Step 0** | 시스템 체크 — OS, Docker, 포트 80/443, 디스크/RAM |
-| **Step 1** | 프로젝트 설정 — 이름, 경로, Full / Partial 설치 유형 |
+| **Step 1** | 프로젝트 설정 — 이름, 경로, Full / Minimal Install 설치 유형 |
 | **Step 2** | 어드민 계정 + 서버 컴포넌트 — 웹 서버, 파일 서버, DB, 미디어 |
 | **Step 3** | 개발 스택 — 런타임 + 프레임워크 선택 *(Step 2에서 App Server 활성화 시만 표시)* |
 | **Step 4** | 도메인 & 네트워크 — 로컬(LAN) 또는 Cloudflare Tunnel(외부 접속) |
@@ -376,14 +397,18 @@ brewnet init
 
 > **Manual 모드**: [one.dash.cloudflare.com](https://one.dash.cloudflare.com) 에서 직접 터널을 만들고 Connector Token을 붙여넣을 수도 있습니다.
 
-### 명령어 전체 목록 (19개)
+### 명령어 전체 목록 (21개)
 
 **설치 & 라이프사이클**
 ```bash
 brewnet init                        # 7단계 대화형 설치 위저드
-brewnet admin                       # 어드민 패널 데몬 시작 (http://localhost:8088)
+brewnet start                       # Docker 서비스 + 어드민 패널 통합 시작 (재부팅 후 사용)
+brewnet admin                       # 어드민 패널 데몬만 시작 (http://localhost:8088)
 brewnet admin --foreground          # 포그라운드 모드로 어드민 패널 실행
 brewnet shutdown                    # 어드민 패널 데몬 종료
+brewnet service install             # 어드민 패널을 OS 자동 시작 서비스로 등록
+brewnet service uninstall           # OS 자동 시작 서비스 제거
+brewnet service status              # OS 서비스 등록 상태 확인
 brewnet uninstall                   # 서비스, 볼륨, 프로젝트 파일 전체 제거
 brewnet uninstall --dry-run         # 삭제 대상 미리 확인 (실제 변경 없음)
 brewnet uninstall --keep-data       # Docker 볼륨(DB, 파일 데이터) 보존
@@ -473,7 +498,22 @@ brewnet down                    # 컨테이너 중지 — Docker 볼륨(데이�
 brewnet down && brewnet up      # 재시작
 ```
 
-모든 컨테이너는 `restart: unless-stopped` 정책을 사용합니다. 서버 재부팅 후 Docker가 시작되면 컨테이너도 자동으로 재시작됩니다.
+모든 컨테이너는 `restart: unless-stopped` 정책을 사용합니다. Docker 시작 시 컨테이너가 자동으로 재시작되고, Named Tunnel 도메인 연결도 유지됩니다.
+
+### 재부팅 시 활성화 방법
+
+```bash
+# 방법 1: 수동 단일 명령어 (Docker 서비스 + 어드민 패널 통합 시작)
+brewnet start
+
+# 방법 2: OS 자동 시작 등록 (최초 1회, 이후 재부팅 시 자동 복원)
+brewnet service install
+```
+
+| 플랫폼 | 방식 |
+|--------|------|
+| macOS | LaunchAgent (`~/Library/LaunchAgents/com.brewnet.admin.plist`) |
+| Linux | systemd user (`~/.config/systemd/user/brewnet-admin.service`) |
 
 ### 언인스톨
 

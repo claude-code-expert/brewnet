@@ -19,17 +19,16 @@
 
 ## 1. 설치
 
-### 원라인 설치 (권장)
+### 방법 A: npm (권장)
+
+```bash
+npm install -g @brewnet/cli
+```
+
+### 방법 B: curl
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/claude-code-expert/brewnet/main/install.sh | bash
-```
-
-설치가 완료되면 PATH를 재로드합니다.
-
-```bash
-source ~/.zshrc    # zsh 사용 시
-source ~/.bashrc   # bash 사용 시
 ```
 
 설치 확인:
@@ -82,7 +81,7 @@ Docker가 없으면 자동 설치를 제안합니다.
 #### Step 1 — 프로젝트 설정
 - **프로젝트 이름**: 디렉터리명으로 사용됩니다 (예: `homeserver`)
 - **설치 경로**: 기본값 `~/brewnet/<프로젝트명>`
-- **설치 유형**: Full Install (전체) / Partial Install (선택)
+- **설치 유형**: Full Install (전체) / Minimal Install (Traefik + Gitea + Quick Tunnel 고정, 1분 이내)
 
 #### Step 2 — 서버 컴포넌트
 
@@ -235,10 +234,38 @@ brewnet down
 brewnet down && brewnet up
 ```
 
-### 서버 재부팅 후 자동 시작
+### 재부팅 시 활성화 방법
 
-모든 컨테이너는 `restart: unless-stopped` 정책으로 설정되어 있습니다.
-Docker 데몬이 시작되면 컨테이너도 자동으로 재시작됩니다.
+재부팅 후 두 가지 방법으로 복원할 수 있습니다.
+
+**방법 1 — 수동 (단일 명령어)**
+
+```bash
+brewnet start
+```
+
+Docker 서비스 시작 + 어드민 패널을 한 번에 시작합니다.
+
+**방법 2 — 자동 (OS 서비스 등록, 권장)**
+
+```bash
+brewnet service install   # 최초 1회 등록
+```
+
+등록 후 재부팅 시 어드민 패널이 자동으로 시작됩니다.
+
+| 플랫폼 | 방식 |
+|--------|------|
+| macOS | `~/Library/LaunchAgents/com.brewnet.admin.plist` |
+| Linux | `~/.config/systemd/user/brewnet-admin.service` |
+
+```bash
+brewnet service status     # 등록 상태 확인
+brewnet service uninstall  # 자동 시작 해제
+```
+
+> **Docker 서비스** (cloudflared, traefik 등)는 `restart: unless-stopped` 정책으로
+> Docker 데몬 시작 시 자동으로 복원됩니다. Named Tunnel 도메인 연결도 자동 유지됩니다.
 
 ---
 

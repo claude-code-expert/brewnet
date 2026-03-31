@@ -19,6 +19,26 @@ jest.unstable_mockModule('node:fs', () => ({
   readFileSync: mockReadFileSync,
   mkdirSync: jest.fn(),
   appendFileSync: jest.fn(),
+  writeFileSync: jest.fn(),
+  unlinkSync: jest.fn(),
+}));
+
+jest.unstable_mockModule(
+  '../../../../../packages/cli/src/services/system-service.js',
+  () => ({
+    installBrewnetService: jest.fn().mockResolvedValue(undefined),
+    uninstallBrewnetService: jest.fn().mockResolvedValue(false),
+    isBrewnetServiceInstalled: jest.fn().mockReturnValue(false),
+    getServiceFilePath: jest.fn(() => '/tmp/test.plist'),
+  }),
+);
+
+jest.unstable_mockModule('@inquirer/prompts', () => ({
+  confirm: jest.fn().mockResolvedValue(false),
+  input: jest.fn(),
+  select: jest.fn(),
+  checkbox: jest.fn(),
+  password: jest.fn(),
 }));
 
 jest.unstable_mockModule(
